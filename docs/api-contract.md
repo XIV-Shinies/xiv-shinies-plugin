@@ -103,7 +103,9 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "minions": true,
     "mounts": true,
     "questSequences": true,
-    "quests": true
+    "quests": true,
+    "tripleTriadCards": true,
+    "tripleTriadNpcs": true
   },
   "enabled": true,             // global kill switch
   "intervals": {
@@ -189,7 +191,9 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
     "mounts": [1, 5],
     "quests": [65575, 66216], // Quest Excel row ids == the server's Quest.id
     "items": [{"id": 7851, "count": 1, "hqCount": 2, "fresh": true}],
-    "questSequences": {"70991": 3} // active journal sequence byte per manifested quest
+    "questSequences": {"70991": 3}, // active journal sequence byte per manifested quest
+    "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
+    "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
   },
   "itemSources": { // optional — how each storage source was read this pass
     "inventory": {"state": "live"},
@@ -257,6 +261,13 @@ Field constraints:
 - `fresh: false` means the count came from a cache rather than a live container read. The
   server treats a stale positive as a positive (the item *was* there), so the flag does not
   change the outcome.
+- **Triple Triad id spaces.** `tripleTriadCards` carries `TripleTriadCard` sheet row ids
+  (1–475, dense; row 0 is a dummy). `tripleTriadNpcs` carries `TripleTriadResident` row ids
+  **exactly as the sheet reports them** — they live in the game's event-handler id range
+  (2293762 and up) and must not be rebased; the server stores them as `TripleTriad` row
+  ids, the same key space. Sheet rows whose `Order` is 65535 are untracked placeholders
+  with no beaten flag and are never sent. Do **not** send `ENpcResident` ids — they are a
+  different sheet in a different range, and the server silently drops them as unknown.
 - **`questSequences`** carries an entry only for a manifested quest **currently in the
   journal**: the key is the quest's Excel row id as a decimal string, the value the raw
   sequence byte the game reports. An empty object means "every manifested quest was
@@ -273,11 +284,14 @@ Field constraints:
   "ok": true,
   "bound": false, // true only when THIS request performed the first-upload bind
   "written": {
-    // rows created + promoted per id-list category — always all four keys
+    // rows created + promoted per id-list category — always every key the server tracks,
+    // whether or not the upload carried that category
     "achievements": 0,
     "minions": 2,
     "mounts": 1,
-    "quests": 12
+    "quests": 12,
+    "tripleTriadCards": 5,
+    "tripleTriadNpcs": 1
   },
   "achievementsSkipped": "not_sent", // present iff the achievements key was absent or stripped as disabled (an explicit empty array is "sent")
   "provenSteps": 3, // present iff items were applied and relic-proof derivation succeeded

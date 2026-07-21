@@ -265,6 +265,12 @@ public class DtoSerializationTests
         Assert.Null(response.AchievementsSkipped);
         Assert.Null(response.ProvenSteps);
         Assert.Null(response.SkippedCategories);
+
+        // The Triple Triad written counts are optional the same way: a server that predates those
+        // categories omits the keys, and the nullable properties read back null rather than
+        // failing the whole deserialization.
+        Assert.Null(response.Written.TripleTriadCards);
+        Assert.Null(response.Written.TripleTriadNpcs);
     }
 
     [Fact]
@@ -272,7 +278,8 @@ public class DtoSerializationTests
     {
         const string body = """
         {"ok": true, "bound": true,
-         "written": {"achievements": 0, "minions": 0, "mounts": 0, "quests": 0},
+         "written": {"achievements": 0, "minions": 0, "mounts": 0, "quests": 0,
+                     "tripleTriadCards": 5, "tripleTriadNpcs": 1},
          "achievementsSkipped": "not_sent",
          "provenSteps": 3,
          "skippedCategories": ["minions"]}
@@ -284,6 +291,8 @@ public class DtoSerializationTests
         Assert.Equal("not_sent", response.AchievementsSkipped);
         Assert.Equal(3, response.ProvenSteps);
         Assert.Equal(new[] { "minions" }, response.SkippedCategories);
+        Assert.Equal(5, response.Written.TripleTriadCards);
+        Assert.Equal(1, response.Written.TripleTriadNpcs);
     }
 
     [Fact]

@@ -18,7 +18,7 @@ public sealed record SyncResponse
     /// <summary>True only when THIS request performed the first-upload character bind.</summary>
     public required bool Bound { get; init; }
 
-    /// <summary>Rows created plus promoted, per id-list category. Always all four keys.</summary>
+    /// <summary>Rows created plus promoted, per id-list category.</summary>
     public required WrittenCounts Written { get; init; }
 
     /// <summary>
@@ -63,4 +63,15 @@ public sealed record WrittenCounts
 
     /// <summary>Quest rows written.</summary>
     public required int Quests { get; init; }
+
+    // The two properties below are nullable and NOT `required`, unlike the four above: a server
+    // that predates the Triple Triad categories omits these keys entirely, and an older server is
+    // a supported peer — a `required` property here would make every sync against one throw
+    // during deserialization.
+
+    /// <summary>Triple Triad card rows written, or null when the server did not send the key.</summary>
+    public int? TripleTriadCards { get; init; }
+
+    /// <summary>Triple Triad opponent rows written, or null when the server did not send the key.</summary>
+    public int? TripleTriadNpcs { get; init; }
 }

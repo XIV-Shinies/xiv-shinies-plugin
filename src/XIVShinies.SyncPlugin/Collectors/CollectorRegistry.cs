@@ -60,6 +60,23 @@ public static class CollectorRegistry
         WhatGetsSent = "The ID numbers of achievements you have earned.",
     };
 
+    private static readonly CategoryInfo TripleTriadCards = new()
+    {
+        Key = CategoryKeys.TripleTriadCards,
+        DisplayName = "Triple Triad cards",
+        WhatGetsSent = "The ID numbers of Triple Triad cards you have collected.",
+    };
+
+    private static readonly CategoryInfo TripleTriadNpcs = new()
+    {
+        Key = CategoryKeys.TripleTriadNpcs,
+        DisplayName = "Triple Triad opponents",
+
+        // "Opponents you have defeated" is the fact the game records (a per-NPC beaten flag), so
+        // the copy says exactly that rather than the vaguer "NPCs you have played".
+        WhatGetsSent = "The ID numbers of Triple Triad opponents you have defeated at least once.",
+    };
+
     private static readonly CategoryInfo Items = new()
     {
         Key = CategoryKeys.Items,
@@ -129,6 +146,20 @@ public static class CollectorRegistry
                 precondition: () => unlockState.IsAchievementListLoaded
                     ? null
                     : CollectSkipReasons.AchievementListNotLoaded),
+
+            // Cards are sheet-backed unlocks, structurally identical to mounts and minions. The
+            // sheet's row 0 is a dummy; the game never marks it unlocked, and even if it did, the
+            // id-zero filter in CollectResult.Ids keeps it off the wire.
+            new ExcelUnlockCollector<TripleTriadCard>(
+                TripleTriadCards,
+                dataManager,
+                framework,
+                row => row.RowId,
+                unlockState.IsTripleTriadCardUnlocked),
+
+            // Defeated opponents have no IUnlockState method, so this collector reads the game's
+            // UIState directly — see its class remarks for the id space it reports.
+            new TripleTriadNpcCollector(TripleTriadNpcs, dataManager, framework),
 
             // The odd one out: it reports possession counts rather than IDs, and it only looks at
             // the items the server named in its manifest. The runner treats it like any other.
