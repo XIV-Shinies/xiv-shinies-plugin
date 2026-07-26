@@ -55,11 +55,21 @@ internal sealed class SyncManager : IDisposable
     /// How long to wait after the login event before reading the character.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The <c>Login</c> event fires early. Unlock bitmaps, the achievement list, and inventory all
     /// stream in over the following seconds, so collecting immediately would read a half-populated
-    /// world and report far less than the character owns. That would not be <i>wrong</i> — absence
-    /// never clears anything server-side — but it would waste an upload and delay the real one by a
-    /// full interval. Waiting costs nothing.
+    /// world and report far less than the character owns.
+    /// </para>
+    /// <para>
+    /// The wait is load-bearing. A sheet-backed collector reports its read as a
+    /// <b>complete</b> enumeration (<see cref="Collectors.CollectResult.CompleteEnumeration"/>),
+    /// which the upload declares to the server — and a declared-complete list makes every id it
+    /// lacks count as evidence of absence. Reading before the game has finished populating those
+    /// bitmaps would therefore not just under-report; it would assert that the missing entries are
+    /// genuinely unowned, and the site would question the user's own manual marks on the strength
+    /// of it. Shortening or removing this wait needs a readiness gate in its place (the
+    /// achievements collector's <c>precondition</c> is the model).
+    /// </para>
     /// </remarks>
     private static readonly TimeSpan LoginSettleDelay = TimeSpan.FromSeconds(10);
 
@@ -823,14 +833,16 @@ internal sealed class SyncManager : IDisposable
 
             // Bound every category to the contract's caps before anything downstream sees it.
             // An over-cap payload is rejected whole by the server (400), losing every category
-            // in it; truncating here keeps the rest of the upload alive. `snapshot with { ... }`
-            // rebuilds the record with the bounded dictionary in place, so everything below —
-            // the cost log, the skip reasons, the request build, and the upload-log draft — sees
-            // the same bounded snapshot without any of them needing to know capping happened.
-            var (boundedCollections, droppedByCap) = PayloadCaps.Bound(snapshot.Collections);
+            // in it; truncating here keeps the rest of the upload alive. PayloadCaps hands back a
+            // bounded snapshot — the same instance when nothing was over a cap — so everything
+            // below (the cost log, the skip reasons, the request build, and the upload-log draft)
+            // sees one snapshot without any of them needing to know capping happened. It also
+            // retracts the completeness claim of every category it cut, so a truncated list can
+            // never ship declared complete.
+            var (boundedSnapshot, droppedByCap) = PayloadCaps.Bound(snapshot);
             if (droppedByCap.Count > 0)
             {
-                snapshot = snapshot with { Collections = boundedCollections };
+                snapshot = boundedSnapshot;
 
                 foreach (var line in droppedByCap)
                     log.Warning($"Payload cap: {line}.");
@@ -880,6 +892,16 @@ internal sealed class SyncManager : IDisposable
 
             request = SyncPayloadBuilder.Build(
                 identity!, pluginVersion, due.Trigger, snapshot, config?.ManifestVersion);
+
+            // Which categories this upload declares complete. Read off the built request rather
+            // than the snapshot, so it reports what actually ships: the builder withholds every
+            // declaration on an unlock upload, and a category the payload does not carry never
+            // gets one. Logged apart from the facts because it is a different kind of statement —
+            // the facts say what was found, this says what the upload asserts was findable (see
+            // SyncRequest.CollectionScopes) — and that assertion's only other visible effect is on
+            // the website, a machine away from the pass that made it.
+            if (log.MinimumLogLevel <= LogEventLevel.Verbose && request.CollectionScopes is { } scopes)
+                log.Verbose($"{due.Trigger} declared complete: {string.Join(", ", scopes.Keys)}");
 
             // The upload-log draft is summarized HERE, from the same snapshot the payload was
             // built from — so the log describes what actually went out, never a reconstruction.

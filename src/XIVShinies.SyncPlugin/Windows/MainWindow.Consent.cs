@@ -101,6 +101,12 @@ internal sealed partial class MainWindow
                     toggled = ImGui.Checkbox($"{row.DisplayName}##{row.Key}", ref enabled);
                 }
 
+                // The elaboration behind this row's one-liner, one hover away. Drawn only when the
+                // collector offered one, so a category whose description already says everything
+                // carries no affordance to wonder about.
+                if (row.Details is { } details)
+                    DrawDetailsHint(details);
+
                 if (toggled)
                 {
                     ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
@@ -129,7 +135,65 @@ internal sealed partial class MainWindow
                 ImGui.Unindent(checkboxColumn);
                 ImGui.Spacing();
             }
+
+            // Every description above says what the plugin FINDS. A snapshot upload additionally
+            // declares which of those lists it read completely (see Api/SyncRequest's
+            // CollectionScopes for what that licenses). It is a claim made about the user's own
+            // entries, so it is disclosed here and not only in the contract.
+            //
+            // Phrased conditionally and named after no category, so it stays true however many
+            // collections can be read completely. The consequence — what the site does with the
+            // claim — is the hover text: it is what makes the line worth reading, not a further
+            // disclosure of what leaves the machine.
+            //
+            // The category rows end with a single Spacing, which is the gap BETWEEN rows. This note
+            // is not another row, so it gets a wider gap above its divider to read as its own
+            // closing remark rather than a continuation of the last collection's copy.
+            ImGui.Spacing();
+            ImGui.Spacing();
+
+            BrandSeparator();
+            ImGui.Spacing();
+            DrawWrapped("Lists the plugin can read in full are reported as complete.", ImGuiCol.Text);
+            DrawDetailsHint(
+                "That lets XIV Shinies point out anything you marked by hand that the plugin did " +
+                "not find, so you can review it. Nothing is ever unmarked for you.");
         }
+    }
+
+    /// <summary>
+    /// Draws a muted question mark on the current line that reveals <paramref name="details"/> on
+    /// hover.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The consent list is a compliance surface AND a list people have to be able to scan. Those
+    /// pull in opposite directions: every caveat worth stating makes the wall of text a reader is
+    /// less likely to finish. Splitting it — the disclosure always visible, the elaboration one
+    /// hover away — keeps the surface honest without making it unreadable. What may move behind
+    /// this mark is bounded, and the rule lives on
+    /// <see cref="Collectors.CategoryInfo.Details"/>: never a kind of data, only detail that makes
+    /// the visible line trustworthy.
+    /// </para>
+    /// <para>
+    /// <c>SameLine</c> puts the glyph on the line the caller just drew, so it trails the label or
+    /// sentence it belongs to instead of starting a row of its own. The icon font is pushed for the
+    /// glyph alone: FontAwesome has no Latin letters, so text drawn while it is active renders as
+    /// blanks.
+    /// </para>
+    /// </remarks>
+    /// <param name="details">The hover text.</param>
+    private void DrawDetailsHint(string details)
+    {
+        ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+
+        using (iconFont.Push())
+            ImGui.TextDisabled(FontAwesomeIcon.QuestionCircle.ToIconString());
+
+        // Answers for the glyph just drawn — the hover target is the mark itself, which is why it
+        // is small and deliberate rather than the whole row lighting up as a person reads down it.
+        if (ImGui.IsItemHovered())
+            Widgets.DrawTooltip(details);
     }
 
     /// <summary>

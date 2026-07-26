@@ -36,6 +36,9 @@ public class CollectorRunnerTests
 
         public string WhatGetsSent => $"Facts about {CategoryKey}.";
 
+        // Optional self-description; the runner never reads it, which is the point.
+        public string? Details { get; init; }
+
         // The runner copies this self-description into the snapshot (the upload log uses it to
         // pick a category's change signal); fixed-scope is the default, tests opt in per fake.
         public bool UsesItemManifest { get; init; }
@@ -108,6 +111,43 @@ public class CollectorRunnerTests
             new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), RemoteConfig());
 
         Assert.DoesNotContain(UnknownCategory, snapshot.ManifestDrivenKeys);
+    }
+
+    // A collector that enumerated its entire domain says so through its result, and the runner
+    // records the key — the payload builder later turns that into a `collectionScopes` "full"
+    // declaration. Generic like everything else here: the fake announces an unknown category.
+    [Fact]
+    public void A_complete_enumerations_key_is_marked_in_the_snapshot()
+    {
+        var collector = new FakeCollector(
+            UnknownCategory, () => CollectResult.Ids(new[] { 42u }, completeEnumeration: true));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Contains(UnknownCategory, snapshot.CompleteKeys);
+    }
+
+    [Fact]
+    public void A_partial_reads_key_is_not_marked_complete()
+    {
+        var snapshot = CollectorRunner.Run(
+            new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.DoesNotContain(UnknownCategory, snapshot.CompleteKeys);
+    }
+
+    // A skip carries no facts at all, so it can never carry a completeness claim — even from a
+    // collector that would have enumerated everything had it been able to read.
+    [Fact]
+    public void A_skipped_collectors_key_is_not_marked_complete()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Skipped("because"));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.DoesNotContain(UnknownCategory, snapshot.CompleteKeys);
     }
 
     // The context's truncation verdict must reach the snapshot, because the orchestrator (which
@@ -403,6 +443,21 @@ public class CollectorRunnerTests
 
         Assert.NotNull(snapshot.Durations);
         Assert.Empty(snapshot.Durations);
+    }
+
+    // The payload builder enumerates this set without a null guard on every non-unlock upload, so
+    // the default has to be an empty set — a hand-built snapshot must be safe to enumerate.
+    [Fact]
+    public void Complete_keys_default_to_empty_rather_than_null()
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>(),
+            Skipped = new Dictionary<string, string>(),
+        };
+
+        Assert.NotNull(snapshot.CompleteKeys);
+        Assert.Empty(snapshot.CompleteKeys);
     }
 
     [Fact]

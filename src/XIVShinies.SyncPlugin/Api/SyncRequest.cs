@@ -78,6 +78,28 @@ public sealed record SyncRequest
     public required Dictionary<string, JsonNode> Collections { get; init; }
 
     /// <summary>
+    /// Per-category completeness declarations (<c>"full"</c> per
+    /// <see cref="CollectionScopeValues"/>), or null when there is nothing to declare — null keys
+    /// are omitted from the JSON, and an omitted key means "partial" on the server.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the one way an id's ABSENCE from a list becomes meaningful. Normally a category's
+    /// list proves only what is present; declaring it <c>"full"</c> asserts it is the character's
+    /// complete set at upload time, which lets the server surface a player's own manual mark that
+    /// the plugin's complete list contradicts ("Marked by you — the plugin didn't find it"). The
+    /// server never infers completeness — a short list is indistinguishable from a small
+    /// collection — so an upload that does not declare it carries no evidence of absence.
+    /// </para>
+    /// <para>
+    /// Category-keyed like <see cref="Collections"/>, and for the same reason: a collector
+    /// declares its own completeness and the builder passes it through, so no caller ever branches
+    /// on a category name.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, string>? CollectionScopes { get; init; }
+
+    /// <summary>
     /// Per-source scan status (inventory live, retainers cached, armoire loaded, etc.), or null when
     /// not present. Optional on the wire: omitted when null or empty.
     /// </summary>
@@ -93,6 +115,22 @@ public sealed record SyncRequest
     /// </para>
     /// </remarks>
     public Dictionary<string, ItemSourceStatus>? ItemSources { get; init; }
+}
+
+/// <summary>
+/// The values the contract accepts in <see cref="SyncRequest.CollectionScopes"/>. Anything else is
+/// rejected with a 400, so the strings live here rather than being retyped at call sites.
+/// </summary>
+public static class CollectionScopeValues
+{
+    /// <summary>This list is the character's complete set for its category at upload time.</summary>
+    public const string Full = "full";
+
+    /// <summary>
+    /// Anything less than complete. Also what an omitted key means, so the plugin never actually
+    /// sends this value — it exists to document the contract's full value set.
+    /// </summary>
+    public const string Partial = "partial";
 }
 
 /// <summary>

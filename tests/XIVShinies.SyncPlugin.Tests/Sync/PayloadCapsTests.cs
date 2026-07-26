@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using Xunit;
+using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
@@ -155,6 +156,68 @@ public class PayloadCapsTests
         Assert.Empty(dropped);
         Assert.Same(collections, bounded);
         Assert.Same(collections["future"], bounded["future"]);
+    }
+
+    // A truncated list is not the character's complete set, so the cut must retract the claim
+    // (PayloadCaps.Bound's remarks carry the reasoning).
+    [Fact]
+    public void Capping_a_category_retracts_its_completeness_claim()
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["facewear"] = IdArray(PayloadCaps.MaxIdsPerCategory + 1),
+            },
+            Skipped = new Dictionary<string, string>(),
+            CompleteKeys = new HashSet<string> { "facewear" },
+        };
+
+        var (bounded, dropped) = PayloadCaps.Bound(snapshot);
+
+        Assert.Single(dropped);
+        Assert.DoesNotContain("facewear", bounded.CompleteKeys);
+    }
+
+    // Only the category that was cut loses its claim: an untouched list is still complete, and
+    // one over-cap category must not silently disarm the rest of the upload's declarations.
+    [Fact]
+    public void Capping_one_category_leaves_another_categorys_claim_intact()
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["facewear"] = IdArray(PayloadCaps.MaxIdsPerCategory + 1),
+                ["ornaments"] = IdArray(3),
+            },
+            Skipped = new Dictionary<string, string>(),
+            CompleteKeys = new HashSet<string> { "facewear", "ornaments" },
+        };
+
+        var (bounded, _) = PayloadCaps.Bound(snapshot);
+
+        Assert.DoesNotContain("facewear", bounded.CompleteKeys);
+        Assert.Contains("ornaments", bounded.CompleteKeys);
+    }
+
+    // Nothing was over a cap, so there is nothing to rebuild: the snapshot that ships is the very
+    // one that was collected, claims and all.
+    [Fact]
+    public void A_compliant_snapshot_is_returned_as_the_same_instance()
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode> { ["facewear"] = IdArray(5) },
+            Skipped = new Dictionary<string, string>(),
+            CompleteKeys = new HashSet<string> { "facewear" },
+        };
+
+        var (bounded, dropped) = PayloadCaps.Bound(snapshot);
+
+        Assert.Empty(dropped);
+        Assert.Same(snapshot, bounded);
+        Assert.Contains("facewear", bounded.CompleteKeys);
     }
 
     [Fact]

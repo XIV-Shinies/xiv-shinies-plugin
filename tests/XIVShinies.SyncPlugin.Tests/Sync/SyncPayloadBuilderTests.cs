@@ -205,4 +205,91 @@ public class SyncPayloadBuilderTests
 
         Assert.Null(request.ItemSources);
     }
+
+    // "full" tells the server this list is the character's COMPLETE set — the one declaration that
+    // makes an id's ABSENCE meaningful (it powers the site's disputed-manual-mark surface). Note
+    // the category key here is one the plugin has never heard of: scope declaration is generic
+    // collector self-description, exactly like the facts themselves.
+    [Fact]
+    public void A_complete_enumeration_is_declared_full_on_a_snapshot_upload()
+    {
+        var snapshot = Snapshot("facewear") with { CompleteKeys = new HashSet<string> { "facewear" } };
+
+        var request = SyncPayloadBuilder.Build(Identity, "1.0.0", SyncTrigger.Manual, snapshot, null);
+
+        Assert.NotNull(request.CollectionScopes);
+        Assert.Equal(CollectionScopeValues.Full, request.CollectionScopes!["facewear"]);
+    }
+
+    // A delta upload must not claim completeness, so the builder withholds every declaration on an
+    // unlock trigger whatever the collector read. Keyed on the trigger alone — no category is
+    // consulted — so it holds for every collection.
+    [Fact]
+    public void An_unlock_upload_never_declares_full_scope()
+    {
+        var snapshot = Snapshot("facewear") with { CompleteKeys = new HashSet<string> { "facewear" } };
+
+        var request = SyncPayloadBuilder.Build(Identity, "1.0.0", SyncTrigger.Unlock, snapshot, null);
+
+        Assert.Null(request.CollectionScopes);
+    }
+
+    // Omitting the object means "partial" server-side, so when nothing was complete there is
+    // nothing to say — an empty scopes object would be noise, like an empty itemSources.
+    [Fact]
+    public void Omits_collection_scopes_when_nothing_was_complete()
+    {
+        var request = SyncPayloadBuilder.Build(
+            Identity, "1.0.0", SyncTrigger.Manual, Snapshot("facewear"), null);
+
+        Assert.Null(request.CollectionScopes);
+    }
+
+    // A scope may only describe a list that is actually in this upload. Declaring "full" for an
+    // absent category would assert completeness of facts the server never received.
+    [Fact]
+    public void A_scope_is_never_declared_for_a_category_the_upload_does_not_carry()
+    {
+        var snapshot = Snapshot("facewear") with { CompleteKeys = new HashSet<string> { "ornaments" } };
+
+        var request = SyncPayloadBuilder.Build(Identity, "1.0.0", SyncTrigger.Manual, snapshot, null);
+
+        Assert.Null(request.CollectionScopes);
+    }
+
+    // The uncarried key must cost only ITSELF. An implementation that bailed out of the whole
+    // object on seeing one missing key would pass every other test here while silently dropping a
+    // legitimate declaration whenever some other collector's category went absent.
+    [Fact]
+    public void An_uncarried_complete_key_does_not_suppress_the_categories_that_are_carried()
+    {
+        var snapshot = Snapshot("facewear", "ornaments") with
+        {
+            CompleteKeys = new HashSet<string> { "facewear", "gone" },
+        };
+
+        var request = SyncPayloadBuilder.Build(Identity, "1.0.0", SyncTrigger.Manual, snapshot, null);
+
+        Assert.NotNull(request.CollectionScopes);
+        Assert.Equal(CollectionScopeValues.Full, request.CollectionScopes!["facewear"]);
+        Assert.False(request.CollectionScopes.ContainsKey("gone"));
+
+        // Carried but never claimed complete, so it says nothing rather than saying "partial".
+        Assert.False(request.CollectionScopes.ContainsKey("ornaments"));
+    }
+
+    // "partial" is the server's default for an absent key, so spending bytes to state it would say
+    // nothing at all. The plugin emits "full" or emits nothing.
+    [Fact]
+    public void The_literal_partial_value_is_never_sent()
+    {
+        var snapshot = Snapshot("facewear", "ornaments") with
+        {
+            CompleteKeys = new HashSet<string> { "facewear" },
+        };
+
+        var request = SyncPayloadBuilder.Build(Identity, "1.0.0", SyncTrigger.Manual, snapshot, null);
+
+        Assert.DoesNotContain(CollectionScopeValues.Partial, request.CollectionScopes!.Values);
+    }
 }

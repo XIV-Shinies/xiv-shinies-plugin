@@ -75,6 +75,12 @@ internal sealed partial class MainWindow
             ImGui.SameLine();
             ImGui.TextUnformatted(collector.DisplayName);
 
+            // The same elaboration the settings list offers. This screen is the fuller disclosure
+            // of the two — it is what a user reads before consenting to anything — so it must never
+            // carry less than the settings do.
+            if (collector.Details is { } details)
+                DrawDetailsHint(details);
+
             ImGui.Indent(iconColumn);
             DrawWrapped(collector.WhatGetsSent, ImGuiCol.Text);
             ImGui.Unindent(iconColumn);

@@ -34,6 +34,27 @@ public sealed record CategoryInfo
     public required string WhatGetsSent { get; init; }
 
     /// <summary>
+    /// The elaboration behind <see cref="WhatGetsSent"/> — where the plugin looks, what edge cases
+    /// count, what is <i>not</i> involved — or null when the one-liner says everything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Shown on hover, so the consent list stays scannable while the full story remains one gesture
+    /// away. The split is load-bearing for compliance, and the dividing line is strict:
+    /// <see cref="WhatGetsSent"/> must name <b>every kind of data that leaves the machine</b>, so a
+    /// user who reads only the visible line still knows what they are agreeing to send. A kind of
+    /// data may never be demoted here — gil belongs on the visible line even though the containers
+    /// it was counted in do not.
+    /// </para>
+    /// <para>
+    /// What belongs here instead: which storage locations were searched, that a count of zero is
+    /// itself reported, that other players are never involved. Detail that makes the visible line
+    /// <i>trustworthy</i> rather than detail that changes what it discloses.
+    /// </para>
+    /// </remarks>
+    public string? Details { get; init; }
+
+    /// <summary>
     /// True when this collection's scope is driven by the server's item manifest, rather than being
     /// fixed at compile time (as quests, mounts, minions, and achievements are).
     /// </summary>

@@ -188,6 +188,14 @@ flag, partial uploads are always safe. The plugin must reflect this — send wha
 readable, omit what wasn't (e.g. omit `achievements` when the list isn't loaded rather than
 sending an empty array), and never treat an absent category as "cleared".
 
+The **one** way an absent id gains meaning is a completeness declaration: a collector that
+enumerated its whole domain returns `CollectResult.Ids(ids, completeEnumeration: true)`, which
+ships as that category's `collectionScopes` `"full"`, and the server may then surface a manual
+mark the complete list contradicts. Nothing is ever unmarked — but the claim is made about the
+user's own data, so it must be true. Claim it only when the collector can enumerate everything
+the **server's catalog** may hold, not merely everything the game will answer for; `false` (the
+default) is always safe. `TripleTriadNpcCollector` is the worked example of declining it.
+
 ## Extensibility contract
 
 Adding a collection must be **one new `ICollector` class** and nothing else. The

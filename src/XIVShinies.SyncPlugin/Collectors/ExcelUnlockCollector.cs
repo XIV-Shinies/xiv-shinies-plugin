@@ -83,6 +83,9 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     public string WhatGetsSent => info.WhatGetsSent;
 
     /// <inheritdoc/>
+    public string? Details => info.Details;
+
+    /// <inheritdoc/>
     // Sheet-backed collections are fixed in scope at compile time (every row in the sheet is a
     // candidate), never driven by the server's item manifest.
     public bool UsesItemManifest => info.UsesItemManifest;
@@ -116,7 +119,9 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
         }
 
         // An empty list is a legitimate result ("we read the sheet; nothing was unlocked"), and is
-        // deliberately different from a skip.
-        return CollectResult.Ids(ids);
+        // deliberately different from a skip. Declared a complete enumeration because the loop
+        // above asked about every row in the sheet — for a sheet-backed collection that IS the
+        // whole domain, so the list is the character's complete set at this moment.
+        return CollectResult.Ids(ids, completeEnumeration: true);
     }
 }

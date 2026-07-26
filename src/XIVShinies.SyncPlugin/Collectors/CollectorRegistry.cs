@@ -31,12 +31,17 @@ public static class CollectorRegistry
         Key = CategoryKeys.QuestSequences,
         DisplayName = "Quest progress",
 
-        // Scoped twice over, and the copy says both halves: only quests the server named are
-        // looked at, and only the journal's step position — never objective text, locations, or
-        // anything else the journal knows — leaves the machine.
+        // Scoped twice over, and the visible line says both halves: only quests the server named
+        // are looked at, and only the journal's step position leaves the machine.
         WhatGetsSent =
             "For the specific quests XIV Shinies asks about, which step of that quest your " +
-            "journal is currently on. Nothing is sent about any other quest.",
+            "journal is currently on.",
+
+        // What the step position is NOT: the journal also holds objective text and map locations,
+        // and a reader has no way to know those stay behind unless it is said.
+        Details =
+            "Nothing is sent about any other quest, and nothing else from your journal — no " +
+            "objective text, no locations.",
     };
 
     private static readonly CategoryInfo Mounts = new()
@@ -70,11 +75,27 @@ public static class CollectorRegistry
     private static readonly CategoryInfo TripleTriadNpcs = new()
     {
         Key = CategoryKeys.TripleTriadNpcs,
-        DisplayName = "Triple Triad opponents",
+        DisplayName = "Triple Triad NPCs",
 
-        // "Opponents you have defeated" is the fact the game records (a per-NPC beaten flag), so
-        // the copy says exactly that rather than the vaguer "NPCs you have played".
-        WhatGetsSent = "The ID numbers of Triple Triad opponents you have defeated at least once.",
+        // The game records a per-NPC beaten flag, so the copy names that exact fact: an opponent
+        // defeated at least once.
+        WhatGetsSent = "The ID numbers of the Triple Triad NPCs you have defeated.",
+
+        // "Never collect data about other characters" is the one Dalamud rule that carries a ban,
+        // and the word "opponent" alone leaves a reader wondering. The reassurance belongs here
+        // rather than on the visible line: no player data is sent either way, so this makes the
+        // line trustworthy without changing what it discloses.
+        //
+        // The second sentence sets an expectation the plugin would otherwise disappoint silently.
+        // The game keeps no record of defeating certain opponents — ones that count toward no
+        // Triple Triad achievement — so no amount of syncing can ever report them, and a user who
+        // defeated one would be left concluding the plugin is broken. Deliberately unnamed and
+        // uncounted: which opponents those are is the game's business and can change with a patch,
+        // and naming them would put catalog knowledge in a plugin that is meant to hold none.
+        Details =
+            "These are the game's computer opponents, never other players. The game keeps no " +
+            "record of defeating a few of them, so those can never be reported — they stay yours " +
+            "to mark by hand.",
     };
 
     private static readonly CategoryInfo Items = new()
@@ -82,24 +103,23 @@ public static class CollectorRegistry
         Key = CategoryKeys.Items,
         DisplayName = "Relic items",
 
-        // Says plainly that the search covers the character's own storage, retainers included, and
-        // that a zero count is still a reported fact, not silence. Only the counts of the items XIV
-        // Shinies named ever leave the machine, but a disclosure that omitted where the plugin looks
-        // — or that "none of this item" is itself sent — would be technically true and practically
-        // misleading. Also names the per-group choice now that item consent is granted per manifest
-        // group rather than as one all-or-nothing switch.
-        //
-        // Currency balances get their own sentence, with gil named outright: a balance is wealth
-        // data, and "items" alone would not tell a reader that consenting to a currency group sends
-        // how much gil they hold. Phrased conditionally ("when XIV Shinies asks") because whether
-        // any currency is asked about is the server's manifest choice, group-gated like everything
-        // else — the sentence is true both before and after such a group exists.
+        // Currencies are named on the visible line, with gil spelled out: a balance is wealth data,
+        // and "items" alone would not tell a reader that consenting to a currency group sends how
+        // much gil they hold. That is a KIND of data, so it can never be demoted to the hover text.
+        // Phrased conditionally because whether any currency is asked about is the server's
+        // manifest choice — the sentence is true both before and after such a group exists.
         WhatGetsSent =
-            "Counts of the specific items XIV Shinies asks about — including that you have none of " +
-            "an item — checked across your inventory, Armoire, Glamour Dresser, Saddlebag, and " +
-            "retainers. When XIV Shinies asks about currencies, your balances (gil included) are " +
-            "sent the same way. You choose which groups to share when XIV Shinies offers them. " +
-            "Nothing else is sent.",
+            "Counts of the specific items XIV Shinies asks about, including your currency balances " +
+            "(gil included) when it asks about those.",
+
+        // Where the plugin looked, and that "none of this item" is itself a reported fact rather
+        // than silence. Both make the count trustworthy; neither adds a kind of data to it. The
+        // per-group choice sits here too, because the group checkboxes are drawn directly beneath
+        // this row — the UI already shows what the sentence would be describing.
+        Details =
+            "Counts are checked across your inventory, Armoire, Glamour Dresser, Saddlebag, and " +
+            "retainers. Having none of an item is reported too. You choose which groups to share, " +
+            "and nothing outside them is looked at.",
 
         // The only collection whose scope comes from the server's item manifest rather than being
         // fixed at compile time, so it is the one that gets per-group consent rows in settings.

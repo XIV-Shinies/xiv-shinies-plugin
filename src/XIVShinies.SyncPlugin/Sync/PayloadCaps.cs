@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Sync;
 
@@ -45,9 +46,9 @@ public static class PayloadCaps
     /// </param>
     /// <returns>
     /// <c>Bounded</c> is the capped dictionary — the very same instance as <paramref
-    /// name="collections"/> when nothing needed truncating, so a compliant payload costs no
-    /// extra allocation. <c>Dropped</c> is one human-readable line per category that was cut,
-    /// empty when nothing was.
+    /// name="collections"/> when nothing needed truncating, so a compliant payload is never
+    /// copied. <c>Dropped</c> is one human-readable line per category that was cut, empty when
+    /// nothing was.
     /// </returns>
     // The return type is a named TUPLE: one value carrying two named parts, which the caller
     // takes apart with `var (bounded, dropped) = ...`. The closest JS/TS analog is returning
@@ -56,7 +57,48 @@ public static class PayloadCaps
     public static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<string> Dropped)
         Bound(Dictionary<string, JsonNode> collections)
     {
+        var (bounded, dropped, _) = BoundCore(collections);
+        return (bounded, dropped);
+    }
+
+    /// <summary>
+    /// Caps every over-limit category of a whole snapshot, and <b>retracts the completeness claim
+    /// of every category it had to cut</b>.
+    /// </summary>
+    /// <returns>
+    /// <c>Bounded</c> is the capped snapshot — the very same instance when nothing needed
+    /// truncating. <c>Dropped</c> is one human-readable line per category that was cut.
+    /// </returns>
+    /// <remarks>
+    /// Capping and retracting live in one function because they must never drift apart: a
+    /// truncated list is no longer the character's complete set, so it cannot carry the claim
+    /// described on <see cref="Collectors.CollectResult.CompleteEnumeration"/>. Dropping ids is
+    /// safe under monotonic writes; declaring a shortened list complete is not.
+    /// </remarks>
+    public static (CollectionSnapshot Bounded, IReadOnlyList<string> Dropped)
+        Bound(CollectionSnapshot snapshot)
+    {
+        var (bounded, dropped, truncatedKeys) = BoundCore(snapshot.Collections);
+
+        // Nothing was over a cap, so the snapshot already is what ships — returned as the same
+        // instance, so neither the record nor its key set is rebuilt.
+        if (dropped.Count == 0)
+            return (snapshot, dropped);
+
+        // Copied before subtracting: CompleteKeys is exposed as a read-only set, and the snapshot
+        // is a record other code may already hold, so the original set is left untouched.
+        var completeKeys = new HashSet<string>(snapshot.CompleteKeys);
+        completeKeys.ExceptWith(truncatedKeys);
+
+        return (snapshot with { Collections = bounded, CompleteKeys = completeKeys }, dropped);
+    }
+
+    /// <summary>Does the capping, and reports the keys it cut as well as the human-readable lines.</summary>
+    private static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<string> Dropped,
+        IReadOnlyCollection<string> TruncatedKeys) BoundCore(Dictionary<string, JsonNode> collections)
+    {
         var dropped = new List<string>();
+        var truncatedKeys = new List<string>();
 
         // Rebuilt lazily: only allocated the first time a category actually needs truncating,
         // so a compliant payload (the overwhelmingly common case) returns the original
@@ -102,8 +144,9 @@ public static class PayloadCaps
             bounded[key] = truncated;
 
             dropped.Add($"{key}: dropped {overBy} entries over the contract cap of {cap}");
+            truncatedKeys.Add(key);
         }
 
-        return (bounded ?? collections, dropped);
+        return (bounded ?? collections, dropped, truncatedKeys);
     }
 }

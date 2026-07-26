@@ -21,6 +21,16 @@ public sealed record CategorySettingsRow
     /// <summary>The plain-language description of what uploading this category sends.</summary>
     public required string WhatGetsSent { get; init; }
 
+    /// <summary>
+    /// The hover elaboration behind <see cref="WhatGetsSent"/>, or null when there is none.
+    /// </summary>
+    /// <remarks>
+    /// Optional on the row for the same reason it is optional on the collector: a category whose
+    /// one-liner already says everything has nothing to elaborate, and the window simply draws no
+    /// hover affordance for it.
+    /// </remarks>
+    public string? Details { get; init; }
+
     /// <summary>Whether the user has opted this category in.</summary>
     public required bool UserEnabled { get; init; }
 
@@ -141,6 +151,7 @@ public static class CategorySettingsView
                 Key = key,
                 DisplayName = collector.DisplayName,
                 WhatGetsSent = collector.WhatGetsSent,
+                Details = collector.Details,
                 UserEnabled = settings.IsCategoryEnabled(key),
 
                 // Carried through verbatim from the collector's own self-description. Nothing here

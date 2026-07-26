@@ -23,9 +23,18 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// key space.
 /// </para>
 /// <para>
-/// Rows whose <c>Order</c> is 65535 are placeholders the game does not track — they have no slot
-/// in the beaten bit array, so asking about them can never produce a fact. They are skipped, which
-/// also excludes the sheet's dummy rows.
+/// Rows whose <c>Order</c> is 65535 are ones the game does not track — they have no slot in the
+/// beaten bit array, so asking about them can never produce a fact. They are skipped, which also
+/// excludes the sheet's dummy rows.
+/// </para>
+/// <para>
+/// Those skipped rows are why this collector never claims a complete enumeration (see
+/// <see cref="CollectResult.CompleteEnumeration"/>). "Untracked" does not mean "not a real
+/// opponent": Lewena at the Gold Saucer is challengeable and drops cards, and the game still gives
+/// her no beaten flag because she counts toward no Triple Triad achievement. XIV Shinies lists such
+/// opponents, so a player can legitimately hold one this collector is structurally unable to
+/// report — and declaring the list complete would turn that gap into evidence against their own
+/// manual mark. Reporting what was found, and claiming nothing beyond it, is the honest answer.
 /// </para>
 /// <para>
 /// Reads game memory through FFXIVClientStructs, so it must run on the framework thread and cannot
@@ -68,6 +77,9 @@ public sealed unsafe class TripleTriadNpcCollector : ICollector
     public string WhatGetsSent => info.WhatGetsSent;
 
     /// <inheritdoc/>
+    public string? Details => info.Details;
+
+    /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
 
     /// <inheritdoc/>
@@ -101,7 +113,9 @@ public sealed unsafe class TripleTriadNpcCollector : ICollector
         }
 
         // An empty list is a legitimate result ("we read the tracked opponents; none is beaten"),
-        // and is deliberately different from a skip.
+        // and is deliberately different from a skip. No completeness claim: the untracked rows the
+        // loop skipped include opponents a player can genuinely have beaten (see the class
+        // remarks), so this list speaks only for what it found.
         return CollectResult.Ids(ids);
     }
 }

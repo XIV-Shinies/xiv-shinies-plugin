@@ -195,6 +195,9 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
     "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
     "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
   },
+  "collectionScopes": { // optional — per-category completeness; omitted key/object == "partial"
+    "tripleTriadCards": "full" // "full" | "partial"
+  },
   "itemSources": { // optional — how each storage source was read this pass
     "inventory": {"state": "live"},
     "currencies": {"state": "live"},
@@ -220,6 +223,7 @@ Field constraints:
 | `items`                  | `{id: positive int, count: non-negative int, hqCount?: positive int, collectableCount?: positive int, fresh: boolean}[]`, **max 10,000 entries** |
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
+| `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
   than the server keeps working (payload evolution is additive-only). An older plugin simply
@@ -265,9 +269,13 @@ Field constraints:
   (1–475, dense; row 0 is a dummy). `tripleTriadNpcs` carries `TripleTriadResident` row ids
   **exactly as the sheet reports them** — they live in the game's event-handler id range
   (2293762 and up) and must not be rebased; the server stores them as `TripleTriad` row
-  ids, the same key space. Sheet rows whose `Order` is 65535 are untracked placeholders
-  with no beaten flag and are never sent. Do **not** send `ENpcResident` ids — they are a
-  different sheet in a different range, and the server silently drops them as unknown.
+  ids, the same key space. Sheet rows whose `Order` is 65535 have no beaten flag and are
+  never sent — but note they are **not** all placeholders: Lewena (`2293811`) is a real,
+  challengeable opponent the game simply does not track, because she counts toward no
+  Triple Triad achievement. The server's catalog carries such opponents, so a player can
+  own one the plugin cannot report. That is why `tripleTriadNpcs` never declares itself a
+  complete list (see `collectionScopes` below). Do **not** send `ENpcResident` ids — they
+  are a different sheet in a different range, and the server silently drops them as unknown.
 - **`questSequences`** carries an entry only for a manifested quest **currently in the
   journal**: the key is the quest's Excel row id as a decimal string, the value the raw
   sequence byte the game reports. An empty object means "every manifested quest was
@@ -353,10 +361,36 @@ Lodestone id, so it never auto-creates characters).
 
 ## Behavior the plugin author should know
 
+- **`collectionScopes` — the one way absence becomes meaningful.** A category's list
+  normally proves only what IS present. Declaring it `"full"` asserts *this array is the
+  character's complete set for this category at upload time* — send it only when the
+  collector genuinely enumerated its whole domain and got an answer for every candidate.
+  `"partial"`, or omitting the key or object, is always safe: it simply carries no
+  evidence of absence. The server **never infers** completeness (a short list is
+  indistinguishable from a small collection). An `unlock` upload is a delta and should
+  report `"partial"` — the server accepts and acts on whatever it is told, so this one is
+  the client's discipline rather than a validation the server enforces. Today only
+  `tripleTriadCards` acts on it: a `"full"` card list stamps the
+  character's snapshot marker, which lets the site flag a manual mark made *before* that
+  moment that the complete list contradicts ("Marked by you — the plugin didn't find
+  it"). Nothing is ever auto-unmarked, and other categories' declarations are recorded
+  and ignored. In this plugin the claim originates on the collector's `CollectResult`
+  (`completeEnumeration`), so a new collector opts in without any downstream change.
+  A category may only declare `"full"` when its collector can enumerate everything the
+  **server's catalog** may contain, not merely everything the game will answer for —
+  `tripleTriadNpcs` withholds the claim for exactly that reason (see the id-space note
+  above). For cards the two agree, and the server has confirmed its catalog is never
+  *ahead* of a live client: it is imported from released-patch sheet data, and the game
+  forces a client patch before login, so "client behind catalog" is unreachable while
+  playing. The reverse skew — catalog behind a just-patched client — is harmless, because
+  an id the catalog does not know is dropped and never becomes markable.
 - **`acquiredAt` timestamps.** An `unlock`-triggered upload stamps the upload moment as the
   acquisition time for every category in it. Snapshot uploads (`interval`/`login`/`manual`)
   stamp the upload time for achievements, minions, and mounts, and leave quests' date null.
-  An existing acquisition date is **never overwritten**.
+  An existing acquisition date is **never overwritten**. The Triple Triad categories stamp
+  the upload time on the first write that marks a row acquired/beaten, identically for
+  snapshot and unlock uploads (they share one write path), and the date is immutable
+  thereafter — for `tripleTriadNpcs` that date is the row's "beaten at" moment.
 - **Relic proofs from the item manifest.** Possession (`count > 0`) of a proof-scope item
   (the `relic-proofs` group, or the flat manifest) proves that relic stage **and every
   lower-order stage of the same relic**. Proofs are sticky: because possession is volatile

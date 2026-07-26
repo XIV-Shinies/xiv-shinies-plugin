@@ -53,6 +53,31 @@ public class DtoSerializationTests
         Assert.False(json.ContainsKey("manifestVersion"));
     }
 
+    // The contract accepts exactly "full" | "partial" (anything else is a 400), and an absent
+    // object means "partial" — so null must serialize as no key at all, not as an empty object.
+    [Fact]
+    public void SyncRequest_omits_collectionScopes_when_it_is_null()
+    {
+        var json = Serialize(MinimalRequest());
+        Assert.False(json.ContainsKey("collectionScopes"));
+    }
+
+    [Fact]
+    public void SyncRequest_serializes_collection_scopes_under_the_contract_key()
+    {
+        var request = MinimalRequest() with
+        {
+            CollectionScopes = new Dictionary<string, string>
+            {
+                ["tripleTriadCards"] = CollectionScopeValues.Full,
+            },
+        };
+
+        var scopes = Serialize(request)["collectionScopes"]!.AsObject();
+
+        Assert.Equal("full", scopes["tripleTriadCards"]!.GetValue<string>());
+    }
+
     [Fact]
     public void SyncRequest_includes_manifestVersion_when_present()
     {
