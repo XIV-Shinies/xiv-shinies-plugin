@@ -162,14 +162,19 @@ internal sealed partial class MainWindow
             configuration.Settings.MasterEnabled && !syncManager.BlockedPendingUserAction;
 
         // Sets the expectation for every collection at once, so no category's own description has
-        // to explain the sync mechanism. Phrased by mechanism, not by category name: unlock-style
-        // acquisitions announce themselves and upload within seconds, while anything the game fires
-        // no event for (item possession, for instance) waits for the scheduled sweep. The cadence
-        // is the live value — the server tunes it — never a hardcoded number.
+        // to explain the sync mechanism. Phrased by mechanism, not by category name: an acquisition
+        // the game announces uploads within seconds, while anything it stays silent about (item
+        // possession, Triple Triad cards) waits for the scheduled sweep. The cadence is the live
+        // value — the server tunes it — never a hardcoded number.
+        //
+        // "Most" is load-bearing. Which acquisitions announce themselves is the game's choice, not
+        // ours, and it is not guessable from the outside: cards look like every other unlock and
+        // still raise no event, so they arrive on the sweep. Promising every unlock in seconds
+        // would be a promise this plugin cannot keep for a collection it already ships.
         if (pipelineRunning)
         {
             DrawWrapped(
-                "New unlocks upload within seconds. Everything else syncs automatically every " +
+                "Most new unlocks upload within seconds. Everything else syncs automatically every " +
                 $"{TimeText.Interval(syncManager.FullSyncInterval)} — press Sync now to update " +
                 "immediately.",
                 ImGuiCol.Text);
