@@ -7,6 +7,10 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.4.1 — 2026-07-30
+
+- Show the plugin's icon and screenshots in the plugin installer
+
 ## v0.4.0 — 2026-07-18
 
 - Sync your progress through multi-part relic turn-in quests (opt-in)
