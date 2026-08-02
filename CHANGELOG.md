@@ -7,6 +7,13 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.5.0 — 2026-08-02
+
+- Sync the Triple Triad cards you have collected (opt-in)
+- Sync the Triple Triad NPCs you have defeated (opt-in)
+- Flag hand-marked cards the plugin could not find, for you to review
+- Show each collection's details on hover to keep settings scannable
+
 ## v0.4.1 — 2026-07-30
 
 - Show the plugin's icon and screenshots in the plugin installer
