@@ -46,11 +46,62 @@ public static class SyncPayloadBuilder
             // Handed straight through. Whichever categories the collectors read, and only those.
             Collections = snapshot.Collections,
 
+            // Which of those lists are complete sets, per the collectors' own claims. Null (an
+            // omitted key, meaning "all partial") when there is nothing to declare.
+            CollectionScopes = BuildCollectionScopes(snapshot, trigger),
+
             // Per-source scan status, or null when there is nothing to send. An empty object on
             // the wire is noise when no source status is worth reporting; null makes the shared
             // serializer policy (ApiJson.Options omits null properties) drop the key entirely.
             ItemSources = BuildWireSourceNotes(snapshot.SourceNotes),
         };
+    }
+
+    /// <summary>
+    /// The completeness declarations that belong on the wire, or null when none do.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only <c>"full"</c> is ever emitted: an omitted key already means "partial" on the server,
+    /// so writing <c>"partial"</c> out would say nothing at the cost of bytes — the same
+    /// minimize-what-you-send reasoning that drops unreadable source notes below.
+    /// </para>
+    /// <para>
+    /// An <c>unlock</c> upload declares nothing, whatever its collectors read. The contract asks
+    /// a delta upload to report <c>"partial"</c>, and the server would accept a <c>"full"</c> it
+    /// sent — it is not schema-rejected — so this is the plugin refusing to make a claim the
+    /// server would trust. An unlock upload exists to date the one thing that just changed; it
+    /// carries whichever categories the unlock routed to and must never be read as a statement
+    /// about everything the character owns. The gate is the trigger's, not any category's.
+    /// </para>
+    /// <para>
+    /// Intersected with the carried categories even though the runner only marks keys it
+    /// collected — a scope for a list this upload does not contain would assert completeness of
+    /// facts the server never received, so the builder refuses to construct one no matter what a
+    /// future snapshot source claims. What it cannot see is a list that was cut AFTER collection:
+    /// <see cref="PayloadCaps"/> owns that, retracting the claim of any category it truncates.
+    /// </para>
+    /// </remarks>
+    private static Dictionary<string, string>? BuildCollectionScopes(
+        CollectionSnapshot snapshot, SyncTrigger trigger)
+    {
+        if (trigger == SyncTrigger.Unlock)
+            return null;
+
+        // Null until a declaration survives the checks, so "none" becomes an omitted key without
+        // a second emptiness check — the same shape as BuildWireSourceNotes below.
+        Dictionary<string, string>? scopes = null;
+
+        foreach (var categoryKey in snapshot.CompleteKeys)
+        {
+            if (!snapshot.Collections.ContainsKey(categoryKey))
+                continue;
+
+            scopes ??= new Dictionary<string, string>();
+            scopes[categoryKey] = CollectionScopeValues.Full;
+        }
+
+        return scopes;
     }
 
     /// <summary>

@@ -28,4 +28,10 @@ public static class CategoryKeys
 
     /// <summary>Journal sequence positions for the quests the server asked about.</summary>
     public const string QuestSequences = "questSequences";
+
+    /// <summary>Unlocked Triple Triad card IDs.</summary>
+    public const string TripleTriadCards = "tripleTriadCards";
+
+    /// <summary>Defeated Triple Triad NPC IDs.</summary>
+    public const string TripleTriadNpcs = "tripleTriadNpcs";
 }

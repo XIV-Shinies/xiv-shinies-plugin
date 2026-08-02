@@ -29,8 +29,9 @@ sends only raw facts the game knows and never computes site concepts like relic 
 keeps it stable as the site grows new collections and rules.
 
 New unlocks (quests, achievements, mounts, minions) upload within seconds of earning them.
-Item possession — used to prove relic progress — travels with periodic full syncs, or
-immediately with the **Sync now** button.
+Anything the plugin gets no unlock signal for — Triple Triad cards, and item possession used
+to prove relic progress — travels with periodic full syncs, or immediately with the **Sync
+now** button.
 
 ## What gets sent
 
@@ -39,8 +40,14 @@ into:
 
 - Completed **quest** IDs
 - Unlocked **achievement**, **mount**, and **minion** IDs
+- Collected **Triple Triad card** IDs, and the IDs of the game's own **Triple Triad NPCs** you
+  have defeated — computer opponents, never other players
 - **Possession counts** for the specific relic-stage items the server asks about — checked
   across your inventory, armoire, glamour dresser, saddlebag, and retainers
+
+For a collection the plugin can read end to end, the upload also records that the list is
+complete. That is what lets the site point out something you marked by hand that the plugin
+did not find, so you can review it — nothing is ever unmarked for you.
 
 Your character is identified by a **one-way fingerprint computed on your machine** — the raw
 ContentId never leaves the game process, and never lands in logs or config. Your character's

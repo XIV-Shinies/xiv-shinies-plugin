@@ -51,6 +51,17 @@ public interface ICollector
     string WhatGetsSent { get; }
 
     /// <summary>
+    /// The elaboration behind <see cref="WhatGetsSent"/>, shown on hover, or null when the
+    /// one-liner says everything.
+    /// </summary>
+    /// <remarks>
+    /// Self-description like the two above. <see cref="WhatGetsSent"/> still has to name every kind
+    /// of data that leaves the machine on its own — this carries the scope and reassurance detail
+    /// that would otherwise crowd the consent list, never a disclosure the visible line omitted.
+    /// </remarks>
+    string? Details { get; }
+
+    /// <summary>
     /// True when this collection's scope is driven by the server's item manifest, rather than being
     /// fixed at compile time.
     /// </summary>

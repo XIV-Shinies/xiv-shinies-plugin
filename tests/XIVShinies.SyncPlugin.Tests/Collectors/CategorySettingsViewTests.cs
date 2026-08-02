@@ -34,6 +34,10 @@ public class CategorySettingsViewTests
 
         public string WhatGetsSent { get; }
 
+        // Set per-test, so the view's carry-through can be checked both ways: a collector that
+        // offers elaboration and one that does not.
+        public string? Details { get; init; }
+
         public bool UsesItemManifest { get; }
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
@@ -87,6 +91,34 @@ public class CategorySettingsViewTests
         Assert.Equal("facewear display", row.DisplayName);
         Assert.Equal("what facewear sends", row.WhatGetsSent);
         Assert.True(row.UserEnabled);
+    }
+
+    // The hover elaboration is optional self-description, carried through like the rest of the
+    // copy. Null must survive as null: the window draws no hover affordance for a category whose
+    // one-liner already says everything, so inventing an empty string here would put a question
+    // mark on every row with nothing behind it.
+    [Fact]
+    public void A_collectors_details_are_carried_onto_its_row()
+    {
+        var collector = new FakeCollector(UnknownCategory, "facewear display", "what facewear sends")
+        {
+            Details = "where facewear was looked for",
+        };
+
+        var row = Assert.Single(
+            CategorySettingsView.Build(
+                new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.Equal("where facewear was looked for", row.Details);
+    }
+
+    [Fact]
+    public void A_collector_offering_no_details_leaves_the_row_without_any()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Null(Assert.Single(rows).Details);
     }
 
     [Fact]

@@ -74,6 +74,21 @@ public sealed record CollectionSnapshot
     public IReadOnlySet<string> ManifestDrivenKeys { get; init; } = new HashSet<string>();
 
     /// <summary>
+    /// The categories whose facts this pass read as a <b>complete</b> enumeration — the
+    /// collector's own claim, recorded from <see cref="CollectResult.CompleteEnumeration"/>.
+    /// </summary>
+    /// <remarks>
+    /// The runner records a key only for a category it collected facts for, so a skipped category
+    /// never appears here. The payload builder still intersects against the carried categories
+    /// before turning these into <c>collectionScopes</c> declarations, since nothing on this
+    /// record enforces that. A set of keys, not a flag per known category, so a future collector's
+    /// claim flows through without anyone here learning its name.
+    /// </remarks>
+    // Not `required`, like the fields above: an empty set is the honest default for a test
+    // snapshot that makes no completeness claims.
+    public IReadOnlySet<string> CompleteKeys { get; init; } = new HashSet<string>();
+
+    /// <summary>
     /// True when this pass's item manifest was clipped at the client's ceiling (see
     /// <see cref="CollectContext.ManifestTruncated"/>) — the server asked about more ids than
     /// the plugin will scan. A fact about the config, not about this pass's scan: it holds even
@@ -117,6 +132,7 @@ public static class CollectorRunner
         var durations = new Dictionary<string, TimeSpan>();
         var sourceNotes = new Dictionary<string, ItemSourceStatus>();
         var manifestDrivenKeys = new HashSet<string>();
+        var completeKeys = new HashSet<string>();
 
         // Built once and shared: every collector sees the same view of the world for this pass.
         // EnabledItemGroupKeys carries the user's per-group opt-ins so the item collector scans only
@@ -180,6 +196,11 @@ public static class CollectorRunner
                 // nothing"), unlike a skip.
                 collections[key] = result.Facts!;
 
+                // The collector's own completeness claim, recorded under its own key — the payload
+                // builder turns it into this category's `collectionScopes` declaration.
+                if (result.CompleteEnumeration)
+                    completeKeys.Add(key);
+
                 // Merge source notes from this collector. Source-keyed: if two collectors both report
                 // on the same source (e.g., both describe inventory), the last one wins because they
                 // describe the same physical storage location. The snapshot iteration order means
@@ -205,6 +226,7 @@ public static class CollectorRunner
             Durations = durations,
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,
+            CompleteKeys = completeKeys,
             ManifestTruncated = context.ManifestTruncated,
             QuestSequenceManifestTruncated = context.QuestSequenceManifestTruncated,
         };

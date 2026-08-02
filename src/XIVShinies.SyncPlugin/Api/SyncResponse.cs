@@ -18,8 +18,30 @@ public sealed record SyncResponse
     /// <summary>True only when THIS request performed the first-upload character bind.</summary>
     public required bool Bound { get; init; }
 
-    /// <summary>Rows created plus promoted, per id-list category. Always all four keys.</summary>
-    public required WrittenCounts Written { get; init; }
+    /// <summary>
+    /// Rows created plus promoted, keyed by category. <c>items</c> never appears — item possession
+    /// feeds relic proofs rather than a collection count.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A dictionary rather than one property per category, for the same reason
+    /// <see cref="SyncRequest.Collections"/> is one: a property per collection would mean adding a
+    /// collection touches this file too, breaking the rule that adding one is a single new
+    /// collector class and nothing else. No category's presence is part of this type's contract, so
+    /// a server generation that names different categories simply deserializes.
+    /// </para>
+    /// <para>
+    /// Informational only: <b>no plugin logic may branch on these.</b> Reading one by name would
+    /// reintroduce exactly the category-name dependency the rest of the plugin avoids. What the
+    /// upload log shows is what was SENT, summarized from the snapshot — never this.
+    /// </para>
+    /// <para>
+    /// Not <c>required</c>: an empty dictionary is the honest reading of a response that omitted
+    /// the object, and refusing to deserialize over an informational field would turn a successful
+    /// upload into a reported failure.
+    /// </para>
+    /// </remarks>
+    public Dictionary<string, int> Written { get; init; } = new();
 
     /// <summary>
     /// Present only when the achievements key was absent or stripped as disabled. An explicit
@@ -40,27 +62,3 @@ public sealed record SyncResponse
     public IReadOnlyList<string>? SkippedCategories { get; init; }
 }
 
-/// <summary>
-/// Rows created plus promoted per category. Note <c>items</c> never appears here — item
-/// possession feeds relic proofs rather than a collection count.
-/// </summary>
-/// <remarks>
-/// These named properties mirror the server's response shape and exist only to deserialize it. They
-/// are informational: <b>no plugin logic may branch on them.</b> Reading one would reintroduce the
-/// category-name dependency that the rest of the plugin is built to avoid, and would quietly break
-/// the rule that adding a collection is one new collector class and nothing else.
-/// </remarks>
-public sealed record WrittenCounts
-{
-    /// <summary>Achievement rows written.</summary>
-    public required int Achievements { get; init; }
-
-    /// <summary>Minion rows written.</summary>
-    public required int Minions { get; init; }
-
-    /// <summary>Mount rows written.</summary>
-    public required int Mounts { get; init; }
-
-    /// <summary>Quest rows written.</summary>
-    public required int Quests { get; init; }
-}

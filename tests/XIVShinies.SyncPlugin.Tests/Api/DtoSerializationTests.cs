@@ -53,6 +53,31 @@ public class DtoSerializationTests
         Assert.False(json.ContainsKey("manifestVersion"));
     }
 
+    // The contract accepts exactly "full" | "partial" (anything else is a 400), and an absent
+    // object means "partial" — so null must serialize as no key at all, not as an empty object.
+    [Fact]
+    public void SyncRequest_omits_collectionScopes_when_it_is_null()
+    {
+        var json = Serialize(MinimalRequest());
+        Assert.False(json.ContainsKey("collectionScopes"));
+    }
+
+    [Fact]
+    public void SyncRequest_serializes_collection_scopes_under_the_contract_key()
+    {
+        var request = MinimalRequest() with
+        {
+            CollectionScopes = new Dictionary<string, string>
+            {
+                ["tripleTriadCards"] = CollectionScopeValues.Full,
+            },
+        };
+
+        var scopes = Serialize(request)["collectionScopes"]!.AsObject();
+
+        Assert.Equal("full", scopes["tripleTriadCards"]!.GetValue<string>());
+    }
+
     [Fact]
     public void SyncRequest_includes_manifestVersion_when_present()
     {
@@ -260,11 +285,43 @@ public class DtoSerializationTests
 
         Assert.True(response.Ok);
         Assert.False(response.Bound);
-        Assert.Equal(2, response.Written.Minions);
-        Assert.Equal(12, response.Written.Quests);
+        Assert.Equal(2, response.Written["minions"]);
+        Assert.Equal(12, response.Written["quests"]);
         Assert.Null(response.AchievementsSkipped);
         Assert.Null(response.ProvenSteps);
         Assert.Null(response.SkippedCategories);
+
+        // A server generation that names fewer categories simply yields fewer keys — an unsent
+        // category is an absent key, and nothing to throw over.
+        Assert.False(response.Written.ContainsKey("tripleTriadCards"));
+    }
+
+    // Written counts are keyed, not named, so a category this plugin has never heard of arrives
+    // intact rather than failing the whole response. That is what lets the server add a collection
+    // without waiting for the plugin.
+    [Fact]
+    public void SyncResponse_reads_written_counts_for_an_unknown_category()
+    {
+        const string body = """
+        {"ok": true, "bound": false, "written": {"quests": 3, "facewear": 7}}
+        """;
+
+        var response = JsonSerializer.Deserialize<SyncResponse>(body, ApiJson.Options)!;
+
+        Assert.Equal(3, response.Written["quests"]);
+        Assert.Equal(7, response.Written["facewear"]);
+    }
+
+    // A response with no written object at all still deserializes: the field is informational, and
+    // refusing it would turn a successful upload into a reported failure.
+    [Fact]
+    public void SyncResponse_tolerates_a_response_with_no_written_object()
+    {
+        var response = JsonSerializer.Deserialize<SyncResponse>(
+            """{"ok": true, "bound": false}""", ApiJson.Options)!;
+
+        Assert.NotNull(response.Written);
+        Assert.Empty(response.Written);
     }
 
     [Fact]
@@ -272,7 +329,8 @@ public class DtoSerializationTests
     {
         const string body = """
         {"ok": true, "bound": true,
-         "written": {"achievements": 0, "minions": 0, "mounts": 0, "quests": 0},
+         "written": {"achievements": 0, "minions": 0, "mounts": 0, "quests": 0,
+                     "tripleTriadCards": 5, "tripleTriadNpcs": 1},
          "achievementsSkipped": "not_sent",
          "provenSteps": 3,
          "skippedCategories": ["minions"]}
@@ -284,6 +342,8 @@ public class DtoSerializationTests
         Assert.Equal("not_sent", response.AchievementsSkipped);
         Assert.Equal(3, response.ProvenSteps);
         Assert.Equal(new[] { "minions" }, response.SkippedCategories);
+        Assert.Equal(5, response.Written["tripleTriadCards"]);
+        Assert.Equal(1, response.Written["tripleTriadNpcs"]);
     }
 
     [Fact]

@@ -70,6 +70,9 @@ public sealed unsafe class QuestSequenceCollector : ICollector
     public string WhatGetsSent => info.WhatGetsSent;
 
     /// <inheritdoc/>
+    public string? Details => info.Details;
+
+    /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
 
     /// <inheritdoc/>

@@ -44,6 +44,18 @@
   </PropertyGroup>
 
   <!--
+    Lets the xUnit project see `internal` types and members. C#'s `internal` means "visible
+    within this assembly", which would otherwise hide them from the tests — the closest JS
+    analogue is a module-private export, except C# enforces it at compile time. Used sparingly:
+    a helper is made internal when exposing it publicly would invite a WRONG call (see
+    PayloadCaps' dictionary overload, which caps without retracting completeness claims), while
+    its rules still deserve direct test coverage.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="XIVShinies.SyncPlugin.Tests" />
+  </ItemGroup>
+
+  <!--
     The packaged plugin manifest is assembled from two sources:
       1) XIVShinies.SyncPlugin.json (this folder) — the human-authored descriptive fields:
          Author, Name, Punchline, Description, ApplicableVersion, RepoUrl, Tags. It's strict

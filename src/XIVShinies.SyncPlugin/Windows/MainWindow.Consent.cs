@@ -101,6 +101,12 @@ internal sealed partial class MainWindow
                     toggled = ImGui.Checkbox($"{row.DisplayName}##{row.Key}", ref enabled);
                 }
 
+                // The elaboration behind this row's one-liner, one hover away. Drawn only when the
+                // collector offered one, so a category whose description already says everything
+                // carries no affordance to wonder about.
+                if (row.Details is { } details)
+                    DrawDetailsHint(details);
+
                 if (toggled)
                 {
                     ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
@@ -129,7 +135,89 @@ internal sealed partial class MainWindow
                 ImGui.Unindent(checkboxColumn);
                 ImGui.Spacing();
             }
+
+            // The category rows end with a single Spacing, which is the gap BETWEEN rows. This note
+            // is not another row, so it gets a wider gap above its divider to read as its own
+            // closing remark rather than a continuation of the last collection's copy.
+            ImGui.Spacing();
+            ImGui.Spacing();
+
+            BrandSeparator();
+            ImGui.Spacing();
+            DrawCompletenessNote();
         }
+    }
+
+    /// <summary>
+    /// Discloses that a collection the plugin can read end to end is reported as complete, and what
+    /// XIV Shinies is then entitled to do with that.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every category's own copy says what the plugin FINDS. A snapshot upload additionally declares
+    /// which of those lists it read completely (see <see cref="Api.SyncRequest.CollectionScopes"/>
+    /// for what that licenses). That is a claim made about the user's OWN entries — it can put a
+    /// question mark against something they marked by hand — so it is disclosed on the consent
+    /// surface rather than living only in the contract.
+    /// </para>
+    /// <para>
+    /// Drawn by the wizard's "What it sends" step and at the foot of the shared category list, so
+    /// every consent surface carries it and none can drift: the pre-consent screen must never
+    /// disclose less than the screen that collects the ticks. Phrased conditionally and naming no
+    /// category, so it stays true however many collections can be read completely.
+    /// </para>
+    /// <para>
+    /// The visible line carries the consequence, not just the mechanism. "Reported as complete" on
+    /// its own reads as inert bookkeeping; what a user needs to know is that it can surface one of
+    /// their own marks for review. The reassurance that nothing is ever undone stays in the hover —
+    /// that is comfort, not disclosure.
+    /// </para>
+    /// </remarks>
+    private void DrawCompletenessNote()
+    {
+        DrawWrapped(
+            "Lists the plugin can read in full are reported as complete, which lets XIV Shinies " +
+            "point out anything you marked by hand that the plugin did not find.",
+            ImGuiCol.Text);
+
+        DrawDetailsHint(
+            "It is only ever pointed out for you to review — nothing is unmarked for you, and a " +
+            "mark you make afterwards is never questioned.");
+    }
+
+    /// <summary>
+    /// Draws a muted question mark on the current line that reveals <paramref name="details"/> on
+    /// hover.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The consent list is a compliance surface AND a list people have to be able to scan. Those
+    /// pull in opposite directions: every caveat worth stating makes the wall of text a reader is
+    /// less likely to finish. Splitting it — the disclosure always visible, the elaboration one
+    /// hover away — keeps the surface honest without making it unreadable. What may move behind
+    /// this mark is bounded, and the rule lives on
+    /// <see cref="Collectors.CategoryInfo.Details"/>: never a kind of data, only detail that makes
+    /// the visible line trustworthy.
+    /// </para>
+    /// <para>
+    /// <c>SameLine</c> puts the glyph on the line the caller just drew, so it trails the label or
+    /// sentence it belongs to instead of starting a row of its own. The icon font is pushed for the
+    /// glyph alone: FontAwesome has no Latin letters, so text drawn while it is active renders as
+    /// blanks.
+    /// </para>
+    /// </remarks>
+    /// <param name="details">The hover text.</param>
+    private void DrawDetailsHint(string details)
+    {
+        ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+
+        using (iconFont.Push())
+            ImGui.TextDisabled(FontAwesomeIcon.QuestionCircle.ToIconString());
+
+        // Answers for the glyph just drawn — the hover target is the mark itself, which is why it
+        // is small and deliberate rather than the whole row lighting up as a person reads down it.
+        if (ImGui.IsItemHovered())
+            Widgets.DrawTooltip(details);
     }
 
     /// <summary>

@@ -54,6 +54,62 @@ public class CollectResultTests
         Assert.Empty(result.Facts!.AsArray());
     }
 
+    // Getting this claim wrong is asymmetric: false only withholds evidence, while true makes an
+    // id's absence count as evidence server-side. So it defaults to false and a collector has to
+    // ask for it.
+    [Fact]
+    public void Ids_does_not_claim_a_complete_enumeration_unless_asked()
+    {
+        Assert.False(CollectResult.Ids(new uint[] { 5 }).CompleteEnumeration);
+    }
+
+    [Fact]
+    public void Ids_carries_the_complete_enumeration_claim_when_the_collector_makes_it()
+    {
+        Assert.True(CollectResult.Ids(new uint[] { 5 }, completeEnumeration: true).CompleteEnumeration);
+    }
+
+    // "I own nothing" and "the game had not filled this in yet" read identically from here, and an
+    // empty list declared complete would contradict every entry the user marked by hand at once.
+    [Fact]
+    public void An_empty_list_never_claims_a_complete_enumeration()
+    {
+        var result = CollectResult.Ids(Array.Empty<uint>(), completeEnumeration: true);
+
+        Assert.True(result.WasCollected);
+        Assert.False(result.CompleteEnumeration);
+    }
+
+    // The same guard applies after the zero filter: a list of nothing but sheet padding collapses to
+    // empty, and an empty list is exactly what must not be declared complete.
+    [Fact]
+    public void A_list_of_only_padding_never_claims_a_complete_enumeration()
+    {
+        var result = CollectResult.Ids(new uint[] { 0, 0 }, completeEnumeration: true);
+
+        Assert.Empty(result.Facts!.AsArray());
+        Assert.False(result.CompleteEnumeration);
+    }
+
+    // Both of these belong to manifest-scoped collections: their scope is whatever the server asked
+    // about, never the whole domain, so there is deliberately no way for them to claim completeness.
+    [Fact]
+    public void Item_and_sequence_facts_cannot_claim_a_complete_enumeration()
+    {
+        var items = CollectResult.Items(Array.Empty<ItemPossession>());
+        var sequences = CollectResult.Sequences(new Dictionary<uint, byte>());
+
+        Assert.False(items.CompleteEnumeration);
+        Assert.False(sequences.CompleteEnumeration);
+    }
+
+    // A skip read nothing, so there is nothing for it to have read completely.
+    [Fact]
+    public void A_skip_never_claims_a_complete_enumeration()
+    {
+        Assert.False(CollectResult.Skipped(CollectSkipReasons.SheetUnavailable).CompleteEnumeration);
+    }
+
     [Fact]
     public void A_skip_carries_its_reason_and_no_facts()
     {

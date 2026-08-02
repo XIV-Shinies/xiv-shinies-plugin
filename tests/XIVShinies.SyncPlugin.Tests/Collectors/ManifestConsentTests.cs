@@ -31,6 +31,8 @@ public class ManifestConsentTests
 
         public string WhatGetsSent => $"what {CategoryKey} sends";
 
+        public string? Details => null;
+
         public bool UsesItemManifest { get; }
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] { 1 });
