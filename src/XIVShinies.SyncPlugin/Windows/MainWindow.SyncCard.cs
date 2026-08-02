@@ -168,9 +168,10 @@ internal sealed partial class MainWindow
         // value — the server tunes it — never a hardcoded number.
         //
         // "Most" is load-bearing. Which acquisitions announce themselves is the game's choice, not
-        // ours, and it is not guessable from the outside: cards look like every other unlock and
-        // still raise no event, so they arrive on the sweep. Promising every unlock in seconds
-        // would be a promise this plugin cannot keep for a collection it already ships.
+        // ours, and it is not guessable from the outside: cards look like every other unlock, yet
+        // no unlock the plugin can route to them ever arrives, so they land on the sweep.
+        // Promising every unlock in seconds would be a promise this plugin cannot keep for a
+        // collection it already ships.
         if (pipelineRunning)
         {
             DrawWrapped(

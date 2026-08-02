@@ -136,16 +136,6 @@ internal sealed partial class MainWindow
                 ImGui.Spacing();
             }
 
-            // Every description above says what the plugin FINDS. A snapshot upload additionally
-            // declares which of those lists it read completely (see Api/SyncRequest's
-            // CollectionScopes for what that licenses). It is a claim made about the user's own
-            // entries, so it is disclosed here and not only in the contract.
-            //
-            // Phrased conditionally and named after no category, so it stays true however many
-            // collections can be read completely. The consequence — what the site does with the
-            // claim — is the hover text: it is what makes the line worth reading, not a further
-            // disclosure of what leaves the machine.
-            //
             // The category rows end with a single Spacing, which is the gap BETWEEN rows. This note
             // is not another row, so it gets a wider gap above its divider to read as its own
             // closing remark rather than a continuation of the last collection's copy.
@@ -154,11 +144,45 @@ internal sealed partial class MainWindow
 
             BrandSeparator();
             ImGui.Spacing();
-            DrawWrapped("Lists the plugin can read in full are reported as complete.", ImGuiCol.Text);
-            DrawDetailsHint(
-                "That lets XIV Shinies point out anything you marked by hand that the plugin did " +
-                "not find, so you can review it. Nothing is ever unmarked for you.");
+            DrawCompletenessNote();
         }
+    }
+
+    /// <summary>
+    /// Discloses that a collection the plugin can read end to end is reported as complete, and what
+    /// XIV Shinies is then entitled to do with that.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every category's own copy says what the plugin FINDS. A snapshot upload additionally declares
+    /// which of those lists it read completely (see <see cref="Api.SyncRequest.CollectionScopes"/>
+    /// for what that licenses). That is a claim made about the user's OWN entries — it can put a
+    /// question mark against something they marked by hand — so it is disclosed on the consent
+    /// surface rather than living only in the contract.
+    /// </para>
+    /// <para>
+    /// Drawn by the wizard's "What it sends" step and at the foot of the shared category list, so
+    /// every consent surface carries it and none can drift: the pre-consent screen must never
+    /// disclose less than the screen that collects the ticks. Phrased conditionally and naming no
+    /// category, so it stays true however many collections can be read completely.
+    /// </para>
+    /// <para>
+    /// The visible line carries the consequence, not just the mechanism. "Reported as complete" on
+    /// its own reads as inert bookkeeping; what a user needs to know is that it can surface one of
+    /// their own marks for review. The reassurance that nothing is ever undone stays in the hover —
+    /// that is comfort, not disclosure.
+    /// </para>
+    /// </remarks>
+    private void DrawCompletenessNote()
+    {
+        DrawWrapped(
+            "Lists the plugin can read in full are reported as complete, which lets XIV Shinies " +
+            "point out anything you marked by hand that the plugin did not find.",
+            ImGuiCol.Text);
+
+        DrawDetailsHint(
+            "It is only ever pointed out for you to review — nothing is unmarked for you, and a " +
+            "mark you make afterwards is never questioned.");
     }
 
     /// <summary>

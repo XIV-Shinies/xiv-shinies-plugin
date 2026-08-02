@@ -86,6 +86,10 @@ internal sealed partial class MainWindow
             ImGui.Unindent(iconColumn);
         }
 
+        // Closes the category list, the same place the note sits in the settings card.
+        ImGui.Spacing();
+        DrawCompletenessNote();
+
         Widgets.SectionGap();
         DrawPrivacyCard(
             "Your character is identified by a one-way fingerprint computed on this machine. " +

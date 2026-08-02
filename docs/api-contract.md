@@ -220,7 +220,7 @@ Field constraints:
 | `manifestVersion`        | optional, ≤ 100 chars                                                                     |
 | `trigger`                | `interval` \| `login` \| `manual` \| `unlock`                                            |
 | id-list categories       | arrays of positive integers, **max 50,000 ids per category**                             |
-| `items`                  | `{id: positive int, count: non-negative int, hqCount?: positive int, collectableCount?: positive int, fresh: boolean}[]`, **max 10,000 entries** |
+| `items`                  | `{id: positive int, count: non-negative int, hqCount?: non-negative int, collectableCount?: non-negative int, fresh: boolean}[]`, **max 10,000 entries** |
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
@@ -311,8 +311,10 @@ Field constraints:
 
 Optional keys are **omitted rather than null**, so the plugin can feature-detect them.
 `items` never appears in `written` (it feeds relic proofs and count storage, not a
-collection count). `itemCounts` and `storedSequences` are informational, like `written`:
-the plugin ignores them — no plugin logic may branch on them.
+collection count). The plugin reads `written` as a plain category-keyed map, so a category
+it has never heard of arrives intact and a server that names fewer causes no error.
+`itemCounts` and `storedSequences` are informational, like `written`: the plugin ignores
+them — no plugin logic may branch on them.
 
 #### Status codes
 

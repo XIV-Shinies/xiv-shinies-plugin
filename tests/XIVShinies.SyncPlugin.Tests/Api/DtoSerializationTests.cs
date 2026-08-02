@@ -285,17 +285,43 @@ public class DtoSerializationTests
 
         Assert.True(response.Ok);
         Assert.False(response.Bound);
-        Assert.Equal(2, response.Written.Minions);
-        Assert.Equal(12, response.Written.Quests);
+        Assert.Equal(2, response.Written["minions"]);
+        Assert.Equal(12, response.Written["quests"]);
         Assert.Null(response.AchievementsSkipped);
         Assert.Null(response.ProvenSteps);
         Assert.Null(response.SkippedCategories);
 
-        // The Triple Triad written counts are optional the same way: a server that predates those
-        // categories omits the keys, and the nullable properties read back null rather than
-        // failing the whole deserialization.
-        Assert.Null(response.Written.TripleTriadCards);
-        Assert.Null(response.Written.TripleTriadNpcs);
+        // A server generation that names fewer categories simply yields fewer keys — an unsent
+        // category is an absent key, and nothing to throw over.
+        Assert.False(response.Written.ContainsKey("tripleTriadCards"));
+    }
+
+    // Written counts are keyed, not named, so a category this plugin has never heard of arrives
+    // intact rather than failing the whole response. That is what lets the server add a collection
+    // without waiting for the plugin.
+    [Fact]
+    public void SyncResponse_reads_written_counts_for_an_unknown_category()
+    {
+        const string body = """
+        {"ok": true, "bound": false, "written": {"quests": 3, "facewear": 7}}
+        """;
+
+        var response = JsonSerializer.Deserialize<SyncResponse>(body, ApiJson.Options)!;
+
+        Assert.Equal(3, response.Written["quests"]);
+        Assert.Equal(7, response.Written["facewear"]);
+    }
+
+    // A response with no written object at all still deserializes: the field is informational, and
+    // refusing it would turn a successful upload into a reported failure.
+    [Fact]
+    public void SyncResponse_tolerates_a_response_with_no_written_object()
+    {
+        var response = JsonSerializer.Deserialize<SyncResponse>(
+            """{"ok": true, "bound": false}""", ApiJson.Options)!;
+
+        Assert.NotNull(response.Written);
+        Assert.Empty(response.Written);
     }
 
     [Fact]
@@ -316,8 +342,8 @@ public class DtoSerializationTests
         Assert.Equal("not_sent", response.AchievementsSkipped);
         Assert.Equal(3, response.ProvenSteps);
         Assert.Equal(new[] { "minions" }, response.SkippedCategories);
-        Assert.Equal(5, response.Written.TripleTriadCards);
-        Assert.Equal(1, response.Written.TripleTriadNpcs);
+        Assert.Equal(5, response.Written["tripleTriadCards"]);
+        Assert.Equal(1, response.Written["tripleTriadNpcs"]);
     }
 
     [Fact]

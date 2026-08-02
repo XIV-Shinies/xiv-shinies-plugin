@@ -447,7 +447,13 @@ internal sealed class SyncManager : IDisposable
             // login re-arms it. Without this, "Sync now" would queue a sweep that the
             // `identity is null` guard silently drops on every frame, and the button would appear
             // to do nothing at all.
-            if (identity is null && clientState.IsLoggedIn)
+            //
+            // `loginSettledAt is null` is what distinguishes "gave up" from "still waiting": a
+            // pending capture — the login settle wait, or an identity retry — leaves a deadline
+            // set, and only the give-up paths clear it without producing an identity. Re-arming
+            // while one is pending would move that deadline to NOW, so a press moments after login
+            // would skip the settle wait entirely — see LoginSettleDelay for what that wait buys.
+            if (identity is null && loginSettledAt is null && clientState.IsLoggedIn)
             {
                 loginSettledAt = now;
                 identityAttempts = 0;

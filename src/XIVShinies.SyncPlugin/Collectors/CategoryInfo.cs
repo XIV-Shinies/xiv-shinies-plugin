@@ -43,12 +43,12 @@ public sealed record CategoryInfo
     /// away. The split is load-bearing for compliance, and the dividing line is strict:
     /// <see cref="WhatGetsSent"/> must name <b>every kind of data that leaves the machine</b>, so a
     /// user who reads only the visible line still knows what they are agreeing to send. A kind of
-    /// data may never be demoted here — gil belongs on the visible line even though the containers
-    /// it was counted in do not.
+    /// data may never be demoted here — gil belongs on the visible line, and so does the fact that
+    /// a per-location scan state travels beside the item counts.
     /// </para>
     /// <para>
-    /// What belongs here instead: which storage locations were searched, that a count of zero is
-    /// itself reported, that other players are never involved. Detail that makes the visible line
+    /// What belongs here instead: which locations were searched, by name; that a count of zero is
+    /// itself reported; that other players are never involved. Detail that makes the visible line
     /// <i>trustworthy</i> rather than detail that changes what it discloses.
     /// </para>
     /// </remarks>

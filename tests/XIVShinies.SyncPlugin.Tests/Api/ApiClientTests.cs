@@ -135,7 +135,7 @@ public class ApiClientTests
         var response = await client.PostSyncAsync(request);
 
         Assert.Equal(ApiStatus.Ok, response.Status);
-        Assert.Equal(1, response.Value!.Written.Quests);
+        Assert.Equal(1, response.Value!.Written["quests"]);
 
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
         Assert.Equal("https://xiv-shinies.com/api/plugin/v1/sync", handler.LastRequest.RequestUri!.ToString());

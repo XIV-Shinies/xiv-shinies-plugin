@@ -50,11 +50,17 @@ public static class PayloadCaps
     /// copied. <c>Dropped</c> is one human-readable line per category that was cut, empty when
     /// nothing was.
     /// </returns>
+    /// <remarks>
+    /// <b>Not for the upload path.</b> Capping a bare dictionary cannot retract the completeness
+    /// claim of a category it truncates, because the claim lives on the snapshot — so a payload
+    /// built from this would ship a shortened list still declared complete. The snapshot overload
+    /// exists to make that impossible; this one exists so the shape rules can be exercised alone.
+    /// </remarks>
     // The return type is a named TUPLE: one value carrying two named parts, which the caller
     // takes apart with `var (bounded, dropped) = ...`. The closest JS/TS analog is returning
     // an object and destructuring it — `const { bounded, dropped } = ...` — but a C# tuple is
     // a lightweight value type, not an allocated object.
-    public static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<string> Dropped)
+    internal static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<string> Dropped)
         Bound(Dictionary<string, JsonNode> collections)
     {
         var (bounded, dropped, _) = BoundCore(collections);

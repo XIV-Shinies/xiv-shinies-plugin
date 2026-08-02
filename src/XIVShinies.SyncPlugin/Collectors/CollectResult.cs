@@ -126,10 +126,11 @@ public sealed record CollectResult
     public bool WasCollected => SkipReason is null && Facts is not null;
 
     /// <summary>
-    /// True when these facts are the character's <b>complete</b> set for the category — the
-    /// collector enumerated its entire domain and got an answer for every candidate.
+    /// True when these facts are asserted to be the character's <b>complete</b> set for the
+    /// category: the collector enumerated its entire domain, and the list came back non-empty.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This claim ends up on the wire as the category's <c>collectionScopes</c> <c>"full"</c>
     /// declaration, which is what lets the server treat an id's absence as evidence — see
     /// <see cref="Api.SyncRequest.CollectionScopes"/> for what it licenses. Only a collector can
@@ -137,6 +138,13 @@ public sealed record CollectResult
     /// took a shortcut, so it travels on the result instead of being inferred downstream. False is
     /// always safe: it merely carries no evidence of absence. Sheet padding does not count against
     /// it — row 0 is not a candidate, so an enumeration is still complete without it.
+    /// </para>
+    /// <para>
+    /// One floor is enforced centrally rather than left to collectors: <b>an empty list never
+    /// carries the claim</b>, whatever the collector asked for. "Owns nothing" and "the game had
+    /// not filled this in yet" produce the identical empty read, and an empty list declared
+    /// complete is the one shape that contradicts every entry the user marked by hand at once.
+    /// </para>
     /// </remarks>
     public bool CompleteEnumeration { get; private init; }
 
@@ -150,9 +158,9 @@ public sealed record CollectResult
     /// <summary>Facts for a category that is a plain list of unlocked or completed IDs.</summary>
     /// <param name="ids">The collected ids.</param>
     /// <param name="completeEnumeration">
-    /// True when the collector checked every candidate in its domain, so this list is the
-    /// character's complete set (see <see cref="CompleteEnumeration"/>). Defaults to false —
-    /// the safe claim — so a caller must opt in explicitly.
+    /// True when the collector checked every candidate in its domain. This is a request, not a
+    /// verdict: <see cref="CompleteEnumeration"/> additionally withholds the claim for an empty
+    /// list. Defaults to false — the safe claim — so a caller must opt in explicitly.
     /// </param>
     /// <remarks>
     /// Zero is dropped. The server requires <b>positive</b> integers, and the game's data sheets
@@ -170,7 +178,11 @@ public sealed record CollectResult
                 positiveIds.Add(id);
         }
 
-        return new() { Facts = SyncFacts.Ids(positiveIds), CompleteEnumeration = completeEnumeration };
+        // The emptiness floor described on CompleteEnumeration. Withholding costs nothing here: an
+        // empty list carries no evidence worth asserting either way.
+        var complete = completeEnumeration && positiveIds.Count > 0;
+
+        return new() { Facts = SyncFacts.Ids(positiveIds), CompleteEnumeration = complete };
     }
 
     /// <summary>Facts for the <c>items</c> category, which carries objects rather than IDs.</summary>

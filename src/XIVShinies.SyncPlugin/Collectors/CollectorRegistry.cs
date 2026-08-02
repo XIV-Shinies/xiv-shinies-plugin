@@ -108,9 +108,18 @@ public static class CollectorRegistry
         // much gil they hold. That is a KIND of data, so it can never be demoted to the hover text.
         // Phrased conditionally because whether any currency is asked about is the server's
         // manifest choice — the sentence is true both before and after such a group exists.
+        //
+        // The storage clause is on the visible line for the same reason. An items upload carries
+        // `itemSources` beside the counts: a per-location scan state, and for retainers both how
+        // many were readable and how many the account holds. That headcount is a fact about the
+        // account rather than a count of any manifest item — and it travels even when no retainer
+        // was scanned — so "counts of the items XIV Shinies asks about" does not cover it, and a
+        // reader would have no way to infer it. Naming the locations themselves stays in the hover:
+        // that is elaboration, whereas the fact they travel at all is disclosure.
         WhatGetsSent =
             "Counts of the specific items XIV Shinies asks about, including your currency balances " +
-            "(gil included) when it asks about those.",
+            "(gil included) when it asks about those, plus which of your storage locations could be " +
+            "read and how many retainers you have.",
 
         // Where the plugin looked, and that "none of this item" is itself a reported fact rather
         // than silence. Both make the count trustworthy; neither adds a kind of data to it. The
