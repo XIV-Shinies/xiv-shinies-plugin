@@ -4,7 +4,7 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// The tracker server's three-word status vocabulary for an occult encounter.
 /// </summary>
 /// <remarks>
-/// The contract (docs/plugin-sync.md § occult/instance-state) admits exactly these three
+/// The contract (docs/api-contract.md § occult/instance-state) admits exactly these three
 /// values. CEs map Register/Warmup → <see cref="Preparing"/>, Battle → <see cref="Active"/>,
 /// Inactive → <see cref="Down"/>; a FATE is <see cref="Active"/> while on the table and
 /// <see cref="Down"/> once removed. Success vs. failure is deliberately not modeled — the

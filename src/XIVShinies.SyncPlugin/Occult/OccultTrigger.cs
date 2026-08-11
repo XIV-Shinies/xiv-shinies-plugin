@@ -2,7 +2,7 @@ namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
 /// Why an occult upload is happening. Travels to the server as the payload's
-/// <c>trigger</c> field (lower-cased), per docs/plugin-sync.md § occult/instance-state.
+/// <c>trigger</c> field (lower-cased), per docs/api-contract.md § occult/instance-state.
 /// </summary>
 public enum OccultTrigger
 {

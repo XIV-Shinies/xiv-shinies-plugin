@@ -120,6 +120,10 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   ],
   "itemOmitWhenUnseenIds": [45043, 45044], // content-bound ids: omit from uploads when no source saw them
   "manifestVersion": "a1b2c3d4e5f6",
+  "occultTracker": {           // the live occult tracker's switches (see its endpoint below)
+    "enabled": true,           // the tracker's kill switch (global/per-user/category folded in)
+    "heartbeatSeconds": 60     // idle re-upload cadence while inside an instance
+  },
   "questSequenceManifest": [70991] // quests whose journal sequence byte to report
 }
 ```
@@ -329,6 +333,70 @@ them — no plugin logic may branch on them.
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
 | **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent.                                        |
 | **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | Global kill switch is off. Back off the full hour.                                                                   |
+
+### POST /api/plugin/v1/occult/instance-state
+
+The live Occult Crescent tracker upload: one compact **full snapshot** of the instance the
+character is standing in — every CE/tower container slot plus tracked FATEs — sent on
+status change (debounced; never progress ticks), as a heartbeat every
+`occultTracker.heartbeatSeconds` from `/config`, and on enter/leave. Deliberately NOT the
+batch `/sync` endpoint: small, frequent, instance-scoped. A server whose `/config` carries
+no `occultTracker` block does not have this endpoint; the client must stay silent then.
+
+#### Request
+
+`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). A real
+snapshot is ~1.2 KB.
+
+```jsonc
+{
+  "characterContentIdHash": "…64 lowercase hex chars…",
+  "characterName": "Some Name", // same binding identity as /sync
+  "homeWorld": "Excalibur",
+  "pluginVersion": "1.0.0",
+  "trigger": "change",          // "change" | "enter" | "heartbeat" | "leave"
+  "instance": {"territoryTypeId": 1252}, // 1252 South Horn | 1346 North Horn — nothing else
+  "encounters": [
+    // Full state every upload. CEs and the Forked Tower by DynamicEvent row id;
+    // FATEs by Fate sheet row id. status is the THREE-word vocabulary only:
+    // "preparing" (CE Register/Warmup) | "active" (Battle / FATE on the table)
+    // | "down" (Inactive / removed).
+    {"dynamicEventId": 43, "status": "active", "sinceUtc": "2026-08-11T16:02:15Z"},
+    {"dynamicEventId": 48, "status": "down", "sinceUtc": null}, // the tower rides along
+    {"fateId": 1972, "status": "active", "sinceUtc": "2026-08-11T15:46:48Z"}
+  ]
+}
+```
+
+- **`sinceUtc` is the fingerprint.** Occult instances have no client-readable id; the
+  server matches an upload to the active tracker (same territory) sharing at least one
+  exact `(encounter, sinceUtc)` pair, bridging quiet gaps with the reporter's presence.
+  So the plugin must send **server-assigned epochs, identical for every observer** — a
+  FATE's start epoch, a CE phase deadline (or battle start derived as deadline −
+  duration) — at exact whole-second precision, formatted `YYYY-MM-DDThh:mm:ssZ`. The
+  plugin's own observation time is the fallback only for transitions the game zeroes
+  (the Battle→Inactive flip). `sinceUtc` must be **present** on every row: null where
+  the game exposes nothing — null entries carry state but never identity, which is why
+  the key is written explicitly rather than omitted.
+- **Exactly one id key per row** — `dynamicEventId` or `fateId`, never both; the other
+  is omitted. Unknown ids are ignored by the server (catalog-trailing rule); the tower
+  ids land on the tracker's tower state rather than an encounter row.
+- **`leave`** (sent on territory exit) clears the character's presence only; the tracker
+  lives on for reporters still inside. A reporter also ages out after ~3 missed
+  heartbeats, so a missed leave self-heals.
+
+#### Response
+
+```jsonc
+200 {"ok": true, "outcome": "applied", "trackerId": "…uuid…", "created": false}
+200 {"ok": true, "outcome": "unresolved", "trackerId": null} // no fingerprintable pair; retry on next change
+200 {"ok": true, "outcome": "left", "trackerId": "…uuid or null…"}
+```
+
+Status codes mirror `/sync` (400 family, 401, 403 with echoed identity, 405, 413, 429
+with its own per-token budget of 240/hour, 503 `sync_disabled`), plus
+**503 `{"error": "tracker_unavailable"}`** when the territory's server-side curation is
+absent — back off, server-side problem.
 
 ## Character binding
 

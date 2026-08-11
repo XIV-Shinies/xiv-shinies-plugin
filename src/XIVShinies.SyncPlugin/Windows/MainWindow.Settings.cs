@@ -68,6 +68,11 @@ internal sealed partial class MainWindow
         {
             ImGui.Spacing();
             DrawCategoryRows(rows, showNewChips: true, FontAwesomeIcon.Gem, "Collections to include");
+
+            // The live tracker's own consent card, kept with the rest of the consent surfaces
+            // under this section but outside the collections card — it is not a collection.
+            ImGui.Spacing();
+            DrawOccultConsentRow();
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

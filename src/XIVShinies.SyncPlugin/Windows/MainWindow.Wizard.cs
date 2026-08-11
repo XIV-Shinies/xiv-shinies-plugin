@@ -90,6 +90,18 @@ internal sealed partial class MainWindow
         ImGui.Spacing();
         DrawCompletenessNote();
 
+        // The live Occult tracker is disclosed here alongside the collections even though it is
+        // not one — this screen is the fuller disclosure of the two, so everything the plugin
+        // can send appears on it. A broadcast tower rather than a gem: it shares live world
+        // state rather than adding anything to your collection.
+        ImGui.Spacing();
+        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Live Occult instance state");
+        ImGui.Indent(iconColumn);
+        DrawWrapped(OccultWhatGetsSent, ImGuiCol.Text);
+        ImGui.Unindent(iconColumn);
+
         Widgets.SectionGap();
         DrawPrivacyCard(
             "Your character is identified by a one-way fingerprint computed on this machine. " +
@@ -118,9 +130,14 @@ internal sealed partial class MainWindow
 
     private void DrawChooseCategoriesStep()
     {
+        // Two consent regimes, stated plainly: collections start OFF (they describe the
+        // player's own progress), while the live tracker's box starts ticked because it shares
+        // world state — and it is on this very screen, so unticking it is one click before
+        // anything can send.
         ImGui.TextWrapped(
-            "Choose what to upload. Everything starts switched off — nothing is sent unless you " +
-            "turn it on here. You can change any of this later.");
+            "Choose what to upload. Collections start switched off — nothing about your " +
+            "progress is sent unless you turn it on here. Sharing live Occult instance state " +
+            "starts on; untick it below if you would rather not. You can change any of this later.");
 
         Widgets.SectionGap();
 
@@ -134,6 +151,10 @@ internal sealed partial class MainWindow
         // first time, to a user who installed the plugin minutes ago. DrawGroupCheckboxes still marks
         // every group it draws as seen, so the settings screen greets them badge-free afterwards.
         DrawCategoryRows(BuildCategoryRows(), showNewChips: false);
+
+        // The live tracker's own consent card, right below the collections it is not part of.
+        ImGui.Spacing();
+        DrawOccultConsentRow();
 
         ImGui.Spacing();
         DrawWizardNav("Finish");

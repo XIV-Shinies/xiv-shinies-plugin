@@ -157,6 +157,19 @@ public class OccultEncounterTrackerTests
         Assert.Null(state.SinceUtc);
     }
 
+    // A torn read of the raw duration would push the derived battle start PAST the deadline —
+    // a plausible-looking epoch no other observer derives, worse than no timestamp at all.
+    [Fact]
+    public void A_battling_ce_with_a_nonpositive_duration_has_a_null_sinceUtc()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle, duration: 0)], [], T0);
+
+        var state = Single(tracker, 46);
+        Assert.Equal(OccultEncounterStatus.Active, state.Status);
+        Assert.Null(state.SinceUtc);
+    }
+
     // Raw game memory can hold garbage during zone transitions. An impossible epoch must
     // degrade to "no timestamp", never throw out of the framework-tick handler.
     [Fact]

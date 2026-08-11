@@ -417,6 +417,13 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     public bool HasCharacter => identity is not null;
 
+    /// <summary>
+    /// The identified character, or null when nobody usable is loaded. The occult tracker reads
+    /// this so both upload paths attribute work to one identity, captured in one place.
+    /// </summary>
+    /// <remarks>A reference read, so atomic; read on the framework thread by the occult manager.</remarks>
+    internal CharacterIdentity? Identity => identity;
+
     /// <summary>Queues an immediate full sweep, as when the user presses "Sync now".</summary>
     /// <remarks>
     /// Clears the "needs user action" halt: pressing the button is the user asserting they fixed it.

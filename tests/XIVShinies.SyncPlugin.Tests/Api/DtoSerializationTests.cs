@@ -463,6 +463,59 @@ public class DtoSerializationTests
     }
 
     [Fact]
+    public void ConfigResponse_deserializes_the_occult_tracker_block()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123",
+             "occultTracker":{"enabled":true,"heartbeatSeconds":60}}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.NotNull(config.OccultTracker);
+        Assert.True(config.OccultTracker!.Enabled);
+        Assert.Equal(60, config.OccultTracker.HeartbeatSeconds);
+    }
+
+    [Fact]
+    public void ConfigResponse_without_an_occult_tracker_block_leaves_it_null()
+    {
+        // An older server never sends the block. Null is the signal that this server has no
+        // tracker endpoint at all, so the feature stays off (see OccultGate).
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.Null(config.OccultTracker);
+    }
+
+    // The kill switch is required (guessing it would be trusting a half-parsed block with the
+    // one value that gates uploads), but the cadence is not: the scheduler clamps whatever
+    // arrives, so a block without it must not fail the WHOLE config deserialization — that
+    // would also strand /sync on its last-known manifest.
+    [Fact]
+    public void An_occult_tracker_block_without_a_cadence_still_parses()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123",
+             "occultTracker":{"enabled":true}}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.True(config.OccultTracker!.Enabled);
+        Assert.Equal(60, config.OccultTracker.HeartbeatSeconds);
+    }
+
+    [Fact]
     public void ConfigResponse_deserializes_the_quest_sequence_manifest()
     {
         const string json = """

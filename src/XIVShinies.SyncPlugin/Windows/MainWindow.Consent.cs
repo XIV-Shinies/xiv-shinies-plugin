@@ -149,6 +149,99 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
+    /// The live Occult tracker's plain-language disclosure — what gets shared and, because the
+    /// natural worry is other players, what does not. One string, used verbatim by every
+    /// surface that discloses the tracker (the wizard's "What it sends" screen and the consent
+    /// card), so no surface can drift to saying less than another.
+    /// </summary>
+    private const string OccultWhatGetsSent =
+        "While you are inside an Occult Crescent instance, shares that instance's public " +
+        "encounter status — critical encounters, FATEs, and the Forked Tower — so its live " +
+        "tracker on XIV Shinies stays current. This is world state: nothing about you " +
+        "beyond your presence in the instance, and never anything about other players.";
+
+    /// <summary>
+    /// The live Occult tracker's consent card: its toggle and its disclosure copy. Drawn as its
+    /// own card on both consent surfaces (the wizard's consent step and the settings), separate
+    /// from the collections card — the tracker is not a collection and must not read as one,
+    /// which is also why the collections select-all does not touch it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unlike every collection category, this defaults ON — it shares <b>world</b> state (which
+    /// encounters are up inside a public instance), not facts about the player, the same stance
+    /// Universalis takes on market data. It still only ever acts once the user has finished the
+    /// wizard and the master switch is on, and this card makes the sharing visible and
+    /// revocable on both consent surfaces.
+    /// </para>
+    /// <para>
+    /// Drawn greyed out when the server's <c>occultTracker</c> switch is off, with the user's
+    /// own preference intact underneath — the same treatment a server-disabled category gets.
+    /// A config with no <c>occultTracker</c> block (or none fetched yet) draws normally: the
+    /// toggle records the user's choice either way, and the manager independently refuses to
+    /// upload to a server that never advertised the feature.
+    /// </para>
+    /// </remarks>
+    private void DrawOccultConsentRow()
+    {
+        var occultConfig = syncManager.RemoteConfig?.OccultTracker;
+        var serverOff = occultConfig is { Enabled: false };
+
+        using (ImRaii.PushStyle(
+                   ImGuiStyleVar.ItemInnerSpacing,
+                   new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
+        using (BrandCard())
+        {
+            // Measured the same way as the collections card's label column, inside the same
+            // style push, so the two cards' text edges line up when stacked.
+            var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
+
+            var enabled = configuration.Settings.ShareOccultInstanceState;
+            bool toggled;
+            using (ImRaii.Disabled(serverOff))
+                toggled = ImGui.Checkbox("Share live Occult instance state##occultTracker", ref enabled);
+
+            if (toggled)
+            {
+                configuration.Settings.ShareOccultInstanceState = enabled;
+                configuration.Save();
+            }
+
+            ImGui.Indent(checkboxColumn);
+
+            // Full contrast, like every category's WhatGetsSent line: this is consent copy.
+            DrawWrapped(OccultWhatGetsSent, ImGuiCol.Text);
+
+            // Muted: it only restates why the toggle above is greyed out.
+            if (serverOff)
+                ImGui.TextDisabled("Temporarily switched off by XIV Shinies.");
+
+            ImGui.Unindent(checkboxColumn);
+
+            ImGui.Spacing();
+
+            // The standing choice for features that do not exist yet — see
+            // PluginSettings.AutoEnableNewFeatures for what a future feature's migration does
+            // with it. Ticking it here is the explicit consent that answer rests on, which is
+            // why the copy promises anything enabled this way shows up on this screen.
+            var autoEnable = configuration.Settings.AutoEnableNewFeatures;
+            if (ImGui.Checkbox("Turn on future sharing features automatically##autoEnableNew", ref autoEnable))
+            {
+                configuration.Settings.AutoEnableNewFeatures = autoEnable;
+                configuration.Save();
+            }
+
+            ImGui.Indent(checkboxColumn);
+            DrawWrapped(
+                "When an update adds a new kind of sharing (like the live tracker above), start " +
+                "it switched on. Anything added this way always appears on this screen, where " +
+                "you can turn it off.",
+                ImGuiCol.Text);
+            ImGui.Unindent(checkboxColumn);
+        }
+    }
+
+    /// <summary>
     /// Discloses that a collection the plugin can read end to end is reported as complete, and what
     /// XIV Shinies is then entitled to do with that.
     /// </summary>

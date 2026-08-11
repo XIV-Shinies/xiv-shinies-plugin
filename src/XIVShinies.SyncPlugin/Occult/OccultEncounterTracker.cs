@@ -194,10 +194,13 @@ public sealed class OccultEncounterTracker
 
             case DynamicEventPhase.Battle:
                 // The game reports the battle's END deadline. Every client must derive the
-                // same start, so it comes from deadline − duration — never a local clock.
+                // same start, so it comes from deadline − duration — never a local clock. A
+                // nonpositive duration (a torn read of the raw uint) would push the derived
+                // start PAST the deadline: a plausible-looking epoch no other observer would
+                // derive, which is worse than no timestamp — so it degrades to null instead.
                 return new Entry(
                     OccultEncounterStatus.Active,
-                    EpochOrNull(reading.PhaseDeadlineEpoch > 0
+                    EpochOrNull(reading.PhaseDeadlineEpoch > 0 && reading.DurationSeconds > 0
                         ? reading.PhaseDeadlineEpoch - reading.DurationSeconds
                         : 0));
 

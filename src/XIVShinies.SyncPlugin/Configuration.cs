@@ -24,11 +24,18 @@ namespace XIVShinies.SyncPlugin;
 // persists to implement IPluginConfiguration, whose one member is the `Version` property below.
 public class Configuration : IPluginConfiguration
 {
+    /// <summary>
+    /// The config schema version a freshly written config carries. A loaded config with a lower
+    /// number is from an older install and runs through
+    /// <see cref="PluginSettings.ApplyUpgradeMigrations"/> before anything reads it.
+    /// </summary>
+    public const int CurrentVersion = 1;
+
     // A C# "property" looks like a field but is really a get/set pair. `{ get; set; }` is an
-    // "auto-property" — the compiler generates the backing storage for you. `= 0` sets the
-    // default. IPluginConfiguration requires this so Dalamud can migrate old saved configs
-    // across schema changes.
-    public int Version { get; set; } = 0;
+    // "auto-property" — the compiler generates the backing storage for you. IPluginConfiguration
+    // requires this so Dalamud can migrate old saved configs across schema changes; version 0
+    // configs predate the sharing settings introduced at version 1.
+    public int Version { get; set; } = CurrentVersion;
 
     /// <summary>Everything the user can configure. Persisted as a nested object.</summary>
     public PluginSettings Settings { get; set; } = new();

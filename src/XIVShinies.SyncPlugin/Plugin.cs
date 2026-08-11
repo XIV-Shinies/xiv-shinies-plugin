@@ -16,6 +16,8 @@ using Dalamud.Plugin.Services;
 using XIVShinies.SyncPlugin.Api;
 // The registered fact sources.
 using XIVShinies.SyncPlugin.Collectors;
+// The live occult instance tracker (reader, scheduler, uploader).
+using XIVShinies.SyncPlugin.Occult;
 // The upload orchestrator and its supporting policy classes.
 using XIVShinies.SyncPlugin.Sync;
 // Our own window classes.
@@ -77,6 +79,12 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Loads image files into GPU textures that ImGui can draw.</summary>
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
 
+    /// <summary>
+    /// The live FATE table for the current zone — world state, not player data. Read by the
+    /// occult tracker while inside an Occult Crescent instance.
+    /// </summary>
+    [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
+
     // --- Plugin state --------------------------------------------------------------------
 
     /// <summary>The persisted settings object (see Configuration.cs).</summary>
@@ -102,6 +110,11 @@ public sealed class Plugin : IDalamudPlugin
     // must be disposed — and disposed BEFORE the ApiClient it borrows.
     private readonly SyncManager syncManager;
 
+    // Watches for the character entering an Occult Crescent instance and streams its CE/FATE
+    // state to the live tracker. Subscribes to game events, so it must be disposed — before the
+    // SyncManager and ApiClient it borrows.
+    private readonly OccultManager occultManager;
+
     /// <summary>
     /// Constructor — Dalamud calls this once on load. Wire everything up here, and be sure to
     /// tear down in Dispose whatever you set up here (handlers, events, windows).
@@ -114,67 +127,116 @@ public sealed class Plugin : IDalamudPlugin
         // is one, otherwise a new default config".
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // Build the API client from the persisted settings. The manifest carries the version the
-        // build stamped in, which becomes the User-Agent and the payload's pluginVersion field.
-        var version = PluginInterface.Manifest.AssemblyVersion?.ToString() ?? "0.0.0";
-        apiClient = new ApiClient(Configuration.Settings, version);
-
-        // Build the fact sources. Nothing reads the game until something explicitly runs them.
-        collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework);
-
-        // Start listening. The manager subscribes to login and unlock events immediately, but every
-        // path out of them checks the upload gate first, so a user who has not opted in sends
-        // nothing and the plugin never contacts the server.
-        //
-        // `Configuration.Save` is passed as a method-group callback (see CollectorRegistry.Create
-        // for how method groups work): the manager gets "persist the settings" as a plain Action,
-        // so it never needs a reference to the Dalamud config shell itself.
-        syncManager = new SyncManager(
-            Framework, ClientState, PlayerState, UnlockState, Log,
-            apiClient, Configuration.Settings, Configuration.Save, collectors, version);
-
-        // The mascot drawn in the settings header — the same hand-made image the installer shows,
-        // shipped next to the DLL. GetFromFile returns a shared texture that loads lazily and is
-        // owned by Dalamud, so there is nothing to dispose on our side; if the file is missing the
-        // wrap comes back empty and the header simply draws without an image.
-        var mascotTexture = TextureProvider.GetFromFile(Path.Combine(
-            PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty, "images", "icon.png"));
-
-        // Create our window and hand it to the WindowSystem so it gets drawn each frame. It reads the
-        // sync manager's status and the collectors' self-descriptions, so it is built after both. The
-        // font pieces let it build a heading-sized font and draw FontAwesome icons.
-        mainWindow = new MainWindow(
-            Configuration, apiClient, syncManager, collectors, mascotTexture,
-            PluginInterface.UiBuilder.FontAtlas,
-            PluginInterface.UiBuilder.IconFontHandle,
-            PluginInterface.UiBuilder.DefaultFontSpec.SizePx,
-            version);
-        windowSystem.AddWindow(mainWindow);
-
-        // Register the /shinies command. CommandInfo takes the handler method (OnCommand); the
-        // object-initializer sets the help text shown in /xlhelp.
-        CommandManager.AddHandler(PluginMeta.CommandName, new CommandInfo(OnCommand)
+        // A config written by an older plugin version runs through its migrations before
+        // anything reads it — this is what keeps a new default-on setting from silently opting
+        // in a user whose wizard ran long ago (see PluginSettings.ApplyUpgradeMigrations).
+        if (Configuration.Version < Configuration.CurrentVersion)
         {
-            HelpMessage = $"Toggle the {PluginMeta.DisplayName} window.",
-        });
+            // The save happens whether or not any setting changed: persisting the version bump
+            // is what records that migrations ran, so they can never run twice.
+            Configuration.Settings.ApplyUpgradeMigrations(Configuration.Version);
+            Configuration.Version = Configuration.CurrentVersion;
+            Configuration.Save();
+        }
 
-        // Register a longer alias that runs the same handler. ShowInHelp = false keeps /xlhelp
-        // to a single entry instead of listing the command twice.
-        CommandManager.AddHandler(PluginMeta.CommandAlias, new CommandInfo(OnCommand)
+        // The whole wiring sequence runs under one guard because a constructor that throws is
+        // a plugin Dalamud never received: Dispose() will never be called, so any event handler
+        // already subscribed would stay bound to a half-constructed plugin for the rest of the
+        // game session, firing every frame. The catch tears down whatever was built — in the
+        // same order Dispose() uses — and rethrows so the load still fails visibly.
+        try
         {
-            ShowInHelp = false,
-        });
+            // Build the API client from the persisted settings. The manifest carries the version
+            // the build stamped in, which becomes the User-Agent and the payload's pluginVersion
+            // field.
+            var version = PluginInterface.Manifest.AssemblyVersion?.ToString() ?? "0.0.0";
+            apiClient = new ApiClient(Configuration.Settings, version);
 
-        // Subscribe to UI events. `+=` adds a handler to a C# "event" (a built-in
-        // publisher/subscriber list); there's no exact React analog, but it's like
-        // addEventListener. Every `+=` here MUST be matched by a `-=` in Dispose, or we'd leak
-        // the handler after the plugin unloads.
-        // - Draw: fires every frame; we forward it to the WindowSystem to render our windows.
-        // - OpenMainUi: the "open" button next to the plugin in the installer.
-        // - OpenConfigUi: the "settings" gear next to the plugin in the installer.
-        PluginInterface.UiBuilder.Draw += windowSystem.Draw;
-        PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
-        PluginInterface.UiBuilder.OpenConfigUi += ToggleMainUi;
+            // Build the fact sources. Nothing reads the game until something explicitly runs them.
+            collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework);
+
+            // Start listening. The manager subscribes to login and unlock events immediately, but
+            // every path out of them checks the upload gate first, so a user who has not opted in
+            // sends nothing and the plugin never contacts the server.
+            //
+            // `Configuration.Save` is passed as a method-group callback (see
+            // CollectorRegistry.Create for how method groups work): the manager gets "persist the
+            // settings" as a plain Action, so it never needs a reference to the Dalamud config
+            // shell itself.
+            syncManager = new SyncManager(
+                Framework, ClientState, PlayerState, UnlockState, Log,
+                apiClient, Configuration.Settings, Configuration.Save, collectors, version);
+
+            // The live occult tracker. Built after the SyncManager because it reads the identity
+            // and server config that manager owns; gated by the same consent switches plus its own
+            // "Share live Occult instance state" toggle, so it too is silent until the user opts in.
+            occultManager = new OccultManager(
+                Framework, ClientState, FateTable, Log,
+                apiClient, Configuration.Settings, syncManager, version);
+
+            // The mascot drawn in the settings header — the same hand-made image the installer
+            // shows, shipped next to the DLL. GetFromFile returns a shared texture that loads
+            // lazily and is owned by Dalamud, so there is nothing to dispose on our side; if the
+            // file is missing the wrap comes back empty and the header simply draws without an
+            // image.
+            var mascotTexture = TextureProvider.GetFromFile(Path.Combine(
+                PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty, "images", "icon.png"));
+
+            // Create our window and hand it to the WindowSystem so it gets drawn each frame. It
+            // reads the sync manager's status and the collectors' self-descriptions, so it is
+            // built after both. The font pieces let it build a heading-sized font and draw
+            // FontAwesome icons.
+            mainWindow = new MainWindow(
+                Configuration, apiClient, syncManager, collectors, mascotTexture,
+                PluginInterface.UiBuilder.FontAtlas,
+                PluginInterface.UiBuilder.IconFontHandle,
+                PluginInterface.UiBuilder.DefaultFontSpec.SizePx,
+                version);
+            windowSystem.AddWindow(mainWindow);
+
+            // Register the /shinies command. CommandInfo takes the handler method (OnCommand);
+            // the object-initializer sets the help text shown in /xlhelp.
+            CommandManager.AddHandler(PluginMeta.CommandName, new CommandInfo(OnCommand)
+            {
+                HelpMessage = $"Toggle the {PluginMeta.DisplayName} window.",
+            });
+
+            // Register a longer alias that runs the same handler. ShowInHelp = false keeps
+            // /xlhelp to a single entry instead of listing the command twice.
+            CommandManager.AddHandler(PluginMeta.CommandAlias, new CommandInfo(OnCommand)
+            {
+                ShowInHelp = false,
+            });
+
+            // Subscribe to UI events. `+=` adds a handler to a C# "event" (a built-in
+            // publisher/subscriber list); there's no exact React analog, but it's like
+            // addEventListener. Every `+=` here MUST be matched by a `-=` in Dispose, or we'd
+            // leak the handler after the plugin unloads.
+            // - Draw: fires every frame; we forward it to the WindowSystem to render our windows.
+            // - OpenMainUi: the "open" button next to the plugin in the installer.
+            // - OpenConfigUi: the "settings" gear next to the plugin in the installer.
+            PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+            PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+            PluginInterface.UiBuilder.OpenConfigUi += ToggleMainUi;
+        }
+        catch
+        {
+            // Unassigned readonly fields are still null here, so `?.` skips whatever never got
+            // built. Removing a handler or unsubscribing an event that was never added is a
+            // no-op, which is what lets this mirror Dispose() without tracking progress flags.
+            PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+            PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+            PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainUi;
+            CommandManager.RemoveHandler(PluginMeta.CommandName);
+            CommandManager.RemoveHandler(PluginMeta.CommandAlias);
+
+            windowSystem.RemoveAllWindows();
+            mainWindow?.Dispose();
+            occultManager?.Dispose();
+            syncManager?.Dispose();
+            apiClient?.Dispose();
+            throw;
+        }
 
         Log.Information($"{PluginMeta.DisplayName} loaded.");
     }
@@ -190,8 +252,17 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainUi;
 
+        // Before the window they dispatch into: a /shinies typed mid-teardown must not toggle
+        // a window that is already gone.
+        CommandManager.RemoveHandler(PluginMeta.CommandName);
+        CommandManager.RemoveHandler(PluginMeta.CommandAlias);
+
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
+
+        // Before the SyncManager and ApiClient it borrows, deliberately: this unsubscribes its
+        // game events and cancels any occult upload in flight first.
+        occultManager.Dispose();
 
         // Before the ApiClient, deliberately: this unsubscribes the game events and cancels any
         // upload in flight, so nothing is still reaching for the client when it goes away.
@@ -199,9 +270,6 @@ public sealed class Plugin : IDalamudPlugin
 
         // Releases the underlying HttpClient and its connection pool.
         apiClient.Dispose();
-
-        CommandManager.RemoveHandler(PluginMeta.CommandName);
-        CommandManager.RemoveHandler(PluginMeta.CommandAlias);
     }
 
     // The command handler. Its signature (string command, string args) is what CommandInfo
