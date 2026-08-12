@@ -392,6 +392,12 @@ snapshot is ~1.2 KB.
   lives on for reporters still inside. A reporter also ages out after ~3 missed
   heartbeats, so a missed leave self-heals. A leave's `worldId` is sampled at exit, so a
   deferred leave still clears presence on the data center that was actually left.
+- **Absence self-heal.** Unlike the monotonic `/sync` writes, this endpoint is a
+  replace-style full snapshot: an encounter the tracker holds `active` that is absent
+  from an incoming snapshot (except on `enter`, whose table may still be settling) is
+  flipped `down` server-side, stamped at receipt. So a client that lost its in-memory state
+  mid-visit (a plugin reload, a consent flip) does not strand an encounter as active —
+  the next full snapshot from any reporter corrects it.
 
 #### Response
 

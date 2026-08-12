@@ -227,6 +227,13 @@ internal sealed class OccultManager : IDisposable
                 pendingLeave = null;
                 tracker.Reset();
                 scheduler.Reset();
+
+                // This reset discards the remembered down ghosts: an encounter that ends
+                // before tracking resumes never gets a down from this client — the server's
+                // absence self-heal corrects it from the next full snapshot (see
+                // docs/api-contract.md § occult/instance-state). The log line marks the
+                // discontinuity for anyone tracing a tracker history that skipped an end.
+                log.Debug("Occult tracking gate closed mid-instance; local state discarded.");
             }
 
             return;
