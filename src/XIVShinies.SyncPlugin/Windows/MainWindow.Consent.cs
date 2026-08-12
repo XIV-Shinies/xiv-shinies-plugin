@@ -155,10 +155,10 @@ internal sealed partial class MainWindow
     /// card), so no surface can drift to saying less than another.
     /// </summary>
     private const string OccultWhatGetsSent =
-        "While you are inside an Occult Crescent instance, shares that instance's public " +
-        "encounter status — critical encounters, FATEs, and the Forked Tower — so its live " +
-        "tracker on XIV Shinies stays current. This is world state: nothing about you " +
-        "beyond your presence in the instance, and never anything about other players.";
+        "While you are in the Occult Crescent, shares your instance's public encounter " +
+        "status (critical encounters, FATEs, Forked Tower) and your current world, powering " +
+        "XIV Shinies' live tracker. Nothing about you beyond your presence, and never " +
+        "anything about other players.";
 
     /// <summary>
     /// The live Occult tracker's consent card: its toggle and its disclosure copy. Drawn as its

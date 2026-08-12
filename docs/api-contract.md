@@ -355,7 +355,14 @@ snapshot is ~1.2 KB.
   "homeWorld": "Excalibur",
   "pluginVersion": "1.0.0",
   "trigger": "change",          // "change" | "enter" | "heartbeat" | "leave"
-  "instance": {"territoryTypeId": 1252}, // 1252 South Horn | 1346 North Horn — nothing else
+  "instance": {
+    "territoryTypeId": 1252,    // 1252 South Horn | 1346 North Horn
+    "worldId": 73               // OPTIONAL: the reporter's CURRENT World row id (not home
+                                // world). The server maps world → data center to scope
+                                // matching and the browse list per DC; omitted when
+                                // unreadable, and the tracker then stays un-scoped. An
+                                // unknown id is ignored (catalog-trailing rule).
+  },
   "encounters": [
     // Full state every upload. CEs and the Forked Tower by DynamicEvent row id;
     // FATEs by Fate sheet row id. status is the THREE-word vocabulary only:
@@ -383,7 +390,8 @@ snapshot is ~1.2 KB.
   ids land on the tracker's tower state rather than an encounter row.
 - **`leave`** (sent on territory exit) clears the character's presence only; the tracker
   lives on for reporters still inside. A reporter also ages out after ~3 missed
-  heartbeats, so a missed leave self-heals.
+  heartbeats, so a missed leave self-heals. A leave's `worldId` is sampled at exit, so a
+  deferred leave still clears presence on the data center that was actually left.
 
 #### Response
 

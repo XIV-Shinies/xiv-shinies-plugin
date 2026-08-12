@@ -38,13 +38,22 @@ public sealed record OccultInstanceStateRequest
 }
 
 /// <summary>
-/// The <c>instance</c> object: the territory alone. Occult instances have no client-readable
-/// id — identity is the encounter fingerprint — so the territory is the only honest field.
+/// The <c>instance</c> object: the territory plus where the reporter is standing. Occult
+/// instances have no client-readable id — identity is the encounter fingerprint — so these
+/// are the only honest fields.
 /// </summary>
 public sealed record OccultInstanceIdentity
 {
     /// <summary>The game's TerritoryType row id (South Horn 1252, North Horn 1346).</summary>
     public required uint TerritoryTypeId { get; init; }
+
+    /// <summary>
+    /// The reporter's CURRENT world (<c>World</c> sheet row id) — not the home world, because
+    /// a data-center traveler reports from wherever they are. The server maps world → data
+    /// center to scope fingerprint matching and the browse list per DC. Null (omitted from
+    /// the JSON) when the world was not readable; the tracker then just stays un-scoped.
+    /// </summary>
+    public uint? WorldId { get; init; }
 }
 
 /// <summary>One encounter row of the snapshot.</summary>

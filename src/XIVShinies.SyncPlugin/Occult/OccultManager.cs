@@ -61,6 +61,7 @@ internal sealed class OccultManager : IDisposable
     private readonly IFramework framework;
     private readonly IClientState clientState;
     private readonly IFateTable fateTable;
+    private readonly IPlayerState playerState;
     private readonly IPluginLog log;
     private readonly ApiClient apiClient;
     private readonly PluginSettings settings;
@@ -129,6 +130,7 @@ internal sealed class OccultManager : IDisposable
         IFramework framework,
         IClientState clientState,
         IFateTable fateTable,
+        IPlayerState playerState,
         IPluginLog log,
         ApiClient apiClient,
         PluginSettings settings,
@@ -139,6 +141,7 @@ internal sealed class OccultManager : IDisposable
         this.framework = framework;
         this.clientState = clientState;
         this.fateTable = fateTable;
+        this.playerState = playerState;
         this.log = log;
         this.apiClient = apiClient;
         this.settings = settings;
@@ -313,7 +316,7 @@ internal sealed class OccultManager : IDisposable
             ? pendingLeave
             : OccultUploadBuilder.Build(
                 identity.ContentIdHash, identity.Name, identity.HomeWorld, pluginVersion,
-                activeTerritory, due.Value, tracker.Current);
+                activeTerritory, due.Value, tracker.Current, ReadCurrentWorldId());
 
         if (due == OccultTrigger.Leave)
             pendingLeave = null;
@@ -343,10 +346,30 @@ internal sealed class OccultManager : IDisposable
 
         pendingLeave = OccultUploadBuilder.Build(
             identity.ContentIdHash, identity.Name, identity.HomeWorld, pluginVersion,
-            activeTerritory, OccultTrigger.Leave, tracker.Current);
+            activeTerritory, OccultTrigger.Leave, tracker.Current, ReadCurrentWorldId());
         tracker.Reset();
         scheduler.NotifyLeft(now);
         log.Debug($"Left occult territory {activeTerritory}; final upload queued.");
+    }
+
+    /// <summary>
+    /// The reporter's CURRENT world (<c>World</c> sheet row id) — where the character is
+    /// standing, not their home world, because a data-center traveler's instance belongs to
+    /// the visited DC. Null when the game has not populated it (the server then leaves the
+    /// tracker un-scoped rather than mis-scoped).
+    /// </summary>
+    /// <remarks>
+    /// Framework thread only, like every game read in this class. Reads the raw row id
+    /// rather than resolving the sheet row: an id the installed game data does not know is
+    /// still worth sending (the server resolves it against its own world table — the
+    /// catalog-trailing rule), and a plain <c>RowId</c> read cannot throw the way a name
+    /// resolution can. Zero is the game's unset world — the one "not readable yet" value —
+    /// so <c>&gt; 0</c> is the whole readability test.
+    /// </remarks>
+    private uint? ReadCurrentWorldId()
+    {
+        var worldId = playerState.CurrentWorld.RowId;
+        return worldId > 0 ? worldId : null;
     }
 
     /// <summary>Uploads off the framework thread and reports the outcome to the scheduler.</summary>

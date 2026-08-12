@@ -19,6 +19,8 @@ public static class OccultUploadBuilder
     /// <param name="territoryTypeId">The occult territory the snapshot describes.</param>
     /// <param name="trigger">What prompted this upload.</param>
     /// <param name="encounters">The tracker's current snapshot (see <c>OccultEncounterTracker.Current</c>).</param>
+    /// <param name="currentWorldId">The reporter's current world (<c>World</c> row id), or null
+    /// when unreadable — the server then leaves the tracker un-scoped by data center.</param>
     public static OccultInstanceStateRequest Build(
         string characterContentIdHash,
         string characterName,
@@ -26,7 +28,8 @@ public static class OccultUploadBuilder
         string pluginVersion,
         uint territoryTypeId,
         OccultTrigger trigger,
-        IReadOnlyList<OccultEncounterState> encounters)
+        IReadOnlyList<OccultEncounterState> encounters,
+        uint? currentWorldId)
     {
         var rows = new List<OccultEncounterUpload>(encounters.Count);
         foreach (var encounter in encounters)
@@ -49,7 +52,11 @@ public static class OccultUploadBuilder
             HomeWorld = homeWorld,
             PluginVersion = pluginVersion,
             Trigger = trigger,
-            Instance = new OccultInstanceIdentity { TerritoryTypeId = territoryTypeId },
+            Instance = new OccultInstanceIdentity
+            {
+                TerritoryTypeId = territoryTypeId,
+                WorldId = currentWorldId,
+            },
             Encounters = rows,
         };
     }

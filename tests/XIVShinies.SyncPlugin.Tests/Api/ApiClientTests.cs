@@ -165,7 +165,8 @@ public class ApiClientTests
             pluginVersion: "1.2.3",
             territoryTypeId: 1252,
             trigger: OccultTrigger.Enter,
-            encounters: []);
+            encounters: [],
+            currentWorldId: null);
 
         var response = await client.PostOccultInstanceStateAsync(request);
 

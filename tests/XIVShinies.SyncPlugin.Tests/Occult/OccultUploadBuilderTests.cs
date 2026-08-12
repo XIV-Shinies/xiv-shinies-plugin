@@ -29,7 +29,8 @@ public class OccultUploadBuilderTests
             pluginVersion: "1.0.0",
             territoryTypeId: 1252,
             trigger: trigger,
-            encounters: encounters);
+            encounters: encounters,
+            currentWorldId: null);
 
     private static OccultEncounterState Ce(
         ushort id, OccultEncounterStatus status, DateTimeOffset? since = null) =>
@@ -67,15 +68,38 @@ public class OccultUploadBuilderTests
         Assert.Equal(expected, json["trigger"]!.GetValue<string>());
     }
 
-    // The instance identity is the territory alone — the tracker is resolved by fingerprint, so
-    // sending anything else would imply an identity that does not exist.
+    // Without a readable current world, the instance identity is the territory alone — the
+    // worldId key must be OMITTED (the server reads an absent key as "un-scoped"), and
+    // nothing else may ride along: the tracker is resolved by fingerprint, so extra fields
+    // would imply an identity that does not exist.
     [Fact]
-    public void The_instance_object_carries_only_the_territory()
+    public void The_instance_object_carries_only_the_territory_when_no_world_is_known()
     {
         var instance = Serialize(Build())["instance"]!.AsObject();
 
         Assert.Equal(1252, instance["territoryTypeId"]!.GetValue<int>());
         Assert.Single(instance);
+    }
+
+    // A readable current world rides along as worldId, which is what scopes the tracker to a
+    // data center server-side.
+    [Fact]
+    public void The_instance_object_carries_the_current_world_when_known()
+    {
+        var request = OccultUploadBuilder.Build(
+            characterContentIdHash: new string('a', 64),
+            characterName: "Some Name",
+            homeWorld: "Excalibur",
+            pluginVersion: "1.0.0",
+            territoryTypeId: 1252,
+            trigger: OccultTrigger.Enter,
+            encounters: [],
+            currentWorldId: 73);
+
+        var instance = Serialize(request)["instance"]!.AsObject();
+
+        Assert.Equal(73, instance["worldId"]!.GetValue<int>());
+        Assert.Equal(2, instance.Count);
     }
 
     [Fact]

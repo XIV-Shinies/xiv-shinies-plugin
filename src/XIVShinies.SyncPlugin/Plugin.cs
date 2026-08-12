@@ -171,7 +171,7 @@ public sealed class Plugin : IDalamudPlugin
             // and server config that manager owns; gated by the same consent switches plus its own
             // "Share live Occult instance state" toggle, so it too is silent until the user opts in.
             occultManager = new OccultManager(
-                Framework, ClientState, FateTable, Log,
+                Framework, ClientState, FateTable, PlayerState, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
             // The mascot drawn in the settings header — the same hand-made image the installer
