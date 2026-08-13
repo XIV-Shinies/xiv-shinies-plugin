@@ -57,20 +57,22 @@ internal sealed partial class MainWindow
         Widgets.SectionGap();
         DrawSectionHeading("What it sends");
 
-        // The description's left edge lines up with the name's, not the gem's: measure the icon
-        // column (glyph plus the spacing SameLine inserts) and indent by exactly that.
-        float iconColumn;
-        using (iconFont.Push())
-        {
-            iconColumn = ImGui.CalcTextSize(FontAwesomeIcon.Gem.ToIconString()).X
-                + ImGui.GetStyle().ItemSpacing.X;
-        }
+        // The disclosure every consent surface carries, in the same intro position the settings
+        // screen gives it: a statement about every list below, not a caption for any one item.
+        DrawCompletenessNote();
+        ImGui.Spacing();
 
-        // Each collector describes itself. Adding a collection makes it appear here with no change
-        // to this window: a gold gem, the name, and the collector's own plain-language disclosure
-        // beneath it, listed under the section heading its collector declared. The disclosure
-        // draws at the normal text color, never muted: it is the consent copy telling the user
-        // what leaves their machine, so it has to be comfortably legible.
+        // Whether the Crescent section existed for the tracker's disclosure to hang on.
+        var trackerDrawn = false;
+
+        // Each collector describes itself. Adding a collection makes it appear here with no
+        // change to this window: a gold gem, then one flowed line — "Name — what it sends" —
+        // under the section heading its collector declared, with the hover elaboration trailing
+        // the sentence when the collector offered one (a category whose one-liner says
+        // everything carries no mark to wonder about). The line is the consent copy telling the
+        // user what leaves their machine, so it draws at full contrast. (See
+        // DrawCompletenessNote for why this pre-consent screen may never disclose less than the
+        // settings.)
         foreach (var section in CategorySettingsView.GroupBySection(BuildCategoryRows()))
         {
             DrawSectionLabel(section.Title);
@@ -79,36 +81,30 @@ internal sealed partial class MainWindow
             {
                 DrawIcon(FontAwesomeIcon.Gem, Brand.Gold);
                 ImGui.SameLine();
-                ImGui.TextUnformatted(row.DisplayName);
+                DrawWrappedWithTrailingHint(
+                    $"{row.DisplayName} — {row.WhatGetsSent}", row.Details);
+            }
 
-                // The same elaboration the settings list offers. This screen is the fuller
-                // disclosure of the two — it is what a user reads before consenting to anything —
-                // so it must never carry less than the settings do.
-                if (row.Details is { } details)
-                    DrawDetailsHint(details);
-
-                ImGui.Indent(iconColumn);
-                DrawWrapped(row.WhatGetsSent, ImGuiCol.Text);
-                ImGui.Unindent(iconColumn);
+            // The live Occult tracker's disclosure joins the Crescent section: it is occult
+            // data a reader scanning by game area expects to find here, even though it is not a
+            // collection. The one sanctioned title comparison on a consent surface — the title
+            // is the registry's own constant, and the tracker is a bespoke feature, not a
+            // registered collector, so no collector gains a name branch by it.
+            if (section.Title == CollectorRegistry.OccultSection)
+            {
+                DrawOccultTrackerDisclosureLine();
+                trackerDrawn = true;
             }
         }
 
-        // Closes the category list, the disclosure every consent surface carries (see
-        // DrawCompletenessNote).
-        ImGui.Spacing();
-        DrawCompletenessNote();
-
-        // The live Occult tracker is disclosed here alongside the collections even though it is
-        // not one — this screen is the fuller disclosure of the two, so everything the plugin
-        // can send appears on it. A broadcast tower rather than a gem: it shares live world
-        // state rather than adding anything to your collection.
-        ImGui.Spacing();
-        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
-        ImGui.SameLine();
-        ImGui.TextUnformatted("Live Occult instance state");
-        ImGui.Indent(iconColumn);
-        DrawWrapped(OccultWhatGetsSent, ImGuiCol.Text);
-        ImGui.Unindent(iconColumn);
+        // The heading above only exists while a registered collector declares it, but the
+        // tracker's disclosure is owed regardless — the feature is live and default-on whatever
+        // the collectors do — so a list without the heading gets it created here.
+        if (!trackerDrawn)
+        {
+            DrawSectionLabel(CollectorRegistry.OccultSection);
+            DrawOccultTrackerDisclosureLine();
+        }
 
         Widgets.SectionGap();
         DrawPrivacyCard(
@@ -118,6 +114,19 @@ internal sealed partial class MainWindow
             "and you choose which of the above to include.");
 
         DrawWizardNav("Get started");
+    }
+
+    /// <summary>
+    /// The welcome screen's tracker disclosure, flowed as one sentence: a broadcast tower — it
+    /// shares live world state rather than adding anything to your collection — then the name
+    /// and copy flowed together, with the what-is-NOT-shared reassurance hover trailing.
+    /// </summary>
+    private void DrawOccultTrackerDisclosureLine()
+    {
+        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
+        ImGui.SameLine();
+        DrawWrappedWithTrailingHint(
+            $"Live Occult instance state — {OccultWhatGetsSent}", OccultTrackerDetails);
     }
 
     private void DrawLinkAccountStep()

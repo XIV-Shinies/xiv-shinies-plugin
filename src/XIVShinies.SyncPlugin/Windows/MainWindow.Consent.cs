@@ -60,9 +60,10 @@ internal sealed partial class MainWindow
                    new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
         using (BrandCard())
         {
-            // A checkbox's label starts after the box itself plus the inner spacing; indenting the
-            // description by the same amount lines its left edge up with the label above it.
-            // Measured inside the push so the description column moves with the label.
+            // A checkbox's label starts after the box itself plus the inner spacing. The
+            // measure seeds each row's description home column and indents the notes and group
+            // checkboxes beneath it; taken inside the push so it tracks the label's real
+            // position.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
             DrawSelectAll(rows, "All collections##selectAll");
             BrandSeparator();
@@ -195,13 +196,18 @@ internal sealed partial class MainWindow
     /// <param name="row">The row to draw.</param>
     /// <param name="showNewChips">See <see cref="DrawGroupCheckboxes"/>.</param>
     /// <param name="checkboxColumn">
-    /// The indent that lines the description up with the checkbox's label, measured by the caller
-    /// inside its ItemInnerSpacing push so the column tracks the label's real position.
+    /// The width from a row's left edge to its checkbox label — the flowed description's home
+    /// column, and the indent for the notes and group checkboxes beneath the row. Measured by
+    /// the caller inside its ItemInnerSpacing push so it tracks the label's real position.
     /// </param>
     private void DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
     {
         var enabled = row.UserEnabled;
         bool toggled;
+
+        // Captured before the checkbox draws: the column its label starts in is where the
+        // flowed description's wrapped lines come home to.
+        var labelColumn = ImGui.GetCursorPosX() + checkboxColumn;
 
         // The server switched this category off for everyone. Show it, disabled, with the
         // user's own preference intact underneath — flipping it back on later restores what
@@ -216,23 +222,20 @@ internal sealed partial class MainWindow
             toggled = ImGui.Checkbox($"{row.DisplayName}##{row.Key}", ref enabled);
         }
 
-        // The elaboration behind this row's one-liner, one hover away. Drawn only when the
-        // collector offered one, so a category whose description already says everything
-        // carries no affordance to wonder about.
-        if (row.Details is { } details)
-            DrawDetailsHint(details);
-
         if (toggled)
         {
             ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
             configuration.Save();
         }
 
-        // The description draws at the normal text color: it is the consent copy for this
-        // category — what the plugin will send if the box is ticked — so it has to be
-        // comfortably legible.
+        // The consent copy flows on the label's own line — "Name — what it sends" — with the
+        // collector's hover elaboration trailing the sentence when it offered one, and wrapped
+        // lines coming home under the label. It is what the plugin will send if the box is
+        // ticked, so it draws at full contrast.
+        ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+        DrawWrappedWithTrailingHint($"— {row.WhatGetsSent}", row.Details, labelColumn);
+
         ImGui.Indent(checkboxColumn);
-        DrawWrapped(row.WhatGetsSent, ImGuiCol.Text);
 
         // Muted: it only restates why the checkbox above it is grayed out, which the
         // disabled control already conveys on its own.
@@ -252,16 +255,25 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The live Occult tracker's plain-language disclosure — what gets shared and, because the
-    /// natural worry is other players, what does not. One string, used verbatim by every
-    /// surface that discloses the tracker (the wizard's "What it sends" screen and the consent
-    /// card), so no surface can drift to saying less than another.
+    /// The live Occult tracker's plain-language disclosure — every kind of data the tracker
+    /// itself shares (the character identity beside it is <see cref="DrawPrivacyCard"/>'s
+    /// disclosure, as for every category). One string, used verbatim by every surface that
+    /// discloses the tracker (the wizard's "What it sends" screen and the consent card), so no
+    /// surface can drift to saying less than another.
     /// </summary>
     private const string OccultWhatGetsSent =
         "While you are in the Occult Crescent, shares your instance's public encounter " +
         "status (critical encounters, FATEs, Forked Tower) and your current world, powering " +
-        "XIV Shinies' live tracker. Nothing about you beyond your presence, and never " +
-        "anything about other players.";
+        "XIV Shinies' live tracker.";
+
+    /// <summary>
+    /// The tracker's hover elaboration: because the natural worry is other players, it says
+    /// what is NOT shared. Reassurance rather than a kind of data, so it follows the same split
+    /// as <see cref="Collectors.CategoryInfo.Details"/>.
+    /// </summary>
+    private const string OccultTrackerDetails =
+        "This is world state — nothing about you beyond your presence, and never anything " +
+        "about other players.";
 
     /// <summary>
     /// The live Occult tracker's consent card: its toggle and its disclosure copy. Drawn as its
@@ -303,6 +315,9 @@ internal sealed partial class MainWindow
             bool toggled;
             using (ImRaii.Disabled(serverOff))
                 toggled = ImGui.Checkbox("Share live Occult instance state##occultTracker", ref enabled);
+
+            // The what-is-NOT-shared reassurance, one hover away like every category's.
+            DrawDetailsHint(OccultTrackerDetails);
 
             if (toggled)
             {
@@ -380,9 +395,10 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Draws a wrapped paragraph whose muted question mark flows as its final word — where a
-    /// reader's eye already is when they finish the sentence — revealing
-    /// <paramref name="details"/> on hover.
+    /// Draws a wrapped paragraph from wherever the cursor stands — continuation lines come back
+    /// to the first word's own column by default, so a paragraph started beside an icon stays
+    /// aligned under itself — with a muted question mark flowing as its final word when
+    /// <paramref name="details"/> offers hover text.
     /// </summary>
     /// <remarks>
     /// The paragraph sibling of <see cref="DrawDetailsHint"/>, which trails a one-line label:
@@ -395,12 +411,22 @@ internal sealed partial class MainWindow
     /// edge instead.
     /// </remarks>
     /// <param name="text">The paragraph.</param>
-    /// <param name="details">The hover text behind the trailing mark.</param>
-    private void DrawWrappedWithTrailingHint(string text, string details)
+    /// <param name="details">The hover text behind the trailing mark, or null for no mark.</param>
+    /// <param name="homeXOverride">
+    /// Where wrapped lines return to, in cursor space — for a paragraph whose continuation
+    /// belongs under an earlier column (a checkbox label) rather than under its own first word.
+    /// Null returns them to the first word's column.
+    /// </param>
+    private void DrawWrappedWithTrailingHint(
+        string text, string? details, float? homeXOverride = null)
     {
         var spaceWidth = ImGui.CalcTextSize(" ").X;
         var innerRight = activeCardInnerRight
             ?? (ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
+
+        // Read before any word draws: the flow moves the cursor, so the first word's own
+        // column can only be captured now.
+        var homeX = homeXOverride ?? ImGui.GetCursorPosX();
         var first = true;
 
         // The word flow is the only wrapping authority (see DrawWrappedSpans for why the
@@ -420,12 +446,33 @@ internal sealed partial class MainWindow
                     // the right edge measured above.
                     ImGui.SameLine(0f, spaceWidth);
                     if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(word).X)
+                    {
                         ImGui.NewLine();
+                        ImGui.SetCursorPosX(homeX);
+                    }
+                }
+                else if (homeXOverride is not null
+                    && innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(word).X)
+                {
+                    // Only when the caller chose a home column: mid-line placement can leave no
+                    // room even for the FIRST word, and wrapping home genuinely widens the
+                    // line. Without an override, home IS the current column, so wrapping would
+                    // just repeat the same failed fit.
+                    ImGui.NewLine();
+                    ImGui.SetCursorPosX(homeX);
                 }
 
                 ImGui.TextUnformatted(word);
                 first = false;
             }
+        }
+
+        if (details is null)
+        {
+            // The words above were submitted with zero vertical spacing; a zero-size advance
+            // outside the push restores the normal gap before whatever the caller draws next.
+            ImGui.Spacing();
+            return;
         }
 
         // The mark, flowed as the sentence's last word. Drawn as a real item (unlike a
@@ -437,7 +484,10 @@ internal sealed partial class MainWindow
             {
                 ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
                 if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(glyph).X)
+                {
                     ImGui.NewLine();
+                    ImGui.SetCursorPosX(homeX);
+                }
             }
 
             ImGui.TextDisabled(glyph);

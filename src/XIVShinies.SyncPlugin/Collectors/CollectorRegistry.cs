@@ -24,8 +24,15 @@ public static class CollectorRegistry
     // constants so two collections meaning the same section cannot drift apart by a typo.
     private const string CollectionLogSection = "Collection log";
     private const string TripleTriadSection = "Triple Triad";
-    private const string OccultSection = "The Occult Crescent";
     private const string ItemsSection = "Items & relics";
+
+    /// <summary>
+    /// The Occult Crescent section's heading. Public, unlike its siblings, because the wizard's
+    /// disclosure list places the live tracker — occult data, but not a collection — under the
+    /// same heading, so the title needs one home: the collectors' declared section and the
+    /// wizard's placement of the tracker cannot drift apart by a typo.
+    /// </summary>
+    public const string OccultSection = "The Occult Crescent";
 
     private static readonly CategoryInfo Quests = new()
     {
@@ -165,12 +172,14 @@ public static class CollectorRegistry
             "Crescent, and your knowledge level when you open the review window yourself.",
 
         // The knowledge level is the one fact here the plugin cannot refresh on its own, so the
-        // hover says where it comes from and that its capture time travels with it — otherwise a
-        // level that lags behind the game looks like a broken sync rather than an old sighting.
+        // hover names the NPC and the menu option that produce it, and says its capture time
+        // travels with it. Otherwise a level that lags behind the game looks like a broken sync
+        // rather than an old sighting.
         Details =
             "All 24 support jobs travel together, updating each time you visit the Crescent. " +
-            "The knowledge level is captured only from the review window, and is sent with the " +
-            "time you opened it.",
+            "The knowledge level is captured only when you choose \"Review your knowledge " +
+            "level and currencies\" at Jeffroy in Phantom Village, and is sent with the time " +
+            "you opened it.",
     };
 
     private static readonly CategoryInfo OccultRecords = new()
