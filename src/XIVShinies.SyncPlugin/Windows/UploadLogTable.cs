@@ -119,8 +119,9 @@ internal sealed class UploadLogTable
         {
             var entry = history[index];
 
-            // Counts that differ from this category's last appearance in the log light up gold —
-            // "something new arrived since the previous upload".
+            // A category that moved against its last appearance in the log lights up gold —
+            // "something new arrived since the previous upload". What counts as movement is
+            // UploadLogDiff.ChangedCategories' rule, not the printed count.
             var changed = UploadLogDiff.ChangedCategories(history, index);
 
             ImGui.TableNextRow();
@@ -169,41 +170,29 @@ internal sealed class UploadLogTable
             // Mixed colors inside one flowing line need the span helper, exactly like the
             // wizard intro's gold website name. A null span color means the normal text color,
             // which is what the counts themselves use — they are the densest data in the table.
-            // A changed category says so in words as well as gold: the color alone is subtle, and
-            // "the count is the same but the contents differ" is invisible without it. A
-            // manifest-driven category gets the server's proof answer instead of "(changed)"
-            // (UploadLogCategory explains why a content diff cannot carry that signal); its note
-            // is gold only when steps were proved, since "proof pending" is not good news. Only
-            // the separator between categories is muted.
+            // What each category says, and which parts of it are highlighted, is the pure
+            // UploadLogText.SentSpans rule; this loop only maps its highlight flag to
+            // Brand.Gold and draws. Only the separator between categories is muted.
             ImGui.TableNextColumn();
             // The proof note comes from the entry (the server answers per upload, not per
             // category), so it is computed once out here and the same note draws beside each
             // manifest-driven category the entry carries.
             var proof = UploadLogText.ProofText(entry);
-            var sent = new List<(string Text, Vector4? Color)>(entry.Categories.Count * 2);
+            var stepsProven = entry.ProvenSteps > 0;
+            var sent = new List<(string Text, Vector4? Color)>(entry.Categories.Count * 3);
             foreach (var category in entry.Categories)
             {
                 if (sent.Count > 0)
                     sent.Add(("·", muted));
 
-                var label = $"{DisplayNameFor(category.Key)} {category.Count:N0}";
-                Vector4? color = null;
-
-                if (category.UsesItemManifest)
-                {
-                    if (proof is not null)
-                    {
-                        label += $" ({proof})";
-                        color = entry.ProvenSteps > 0 ? Brand.Gold : null;
-                    }
-                }
-                else if (changed.Contains(category.Key))
-                {
-                    label += " (changed)";
-                    color = Brand.Gold;
-                }
-
-                sent.Add((label, color));
+                var spans = UploadLogText.SentSpans(
+                    DisplayNameFor(category.Key),
+                    category,
+                    changed.Contains(category.Key),
+                    proof,
+                    stepsProven);
+                foreach (var (text, highlight) in spans)
+                    sent.Add((text, highlight ? Brand.Gold : null));
             }
 
             Widgets.DrawWrappedSpans(sent.ToArray());

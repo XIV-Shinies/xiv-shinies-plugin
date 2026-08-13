@@ -310,12 +310,12 @@ public class UploadLogTests
         Assert.Contains("quests", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // A manifest-driven category's contents move whenever the SERVER edits its manifest, so
-    // "changed" would claim the player obtained something when nothing happened. Those
-    // categories are excluded from the diff entirely; their honest signal is the server's
-    // proof answer (see the proof-reporting section below).
+    // A manifest-driven category's contents move whenever the SERVER edits its manifest, so a
+    // content diff would claim the player obtained something when nothing happened. Its change
+    // signal is the owned-entry count instead — and with no owned count to compare (an entry
+    // whose facts were not the possession shape), nothing can honestly be flagged.
     [Fact]
-    public void A_manifest_driven_category_is_never_flagged_as_changed()
+    public void A_manifest_category_with_no_owned_count_is_not_flagged()
     {
         var newestFirst = new[]
         {
@@ -336,6 +336,144 @@ public class UploadLogTests
         };
 
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // Obtaining a first copy of a manifest item moves the owned-entry count — the movement
+    // that means the character's visible holdings changed, which is the signal's meaning.
+    [Fact]
+    public void A_manifest_category_is_flagged_when_its_owned_count_moves()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory(
+                        "items", 2246, "bbbb2222", UsesItemManifest: true, OwnedCount: 235),
+                },
+            },
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory(
+                        "items", 2246, "aaaa1111", UsesItemManifest: true, OwnedCount: 234),
+                },
+            },
+        };
+
+        Assert.Contains("items", UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // Content changes that do NOT move the owned-entry count — the server growing its manifest
+    // with items the player lacks, or a currency balance moving between two positive values —
+    // must stay unflagged: neither is "the player picked something up".
+    [Fact]
+    public void A_manifest_category_is_not_flagged_when_the_owned_count_holds_still()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory(
+                        "items", 2300, "bbbb2222", UsesItemManifest: true, OwnedCount: 234),
+                },
+            },
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory(
+                        "items", 2246, "aaaa1111", UsesItemManifest: true, OwnedCount: 234),
+                },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // The owned-entry count comes from the possession shape itself: an entry is owned when any
+    // of its per-quality counts is positive, whichever quality that is. An entry with no count
+    // members at all, and a null element, both read as unowned rather than throwing.
+    // Non-manifest categories have no owned count — the concept only exists where the server's
+    // manifest sets the scope.
+    [Fact]
+    public void Draft_counts_owned_entries_for_a_manifest_driven_category()
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["quests"] = JsonNode.Parse("[1,2,3]")!,
+                ["items"] = JsonNode.Parse(
+                    """
+                    [{"id":10,"count":2,"fresh":true},
+                     {"id":11,"count":0,"fresh":true},
+                     {"id":12,"count":0,"hqCount":1,"fresh":false},
+                     {"id":13,"count":0,"collectableCount":3,"fresh":true},
+                     {"id":14,"fresh":true},
+                     null]
+                    """)!,
+            },
+            Skipped = new Dictionary<string, string>(),
+            ManifestDrivenKeys = new HashSet<string> { "items" },
+        };
+
+        var draft = UploadLogEntry.Draft(DateTimeOffset.UnixEpoch, SyncTrigger.Manual, snapshot);
+
+        Assert.Collection(
+            draft.Categories,
+            quests => Assert.Null(quests.OwnedCount),
+            items => Assert.Equal(3, items.OwnedCount));
+    }
+
+    // Only the possession shape can be counted honestly. Object-shaped facts and an id list
+    // under a manifest-driven key both yield null — silence — where a zero would wrongly arm
+    // the change signal to fire the moment the shape ever becomes a possession array. The empty
+    // array is the exception: "collected, owns none of it" is a real zero baseline that a
+    // first pickup genuinely moves.
+    [Theory]
+    [InlineData("""{"level":40}""", null)]
+    [InlineData("[1,2,3]", null)]
+    [InlineData("[]", 0)]
+    public void Draft_owned_count_is_null_for_non_possession_shapes_and_zero_when_empty(
+        string facts, int? expected)
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["items"] = JsonNode.Parse(facts)!,
+            },
+            Skipped = new Dictionary<string, string>(),
+            ManifestDrivenKeys = new HashSet<string> { "items" },
+        };
+
+        var draft = UploadLogEntry.Draft(DateTimeOffset.UnixEpoch, SyncTrigger.Manual, snapshot);
+
+        Assert.Equal(expected, draft.Categories[0].OwnedCount);
+    }
+
+    // OwnedCount is nullable, so one side of a comparison can be silent while the other
+    // carries a number. Comparing a number against silence would be a guess in either
+    // direction — both stay unflagged.
+    [Fact]
+    public void A_manifest_category_with_an_owned_count_on_only_one_side_is_not_flagged()
+    {
+        UploadLogEntry Entry(int? ownedCount) => SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory(
+                    "items", 2246, "aaaa1111", UsesItemManifest: true, OwnedCount: ownedCount),
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(new[] { Entry(235), Entry(null) }, 0));
+        Assert.Empty(UploadLogDiff.ChangedCategories(new[] { Entry(null), Entry(234) }, 0));
     }
 
     [Fact]
@@ -786,10 +924,11 @@ public class UploadLogTests
         Assert.Contains("| provenSteps: 2", lines[1]);
     }
 
-    // The window rule and the dump rule agree: a manifest-driven category never reads as
-    // "changed", in gold or in text.
+    // The window rule and the dump rule agree: with no owned count on a manifest-driven
+    // category, its contents can differ without anything reading as "changed" — a content diff
+    // cannot carry that category's signal.
     [Fact]
-    public void Clipboard_text_never_marks_a_manifest_driven_category_as_changed()
+    public void Clipboard_text_does_not_mark_a_manifest_category_with_no_owned_count()
     {
         var older = ManifestEntry(0) with
         {
@@ -803,6 +942,31 @@ public class UploadLogTests
         var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", newestFirst);
 
         Assert.DoesNotContain("changed:", text);
+    }
+
+    // The other half of that rule: an owned-entry count that moved DOES read as changed in the
+    // dump, and the owned count prints on the sent line — so both the flag and its absence can
+    // be verified from the pasted text alone.
+    [Fact]
+    public void Clipboard_text_marks_a_manifest_category_whose_owned_count_moved()
+    {
+        UploadLogEntry Entry(int ownedCount, string fingerprint) => SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory(
+                    "items", 2246, fingerprint, UsesItemManifest: true, OwnedCount: ownedCount),
+            },
+        };
+        var newestFirst = new[] { Entry(235, "bbbb2222"), Entry(234, "aaaa1111") };
+
+        var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", newestFirst);
+        var lines = text.Split('\n');
+
+        Assert.Contains("items=2246 owned=235", lines[1]);
+        Assert.Contains("| changed: items", lines[1]);
+        Assert.Contains("items=2246 owned=234", lines[2]);
+        Assert.DoesNotContain("changed:", lines[2]);
     }
 
     [Fact]
@@ -826,5 +990,66 @@ public class UploadLogTests
         var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });
 
         Assert.Contains("2026-07-10 20:00:00Z", text);
+    }
+
+    // --- Sent-column spans -------------------------------------------------------------------
+    // SentSpans is the pure rule behind the window's Sent column: what each category's text
+    // says, split into spans, and which spans draw highlighted (the window maps the flag to
+    // gold). Pinned here because the precedence — "(changed)" always highlights, the proof note
+    // only when steps were proved — is invisible to the eye until the rare states coincide.
+    // Counts here stay under 1000: the label formats with N0, whose thousands separator is
+    // culture-dependent.
+
+    [Fact]
+    public void Sent_spans_highlight_a_changed_category_as_one_span()
+    {
+        var category = new UploadLogCategory("minions", 390);
+
+        var spans = UploadLogText.SentSpans(
+            "Minions", category, changed: true, proof: null, stepsProven: false);
+
+        Assert.Equal(new[] { ("Minions 390 (changed)", true) }, spans);
+    }
+
+    // The proof note rides only a manifest-driven category, in its own span, highlighted only
+    // by proven steps — so a plain label can still carry a highlighted proof beside it.
+    [Fact]
+    public void Sent_spans_highlight_a_proven_proof_note_beside_a_plain_label()
+    {
+        var category = new UploadLogCategory("items", 189, UsesItemManifest: true);
+
+        var spans = UploadLogText.SentSpans(
+            "Tracked items", category, changed: false, proof: "2 new steps proven", stepsProven: true);
+
+        Assert.Equal(
+            new[] { ("Tracked items 189", false), (" (2 new steps proven)", true) }, spans);
+    }
+
+    // The coincidence the split exists for: a possession change highlights its own span while
+    // "proof pending" — not good news — stays plain right beside it.
+    [Fact]
+    public void Sent_spans_keep_a_pending_proof_plain_beside_a_changed_mark()
+    {
+        var category = new UploadLogCategory(
+            "items", 189, UsesItemManifest: true, OwnedCount: 43);
+
+        var spans = UploadLogText.SentSpans(
+            "Tracked items", category, changed: true, proof: "proof pending", stepsProven: false);
+
+        Assert.Equal(
+            new[] { ("Tracked items 189 (changed)", true), (" (proof pending)", false) }, spans);
+    }
+
+    // A non-manifest category never grows a proof span, even when the entry has a proof note
+    // for its manifest neighbors.
+    [Fact]
+    public void Sent_spans_attach_no_proof_note_to_a_non_manifest_category()
+    {
+        var category = new UploadLogCategory("quests", 903);
+
+        var spans = UploadLogText.SentSpans(
+            "Quests", category, changed: false, proof: "proof pending", stepsProven: false);
+
+        Assert.Equal(new[] { ("Quests 903", false) }, spans);
     }
 }

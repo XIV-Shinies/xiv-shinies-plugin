@@ -123,7 +123,9 @@ public static class CollectorRegistry
     private static readonly CategoryInfo Items = new()
     {
         Key = CategoryKeys.Items,
-        DisplayName = "Relic items",
+        // Named without any kind of item: the manifest's set is the server's to change at any
+        // time (see UsesItemManifest below), and a name that named one would go stale.
+        DisplayName = "Tracked items",
         Section = ItemsSection,
 
         // Currencies are named on the visible line, with gil spelled out: a balance is wealth data,
