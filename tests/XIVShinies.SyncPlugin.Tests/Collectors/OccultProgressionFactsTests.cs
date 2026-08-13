@@ -131,6 +131,19 @@ public class OccultProgressionFactsTests
         Assert.False(result.CompleteEnumeration);
     }
 
+    // A knowledge sighting captured outside an instance travels alone: the jobs key is still
+    // present — the contract requires it — but empty, and the server's empty map writes nothing.
+    [Fact]
+    public void A_knowledge_only_payload_carries_an_empty_jobs_map()
+    {
+        var observation = new KnowledgeObservation { Level = 40, ObservedAt = ObservedAt };
+        var result = CollectResult.Progression(
+            new Dictionary<byte, OccultJobProgress>(), observation);
+
+        Assert.Empty(result.Facts!["jobs"]!.AsObject());
+        Assert.Equal(40, result.Facts!["knowledge"]!["level"]!.GetValue<int>());
+    }
+
     [Fact]
     public void All_jobs_appear_in_the_map()
     {

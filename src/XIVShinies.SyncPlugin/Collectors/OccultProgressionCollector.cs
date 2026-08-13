@@ -15,9 +15,17 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <para>
 /// Job progress lives in the occult instance director's state block
 /// (<c>OccultCrescentState</c>), which exists only while the character is inside an Occult
-/// Crescent instance — outside one this collector skips with
+/// Crescent instance. Outside one, a held knowledge sighting is sent alone with an empty jobs
+/// map; with no sighting either, this collector skips with
 /// <see cref="CollectSkipReasons.NotInOccultInstance"/>. The values are character-wide (both
 /// zones report the same array) and monotonic: job levels and EXP can never decrease.
+/// </para>
+/// <para>
+/// The settings read-status chip speaks for the category as a whole. Any pass that collected
+/// something clears the category's skip reason (see <c>SyncManager.RememberSkipReasons</c>),
+/// so once a sighting exists the "enter the Crescent" hint is gone for the rest of the login
+/// session even though job levels were never read: the hint exists to explain a category that
+/// uploads nothing, and this one is uploading a sighting.
 /// </para>
 /// <para>
 /// The knowledge sighting rides along when one exists; see <see cref="KnowledgeObservation"/>
@@ -33,6 +41,12 @@ namespace XIVShinies.SyncPlugin.Collectors;
 // crash.
 public sealed unsafe class OccultProgressionCollector : ICollector
 {
+    // The empty jobs map handed to a knowledge-only payload. One shared instance is safe
+    // because nothing ever mutates it: the field's IReadOnlyDictionary type is a read-only
+    // view, and the only Dictionary reference lives here, so no caller can add to it.
+    private static readonly IReadOnlyDictionary<byte, OccultJobProgress> NoJobs =
+        new Dictionary<byte, OccultJobProgress>();
+
     private readonly IFramework framework;
     private readonly KnowledgeObserver knowledgeObserver;
 
@@ -80,7 +94,17 @@ public sealed unsafe class OccultProgressionCollector : ICollector
         // an instance.
         var state = PublicContentOccultCrescent.GetState();
         if (state == null)
-            return CollectResult.Skipped(CollectSkipReasons.NotInOccultInstance);
+        {
+            // Outside an instance the director's state — this collector's one source for job
+            // data — is gone, but a knowledge sighting may be waiting: the review window lives
+            // in Phantom Village, outside the instances, so the natural "leave, then check
+            // your level" flow captures one exactly where this collector cannot read the jobs.
+            // The contract accepts an empty jobs map, so the sighting reaches the server on
+            // the very next pass, wherever the character is standing.
+            return knowledgeObserver.Current is { } sighting
+                ? CollectResult.Progression(NoJobs, sighting)
+                : CollectResult.Skipped(CollectSkipReasons.NotInOccultInstance);
+        }
 
         // Both arrays are fixed at 24 entries — one per MKDSupportJob row, index == row id,
         // and row 0 (Freelancer) is a real job. They are fixed-size arrays embedded in the

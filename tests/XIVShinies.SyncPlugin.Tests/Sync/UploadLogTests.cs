@@ -100,6 +100,22 @@ public class UploadLogTests
         Assert.Equal(4, category.Count); // two jobs + the sighting's two fields
     }
 
+    // The knowledge-only shape a sighting produces outside an Occult instance: an empty
+    // container member contributes zero, so the log reads two facts — the sighting's fields.
+    [Fact]
+    public void Draft_counts_an_empty_container_member_as_zero()
+    {
+        var snapshot = SnapshotWith(collections: new Dictionary<string, JsonNode>
+        {
+            ["occultProgression"] = JsonNode.Parse(
+                """{"jobs":{},"knowledge":{"level":40,"observedAt":"2026-08-13T13:00:00Z"}}""")!,
+        });
+
+        var draft = UploadLogEntry.Draft(DateTimeOffset.UnixEpoch, SyncTrigger.Interval, snapshot);
+
+        Assert.Equal(2, Assert.Single(draft.Categories).Count);
+    }
+
     // A shape the log has never seen (neither array nor object) is purely hypothetical — but a
     // formatter that CAN misread it as zero facts eventually will, so the "count it as one rather
     // than crash or hide it" fallback is pinned.

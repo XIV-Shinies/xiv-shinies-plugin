@@ -298,9 +298,10 @@ Field constraints:
   the plugin cannot tell which) never clears previously derived credit.
 - **Occult id spaces & semantics.** `occultProgression.jobs` is keyed by `MKDSupportJob`
   row ids (0–23, and **0 — Freelancer — is a real job**); values come from the occult
-  instance director, so the category is readable only inside an Occult instance and is
-  omitted from every upload made elsewhere. Job writes are
-  monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
+  instance director, which the plugin can read only inside an Occult instance. `jobs` may be
+  sent as an **empty map** — the server accepts it and an empty map writes nothing — which is
+  how a knowledge sighting recorded outside an instance still reaches the server. Job writes
+  are monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
   the TRUE knowledge level from the review window (the in-instance HUD shows only the
   zone-synced level), sent with the time the window was opened; the server keeps the
   **freshest** observation across plugin and Lodestone sources, never a maximum — death
