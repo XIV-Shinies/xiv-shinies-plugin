@@ -28,12 +28,15 @@ internal sealed partial class MainWindow
             collectors, configuration.Settings, syncManager.RemoteConfig, syncManager.LastSkipped);
 
     /// <summary>
-    /// Draws one checkbox per registered collector, shared by the wizard and the settings.
+    /// The wizard's consent list: every section's rows in one card, each section under a plain
+    /// label so nothing a user is consenting to can hide behind a collapsed header.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Contains no category names. Every label and description comes from the row the collector
-    /// produced, which is what keeps "adding a collection is one new class" true.
+    /// Contains no category or section names. Every label, heading, and description comes from
+    /// the rows the collectors produced, which is what keeps "adding a collection is one new
+    /// class" true. The settings screen draws the same rows through
+    /// <see cref="DrawConsentSections"/> instead, where sections may be folded away.
     /// </para>
     /// <para>
     /// This card is about <b>consent alone</b> — what the user chooses to send. Whether a chosen
@@ -41,25 +44,8 @@ internal sealed partial class MainWindow
     /// status, in the sync card's read-status panel (see <see cref="DrawStatus"/>).
     /// </para>
     /// </remarks>
-    /// <param name="rows">
-    /// This frame's category rows, from <see cref="BuildCategoryRows"/>. Passed in rather than rebuilt
-    /// here so a settings frame builds them exactly once for all three of its consumers — see
-    /// <see cref="DrawSettings"/>.
-    /// </param>
-    /// <param name="showNewChips">
-    /// Whether a manifest group the user has not been shown before wears a "New" badge (see
-    /// <see cref="DrawGroupCheckboxes"/>). The settings pass true; the wizard passes false, because
-    /// in the wizard every group is being shown for the first time and a badge on all of them at
-    /// once distinguishes nothing. Either way the groups drawn are marked seen, so a user arriving
-    /// in the settings straight from the wizard finds no badges waiting for them.
-    /// </param>
-    /// <param name="headerIcon">The card header's icon, or null for a headerless card.</param>
-    /// <param name="headerTitle">The card header's title, or null for a headerless card.</param>
-    private void DrawCategoryRows(
-        IReadOnlyList<CategorySettingsRow> rows,
-        bool showNewChips,
-        FontAwesomeIcon? headerIcon = null,
-        string? headerTitle = null)
+    /// <param name="rows">This frame's category rows, from <see cref="BuildCategoryRows"/>.</param>
+    private void DrawCategoryRows(IReadOnlyList<CategorySettingsRow> rows)
     {
         // ItemInnerSpacing is the gap ImGui puts between a checkbox's box and its label — wider
         // here so the labels get some air. Pushed as a style variable scoped to this card.
@@ -68,13 +54,6 @@ internal sealed partial class MainWindow
                    new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
         using (BrandCard())
         {
-            // The header is optional because this card is shared: the settings screen titles it,
-            // while the wizard's step already introduces the list with its own copy.
-            if (headerIcon is { } icon && headerTitle is not null)
-            {
-                DrawCardTitle(icon, headerTitle);
-                CloseCardHeader();
-            }
             // A checkbox's label starts after the box itself plus the inner spacing; indenting the
             // description by the same amount lines its left edge up with the label above it.
             // Measured inside the push so the description column moves with the label.
@@ -83,57 +62,14 @@ internal sealed partial class MainWindow
             BrandSeparator();
             ImGui.Spacing();
 
-            foreach (var row in rows)
+            foreach (var section in CategorySettingsView.GroupBySection(rows))
             {
-                var enabled = row.UserEnabled;
-                bool toggled;
+                DrawSectionLabel(section.Title);
 
-                // The server switched this category off for everyone. Show it, disabled, with the
-                // user's own preference intact underneath — flipping it back on later restores what
-                // they chose.
-                using (ImRaii.Disabled(!row.ServerEnabled))
-                {
-                    // Everything after `##` is hidden from the label but forms part of the widget's
-                    // identity. ImGui derives a control's ID from its label text, so two collections
-                    // that happened to choose the same DisplayName would share an ID and cross-wire
-                    // their clicks. The category key is unique by construction, which makes this
-                    // collision impossible rather than merely unlikely.
-                    toggled = ImGui.Checkbox($"{row.DisplayName}##{row.Key}", ref enabled);
-                }
-
-                // The elaboration behind this row's one-liner, one hover away. Drawn only when the
-                // collector offered one, so a category whose description already says everything
-                // carries no affordance to wonder about.
-                if (row.Details is { } details)
-                    DrawDetailsHint(details);
-
-                if (toggled)
-                {
-                    ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
-                    configuration.Save();
-                }
-
-                // The description draws at the normal text color: it is the consent copy for this
-                // category — what the plugin will send if the box is ticked — so it has to be
-                // comfortably legible.
-                ImGui.Indent(checkboxColumn);
-                DrawWrapped(row.WhatGetsSent, ImGuiCol.Text);
-
-                // Muted: it only restates why the checkbox above it is grayed out, which the
-                // disabled control already conveys on its own.
-                if (!row.ServerEnabled)
-                    ImGui.TextDisabled("Temporarily switched off by XIV Shinies.");
-
-                // Disabled along with the category above them. A group belongs to its category and is
-                // only ever scanned as part of that category's pass, so leaving the groups live under a
-                // greyed-out parent would offer the user a consent choice that cannot mean anything —
-                // and ticking one would switch its category back on behind the very control that says it
-                // is off.
-                using (ImRaii.Disabled(!row.ServerEnabled))
-                    DrawGroupCheckboxes(row, showNewChips);
-
-                ImGui.Unindent(checkboxColumn);
-                ImGui.Spacing();
+                // No "New" badges in the wizard: every group here is on screen for the first
+                // time (see DrawGroupCheckboxes).
+                foreach (var row in section.Rows)
+                    DrawCategoryRow(row, showNewChips: false, checkboxColumn);
             }
 
             // The category rows end with a single Spacing, which is the gap BETWEEN rows. This note
@@ -146,6 +82,194 @@ internal sealed partial class MainWindow
             ImGui.Spacing();
             DrawCompletenessNote();
         }
+    }
+
+    /// <summary>
+    /// The settings screen's consent list: one collapsible header per section, each opening to a
+    /// card of that section's rows, so the list stays navigable as collections accumulate.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The whole block is indented one level beneath the outer "Collections" header, so the
+    /// section headers read as its children rather than as more siblings. Each header carries a
+    /// live count at its right edge ("2 of 5 syncing"), so a folded section still says
+    /// where its consent stands — and it wears the "New" chip when a manifest group beneath it
+    /// has never been shown, the same treatment the outer Collections header gets (see
+    /// <see cref="DrawSettings"/>), because a badge inside a folded section is invisible.
+    /// </para>
+    /// <para>
+    /// The select-all spans every section, so it sits in its own slim card above the headers,
+    /// handed the open sections' rows alone (see <see cref="DrawSelectAll"/> for what that
+    /// licenses), read from the <b>previous</b> frame's headers — the inline comment explains
+    /// why that one-frame lag is safe. The completeness disclosure sits beneath the collection
+    /// sections instead, where it reads as a statement about every collection rather than as a
+    /// caption for the select-all checkbox.
+    /// </para>
+    /// </remarks>
+    /// <param name="rows">This frame's category rows, from <see cref="BuildCategoryRows"/>.</param>
+    private void DrawConsentSections(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        using (ImRaii.PushStyle(
+                   ImGuiStyleVar.ItemInnerSpacing,
+                   new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
+        {
+            // One level of indent for everything under the outer "Collections" header — the
+            // visual cue that these headers are its children, not more top-level sections.
+            ImGui.Indent();
+
+            // The select-all sits above the headers, so it works from the PREVIOUS frame's open
+            // set: which sections are open this frame is only knowable after the headers draw,
+            // and a header cannot be toggled and the select-all clicked on the same frame, so
+            // the lag can never act on a fold the user has not seen. Until the sections have
+            // drawn once, nothing counts as open and the control draws disabled.
+            var visibleRows = new List<CategorySettingsRow>();
+            if (openConsentSections is { } knownOpen)
+            {
+                foreach (var row in rows)
+                {
+                    if (knownOpen.Contains(row.Section))
+                        visibleRows.Add(row);
+                }
+            }
+
+            using (BrandCard())
+            {
+                // Disabled when no section is open: there is nothing the bulk toggle may touch,
+                // and an enabled-looking control that ignores the click reads as broken.
+                using (ImRaii.Disabled(visibleRows.Count == 0))
+                    DrawSelectAll(visibleRows);
+
+                // A disabled control with no visible reason reads as a bug, so the reason is
+                // said right where the greyed box is.
+                if (visibleRows.Count == 0)
+                    ImGui.TextDisabled("Open a section below to use this.");
+            }
+
+            // Rebuilt every frame so a section the user just folded drops out of the select-all's
+            // reach on the very next one.
+            var openNow = new HashSet<string>();
+
+            foreach (var section in CategorySettingsView.GroupBySection(rows))
+            {
+                // Captured before the header so the count and the "New" chip can be right-aligned
+                // onto the header's own row (see Widgets.DrawHeaderRightText and
+                // DrawHeaderRightChip).
+                var headerCursorX = ImGui.GetCursorPosX();
+                var headerScreenX = ImGui.GetCursorScreenPos().X;
+                var headerInnerRight =
+                    activeCardInnerRight ?? (headerCursorX + ImGui.GetContentRegionAvail().X);
+
+                // Everything after `###` is the widget's id, kept apart from the visible heading:
+                // ImGui derives a widget's id from its label text, and the "consent-" prefix keeps
+                // these headers from colliding with any other header carrying the same title.
+                var open = ImGui.CollapsingHeader(
+                    $"{section.Title}###consent-{section.Title}",
+                    ImGuiTreeNodeFlags.DefaultOpen);
+
+                // The section's live count at the header's right edge — how many of its
+                // collections will actually upload as things stand. Painted rather than laid out,
+                // so it sits ON the header row; clicks fall through to the header.
+                var rightEdge = headerScreenX + (headerInnerRight - headerCursorX);
+                var countLeft = Widgets.DrawHeaderRightText(
+                    $"{section.EnabledCount} of {section.Rows.Count} syncing", rightEdge);
+
+                // The chip stacks to the left of the count, both on the header row.
+                if (AnyGroupIsNew(section.Rows))
+                    DrawHeaderRightChip(FontAwesomeIcon.Star, "New", Brand.Gold, countLeft);
+
+                if (!open)
+                    continue;
+
+                openNow.Add(section.Title);
+
+                ImGui.Spacing();
+                using (BrandCard())
+                {
+                    var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
+                    foreach (var row in section.Rows)
+                        DrawCategoryRow(row, showNewChips: true, checkboxColumn);
+                }
+            }
+
+            openConsentSections = openNow;
+
+            // The disclosure every consent surface carries, drawn once beneath the collection
+            // sections rather than repeated inside each one.
+            ImGui.Spacing();
+            DrawCompletenessNote();
+
+            ImGui.Unindent();
+        }
+    }
+
+    /// <summary>
+    /// The section titles that were open on the most recent frame that drew the consent list —
+    /// the reach the select-all above the headers is allowed (see
+    /// <see cref="DrawConsentSections"/>). Null until the sections have drawn once.
+    /// </summary>
+    private HashSet<string>? openConsentSections;
+
+    /// <summary>
+    /// One collection's consent row: the checkbox, its disclosure copy, and its group checkboxes.
+    /// Shared verbatim by both consent surfaces, so neither can drift to showing less.
+    /// </summary>
+    /// <param name="row">The row to draw.</param>
+    /// <param name="showNewChips">See <see cref="DrawGroupCheckboxes"/>.</param>
+    /// <param name="checkboxColumn">
+    /// The indent that lines the description up with the checkbox's label, measured by the caller
+    /// inside its ItemInnerSpacing push so the column tracks the label's real position.
+    /// </param>
+    private void DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
+    {
+        var enabled = row.UserEnabled;
+        bool toggled;
+
+        // The server switched this category off for everyone. Show it, disabled, with the
+        // user's own preference intact underneath — flipping it back on later restores what
+        // they chose.
+        using (ImRaii.Disabled(!row.ServerEnabled))
+        {
+            // Everything after `##` is hidden from the label but forms part of the widget's
+            // identity. ImGui derives a control's ID from its label text, so two collections
+            // that happened to choose the same DisplayName would share an ID and cross-wire
+            // their clicks. The category key is unique by construction, which makes this
+            // collision impossible rather than merely unlikely.
+            toggled = ImGui.Checkbox($"{row.DisplayName}##{row.Key}", ref enabled);
+        }
+
+        // The elaboration behind this row's one-liner, one hover away. Drawn only when the
+        // collector offered one, so a category whose description already says everything
+        // carries no affordance to wonder about.
+        if (row.Details is { } details)
+            DrawDetailsHint(details);
+
+        if (toggled)
+        {
+            ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
+            configuration.Save();
+        }
+
+        // The description draws at the normal text color: it is the consent copy for this
+        // category — what the plugin will send if the box is ticked — so it has to be
+        // comfortably legible.
+        ImGui.Indent(checkboxColumn);
+        DrawWrapped(row.WhatGetsSent, ImGuiCol.Text);
+
+        // Muted: it only restates why the checkbox above it is grayed out, which the
+        // disabled control already conveys on its own.
+        if (!row.ServerEnabled)
+            ImGui.TextDisabled("Temporarily switched off by XIV Shinies.");
+
+        // Disabled along with the category above them. A group belongs to its category and is
+        // only ever scanned as part of that category's pass, so leaving the groups live under a
+        // greyed-out parent would offer the user a consent choice that cannot mean anything —
+        // and ticking one would switch its category back on behind the very control that says it
+        // is off.
+        using (ImRaii.Disabled(!row.ServerEnabled))
+            DrawGroupCheckboxes(row, showNewChips);
+
+        ImGui.Unindent(checkboxColumn);
+        ImGui.Spacing();
     }
 
     /// <summary>
@@ -163,7 +287,7 @@ internal sealed partial class MainWindow
     /// <summary>
     /// The live Occult tracker's consent card: its toggle and its disclosure copy. Drawn as its
     /// own card on both consent surfaces (the wizard's consent step and the settings), separate
-    /// from the collections card — the tracker is not a collection and must not read as one,
+    /// from the collections list — the tracker is not a collection and must not read as one,
     /// which is also why the collections select-all does not touch it.
     /// </summary>
     /// <remarks>
@@ -254,9 +378,10 @@ internal sealed partial class MainWindow
     /// surface rather than living only in the contract.
     /// </para>
     /// <para>
-    /// Drawn by the wizard's "What it sends" step and at the foot of the shared category list, so
-    /// every consent surface carries it and none can drift: the pre-consent screen must never
-    /// disclose less than the screen that collects the ticks. Phrased conditionally and naming no
+    /// Drawn by the wizard's "What it sends" step, at the foot of the wizard's consent card,
+    /// and below the settings screen's section headers, so every consent surface carries it
+    /// and none can drift: the pre-consent screen must never disclose less than the screen
+    /// that collects the ticks. Phrased conditionally and naming no
     /// category, so it stays true however many collections can be read completely.
     /// </para>
     /// <para>
@@ -319,13 +444,14 @@ internal sealed partial class MainWindow
     /// <see cref="DrawGroupCheckboxes"/> uses to decide whether to draw that group's own badge.
     /// </summary>
     /// <remarks>
-    /// Used to decide whether the collapsed "Collections" header itself should wear a
-    /// "New" chip (see <see cref="DrawSettings"/>): with the card collapsed, none of the per-group
-    /// badges beneath it are visible, so a group added since the last session would otherwise go
-    /// unnoticed until the user happened to expand the card. This reads the same rows
-    /// <see cref="CategorySettingsView.Build"/> already produces and the same <c>seenThisSession</c>
-    /// set <see cref="DrawGroupCheckboxes"/> already maintains — no new state, and no branch on which
-    /// category or group is being asked about.
+    /// Used to decide whether a collapsible header — the outer "Collections" header (see
+    /// <see cref="DrawSettings"/>) and each consent section's own header (see
+    /// <see cref="DrawConsentSections"/>) — should wear a "New" chip: with the header folded,
+    /// none of the per-group badges beneath it are visible, so a group added since the last
+    /// session would otherwise go unnoticed until the user happened to expand it. This reads the
+    /// same rows <see cref="CategorySettingsView.Build"/> already produces and the same
+    /// <c>seenThisSession</c> set <see cref="DrawGroupCheckboxes"/> already maintains — no new
+    /// state, and no branch on which category or group is being asked about.
     /// </remarks>
     /// <param name="rows">The category rows to scan, from <see cref="CategorySettingsView.Build"/>.</param>
     private bool AnyGroupIsNew(IReadOnlyList<CategorySettingsRow> rows)
@@ -389,8 +515,8 @@ internal sealed partial class MainWindow
             wizardShowedGroups = true;
 
         // A further indent nests the group checkboxes beneath their category's description. Measured
-        // the same way as the category column, inside the ItemInnerSpacing push DrawCategoryRows opened,
-        // so it tracks the same spacing.
+        // the same way as the category column, inside the ItemInnerSpacing push the consent surface
+        // opened, so it tracks the same spacing.
         var groupIndent = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
         ImGui.Indent(groupIndent);
 
@@ -452,15 +578,19 @@ internal sealed partial class MainWindow
         ImGui.Unindent(groupIndent);
     }
 
-    /// <summary>One checkbox that flips every collection at once.</summary>
+    /// <summary>One checkbox that flips every visible collection at once.</summary>
     /// <remarks>
     /// <para>
     /// Shown checked only when everything is on, so clicking it always does the obvious thing: from
     /// "all on" it turns everything off, from anything else it turns everything on. It never names a
-    /// category — it iterates whatever rows exist. A row the server has switched off is left out of
-    /// both the reading and the writing, itself and its groups alike: that category uploads nothing
-    /// whatever the boxes say, so this control leaves its consent exactly as the user last set it,
-    /// ready to mean something again if the server switches it back on.
+    /// category — it iterates whatever rows it is handed, and the caller hands it only rows whose
+    /// disclosure is on screen: the wizard's flat list passes every row, while the settings pass
+    /// the open sections' rows alone (disabling this control when every section is folded and
+    /// there is nothing to hand — see <see cref="DrawConsentSections"/>), so a bulk write can
+    /// never grant consent for a checkbox the user cannot see. A row the server has switched off is
+    /// left out of both the reading and the writing, itself and its groups alike: that category
+    /// uploads nothing whatever the boxes say, so this control leaves its consent exactly as the
+    /// user last set it, ready to mean something again if the server switches it back on.
     /// </para>
     /// <para>
     /// "Everything" includes the per-group consent checkboxes nested under a manifest-driven row (see

@@ -23,6 +23,8 @@ public class CollectorSelectionTests
 
         public string DisplayName => CategoryKey;
 
+        public string Section => "Fakes";
+
         public string WhatGetsSent => $"Facts about {CategoryKey}.";
 
         public string? Details => null;

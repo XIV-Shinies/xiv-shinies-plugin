@@ -20,10 +20,18 @@ public static class CollectorRegistry
     // to the opt-in toggle before the user consents, so it is a compliance surface: it must stay a
     // true description of what the matching collector actually uploads.
 
+    // The section headings the consent surfaces group by (see CategoryInfo.Section). Named as
+    // constants so two collections meaning the same section cannot drift apart by a typo.
+    private const string CollectionLogSection = "Collection log";
+    private const string TripleTriadSection = "Triple Triad";
+    private const string OccultSection = "The Occult Crescent";
+    private const string ItemsSection = "Items & relics";
+
     private static readonly CategoryInfo Quests = new()
     {
         Key = CategoryKeys.Quests,
         DisplayName = "Quests",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of quests you have completed.",
     };
 
@@ -31,6 +39,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.QuestSequences,
         DisplayName = "Quest progress",
+        Section = CollectionLogSection,
 
         // Scoped twice over, and the visible line says both halves: only quests the server named
         // are looked at, and only the journal's step position leaves the machine.
@@ -49,6 +58,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Mounts,
         DisplayName = "Mounts",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of mounts you have unlocked.",
     };
 
@@ -56,6 +66,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Minions,
         DisplayName = "Minions",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of minions you have unlocked.",
     };
 
@@ -63,6 +74,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Achievements,
         DisplayName = "Achievements",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of achievements you have earned.",
     };
 
@@ -70,6 +82,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.TripleTriadCards,
         DisplayName = "Triple Triad cards",
+        Section = TripleTriadSection,
         WhatGetsSent = "The ID numbers of Triple Triad cards you have collected.",
     };
 
@@ -77,6 +90,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.TripleTriadNpcs,
         DisplayName = "Triple Triad NPCs",
+        Section = TripleTriadSection,
 
         // The game records a per-NPC beaten flag, so the copy names that exact fact: an opponent
         // defeated at least once.
@@ -103,6 +117,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Items,
         DisplayName = "Relic items",
+        Section = ItemsSection,
 
         // Currencies are named on the visible line, with gil spelled out: a balance is wealth data,
         // and "items" alone would not tell a reader that consenting to a currency group sends how
@@ -140,6 +155,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.OccultProgression,
         DisplayName = "Phantom jobs",
+        Section = OccultSection,
 
         // Both halves of the payload on the visible line: the per-job progress, and the
         // knowledge level with the condition under which it is captured — a window the user
@@ -161,6 +177,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.OccultRecords,
         DisplayName = "Occult records",
+        Section = OccultSection,
         WhatGetsSent = "The ID numbers of the occult records you have discovered.",
     };
 

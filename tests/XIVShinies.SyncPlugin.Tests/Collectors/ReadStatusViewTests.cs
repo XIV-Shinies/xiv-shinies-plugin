@@ -28,6 +28,7 @@ public class ReadStatusViewTests
     {
         Key = key,
         DisplayName = $"{key} display",
+        Section = "Fakes",
         WhatGetsSent = $"what {key} sends",
         UserEnabled = userEnabled,
         ServerEnabled = serverEnabled,

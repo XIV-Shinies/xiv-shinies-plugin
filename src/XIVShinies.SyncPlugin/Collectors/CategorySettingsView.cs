@@ -18,6 +18,12 @@ public sealed record CategorySettingsRow
     /// <summary>The label to draw beside the checkbox.</summary>
     public required string DisplayName { get; init; }
 
+    /// <summary>
+    /// The heading this row is listed under, carried verbatim from the collector's
+    /// self-description (see <see cref="CategoryInfo.Section"/>).
+    /// </summary>
+    public required string Section { get; init; }
+
     /// <summary>The plain-language description of what uploading this category sends.</summary>
     public required string WhatGetsSent { get; init; }
 
@@ -111,6 +117,63 @@ public sealed record ItemGroupRow
 }
 
 /// <summary>
+/// One heading's worth of the consent list: a section title and the rows listed under it.
+/// </summary>
+/// <remarks>
+/// Produced by <see cref="CategorySettingsView.GroupBySection"/>. The consent surfaces draw one
+/// header per section — collapsible in the settings, a plain label in the wizard — without ever
+/// knowing which sections exist.
+/// </remarks>
+public sealed record CategorySection
+{
+    /// <summary>The heading, exactly as the section's collectors declared it.</summary>
+    public required string Title { get; init; }
+
+    /// <summary>This section's rows, in registration order.</summary>
+    public required IReadOnlyList<CategorySettingsRow> Rows { get; init; }
+
+    /// <summary>
+    /// How many of this section's rows will actually upload as things stand — the number a
+    /// section header shows beside its title.
+    /// </summary>
+    /// <remarks>
+    /// "Will actually upload" is the whole rule: a row the server switched off does not count
+    /// however its box is ticked, and a manifest-driven row whose groups are all off counts for
+    /// nothing either — with no group consented, its pass looks at nothing at all.
+    /// </remarks>
+    public int EnabledCount
+    {
+        get
+        {
+            var count = 0;
+            foreach (var row in Rows)
+            {
+                if (!row.IsEffectivelyOn)
+                    continue;
+
+                if (row.Groups is { Count: > 0 } groups && AllGroupsOff(groups))
+                    continue;
+
+                count++;
+            }
+
+            return count;
+        }
+    }
+
+    private static bool AllGroupsOff(IReadOnlyList<ItemGroupRow> groups)
+    {
+        foreach (var group in groups)
+        {
+            if (group.Enabled)
+                return false;
+        }
+
+        return true;
+    }
+}
+
+/// <summary>
 /// Assembles the settings window's category list from the registered collectors.
 /// </summary>
 /// <remarks>
@@ -150,6 +213,7 @@ public static class CategorySettingsView
             {
                 Key = key,
                 DisplayName = collector.DisplayName,
+                Section = collector.Section,
                 WhatGetsSent = collector.WhatGetsSent,
                 Details = collector.Details,
                 UserEnabled = settings.IsCategoryEnabled(key),
@@ -174,6 +238,45 @@ public static class CategorySettingsView
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Buckets rows under the section titles their collectors declared, for the consent surfaces
+    /// to draw one heading at a time.
+    /// </summary>
+    /// <remarks>
+    /// Sections appear in the order their first row appears, and rows keep registration order
+    /// within their section — so the on-screen order is still decided entirely by
+    /// <see cref="CollectorRegistry"/>. There is no fixed section list and no fallback bucket:
+    /// whatever titles the rows carry are the sections that exist, which is what keeps this
+    /// surface free of category knowledge.
+    /// </remarks>
+    /// <param name="rows">The rows to group, from <see cref="Build"/>.</param>
+    public static IReadOnlyList<CategorySection> GroupBySection(
+        IReadOnlyList<CategorySettingsRow> rows)
+    {
+        // Two structures side by side: the list remembers first-appearance order (a Dictionary
+        // alone promises no order), while the dictionary finds each section's bucket in one step.
+        var sections = new List<(string Title, List<CategorySettingsRow> Rows)>();
+        var byTitle = new Dictionary<string, List<CategorySettingsRow>>();
+
+        foreach (var row in rows)
+        {
+            if (!byTitle.TryGetValue(row.Section, out var bucket))
+            {
+                bucket = new List<CategorySettingsRow>();
+                byTitle[row.Section] = bucket;
+                sections.Add((row.Section, bucket));
+            }
+
+            bucket.Add(row);
+        }
+
+        var result = new List<CategorySection>(sections.Count);
+        foreach (var (title, bucketRows) in sections)
+            result.Add(new CategorySection { Title = title, Rows = bucketRows });
+
+        return result;
     }
 
     // Group rows attach only when BOTH sides agree there is something to draw: the collector has

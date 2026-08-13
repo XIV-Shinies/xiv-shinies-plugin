@@ -34,6 +34,8 @@ public class CollectorRunnerTests
         // runner never reads it.
         public string DisplayName => CategoryKey;
 
+        public string Section => "Fakes";
+
         public string WhatGetsSent => $"Facts about {CategoryKey}.";
 
         // Optional self-description; the runner never reads it, which is the point.

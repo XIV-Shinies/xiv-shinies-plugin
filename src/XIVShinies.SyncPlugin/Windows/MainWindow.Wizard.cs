@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
+using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -67,26 +68,33 @@ internal sealed partial class MainWindow
 
         // Each collector describes itself. Adding a collection makes it appear here with no change
         // to this window: a gold gem, the name, and the collector's own plain-language disclosure
-        // beneath it. The disclosure draws at the normal text color, never muted: it is the consent
-        // copy telling the user what leaves their machine, so it has to be comfortably legible.
-        foreach (var collector in collectors)
+        // beneath it, listed under the section heading its collector declared. The disclosure
+        // draws at the normal text color, never muted: it is the consent copy telling the user
+        // what leaves their machine, so it has to be comfortably legible.
+        foreach (var section in CategorySettingsView.GroupBySection(BuildCategoryRows()))
         {
-            DrawIcon(FontAwesomeIcon.Gem, Brand.Gold);
-            ImGui.SameLine();
-            ImGui.TextUnformatted(collector.DisplayName);
+            DrawSectionLabel(section.Title);
 
-            // The same elaboration the settings list offers. This screen is the fuller disclosure
-            // of the two — it is what a user reads before consenting to anything — so it must never
-            // carry less than the settings do.
-            if (collector.Details is { } details)
-                DrawDetailsHint(details);
+            foreach (var row in section.Rows)
+            {
+                DrawIcon(FontAwesomeIcon.Gem, Brand.Gold);
+                ImGui.SameLine();
+                ImGui.TextUnformatted(row.DisplayName);
 
-            ImGui.Indent(iconColumn);
-            DrawWrapped(collector.WhatGetsSent, ImGuiCol.Text);
-            ImGui.Unindent(iconColumn);
+                // The same elaboration the settings list offers. This screen is the fuller
+                // disclosure of the two — it is what a user reads before consenting to anything —
+                // so it must never carry less than the settings do.
+                if (row.Details is { } details)
+                    DrawDetailsHint(details);
+
+                ImGui.Indent(iconColumn);
+                DrawWrapped(row.WhatGetsSent, ImGuiCol.Text);
+                ImGui.Unindent(iconColumn);
+            }
         }
 
-        // Closes the category list, the same place the note sits in the settings card.
+        // Closes the category list, the disclosure every consent surface carries (see
+        // DrawCompletenessNote).
         ImGui.Spacing();
         DrawCompletenessNote();
 
@@ -146,11 +154,7 @@ internal sealed partial class MainWindow
         // group checkboxes exist by the time its own checkbox can be ticked. That is what makes ticking
         // a category able to tick the groups it means, and it is why no consent here can ever be granted
         // for a checkbox the user was not looking at.
-        //
-        // No "New" badges: the manifest groups drawn beneath a category are all being shown for the
-        // first time, to a user who installed the plugin minutes ago. DrawGroupCheckboxes still marks
-        // every group it draws as seen, so the settings screen greets them badge-free afterwards.
-        DrawCategoryRows(BuildCategoryRows(), showNewChips: false);
+        DrawCategoryRows(BuildCategoryRows());
 
         // The live tracker's own consent card, right below the collections it is not part of.
         ImGui.Spacing();

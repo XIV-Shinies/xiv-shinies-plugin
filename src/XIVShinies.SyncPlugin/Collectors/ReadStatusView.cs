@@ -61,8 +61,8 @@ public static class ReadStatusView
     /// Every line the panel should draw, split into its collection lines and its container lines.
     /// </summary>
     /// <param name="rows">
-    /// The settings window's category rows — the same list the consent card is drawn from (see
-    /// <see cref="CategorySettingsView.Build"/>). Only rows that are
+    /// The settings window's category rows — the same list the consent sections are drawn from
+    /// (see <see cref="CategorySettingsView.Build"/>). Only rows that are
     /// <see cref="CategorySettingsRow.IsEffectivelyOn"/> produce a line: a collection the user (or the
     /// server) switched off is not being uploaded by choice, so it has no read status worth reporting,
     /// and a "not read" line beside it would read as a fault rather than as a decision.

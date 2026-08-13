@@ -57,6 +57,9 @@ public sealed unsafe class OccultRecordsCollector : ICollector
     public string DisplayName => info.DisplayName;
 
     /// <inheritdoc/>
+    public string Section => info.Section;
+
+    /// <inheritdoc/>
     public string WhatGetsSent => info.WhatGetsSent;
 
     /// <inheritdoc/>

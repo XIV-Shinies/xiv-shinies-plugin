@@ -32,6 +32,10 @@ public class CategorySettingsViewTests
 
         public string DisplayName { get; }
 
+        // Set per-test, so a fake can carry a named section; every other test leaves the shared
+        // default.
+        public string Section { get; init; } = "Fakes";
+
         public string WhatGetsSent { get; }
 
         // Set per-test, so the view's carry-through can be checked both ways: a collector that
@@ -91,6 +95,44 @@ public class CategorySettingsViewTests
         Assert.Equal("facewear display", row.DisplayName);
         Assert.Equal("what facewear sends", row.WhatGetsSent);
         Assert.True(row.UserEnabled);
+    }
+
+    // The section heading is self-description like the display name, and the grouping the consent
+    // surfaces draw (see CategorySectionTests) is only as good as this carry-through.
+    [Fact]
+    public void A_collectors_section_is_carried_onto_its_row()
+    {
+        var collector = new FakeCollector(UnknownCategory, "facewear display", "what facewear sends")
+        {
+            Section = "Glamour",
+        };
+
+        var row = Assert.Single(
+            CategorySettingsView.Build(
+                new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.Equal("Glamour", row.Section);
+    }
+
+    // The extensibility gate, end to end: an unknown collector declaring an unheard-of section
+    // flows through Build AND GroupBySection into its own heading in one trip. The two links are
+    // pinned individually elsewhere; this is the assertion that nothing between them normalizes
+    // or defaults the section away.
+    [Fact]
+    public void An_unknown_collectors_section_becomes_its_own_heading_end_to_end()
+    {
+        var collector = new FakeCollector(UnknownCategory, "facewear display", "what facewear sends")
+        {
+            Section = "Glamour",
+        };
+
+        var sections = CategorySettingsView.GroupBySection(
+            CategorySettingsView.Build(
+                new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        var section = Assert.Single(sections);
+        Assert.Equal("Glamour", section.Title);
+        Assert.Equal(UnknownCategory, Assert.Single(section.Rows).Key);
     }
 
     // The hover elaboration is optional self-description, carried through like the rest of the
