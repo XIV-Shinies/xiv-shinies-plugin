@@ -202,7 +202,7 @@ internal sealed partial class MainWindow
             // The whole panel is assembled by a pure, tested builder, so this window stays a printer:
             // it draws whatever notes it is handed and never asks which collection or which container
             // produced one. The rows are this frame's, built once at the top of DrawSettings and
-            // shared with the consent sections below.
+            // shared with the consent card below.
             var readStatus = ReadStatusView.Build(rows, syncManager.LastSourceNotes);
 
             // Whether any note drawn below is Missing — something contributing nothing at all right

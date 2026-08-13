@@ -57,8 +57,8 @@ internal sealed partial class MainWindow
         Widgets.SectionGap();
         DrawSectionHeading("What it sends");
 
-        // The disclosure every consent surface carries, in the same intro position the settings
-        // screen gives it: a statement about every list below, not a caption for any one item.
+        // The disclosure every consent surface carries, opening the list: a statement about
+        // every collection below, not a caption for any one item.
         DrawCompletenessNote();
         ImGui.Spacing();
 
@@ -163,7 +163,8 @@ internal sealed partial class MainWindow
         // group checkboxes exist by the time its own checkbox can be ticked. That is what makes ticking
         // a category able to tick the groups it means, and it is why no consent here can ever be granted
         // for a checkbox the user was not looking at.
-        DrawCategoryRows(BuildCategoryRows());
+        // See DrawCategoryRows's showNewChips for why the wizard badges nothing.
+        DrawCategoryRows(BuildCategoryRows(), showNewChips: false);
 
         // The live tracker's own consent card, right below the collections it is not part of.
         ImGui.Spacing();

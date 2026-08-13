@@ -806,15 +806,13 @@ internal static class Widgets
     /// <remarks>
     /// <para>
     /// Reads back the immediately preceding widget's rectangle with <c>GetItemRectMin</c> /
-    /// <c>GetItemRectMax</c> — valid only while no further ITEM has been submitted since that
-    /// widget; draw-list painting in between (such as <see cref="DrawHeaderRightText"/>) leaves
-    /// the rectangle intact — to learn the row's actual height, then paints the chip at an
-    /// explicit screen position
-    /// instead of asking the layout system for a "next" position on that row (there is not one; the
-    /// row is already full). The chip is pure draw-list output with no interactive element of its
-    /// own (see <see cref="PaintChip"/>), so overlapping the header this way does not steal any of
-    /// its clicks — expanding and collapsing the section still works anywhere on the row, chip
-    /// included.
+    /// <c>GetItemRectMax</c> — valid only because nothing else is drawn between that widget and
+    /// this call — to learn the row's actual height, then paints the chip at an explicit screen
+    /// position instead of asking the layout system for a "next" position on that row (there is
+    /// not one; the row is already full). The chip is pure draw-list output with no interactive
+    /// element of its own (see <see cref="PaintChip"/>), so overlapping the header this way does
+    /// not steal any of its clicks — expanding and collapsing the section still works anywhere
+    /// on the row, chip included.
     /// </para>
     /// <para>
     /// The layout cursor is left exactly where the preceding widget put it: painting through the
@@ -852,48 +850,5 @@ internal static class Widgets
             rowMin.Y + ((rowHeight - metrics.ChipSize.Y) / 2f));
 
         PaintChip(iconFont, metrics, topLeft, color);
-    }
-
-    /// <summary>
-    /// Paints text flush against a fixed right edge of the full-width widget drawn immediately
-    /// before it — the plain-text sibling of <see cref="DrawHeaderRightChip"/>, for a status
-    /// readout (a count, a state word) on a <c>CollapsingHeader</c>'s own row.
-    /// </summary>
-    /// <remarks>
-    /// The same overlap technique as the chip: the preceding widget's rectangle is read back for
-    /// vertical centering (valid only while no further item has been submitted — this call itself
-    /// paints through the draw list, so it does not disturb the rectangle for a chip painted
-    /// after it), the text goes through the draw list so the layout cursor never moves, and
-    /// clicks pass straight through to the header underneath. Drawn at the normal text color:
-    /// the readout is a live status the user has to be able to read at a glance, and a folded
-    /// header is exactly where they will read it.
-    /// </remarks>
-    /// <param name="text">The text to paint.</param>
-    /// <param name="rightEdgeScreenX">
-    /// The screen-space X the text's right edge should land just inside of — the same edge
-    /// <see cref="DrawHeaderRightChip"/> takes.
-    /// </param>
-    /// <returns>
-    /// The screen-space X of the painted text's left edge, so a caller stacking a chip beside the
-    /// readout can hand that chip this value as ITS right edge.
-    /// </returns>
-    internal static float DrawHeaderRightText(string text, float rightEdgeScreenX)
-    {
-        var size = ImGui.CalcTextSize(text);
-
-        var rowMin = ImGui.GetItemRectMin();
-        var rowMax = ImGui.GetItemRectMax();
-        var rowHeight = rowMax.Y - rowMin.Y;
-
-        var margin = 8f * ImGuiHelpers.GlobalScale;
-
-        var topLeft = new Vector2(
-            rightEdgeScreenX - margin - size.X,
-            rowMin.Y + ((rowHeight - size.Y) / 2f));
-
-        ImGui.GetWindowDrawList().AddText(
-            topLeft, ImGui.GetColorU32(ImGuiCol.Text), text);
-
-        return topLeft.X;
     }
 }

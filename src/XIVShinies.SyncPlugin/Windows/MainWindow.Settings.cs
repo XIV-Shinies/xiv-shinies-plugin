@@ -19,8 +19,8 @@ internal sealed partial class MainWindow
     private void DrawSettings()
     {
         // The three surfaces that need the category rows — the read-status panel inside the sync card,
-        // the "New" chip on the Collections header, and the consent sections themselves — are all
-        // drawn from THIS list (see BuildCategoryRows).
+        // the "New" chip on the Collections header, and the consent card itself — are all drawn
+        // from THIS list (see BuildCategoryRows).
         var rows = BuildCategoryRows();
 
         DrawSettingsHeader();
@@ -50,7 +50,7 @@ internal sealed partial class MainWindow
         // change at any moment, so it greets them expanded — but it is a long card, so it can be
         // folded away once they have made their choices.
         // "Collections", like the other accordion headers (Account, Privacy, Recent uploads): a
-        // brief section name. The consent list inside draws its own per-section headers.
+        // brief section name. The consent list inside labels its own sections in place.
         var collectionsOpen =
             ImGui.CollapsingHeader("Collections", ImGuiTreeNodeFlags.DefaultOpen);
 
@@ -67,22 +67,11 @@ internal sealed partial class MainWindow
         if (collectionsOpen)
         {
             ImGui.Spacing();
-            DrawConsentSections(rows);
+            DrawCategoryRows(rows, showNewChips: true);
 
-            // The live tracker's consent card under its own heading, indented to sit with the
-            // section headers above it. It is not a collection, so it lives outside the generic
-            // section loop under a fixed name — the one consent surface that is allowed to,
-            // because it describes a bespoke feature rather than a registered collector.
-            ImGui.Indent();
-            var liveSharingOpen = ImGui.CollapsingHeader(
-                "Live sharing###consent-live-sharing", ImGuiTreeNodeFlags.DefaultOpen);
-            if (liveSharingOpen)
-            {
-                ImGui.Spacing();
-                DrawOccultConsentRow();
-            }
-
-            ImGui.Unindent();
+            // The live tracker's consent card, below the collections card it is not part of.
+            ImGui.Spacing();
+            DrawOccultConsentRow();
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

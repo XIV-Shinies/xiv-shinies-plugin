@@ -135,9 +135,8 @@ public sealed record ItemGroupRow
 /// One heading's worth of the consent list: a section title and the rows listed under it.
 /// </summary>
 /// <remarks>
-/// Produced by <see cref="CategorySettingsView.GroupBySection"/>. The consent surfaces draw one
-/// header per section — collapsible in the settings, a plain label in the wizard — without ever
-/// knowing which sections exist.
+/// Produced by <see cref="CategorySettingsView.GroupBySection"/>. The consent surfaces draw a
+/// plain label per section without ever knowing which sections exist.
 /// </remarks>
 public sealed record CategorySection
 {
@@ -146,46 +145,6 @@ public sealed record CategorySection
 
     /// <summary>This section's rows, in registration order.</summary>
     public required IReadOnlyList<CategorySettingsRow> Rows { get; init; }
-
-    /// <summary>
-    /// How many of this section's rows will actually upload as things stand — the number a
-    /// section header shows beside its title.
-    /// </summary>
-    /// <remarks>
-    /// "Will actually upload" is the whole rule: a row the server switched off does not count
-    /// however its box is ticked, and a manifest-driven row whose groups are all off counts for
-    /// nothing either — with no group consented, its pass looks at nothing at all.
-    /// </remarks>
-    public int EnabledCount
-    {
-        get
-        {
-            var count = 0;
-            foreach (var row in Rows)
-            {
-                if (!row.IsEffectivelyOn)
-                    continue;
-
-                if (row.Groups is { Count: > 0 } groups && AllGroupsOff(groups))
-                    continue;
-
-                count++;
-            }
-
-            return count;
-        }
-    }
-
-    private static bool AllGroupsOff(IReadOnlyList<ItemGroupRow> groups)
-    {
-        foreach (var group in groups)
-        {
-            if (group.Enabled)
-                return false;
-        }
-
-        return true;
-    }
 }
 
 /// <summary>
