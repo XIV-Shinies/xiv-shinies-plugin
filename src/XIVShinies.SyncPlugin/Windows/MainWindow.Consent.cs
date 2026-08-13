@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -58,7 +59,7 @@ internal sealed partial class MainWindow
             // description by the same amount lines its left edge up with the label above it.
             // Measured inside the push so the description column moves with the label.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
-            DrawSelectAll(rows);
+            DrawSelectAll(rows, "All collections##selectAll");
             BrandSeparator();
             ImGui.Spacing();
 
@@ -98,12 +99,10 @@ internal sealed partial class MainWindow
     /// <see cref="DrawSettings"/>), because a badge inside a folded section is invisible.
     /// </para>
     /// <para>
-    /// The select-all spans every section, so it sits in its own slim card above the headers,
-    /// handed the open sections' rows alone (see <see cref="DrawSelectAll"/> for what that
-    /// licenses), read from the <b>previous</b> frame's headers — the inline comment explains
-    /// why that one-frame lag is safe. The completeness disclosure sits beneath the collection
-    /// sections instead, where it reads as a statement about every collection rather than as a
-    /// caption for the select-all checkbox.
+    /// An intro card above the headers carries the one-line instructions and the completeness
+    /// disclosure. Bulk consent is per section: each opened section's card starts with its own
+    /// "Select all", so a bulk write is only ever offered beside the very rows it would write —
+    /// a folded section offers nothing.
     /// </para>
     /// </remarks>
     /// <param name="rows">This frame's category rows, from <see cref="BuildCategoryRows"/>.</param>
@@ -117,37 +116,17 @@ internal sealed partial class MainWindow
             // visual cue that these headers are its children, not more top-level sections.
             ImGui.Indent();
 
-            // The select-all sits above the headers, so it works from the PREVIOUS frame's open
-            // set: which sections are open this frame is only knowable after the headers draw,
-            // and a header cannot be toggled and the select-all clicked on the same frame, so
-            // the lag can never act on a fold the user has not seen. Until the sections have
-            // drawn once, nothing counts as open and the control draws disabled.
-            var visibleRows = new List<CategorySettingsRow>();
-            if (openConsentSections is { } knownOpen)
-            {
-                foreach (var row in rows)
-                {
-                    if (knownOpen.Contains(row.Section))
-                        visibleRows.Add(row);
-                }
-            }
-
             using (BrandCard())
             {
-                // Disabled when no section is open: there is nothing the bulk toggle may touch,
-                // and an enabled-looking control that ignores the click reads as broken.
-                using (ImRaii.Disabled(visibleRows.Count == 0))
-                    DrawSelectAll(visibleRows);
+                // How to use the list, said once at the top — the checkboxes all sit inside
+                // foldable sections, and a folded list does not explain itself.
+                DrawWrapped(
+                    "Tick the collections you want to sync in the sections below.",
+                    ImGuiCol.Text);
 
-                // A disabled control with no visible reason reads as a bug, so the reason is
-                // said right where the greyed box is.
-                if (visibleRows.Count == 0)
-                    ImGui.TextDisabled("Open a section below to use this.");
+                ImGui.Spacing();
+                DrawCompletenessNote();
             }
-
-            // Rebuilt every frame so a section the user just folded drops out of the select-all's
-            // reach on the very next one.
-            var openNow = new HashSet<string>();
 
             foreach (var section in CategorySettingsView.GroupBySection(rows))
             {
@@ -180,34 +159,29 @@ internal sealed partial class MainWindow
                 if (!open)
                     continue;
 
-                openNow.Add(section.Title);
-
                 ImGui.Spacing();
                 using (BrandCard())
                 {
                     var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
+
+                    // This section's own bulk toggle, drawn inside the opened card beside the
+                    // very rows it reads and writes. Disabled when the server switched every
+                    // row off — the toggle would write nothing, and an enabled-looking control
+                    // that ignores the click reads as broken.
+                    using (ImRaii.Disabled(!ManifestConsent.AnyServerEnabled(section.Rows)))
+                        DrawSelectAll(section.Rows, $"Select all##selectAll-{section.Title}");
+
+                    BrandSeparator();
+                    ImGui.Spacing();
+
                     foreach (var row in section.Rows)
                         DrawCategoryRow(row, showNewChips: true, checkboxColumn);
                 }
             }
 
-            openConsentSections = openNow;
-
-            // The disclosure every consent surface carries, drawn once beneath the collection
-            // sections rather than repeated inside each one.
-            ImGui.Spacing();
-            DrawCompletenessNote();
-
             ImGui.Unindent();
         }
     }
-
-    /// <summary>
-    /// The section titles that were open on the most recent frame that drew the consent list —
-    /// the reach the select-all above the headers is allowed (see
-    /// <see cref="DrawConsentSections"/>). Null until the sections have drawn once.
-    /// </summary>
-    private HashSet<string>? openConsentSections;
 
     /// <summary>
     /// One collection's consent row: the checkbox, its disclosure copy, and its group checkboxes.
@@ -379,9 +353,9 @@ internal sealed partial class MainWindow
     /// </para>
     /// <para>
     /// Drawn by the wizard's "What it sends" step, at the foot of the wizard's consent card,
-    /// and below the settings screen's section headers, so every consent surface carries it
-    /// and none can drift: the pre-consent screen must never disclose less than the screen
-    /// that collects the ticks. Phrased conditionally and naming no
+    /// and in the settings screen's intro card above the sections, so every consent surface
+    /// carries it and none can drift: the pre-consent screen must never disclose less than
+    /// the screen that collects the ticks. Phrased conditionally and naming no
     /// category, so it stays true however many collections can be read completely.
     /// </para>
     /// <para>
@@ -393,14 +367,79 @@ internal sealed partial class MainWindow
     /// </remarks>
     private void DrawCompletenessNote()
     {
-        DrawWrapped(
+        DrawWrappedWithTrailingHint(
             "Lists the plugin can read in full are reported as complete, which lets XIV Shinies " +
             "point out anything you marked by hand that the plugin did not find.",
-            ImGuiCol.Text);
-
-        DrawDetailsHint(
             "It is only ever pointed out for you to review — nothing is unmarked for you, and a " +
             "mark you make afterwards is never questioned.");
+    }
+
+    /// <summary>
+    /// Draws a wrapped paragraph whose muted question mark flows as its final word — where a
+    /// reader's eye already is when they finish the sentence — revealing
+    /// <paramref name="details"/> on hover.
+    /// </summary>
+    /// <remarks>
+    /// The paragraph sibling of <see cref="DrawDetailsHint"/>, which trails a one-line label:
+    /// <c>SameLine</c> after a WRAPPED paragraph anchors at the end of its first line, leaving
+    /// the mark floating mid-paragraph. So the paragraph is flowed here word by word (the same
+    /// flow as <see cref="Widgets.DrawWrappedSpans"/>) and the mark is appended as one more
+    /// word, wrapping to the next line only when it genuinely does not fit. Fit is measured
+    /// against the enclosing card's inner edge when there is one, so the lines break where the
+    /// card's own wrapped text does; drawn outside a card, it measures to the window's content
+    /// edge instead.
+    /// </remarks>
+    /// <param name="text">The paragraph.</param>
+    /// <param name="details">The hover text behind the trailing mark.</param>
+    private void DrawWrappedWithTrailingHint(string text, string details)
+    {
+        var spaceWidth = ImGui.CalcTextSize(" ").X;
+        var innerRight = activeCardInnerRight
+            ?? (ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
+        var first = true;
+
+        // The word flow is the only wrapping authority (see DrawWrappedSpans for why the
+        // surrounding wrap scope is switched off), and the zero vertical item spacing keeps the
+        // flowed lines as tight as a single wrapped text call's. Both pushes end before the
+        // mark below, so whatever the caller draws after this paragraph gets its normal gap.
+        using (ImRaii.PushStyle(
+                   ImGuiStyleVar.ItemSpacing,
+                   new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f)))
+        using (ImRaii.TextWrapPos(-1f))
+        {
+            foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!first)
+                {
+                    // Tentatively continue the line, then wrap if the word will not fit before
+                    // the right edge measured above.
+                    ImGui.SameLine(0f, spaceWidth);
+                    if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(word).X)
+                        ImGui.NewLine();
+                }
+
+                ImGui.TextUnformatted(word);
+                first = false;
+            }
+        }
+
+        // The mark, flowed as the sentence's last word. Drawn as a real item (unlike a
+        // draw-list glyph), so the hover test below is the ordinary one.
+        using (iconFont.Push())
+        {
+            var glyph = FontAwesomeIcon.QuestionCircle.ToIconString();
+            if (!first)
+            {
+                ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+                if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(glyph).X)
+                    ImGui.NewLine();
+            }
+
+            ImGui.TextDisabled(glyph);
+        }
+
+        if (ImGui.IsItemHovered())
+            Widgets.DrawTooltip(details);
     }
 
     /// <summary>
@@ -578,16 +617,15 @@ internal sealed partial class MainWindow
         ImGui.Unindent(groupIndent);
     }
 
-    /// <summary>One checkbox that flips every visible collection at once.</summary>
+    /// <summary>One checkbox that flips every collection it is handed at once.</summary>
     /// <remarks>
     /// <para>
-    /// Shown checked only when everything is on, so clicking it always does the obvious thing: from
-    /// "all on" it turns everything off, from anything else it turns everything on. It never names a
-    /// category — it iterates whatever rows it is handed, and the caller hands it only rows whose
-    /// disclosure is on screen: the wizard's flat list passes every row, while the settings pass
-    /// the open sections' rows alone (disabling this control when every section is folded and
-    /// there is nothing to hand — see <see cref="DrawConsentSections"/>), so a bulk write can
-    /// never grant consent for a checkbox the user cannot see. A row the server has switched off is
+    /// Shown checked only when everything it covers is on, so clicking it always does the obvious
+    /// thing: from "all on" it turns everything off, from anything else it turns everything on. It
+    /// never names a category — it iterates whatever rows it is handed, and every caller hands it
+    /// the rows drawn beside it (the wizard's whole flat list, or one opened section's card — see
+    /// <see cref="DrawConsentSections"/>), so a bulk write can never grant consent for a checkbox
+    /// the user cannot see. A row the server has switched off is
     /// left out of both the reading and the writing, itself and its groups alike: that category
     /// uploads nothing whatever the boxes say, so this control leaves its consent exactly as the
     /// user last set it, ready to mean something again if the server switches it back on.
@@ -595,10 +633,10 @@ internal sealed partial class MainWindow
     /// <para>
     /// "Everything" includes the per-group consent checkboxes nested under a manifest-driven row (see
     /// <see cref="DrawGroupCheckboxes"/>), both in what it writes and in whether it reads as checked.
-    /// A category whose groups are all off uploads nothing at all, so a control promising "all
-    /// collections" that left them off would be promising something it does not deliver — and would
-    /// then keep showing itself unchecked, because a group somewhere is still off. The groups stay
-    /// individually toggleable afterwards; this only sets a starting point.
+    /// A category whose groups are all off uploads nothing at all, so a select-all that ticked the
+    /// category and left its groups off would switch on a collection that still sends nothing —
+    /// and would then keep showing itself unchecked, because a group somewhere is still off. The
+    /// groups stay individually toggleable afterwards; this only sets a starting point.
     /// </para>
     /// <para>
     /// This says nothing about a group that arrives LATER. A group the server adds after this click
@@ -607,13 +645,18 @@ internal sealed partial class MainWindow
     /// groups on screen are ever written here.
     /// </para>
     /// </remarks>
-    private void DrawSelectAll(IReadOnlyList<CategorySettingsRow> rows)
+    /// <param name="rows">The rows this control reads and writes — always the ones drawn beside it.</param>
+    /// <param name="label">
+    /// The checkbox's visible text plus its <c>##</c> id — unique per surface, so the wizard's
+    /// control and every section's control keep separate ImGui identities.
+    /// </param>
+    private void DrawSelectAll(IReadOnlyList<CategorySettingsRow> rows, string label)
     {
         // Whether the box reads as ticked is a rule about consent, not about drawing, so it lives in
         // ManifestConsent with the rest of them and is unit-tested there.
         var allEnabled = ManifestConsent.AllConsentGiven(rows);
 
-        if (ImGui.Checkbox("All collections##selectAll", ref allEnabled))
+        if (ImGui.Checkbox(label, ref allEnabled))
         {
             foreach (var row in rows)
             {

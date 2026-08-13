@@ -97,7 +97,29 @@ public static class ManifestConsent
     }
 
     /// <summary>
-    /// Whether every consent control on screen is switched on — the state of the "all collections" box.
+    /// Whether at least one of these rows is server-enabled — that is, whether a select-all
+    /// over them could write anything at all.
+    /// </summary>
+    /// <remarks>
+    /// A select-all skips rows the server switched off (see <see cref="AllConsentGiven"/>), so
+    /// a list containing none that are enabled has no bulk write left to offer — which is what
+    /// a consent surface needs to know before drawing one.
+    /// </remarks>
+    /// <param name="rows">The category rows the select-all would cover.</param>
+    public static bool AnyServerEnabled(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (row.ServerEnabled)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether every consent control these rows cover is switched on — the state of a
+    /// select-all box over them.
     /// </summary>
     /// <remarks>
     /// Two questions, not one, because "every row it met was on" is only an answer if it met any. A box

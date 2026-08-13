@@ -296,6 +296,32 @@ public class ManifestConsentTests
         Assert.True(ManifestConsent.AllConsentGiven(rows));
     }
 
+    // A bulk write skips rows the server switched off, so a list of nothing but those has no
+    // bulk write to receive.
+    [Fact]
+    public void A_list_with_no_server_enabled_row_cannot_receive_a_bulk_write()
+    {
+        var rows = new[]
+        {
+            Row("quests", serverEnabled: false),
+            Row("mounts", serverEnabled: false),
+        };
+
+        Assert.False(ManifestConsent.AnyServerEnabled(rows));
+    }
+
+    [Fact]
+    public void One_server_enabled_row_is_enough_for_a_bulk_write_to_mean_something()
+    {
+        var rows = new[]
+        {
+            Row("quests", serverEnabled: false),
+            Row("mounts"),
+        };
+
+        Assert.True(ManifestConsent.AnyServerEnabled(rows));
+    }
+
     // --- "The server asked, and the user has not agreed to answer" --------------------------
     // The rule that decides whether a manifest-driven collection is scanned at all. It lives here, and
     // not in the collector that acts on it, because that collector reads game memory and cannot be
