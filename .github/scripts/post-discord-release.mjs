@@ -1,9 +1,9 @@
 // Posts a published GitHub Release to the Discord #releases channel as a rich embed,
 // attaching that release's screenshots when the repo carries any.
 //
-// Runs from the release job in .github/workflows/release.yml with the release's details
-// in environment variables (never interpolated into a shell line — a release body is
-// arbitrary text).
+// Runs from the manually-dispatched Announce workflow (.github/workflows/announce.yml)
+// with the release's details in environment variables (never interpolated into a shell
+// line — a release body is arbitrary text).
 // Deliberately dependency-free: Node 20+ ships fetch/FormData/Blob, so there is nothing
 // to install and nothing to audit beyond this file.
 //

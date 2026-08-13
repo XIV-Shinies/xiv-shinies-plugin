@@ -1,19 +1,23 @@
-# Announce: manually posts an already-published GitHub Release to the Discord #releases
-# channel. The release workflow announces automatically as its final step; this workflow is
-# the recovery path when that step failed (a webhook outage, a payload bug) — the release
-# itself is immutable and fine, only the announcement needs re-running, and re-running the
-# whole release job would fail at the already-existing Release.
+# Announce: posts an already-published release to the Discord #releases channel. Manually
+# dispatched, never automatic — the dispatch IS the maintainer's approval, given only after
+# they have personally verified the published release (the workflow succeeded, repo.json
+# serves the new version, the asset URL answers, the in-game update works). Running this is
+# the release process's very last step, so a broken or half-published release can never
+# announce itself.
 #
-# Trigger it from the Actions tab (or `gh workflow run announce.yml -f tag=vX.Y.Z`) with the
-# tag of the Release to announce. Posting is idempotent only in the sense that Discord shows
-# one message per run — dispatching twice posts twice, so check #releases first.
+# Deliberately a separate workflow rather than an approval-gated job inside release.yml: a
+# waiting job sits on the release run inviting an approve-to-clear-the-queue click, while a
+# dispatch requires the maintainer to come back and actively say "announce it".
+#
+# Re-running posts a SECOND Discord message (webhooks are not idempotent) — re-run only when
+# the previous run failed without posting anything.
 name: Announce
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to announce (e.g. v0.3.0)"
+        description: "Published release tag to announce (vX.Y.Z)"
         required: true
         type: string
 
@@ -21,34 +25,66 @@ jobs:
   announce:
     runs-on: ubuntu-latest
 
-    # Reading the checked-out tree is all this job needs; the default token is read-only here.
+    # Reading the release needs only the default read scope; this workflow never writes to
+    # the repository.
     permissions:
       contents: read
 
+    defaults:
+      run:
+        shell: pwsh
+
     steps:
-      # Check out the DISPATCHED ref (main, normally) rather than the release's tag: a
-      # recovery run must use the newest announcement script — the tag's tree carries
-      # whatever version existed at release time, possibly including the very bug being
-      # recovered from. The screenshots still match the release, because per-release
-      # folders (images/releases/<tag>/) are committed on main and stay there.
+      # Checked out at the dispatched ref (main, normally), NOT the release's tag: release
+      # tags are immutable, so a tag checkout would forever run whatever announcement script
+      # existed at release time — a script fix landed on main could never reach it. The
+      # screenshots still match the release, because per-release folders
+      # (images/releases/<tag>/) are committed on main and stay there.
       - name: Checkout
         uses: actions/checkout@v5
 
-      # The release's fields cross into the Node script as environment variables: one API
-      # read, then per-field extraction with jq. The body is arbitrary changelog markdown
-      # and is only ever held as data — captured by quoted command substitution, never
-      # re-parsed by the shell. publishedAt arrives as the raw ISO string from the API
-      # (bash does no date conversion), and the script re-normalizes it anyway.
-      - name: Post the release to Discord
+      # The interlock this workflow exists for: only a genuinely published release can be
+      # announced. A missing or draft release fails here, loudly, and nothing reaches
+      # Discord.
+      - name: Verify the release is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Input '$($env:TAG)' is not a release tag (expected vMAJOR.MINOR.PATCH)."
+          }
+
+          # Captured before parsing so a missing release reports itself rather than
+          # surfacing as a JSON parse error on empty output.
+          $json = gh release view $env:TAG --json isDraft 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            throw "No GitHub Release exists for $($env:TAG); publish it (push the tag) first."
+          }
+
+          $release = $json | ConvertFrom-Json
+          if ($release.isDraft) {
+            throw "The $($env:TAG) release is still a draft; publish it before announcing."
+          }
+
+      # The release's fields are read back from the GitHub API and cross into the Node
+      # script as environment variables — the body is arbitrary changelog markdown and must
+      # never be interpolated into script text. No continue-on-error: this run's only job
+      # is the announcement, so a Discord failure should fail the run visibly.
+      - name: Announce the release on Discord
         env:
           GH_TOKEN: ${{ github.token }}
           DISCORD_RELEASES_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASES_WEBHOOK_URL }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          TAG: ${{ inputs.tag }}
         run: |
-          RELEASE_JSON="$(gh release view "$RELEASE_TAG" --json name,body,url,publishedAt)"
-          RELEASE_NAME="$(jq -r .name <<<"$RELEASE_JSON")"
-          RELEASE_BODY="$(jq -r .body <<<"$RELEASE_JSON")"
-          RELEASE_URL="$(jq -r .url <<<"$RELEASE_JSON")"
-          RELEASE_PUBLISHED_AT="$(jq -r .publishedAt <<<"$RELEASE_JSON")"
-          export RELEASE_NAME RELEASE_BODY RELEASE_URL RELEASE_PUBLISHED_AT
+          $release = gh release view $env:TAG --json name,body,url,publishedAt | ConvertFrom-Json
+          $env:RELEASE_NAME = $release.name
+          $env:RELEASE_BODY = $release.body
+          $env:RELEASE_URL = $release.url
+          $env:RELEASE_TAG = $env:TAG
+          # ConvertFrom-Json parses the ISO date string into a DateTime, which stringifies
+          # in the runner's culture format on the way into the environment. Discord's embed
+          # timestamp must be ISO 8601, so the value is explicitly re-serialized ("o" is the
+          # ISO round-trip format).
+          $env:RELEASE_PUBLISHED_AT = ([datetime]$release.publishedAt).ToUniversalTime().ToString("o")
           node .github/scripts/post-discord-release.mjs

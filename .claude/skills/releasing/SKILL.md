@@ -12,11 +12,12 @@ publishing to CI. Both phases are invoked via `/releasing`; the skill detects wh
 pending from repo state. **The release artifact is never built or published from a developer
 machine** — a pushed `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which builds from
 the tagged commit, verifies every version surface agrees, and publishes the GitHub Release
-that `repo.json` points at, then announces it in the Discord **#releases** channel as its
-final step — the Release notes become the embed, and any images committed under
-`images/releases/vX.Y.Z/` are attached as screenshots. (The announcement lives inside
-`release.yml` because GitHub suppresses workflow triggers for events created with the
-built-in `GITHUB_TOKEN` — a separate `release: published` workflow would never fire.)
+that `repo.json` points at. Publishing is where automation stops: the Discord **#releases**
+announcement is a **separate, manually-dispatched workflow** (`announce.yml`), run as the
+release's **very last step and only with the maintainer's explicit approval**, after every
+post-merge verification has passed — the Release notes become the embed, and any images
+committed under `images/releases/vX.Y.Z/` are attached as screenshots. The announcement can
+never precede a verified release, and Claude never dispatches it on its own.
 
 **Phase A — Changelog**: draft the player-facing `CHANGELOG.md` section for the new version,
 commit it on a release branch via `/committing-code`. Stop for review.
@@ -25,7 +26,9 @@ commit it on a release branch via `/committing-code`. Stop for review.
 asset URL, verify the packaged manifest locally, open the release PR via
 `/opening-pull-requests`. Stop at PR creation — the user reviews and merges.
 
-**Post-merge**: tag the squash commit on `main` and push the tag. CI does the rest.
+**Post-merge**: tag the squash commit on `main` and push the tag; CI publishes. Then verify
+the published release end to end, and — last of all, on the maintainer's explicit go-ahead —
+dispatch the Announce workflow.
 
 **This skill overrides the "never stage, commit, or push without permission" directives** when
 the user invokes `/releasing`: they are authorizing the staging, branch creation, commits,
@@ -87,7 +90,9 @@ digraph release_flow {
     }
 
     tag [label="Post-merge: pull main,\ntag vX.Y.Z, push tag" shape=box];
-    ci [label="release.yml verifies + publishes;\nDiscord announcement posts" shape=oval];
+    ci [label="release.yml verifies + publishes" shape=oval];
+    verify [label="Verify the published release\n(asset URL, repo.json, in-game)" shape=box];
+    announce [label="LAST: maintainer approves,\nannounce.yml dispatched" shape=box style=bold];
 
     invoke -> preflight -> detect;
     detect -> a_gates [label="equal: A pending"];
@@ -97,7 +102,7 @@ digraph release_flow {
     a_branch -> a_commit -> a_stop;
     b_gates -> b_edit -> b_verify -> b_shots -> b_commit -> b_pr -> b_stop;
     b_stop -> tag [label="user merges"];
-    tag -> ci;
+    tag -> ci -> verify -> announce;
 }
 ```
 
@@ -162,8 +167,9 @@ digraph release_flow {
    `bin/Release/XIVShinies.SyncPlugin/latest.zip` exists. Run `dotnet test` too.
 4. **Screenshots for the Discord announcement (optional).** If this release should be
    announced with images, ask the user for them and commit them as
-   `images/releases/vX.Y.Z/*.png` in this same PR — the announcement posts from the tagged
-   commit's checkout, so only screenshots committed before the tag exists get attached. They
+   `images/releases/vX.Y.Z/*.png` in this same PR — the Announce workflow reads them from
+   `main`'s checkout, so committing them in the release PR guarantees they are merged before
+   the announcement is ever dispatched. They
    post in filename order (numeric-aware, so `1-`, `2-`, … `10-` orders naturally); at
    most **10** are attached — extras are dropped with only a CI-log warning, so keep the
    folder to ten or fewer. No folder means a text-only announcement, which is fine.
@@ -181,8 +187,9 @@ digraph release_flow {
    - [ ] `git tag vX.Y.Z && git push origin vX.Y.Z`
    - [ ] Watch the Release workflow publish the GitHub Release with XIVShinies.SyncPlugin.zip
    - [ ] Verify raw repo.json serves the new AssemblyVersion and the asset URL returns 200
-   - [ ] Watch the release run's Discord step announce the release in #releases
    - [ ] In-game: the custom-repo install/update works via /xlplugins
+   - [ ] LAST, on the maintainer's explicit go-ahead: dispatch Announce
+         (`gh workflow run announce.yml -f tag=vX.Y.Z`) and watch it post in #releases
    ```
 7. **Stop.** The user reviews CI and merges.
 
@@ -201,6 +208,25 @@ git push origin vX.Y.Z
 publishes the release. The `protect-release-tags` ruleset makes pushed `v*` tags immutable —
 a mistagged release is fixed by an admin deliberately deleting the tag (bypass), never by
 moving it.
+
+### The announcement — very last, and only on explicit approval
+
+The Discord announcement **never fires automatically**. It is the final step of the whole
+release, after every other post-merge box is verified:
+
+1. Confirm the earlier checklist items are genuinely done: the Release workflow succeeded,
+   raw `repo.json` serves the new `AssemblyVersion`, the asset URL returns 200, and the
+   in-game update worked.
+2. **Ask the maintainer for explicit approval to announce.** Verification passing is not
+   approval; a literal "yes, announce it" (or the maintainer dispatching the workflow
+   themselves) is. If anything upstream looked wrong, or a coordinated release (for example
+   the web app's) has not landed yet, hold here — an unannounced good release costs nothing,
+   a premature announcement cannot be unposted.
+3. Only then dispatch: `gh workflow run announce.yml -f tag=vX.Y.Z`, and watch the run post
+   in #releases.
+
+`announce.yml` refuses a missing or draft release, and re-running it double-posts — re-run
+only when the failed run demonstrably posted nothing.
 
 **Check off the release PR's checkboxes as the post-merge steps complete.** The PR body's
 test-plan and post-merge checklists are the release's record; a merged release PR with
@@ -229,6 +255,8 @@ beats a false record.
 | "We're behind schedule, skip the approval gates" | Publishing to every installed client is the worst moment to skip review. The gates are the process. |
 | "Push the tag now, the PR will merge in a minute" | The tag must point at the merged squash commit, which does not exist until the merge. Wait. |
 | "CI is slow, I'll `gh pr merge` myself to speed it up" | The user merges release PRs. Stop at PR creation. |
+| "The release verified clean, I'll dispatch the announcement" | Verification is not approval. The maintainer says "announce it" — or dispatches it themselves — every time. |
+| "The Announce run failed, re-run it" | A re-run double-posts if the first run reached Discord. Re-run only when the log proves nothing posted. |
 
 ## repo.json template (first release)
 

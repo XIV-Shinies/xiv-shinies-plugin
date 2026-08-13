@@ -220,9 +220,11 @@ Project-scoped skills live in `.claude/skills/`:
 - **releasing** — two-phase release flow (changelog entry → version/repo.json release PR,
   each gated on user approval), then a `vX.Y.Z` tag pushed to `main` after the squash merge;
   the tag-triggered Release workflow verifies every version surface agrees and publishes the
-  GitHub Release that `repo.json` points at, then posts an automatic Discord **#releases**
-  announcement carrying the release notes, with screenshots attached from
-  `images/releases/vX.Y.Z/` when that folder is committed before the release PR merges.
+  GitHub Release that `repo.json` points at. The Discord **#releases** announcement is a
+  separate, manually-dispatched workflow (`announce.yml`) run as the release's very last
+  step and **only with the maintainer's explicit approval** — it carries the release notes,
+  with screenshots attached from `images/releases/vX.Y.Z/` when that folder is committed
+  before the release PR merges.
   Releases are never built or published from a developer machine. Official-repo submission (later) still needs a `manifest.toml` placed
   under `testing/live/` in DalamudPluginsD17 (new plugins start on the testing track), one
   plugin per PR, and the AI-use level (**copilot**) disclosed in that PR's description; the
