@@ -135,6 +135,46 @@ public class CategorySettingsViewTests
         Assert.Equal(UnknownCategory, Assert.Single(section.Rows).Key);
     }
 
+    // The partial phrase rides the same no-name-branch route as the skip reason: keyed lookup,
+    // null when the category's last read was whole.
+    [Fact]
+    public void A_categorys_partial_note_is_carried_onto_its_row()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            RemoteConfig(),
+            lastSkipped: null,
+            lastPartialNotes: new Dictionary<string, string> {[UnknownCategory] = "half read."});
+
+        Assert.Equal("half read.", Assert.Single(rows).PartialNote);
+    }
+
+    [Fact]
+    public void A_category_with_no_partial_note_leaves_the_row_without_one()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Null(Assert.Single(rows).PartialNote);
+    }
+
+    // The healthy-chip hover copy rides the same keyed route as the partial note.
+    [Fact]
+    public void A_categorys_chip_detail_is_carried_onto_its_row()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            RemoteConfig(),
+            lastCollectedDetails: new Dictionary<string, string>
+            {
+                [UnknownCategory] = "Optional hover copy.",
+            });
+
+        Assert.Equal("Optional hover copy.", Assert.Single(rows).CollectedDetail);
+    }
+
     // The hover elaboration is optional self-description, carried through like the rest of the
     // copy. Null must survive as null: the window draws no hover affordance for a category whose
     // one-liner already says everything, so inventing an empty string here would put a question

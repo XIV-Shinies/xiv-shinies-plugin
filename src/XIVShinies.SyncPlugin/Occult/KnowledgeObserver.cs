@@ -81,6 +81,16 @@ public sealed unsafe class KnowledgeObserver : IDisposable
     /// </summary>
     public KnowledgeObservation? Current => current;
 
+    /// <summary>
+    /// A fence that moves at every session edge (login and logout). State another class scopes
+    /// to the same login session as the sighting stores this value alongside; a stored copy that
+    /// no longer matches was recorded in a session that has ended. Comparing generations answers
+    /// that without the other class wiring client-state events of its own.
+    /// </summary>
+    public int SessionGeneration => sessionGeneration;
+
+    private int sessionGeneration;
+
     /// <summary>Unregisters everything the constructor wired.</summary>
     public void Dispose()
     {
@@ -90,10 +100,19 @@ public sealed unsafe class KnowledgeObserver : IDisposable
         addonLifecycle.UnregisterListener(AddonEvent.PostRefresh, AddonName, OnAddon);
     }
 
-    // Both session edges clear the sighting; the constructor explains why both are wired.
-    private void OnLogin() => current = null;
+    // Both session edges clear the sighting and move the session fence; the constructor
+    // explains why both edges are wired.
+    private void OnLogin()
+    {
+        current = null;
+        sessionGeneration++;
+    }
 
-    private void OnLogout(int type, int code) => current = null;
+    private void OnLogout(int type, int code)
+    {
+        current = null;
+        sessionGeneration++;
+    }
 
     private void OnAddon(AddonEvent type, AddonArgs args)
     {

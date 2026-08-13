@@ -158,6 +158,34 @@ public sealed record CollectResult
     /// </remarks>
     public bool CompleteEnumeration { get; private init; }
 
+    /// <summary>
+    /// A phrase for the settings read-status panel when this pass read only part of what the
+    /// category covers, or null when there is nothing partial to say. Drawn after the category's
+    /// display name ("<c>{DisplayName}: {phrase}</c>"), like a skip hint — it names the half
+    /// that was not read and the in-game action that reads it.
+    /// </summary>
+    /// <remarks>
+    /// Only meaningful on a collected result: a skipped category's whole story is its
+    /// <see cref="SkipReason"/>. Self-description like everything else on this record — the
+    /// runner files it under the collector's own key, the orchestrator remembers the latest one
+    /// per category, and the panel prints whatever it is handed, so no consumer ever knows which
+    /// collection is partially read.
+    /// </remarks>
+    public string? PartialNote { get; private init; }
+
+    /// <summary>
+    /// Hover copy for the category's healthy read-status chip, or null when the chip needs
+    /// none. Where <see cref="PartialNote"/> is a visible line naming a required action, this
+    /// is optional information a reader can live without — which is exactly what the chip's
+    /// hover is allowed to carry (see <see cref="SourceNote.Detail"/>).
+    /// </summary>
+    /// <remarks>
+    /// Only meaningful on a collected result, and only rendered while the category draws as the
+    /// healthy chip: a skip reason or a partial note replaces the chip with its own line. The
+    /// same self-description route as <see cref="PartialNote"/> — no consumer interprets it.
+    /// </remarks>
+    public string? CollectedDetail { get; private init; }
+
     /// <summary>The source could not be read; omit this category from the upload.</summary>
     /// <param name="reason">
     /// A short, stable, machine-readable reason (for example <c>"achievement_list_not_loaded"</c>).
@@ -208,9 +236,21 @@ public sealed record CollectResult
     /// a real job the zero-drop protecting the id-list categories must not eat. No completeness
     /// claim either — the category is a map, and the scopes vocabulary speaks about id lists.
     /// </remarks>
+    /// <param name="jobs">The per-job progress, keyed by <c>MKDSupportJob</c> row id.</param>
+    /// <param name="knowledge">The knowledge sighting to ride along, or null when none is held.</param>
+    /// <param name="partialNote">See <see cref="PartialNote"/>; null when nothing partial to say.</param>
+    /// <param name="collectedDetail">See <see cref="CollectedDetail"/>; null when the chip needs none.</param>
     public static CollectResult Progression(
-        IReadOnlyDictionary<byte, OccultJobProgress> jobs, KnowledgeObservation? knowledge) =>
-        new() { Facts = SyncFacts.Progression(jobs, knowledge) };
+        IReadOnlyDictionary<byte, OccultJobProgress> jobs,
+        KnowledgeObservation? knowledge,
+        string? partialNote = null,
+        string? collectedDetail = null) =>
+        new()
+        {
+            Facts = SyncFacts.Progression(jobs, knowledge),
+            PartialNote = partialNote,
+            CollectedDetail = collectedDetail,
+        };
 
     /// <summary>
     /// Facts for the <c>questSequences</c> category: which step of each asked-about quest the

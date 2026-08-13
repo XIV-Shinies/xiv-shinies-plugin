@@ -21,11 +21,14 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// zones report the same array) and monotonic: job levels and EXP can never decrease.
 /// </para>
 /// <para>
-/// The settings read-status chip speaks for the category as a whole. Any pass that collected
-/// something clears the category's skip reason (see <c>SyncManager.RememberSkipReasons</c>),
-/// so once a sighting exists the "enter the Crescent" hint is gone for the rest of the login
-/// session even though job levels were never read: the hint exists to explain a category that
-/// uploads nothing, and this one is uploading a sighting.
+/// A knowledge-only pass clears the category's skip reason (any collected pass does — see
+/// <c>Sync.CollectionStatusMemory.MergeSkipReasons</c>) but carries a partial note in its
+/// place while the login session has not read the jobs, so the settings read-status panel
+/// says the job levels still need an instance visit exactly when they do — a session that has
+/// already read the jobs gets the healthy chip instead. The reverse gap is quieter: a pass
+/// that read the jobs without a knowledge sighting puts where the knowledge level comes from
+/// on the chip's hover, never a visible line, because the sighting clears at every logout and
+/// a line would nag every session.
 /// </para>
 /// <para>
 /// The knowledge sighting rides along when one exists; see <see cref="KnowledgeObservation"/>
@@ -49,6 +52,15 @@ public sealed unsafe class OccultProgressionCollector : ICollector
 
     private readonly IFramework framework;
     private readonly KnowledgeObserver knowledgeObserver;
+
+    // The observer's session generation at the moment the in-instance path last read the jobs,
+    // or null when no session has. A knowledge-only pass compares it against the current
+    // generation to decide whether the jobs half is genuinely unread THIS login session (the
+    // partial note is owed) or already read by an earlier in-instance pass (it is not).
+    // The generation, rather than a plain bool, is what keeps the answer honest across a relog:
+    // a new session moves the fence, so a stale "jobs read" can never suppress a note the new
+    // character's sighting is owed. Written and read on the framework thread only.
+    private int? jobsReadGeneration;
 
     // How this collection names and describes itself to the user.
     private readonly CategoryInfo info;
@@ -90,6 +102,9 @@ public sealed unsafe class OccultProgressionCollector : ICollector
     {
         GameThread.EnsureFrameworkThread(framework, nameof(OccultProgressionCollector));
 
+        // Read once for the whole pass: both branches below decide what to send by it.
+        var sighting = knowledgeObserver.Current;
+
         // The static accessor resolves only while the occult director exists — that is, inside
         // an instance.
         var state = PublicContentOccultCrescent.GetState();
@@ -101,8 +116,18 @@ public sealed unsafe class OccultProgressionCollector : ICollector
             // your level" flow captures one exactly where this collector cannot read the jobs.
             // The contract accepts an empty jobs map, so the sighting reaches the server on
             // the very next pass, wherever the character is standing.
-            return knowledgeObserver.Current is { } sighting
-                ? CollectResult.Progression(NoJobs, sighting)
+            // The partial note keeps the read-status panel honest about the half this pass
+            // could not read.
+            var jobsReadThisSession = jobsReadGeneration == knowledgeObserver.SessionGeneration;
+
+            return sighting is not null
+                ? CollectResult.Progression(
+                    NoJobs,
+                    sighting,
+                    partialNote: jobsReadThisSession
+                        ? null
+                        : "knowledge level read — job levels sync during your next " +
+                          "Occult Crescent visit.")
                 : CollectResult.Skipped(CollectSkipReasons.NotInOccultInstance);
         }
 
@@ -120,6 +145,20 @@ public sealed unsafe class OccultProgressionCollector : ICollector
             };
         }
 
-        return CollectResult.Progression(jobs, knowledgeObserver.Current);
+        // Fences the partial note above to this login session: the jobs have been read into
+        // this pass's facts, so a later knowledge-only pass in the same session has nothing
+        // partial to report.
+        jobsReadGeneration = knowledgeObserver.SessionGeneration;
+
+        // When no sighting is held, the chip carries a hover saying where the knowledge level
+        // comes from — a visible line is not owed for it (see this class's remarks), and the
+        // server's Lodestone sync covers the value anyway.
+        return CollectResult.Progression(
+            jobs,
+            sighting,
+            collectedDetail: sighting is null
+                ? "Your knowledge level syncs when you open the review window at Jeffroy in " +
+                  "Phantom Village."
+                : null);
     }
 }

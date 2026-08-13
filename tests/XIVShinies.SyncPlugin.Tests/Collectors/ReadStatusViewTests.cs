@@ -94,9 +94,93 @@ public class ReadStatusViewTests
             status.Containers.Select(note => note.Label));
     }
 
+    // A healthy chip may carry optional hover copy the collector attached — information a reader
+    // can live without, which is all a hover is allowed to hide.
+    [Fact]
+    public void A_healthy_collections_chip_carries_the_collectors_hover_copy()
+    {
+        var row = Row(UnknownCategory) with { CollectedDetail = "Optional hover copy." };
+
+        var status = ReadStatusView.Build(new[] { row }, NoSources());
+
+        var note = Assert.Single(status.Collections);
+        Assert.Equal(SourceTone.Live, note.Tone);
+        Assert.Equal("Optional hover copy.", note.Detail);
+    }
+
+    // The hover copy belongs to the healthy chip alone: a partial line already carries its own
+    // required action, and hover must never be the only home of one.
+    [Fact]
+    public void A_partial_line_does_not_carry_the_chip_hover_copy()
+    {
+        var row = Row(UnknownCategory) with
+        {
+            PartialNote = "half read — visit the place.",
+            CollectedDetail = "Optional hover copy.",
+        };
+
+        var status = ReadStatusView.Build(new[] { row }, NoSources());
+
+        Assert.Null(Assert.Single(status.Collections).Detail);
+    }
+
+    // A partially read collection keeps a visible action line: the phrase the collector authored
+    // names the unread half and the in-game action that reads it, drawn in the Missing tone so
+    // the action stays on screen rather than hiding behind a healthy-looking chip.
+    [Fact]
+    public void A_partially_read_collection_draws_a_line_naming_the_unread_half()
+    {
+        var row = Row(UnknownCategory) with { PartialNote = "half read — visit the place." };
+
+        var status = ReadStatusView.Build(new[] { row }, NoSources());
+
+        var note = Assert.Single(status.Collections);
+        Assert.Equal(SourceTone.Missing, note.Tone);
+        Assert.Equal("facewear display: half read — visit the place.", note.Text);
+    }
+
+    // The suppression takes the hover copy with it — no chip means nowhere to hover — unlike a
+    // partial phrase, which survives because it names a required action.
+    [Fact]
+    public void A_manifest_rows_chip_hover_copy_is_suppressed_with_its_chip()
+    {
+        var row = ManifestRow() with { CollectedDetail = "Optional hover copy." };
+
+        var status = ReadStatusView.Build(new[] { row }, OneSource());
+
+        Assert.Empty(status.Collections);
+    }
+
+    // A manifest-driven row's healthy line is suppressed in favour of the container lines, but a
+    // partial phrase says something no container line says, so it must survive the suppression.
+    [Fact]
+    public void A_manifest_rows_partial_note_survives_the_container_suppression()
+    {
+        var row = ManifestRow() with { PartialNote = "half read — visit the place." };
+
+        var status = ReadStatusView.Build(new[] { row }, OneSource());
+
+        var note = Assert.Single(status.Collections);
+        Assert.Equal("items display: half read — visit the place.", note.Text);
+    }
+
+    // A remembered partial note can outlive a category's readability (the memory merges across
+    // passes), but a fresh skip reason is the current story and must win the line.
+    [Fact]
+    public void A_skip_reason_outranks_a_stale_partial_note()
+    {
+        var row = Row(UnknownCategory, skipReason: "collector_error")
+            with { PartialNote = "half read — visit the place." };
+
+        var status = ReadStatusView.Build(new[] { row }, NoSources());
+
+        var note = Assert.Single(status.Collections);
+        Assert.Equal("facewear display: could not be read.", note.Text);
+    }
+
     // A collection that was read this pass has nothing for the user to do, so it is a chip: the
-    // green check IS "read", and the label is the collection's own display name. No sentence and no
-    // hover copy — there is nothing more to say about a healthy collection.
+    // green check IS "read", and the label is the collection's own display name. No sentence, and
+    // no hover copy for a collector that attached none — a bare healthy chip is the whole message.
     [Fact]
     public void An_enabled_collection_that_was_read_is_a_chip_labelled_with_its_name()
     {

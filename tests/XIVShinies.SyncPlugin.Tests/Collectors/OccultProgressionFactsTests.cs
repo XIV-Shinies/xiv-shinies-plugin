@@ -131,6 +131,28 @@ public class OccultProgressionFactsTests
         Assert.False(result.CompleteEnumeration);
     }
 
+    // The partial phrase is for the settings panel alone — it rides the result, never the wire.
+    [Fact]
+    public void A_partial_note_rides_the_result_and_never_reaches_the_facts()
+    {
+        var result = CollectResult.Progression(
+            Jobs((0, 0, 1)), knowledge: null, partialNote: "half read.");
+
+        Assert.Equal("half read.", result.PartialNote);
+        Assert.False(result.Facts!.AsObject().ContainsKey("partialNote"));
+    }
+
+    // As is the chip's hover copy.
+    [Fact]
+    public void A_chip_detail_rides_the_result_and_never_reaches_the_facts()
+    {
+        var result = CollectResult.Progression(
+            Jobs((0, 0, 1)), knowledge: null, collectedDetail: "Optional hover copy.");
+
+        Assert.Equal("Optional hover copy.", result.CollectedDetail);
+        Assert.False(result.Facts!.AsObject().ContainsKey("collectedDetail"));
+    }
+
     // A knowledge sighting captured outside an instance travels alone: the jobs key is still
     // present — the contract requires it — but empty, and the server's empty map writes nothing.
     [Fact]

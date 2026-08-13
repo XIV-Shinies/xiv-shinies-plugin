@@ -71,6 +71,21 @@ public sealed record CategorySettingsRow
     /// </remarks>
     public string? SkipReason { get; init; }
 
+    /// <summary>
+    /// The category's latest partial-read phrase (see
+    /// <see cref="CollectResult.PartialNote"/>), or null when its last read was whole. The same
+    /// no-name-branch route as <see cref="SkipReason"/>: the collector authors the phrase, the
+    /// panel prints it.
+    /// </summary>
+    public string? PartialNote { get; init; }
+
+    /// <summary>
+    /// The category's latest healthy-chip hover copy (see
+    /// <see cref="CollectResult.CollectedDetail"/>), or null when its chip needs none. The same
+    /// collector-authored route as <see cref="PartialNote"/>.
+    /// </summary>
+    public string? CollectedDetail { get; init; }
+
     /// <summary>True when this category will actually be uploaded as things stand.</summary>
     public bool IsEffectivelyOn => UserEnabled && ServerEnabled;
 
@@ -197,11 +212,21 @@ public static class CategorySettingsView
     /// Skip reasons from the most recent collection pass, keyed by category. Empty before the first
     /// pass, which simply means no row shows a hint yet.
     /// </param>
+    /// <param name="lastPartialNotes">
+    /// Each category's latest partial-read phrase, keyed by category. Empty before the first pass
+    /// and for categories whose last read was whole.
+    /// </param>
+    /// <param name="lastCollectedDetails">
+    /// Each category's latest healthy-chip hover copy, keyed by category. Empty before the first
+    /// pass and for categories whose chip needs none.
+    /// </param>
     public static IReadOnlyList<CategorySettingsRow> Build(
         IEnumerable<ICollector> collectors,
         PluginSettings settings,
         ConfigResponse? remoteConfig,
-        IReadOnlyDictionary<string, string>? lastSkipped = null)
+        IReadOnlyDictionary<string, string>? lastSkipped = null,
+        IReadOnlyDictionary<string, string>? lastPartialNotes = null,
+        IReadOnlyDictionary<string, string>? lastCollectedDetails = null)
     {
         var rows = new List<CategorySettingsRow>();
 
@@ -231,6 +256,16 @@ public static class CategorySettingsView
                 // discard-style pattern below just means "null when it was not there".
                 SkipReason = lastSkipped is not null && lastSkipped.TryGetValue(key, out var reason)
                     ? reason
+                    : null,
+
+                PartialNote = lastPartialNotes is not null
+                    && lastPartialNotes.TryGetValue(key, out var partialNote)
+                    ? partialNote
+                    : null,
+
+                CollectedDetail = lastCollectedDetails is not null
+                    && lastCollectedDetails.TryGetValue(key, out var collectedDetail)
+                    ? collectedDetail
                     : null,
 
                 Groups = BuildGroupRows(collector, settings, remoteConfig),

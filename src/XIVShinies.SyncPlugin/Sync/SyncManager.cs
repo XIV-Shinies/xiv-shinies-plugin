@@ -275,6 +275,29 @@ internal sealed class SyncManager : IDisposable
     private volatile IReadOnlyDictionary<string, string> lastSkipped = new Dictionary<string, string>();
 
     /// <summary>
+    /// Each category's latest partial-read phrase (see <see cref="Collectors.CollectResult.PartialNote"/>),
+    /// merged across passes rather than replaced, for the same reason <see cref="lastSkipped"/>
+    /// is (see <see cref="CollectionStatusMemory.MergePartialNotes"/> for the exact rule): a
+    /// pass that collected a category in full clears its note, a pass that did not run it leaves
+    /// the last note standing. For the settings window.
+    /// </summary>
+    /// <remarks>
+    /// <c>volatile</c>, and never mutated once handed out, for the same cross-thread reason as
+    /// <see cref="lastSkipped"/>: the writer is the collection pass on the framework thread, the
+    /// reader is the window's draw call.
+    /// </remarks>
+    private volatile IReadOnlyDictionary<string, string> lastPartialNotes =
+        new Dictionary<string, string>();
+
+    /// <summary>
+    /// Each category's latest healthy-chip hover copy (see
+    /// <see cref="Collectors.CollectResult.CollectedDetail"/>), remembered with the same merge
+    /// rules and thread discipline as <see cref="lastPartialNotes"/>. For the settings window.
+    /// </summary>
+    private volatile IReadOnlyDictionary<string, string> lastCollectedDetails =
+        new Dictionary<string, string>();
+
+    /// <summary>
     /// Per-source scan status from the most recent collection pass that reported any, keyed by
     /// source (see <see cref="SourceKeys"/>) — for example, "the saddlebag was read from a
     /// cache, not live". For the settings window.
@@ -394,6 +417,20 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
     public IReadOnlyDictionary<string, string> LastSkipped => lastSkipped;
+
+    /// <summary>
+    /// Each category's latest partial-read phrase, keyed by category. Empty before the first pass
+    /// and for every category read in full.
+    /// </summary>
+    /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
+    public IReadOnlyDictionary<string, string> LastPartialNotes => lastPartialNotes;
+
+    /// <summary>
+    /// Each category's latest healthy-chip hover copy, keyed by category. Empty before the first
+    /// pass and for every category whose chip needs none.
+    /// </summary>
+    /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
+    public IReadOnlyDictionary<string, string> LastCollectedDetails => lastCollectedDetails;
 
     /// <summary>
     /// Per-source scan status from the most recent collection pass that reported any (see
@@ -604,6 +641,11 @@ internal sealed class SyncManager : IDisposable
         // unloaded on logout. Carrying them into the next character would show hints about a state
         // that no longer exists.
         lastSkipped = new Dictionary<string, string>();
+
+        // Partial notes and chip hover copy are session-scoped for the same reason: whatever was
+        // read, or left unread, belonged to the departing character.
+        lastPartialNotes = new Dictionary<string, string>();
+        lastCollectedDetails = new Dictionary<string, string>();
 
         // Source notes describe THIS character's inventory, retainers, and other storage — none of
         // which belongs to whoever logs in next. Carrying them across a character switch would show
@@ -887,11 +929,10 @@ internal sealed class SyncManager : IDisposable
                     log.Verbose($"{due.Trigger} facts for {categoryKey}: {facts.ToJsonString()}");
             }
 
-            // Kept for the settings window. An unlock pass runs only the collectors whose categories
-            // changed, so it can speak for those and no others; replacing the whole map would erase
-            // every absent category's reason. Merging keeps the last thing each category said about
-            // itself.
+            // Kept for the settings window; the merge rules live in CollectionStatusMemory.
             RememberSkipReasons(snapshot);
+            RememberPartialNotes(snapshot);
+            RememberCollectedDetails(snapshot);
             RememberSourceNotes(snapshot);
 
             if (snapshot.Collections.Count == 0)
@@ -948,28 +989,27 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Folds this pass's skip reasons into what the settings window shows.
+    /// Folds this pass's skip reasons into what the settings window shows. The merge rules live
+    /// in <see cref="CollectionStatusMemory"/>, where they are unit-tested — including why the
+    /// memory is merged rather than replaced.
     /// </summary>
-    /// <remarks>
-    /// Merged rather than replaced. An <c>unlock</c> pass runs only the collectors for the categories
-    /// that changed — one, or several when a burst of unlocks was debounced together — so it knows
-    /// nothing about the rest. Overwriting the map with its results would wipe their reasons and make
-    /// the window claim every absent category is fine. A category that succeeded this time has its
-    /// stale reason removed; a category that did not run keeps whatever it last said.
-    /// </remarks>
-    private void RememberSkipReasons(CollectionSnapshot snapshot)
-    {
-        var merged = new Dictionary<string, string>(lastSkipped);
+    private void RememberSkipReasons(CollectionSnapshot snapshot) =>
+        lastSkipped = CollectionStatusMemory.MergeSkipReasons(lastSkipped, snapshot);
 
-        foreach (var (category, reason) in snapshot.Skipped)
-            merged[category] = reason;
+    /// <summary>
+    /// Merges this pass's partial-read phrases into the settings window's memory of them. The
+    /// rules live in <see cref="CollectionStatusMemory"/>, where they are unit-tested.
+    /// </summary>
+    private void RememberPartialNotes(CollectionSnapshot snapshot) =>
+        lastPartialNotes = CollectionStatusMemory.MergePartialNotes(lastPartialNotes, snapshot);
 
-        // Whatever was read successfully this pass is no longer skipped.
-        foreach (var category in snapshot.Collections.Keys)
-            merged.Remove(category);
-
-        lastSkipped = merged;
-    }
+    /// <summary>
+    /// Merges this pass's healthy-chip hover copy into the settings window's memory of it. The
+    /// rules live in <see cref="CollectionStatusMemory"/>, where they are unit-tested.
+    /// </summary>
+    private void RememberCollectedDetails(CollectionSnapshot snapshot) =>
+        lastCollectedDetails =
+            CollectionStatusMemory.MergeCollectedDetails(lastCollectedDetails, snapshot);
 
     /// <summary>
     /// Replaces the settings window's source-notes snapshot with this pass's, but only when this

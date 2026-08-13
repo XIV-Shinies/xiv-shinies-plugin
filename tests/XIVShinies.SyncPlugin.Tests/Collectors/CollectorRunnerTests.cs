@@ -212,6 +212,59 @@ public class CollectorRunnerTests
             3, snapshot.Collections[UnknownCategory].AsObject()["70562"]!.GetValue<int>());
     }
 
+    // The extensibility gate for partial notes: a collector's phrase lands in the snapshot under
+    // its own key, the runner none the wiser about which collection is partially read.
+    [Fact]
+    public void A_collectors_partial_note_lands_in_the_snapshot_under_its_key()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Progression(
+            new Dictionary<byte, OccultJobProgress>(),
+            knowledge: null,
+            partialNote: "half read — do the in-game thing."));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Equal("half read — do the in-game thing.", snapshot.PartialNotes[UnknownCategory]);
+        Assert.True(snapshot.Collections.ContainsKey(UnknownCategory));
+    }
+
+    // A whole read says nothing partial: the snapshot carries no entry, which is what clears
+    // any note the category was remembered with.
+    [Fact]
+    public void A_collector_without_a_partial_note_leaves_none_in_the_snapshot()
+    {
+        var snapshot = CollectorRunner.Run(
+            new[] { Collecting(UnknownCategory, 1) }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Empty(snapshot.PartialNotes);
+    }
+
+    // The healthy-chip hover copy rides the same generic route as the partial note.
+    [Fact]
+    public void A_collectors_chip_detail_lands_in_the_snapshot_under_its_key()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Progression(
+            new Dictionary<byte, OccultJobProgress>(),
+            knowledge: null,
+            collectedDetail: "Optional hover copy."));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Equal("Optional hover copy.", snapshot.CollectedDetails[UnknownCategory]);
+    }
+
+    // A pass with no hover copy leaves no entry — the absence is what clears a remembered one.
+    [Fact]
+    public void A_collector_without_a_chip_detail_leaves_none_in_the_snapshot()
+    {
+        var snapshot = CollectorRunner.Run(
+            new[] { Collecting(UnknownCategory, 1) }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Empty(snapshot.CollectedDetails);
+    }
+
     [Fact]
     public void A_category_the_user_never_opted_into_is_omitted()
     {

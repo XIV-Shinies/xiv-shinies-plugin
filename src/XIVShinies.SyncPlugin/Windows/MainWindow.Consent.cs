@@ -26,7 +26,12 @@ internal sealed partial class MainWindow
     /// </remarks>
     private IReadOnlyList<CategorySettingsRow> BuildCategoryRows() =>
         CategorySettingsView.Build(
-            collectors, configuration.Settings, syncManager.RemoteConfig, syncManager.LastSkipped);
+            collectors,
+            configuration.Settings,
+            syncManager.RemoteConfig,
+            syncManager.LastSkipped,
+            syncManager.LastPartialNotes,
+            syncManager.LastCollectedDetails);
 
     /// <summary>
     /// The wizard's consent list: every section's rows in one card, each section under a plain
