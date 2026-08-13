@@ -102,6 +102,8 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "items": true,
     "minions": true,
     "mounts": true,
+    "occultProgression": true,
+    "occultRecords": true,
     "questSequences": true,
     "quests": true,
     "tripleTriadCards": true,
@@ -196,6 +198,11 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
     "quests": [65575, 66216], // Quest Excel row ids == the server's Quest.id
     "items": [{"id": 7851, "count": 1, "hqCount": 2, "fresh": true}],
     "questSequences": {"70991": 3}, // active journal sequence byte per manifested quest
+    "occultProgression": { // phantom jobs keyed by MKDSupportJob row id (0 = Freelancer, real)
+      "jobs": {"0": {"exp": 1200, "level": 4}},
+      "knowledge": {"level": 40, "observedAt": "2026-08-12T20:00:00Z"} // optional sighting
+    },
+    "occultRecords": [1, 2, 55], // MKDLore row ids — the complete SeenLore list
     "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
     "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
   },
@@ -227,6 +234,7 @@ Field constraints:
 | `items`                  | `{id: positive int, count: non-negative int, hqCount?: non-negative int, collectableCount?: non-negative int, fresh: boolean}[]`, **max 10,000 entries** |
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
+| `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
@@ -288,6 +296,18 @@ Field constraints:
   server's curated tables decide what each byte proves. Observations are **sticky
   server-side**: a quest absent from a later upload (abandoned, completed, never started —
   the plugin cannot tell which) never clears previously derived credit.
+- **Occult id spaces & semantics.** `occultProgression.jobs` is keyed by `MKDSupportJob`
+  row ids (0–23, and **0 — Freelancer — is a real job**); values come from the occult
+  instance director, so the category is readable only inside an Occult instance and is
+  omitted from every upload made elsewhere. Job writes are
+  monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
+  the TRUE knowledge level from the review window (the in-instance HUD shows only the
+  zone-synced level), sent with the time the window was opened; the server keeps the
+  **freshest** observation across plugin and Lodestone sources, never a maximum — death
+  without a raise can de-level knowledge. `occultRecords` carries `MKDLore` row ids — the
+  game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
+  category declares itself `"full"` (see the `collectionScopes` bullet below). Storage is
+  sticky insert-only, and uncataloged ids drop under the catalog-trailing rule.
 
 #### Response (200)
 
@@ -309,7 +329,9 @@ Field constraints:
   "provenSteps": 3, // present iff items were applied and relic-proof derivation succeeded
   "itemCounts": 1268, // rows written to item-count storage by this upload's items
   "skippedCategories": ["minions"], // present iff the server stripped disabled categories from this payload
-  "storedSequences": 1 // present iff questSequences survived the strip and stored; NEW observations this upload (0 = all already known)
+  "storedSequences": 1, // present iff questSequences survived the strip and stored; NEW observations this upload (0 = all already known)
+  "storedProgression": 3, // present iff occultProgression survived and stored; jobs whose value ADVANCED (knowledge not counted)
+  "storedRecords": 5 // present iff occultRecords survived and stored; NEW sticky rows this upload
 }
 ```
 
@@ -317,8 +339,9 @@ Optional keys are **omitted rather than null**, so the plugin can feature-detect
 `items` never appears in `written` (it feeds relic proofs and count storage, not a
 collection count). The plugin reads `written` as a plain category-keyed map, so a category
 it has never heard of arrives intact and a server that names fewer causes no error.
-`itemCounts` and `storedSequences` are informational, like `written`: the plugin ignores
-them — no plugin logic may branch on them.
+`itemCounts`, `storedSequences`, `storedProgression`, and `storedRecords` are
+informational, like `written`: the plugin ignores them — no plugin logic may branch on
+them.
 
 #### Status codes
 

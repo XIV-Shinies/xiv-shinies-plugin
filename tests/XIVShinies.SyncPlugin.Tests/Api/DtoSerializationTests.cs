@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -565,6 +566,39 @@ public class DtoSerializationTests
 
         Assert.Equal(3, sequences["70562"]!.GetValue<int>());
         Assert.Equal(255, sequences["69208"]!.GetValue<int>());
+    }
+
+    // The one nested-object category: a "jobs" map of per-job records plus an optional knowledge
+    // record. OccultProgressionFactsTests pins the node tree itself; this test pins that the tree
+    // survives a full request serialization through ApiJson.Options intact — keys verbatim,
+    // nothing camel-cased or dropped by the serializer.
+    [Fact]
+    public void Occult_progression_serializes_as_nested_objects_with_verbatim_keys()
+    {
+        var request = MinimalRequest() with
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["occultProgression"] = SyncFacts.Progression(
+                    new Dictionary<byte, OccultJobProgress>
+                    {
+                        [0] = new() { Exp = 1840, Level = 2 },
+                    },
+                    new KnowledgeObservation
+                    {
+                        Level = 40,
+                        ObservedAt = new DateTimeOffset(2026, 8, 12, 20, 0, 0, TimeSpan.Zero),
+                    }),
+            },
+        };
+
+        var progression = Serialize(request)["collections"]!["occultProgression"]!.AsObject();
+
+        Assert.Equal(1840, progression["jobs"]!["0"]!["exp"]!.GetValue<int>());
+        Assert.Equal(2, progression["jobs"]!["0"]!["level"]!.GetValue<int>());
+        Assert.Equal(40, progression["knowledge"]!["level"]!.GetValue<int>());
+        Assert.Equal(
+            "2026-08-12T20:00:00Z", progression["knowledge"]!["observedAt"]!.GetValue<string>());
     }
 
     [Fact]

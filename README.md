@@ -44,6 +44,9 @@ into:
   have defeated — computer opponents, never other players
 - **Possession counts** for the specific relic-stage items the server asks about — checked
   across your inventory, armoire, glamour dresser, saddlebag, and retainers
+- **Phantom job levels and experience**, read while you are inside the Occult Crescent, and
+  your **knowledge level** when you open the review window yourself
+- Discovered **occult record** IDs
 - **Live Occult Crescent instance state**, while you are inside one: which critical
   encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
   are on, powering the site's live occult tracker on the right data center. This is world

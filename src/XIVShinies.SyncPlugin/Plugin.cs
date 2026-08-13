@@ -85,6 +85,12 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
 
+    /// <summary>
+    /// Game-window lifecycle events. Used to passively read the knowledge level from the
+    /// occult review window when the user opens it themselves.
+    /// </summary>
+    [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
+
     // --- Plugin state --------------------------------------------------------------------
 
     /// <summary>The persisted settings object (see Configuration.cs).</summary>
@@ -105,6 +111,10 @@ public sealed class Plugin : IDalamudPlugin
     // Every registered fact source. Constructed once; nothing runs them yet. They hold no
     // unmanaged resources, so there is nothing to dispose.
     private readonly IReadOnlyList<ICollector> collectors;
+
+    // Passively captures the knowledge level from the occult review window. Subscribes to
+    // addon-lifecycle events and to login/logout, so it must be disposed.
+    private readonly KnowledgeObserver knowledgeObserver;
 
     // Listens for login/unlock/interval and drives the uploads. Subscribes to game events, so it
     // must be disposed — and disposed BEFORE the ApiClient it borrows.
@@ -152,8 +162,13 @@ public sealed class Plugin : IDalamudPlugin
             var version = PluginInterface.Manifest.AssemblyVersion?.ToString() ?? "0.0.0";
             apiClient = new ApiClient(Configuration.Settings, version);
 
+            // The knowledge-level capture, built before the collectors because the phantom jobs
+            // collector reads from it. It only records what the player puts on screen
+            // themselves — see KnowledgeObserver's remarks for the passive-capture design.
+            knowledgeObserver = new KnowledgeObserver(AddonLifecycle, ClientState, Log);
+
             // Build the fact sources. Nothing reads the game until something explicitly runs them.
-            collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework);
+            collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework, knowledgeObserver);
 
             // Start listening. The manager subscribes to login and unlock events immediately, but
             // every path out of them checks the upload gate first, so a user who has not opted in
@@ -234,6 +249,7 @@ public sealed class Plugin : IDalamudPlugin
             mainWindow?.Dispose();
             occultManager?.Dispose();
             syncManager?.Dispose();
+            knowledgeObserver?.Dispose();
             apiClient?.Dispose();
             throw;
         }
@@ -267,6 +283,10 @@ public sealed class Plugin : IDalamudPlugin
         // Before the ApiClient, deliberately: this unsubscribes the game events and cancels any
         // upload in flight, so nothing is still reaching for the client when it goes away.
         syncManager.Dispose();
+
+        // After the SyncManager whose collection passes read it: no pass can start once the
+        // manager's handlers are detached.
+        knowledgeObserver.Dispose();
 
         // Releases the underlying HttpClient and its connection pool.
         apiClient.Dispose();

@@ -42,6 +42,13 @@ public static class CollectSkipReasons
     public const string AchievementListNotLoaded = "achievement_list_not_loaded";
 
     /// <summary>
+    /// The character is not inside an Occult Crescent instance, where this collection's source
+    /// (the instance director's state) lives. The user fixes this by entering the Crescent;
+    /// the settings UI turns this reason into that hint.
+    /// </summary>
+    public const string NotInOccultInstance = "not_in_occult_instance";
+
+    /// <summary>
     /// Turns a skip reason into advice for the settings window, or null if it is not worth saying.
     /// </summary>
     /// <remarks>
@@ -69,6 +76,9 @@ public static class CollectSkipReasons
     {
         AchievementListNotLoaded =>
             "not read yet — open your Achievements window in game once, then press Sync now.",
+
+        NotInOccultInstance =>
+            "not read yet — enter the Occult Crescent once; it syncs during your visit.",
 
         // The hint names no category on purpose: every manifest-driven collection — item counts
         // and quest sequences alike — reports this same reason.
@@ -188,6 +198,19 @@ public sealed record CollectResult
     /// <summary>Facts for the <c>items</c> category, which carries objects rather than IDs.</summary>
     public static CollectResult Items(IReadOnlyList<ItemPossession> items) =>
         Items(items, sourceNotes: null);
+
+    /// <summary>
+    /// Facts for the <c>occultProgression</c> category: per-job phantom job progress, plus the
+    /// optional knowledge sighting.
+    /// </summary>
+    /// <remarks>
+    /// No id filtering: the map is keyed by <c>MKDSupportJob</c> row id, where 0 (Freelancer) is
+    /// a real job the zero-drop protecting the id-list categories must not eat. No completeness
+    /// claim either — the category is a map, and the scopes vocabulary speaks about id lists.
+    /// </remarks>
+    public static CollectResult Progression(
+        IReadOnlyDictionary<byte, OccultJobProgress> jobs, KnowledgeObservation? knowledge) =>
+        new() { Facts = SyncFacts.Progression(jobs, knowledge) };
 
     /// <summary>
     /// Facts for the <c>questSequences</c> category: which step of each asked-about quest the

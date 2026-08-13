@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Collectors;
 
@@ -135,12 +136,44 @@ public static class CollectorRegistry
         UsesItemManifest = true,
     };
 
+    private static readonly CategoryInfo OccultProgression = new()
+    {
+        Key = CategoryKeys.OccultProgression,
+        DisplayName = "Phantom jobs",
+
+        // Both halves of the payload on the visible line: the per-job progress, and the
+        // knowledge level with the condition under which it is captured — a window the user
+        // opens themselves, never something the plugin asks the game for.
+        WhatGetsSent =
+            "Your phantom job levels and experience, read while you are inside the Occult " +
+            "Crescent, and your knowledge level when you open the review window yourself.",
+
+        // The knowledge level is the one fact here the plugin cannot refresh on its own, so the
+        // hover says where it comes from and that its capture time travels with it — otherwise a
+        // level that lags behind the game looks like a broken sync rather than an old sighting.
+        Details =
+            "All 24 support jobs travel together, updating each time you visit the Crescent. " +
+            "The knowledge level is captured only from the review window, and is sent with the " +
+            "time you opened it.",
+    };
+
+    private static readonly CategoryInfo OccultRecords = new()
+    {
+        Key = CategoryKeys.OccultRecords,
+        DisplayName = "Occult records",
+        WhatGetsSent = "The ID numbers of the occult records you have discovered.",
+    };
+
     /// <summary>Creates every collector, in the order they will be run.</summary>
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="unlockState">Dalamud's local-player unlock state.</param>
     /// <param name="framework">Used by each collector to verify it is on the framework thread.</param>
+    /// <param name="knowledgeObserver">The passive knowledge-level capture the phantom jobs collector reads.</param>
     public static IReadOnlyList<ICollector> Create(
-        IDataManager dataManager, IUnlockState unlockState, IFramework framework) =>
+        IDataManager dataManager,
+        IUnlockState unlockState,
+        IFramework framework,
+        KnowledgeObserver knowledgeObserver) =>
         new ICollector[]
         {
             // `unlockState.IsQuestCompleted` is a "method group": the method is passed as a value
@@ -189,6 +222,14 @@ public static class CollectorRegistry
             // Defeated opponents have no IUnlockState method, so this collector reads the game's
             // UIState directly — see its class remarks for the id space it reports.
             new TripleTriadNpcCollector(TripleTriadNpcs, dataManager, framework),
+
+            // Phantom job progress lives in the occult instance director, so this one reads only
+            // inside the Crescent; the knowledge sighting rides along from the observer.
+            new OccultProgressionCollector(OccultProgression, framework, knowledgeObserver),
+
+            // Discovered occult records — a client-persisted list readable anywhere, so it needs
+            // no instance visit and no sheet walk: the saved list IS the seen-set.
+            new OccultRecordsCollector(OccultRecords, framework),
 
             // The odd one out: it reports possession counts rather than IDs, and it only looks at
             // the items the server named in its manifest. The runner treats it like any other.

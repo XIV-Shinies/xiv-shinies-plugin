@@ -81,6 +81,25 @@ public class UploadLogTests
         Assert.Equal(2, category.Count);
     }
 
+    // A nested map (occultProgression: a "jobs" object of per-job records, plus an optional
+    // "knowledge" record) must not count its two members as two facts. A container member
+    // contributes its own entry count, so each job in the map reads as one fact — plus two
+    // for a knowledge sighting when one exists.
+    [Fact]
+    public void Draft_counts_the_entries_of_a_nested_container_member()
+    {
+        var snapshot = SnapshotWith(collections: new Dictionary<string, JsonNode>
+        {
+            ["occultProgression"] = JsonNode.Parse(
+                """{"jobs":{"0":{"exp":10,"level":2},"1":{"exp":0,"level":1}},"knowledge":{"level":40,"observedAt":"2026-08-12T20:00:00Z"}}""")!,
+        });
+
+        var draft = UploadLogEntry.Draft(DateTimeOffset.UnixEpoch, SyncTrigger.Manual, snapshot);
+
+        var category = Assert.Single(draft.Categories);
+        Assert.Equal(4, category.Count); // two jobs + the sighting's two fields
+    }
+
     // A shape the log has never seen (neither array nor object) is purely hypothetical — but a
     // formatter that CAN misread it as zero facts eventually will, so the "count it as one rather
     // than crash or hide it" fallback is pinned.

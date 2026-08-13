@@ -148,17 +148,37 @@ public sealed record UploadLogEntry
 
     /// <summary>
     /// How many facts a category's JSON carries. Array categories (id lists, item-count objects)
-    /// count their elements; object categories (quest id → sequence) count their members. Any
-    /// other shape counts as one fact rather than crashing or hiding it in the log.
+    /// count their elements; object categories count their members, except that a member which
+    /// is itself a container counts its own entries — so a flat map (quest id → sequence byte)
+    /// counts one per quest, and a nested map (a "jobs" object of 24 per-job records) counts one
+    /// per job rather than collapsing to a single fact. Shape alone decides; no category names.
+    /// Any other shape counts as one fact rather than crashing or hiding it in the log.
     /// </summary>
     // A `switch` EXPRESSION: each arm is `pattern => value`, and `_` is the required
     // catch-all — like a chain of ternaries in JS, but the compiler checks the patterns.
     private static int CountFacts(JsonNode facts) => facts switch
     {
         JsonArray array => array.Count,
-        JsonObject members => members.Count,
+        JsonObject members => CountMembers(members),
         _ => 1,
     };
+
+    /// <summary>One fact per scalar member; a container member contributes its own count.</summary>
+    private static int CountMembers(JsonObject members)
+    {
+        var count = 0;
+        foreach (var (_, value) in members)
+        {
+            count += value switch
+            {
+                JsonArray array => array.Count,
+                JsonObject nested => nested.Count,
+                _ => 1,
+            };
+        }
+
+        return count;
+    }
 
     /// <summary>
     /// A short, deterministic hash of a category's facts. Collectors build their facts in a
