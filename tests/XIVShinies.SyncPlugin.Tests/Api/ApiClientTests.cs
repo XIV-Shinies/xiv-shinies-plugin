@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Xunit;
 using XIVShinies.SyncPlugin;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
@@ -144,6 +145,41 @@ public class ApiClientTests
         Assert.Contains("\"quests\":[65575]", handler.LastBody);
         // The monotonic rule survives the wire: unread categories never appear.
         Assert.DoesNotContain("achievements", handler.LastBody);
+    }
+
+    // The occult upload rides the same guarded POST path as /sync; this pins its URL and that
+    // the response's outcome/trackerId survive the trip.
+    [Fact]
+    public async Task PostOccultInstanceState_posts_to_the_contract_url()
+    {
+        const string body = """
+        {"ok": true, "outcome": "applied",
+         "trackerId": "6f9619ff-8b86-d011-b42d-00cf4fc964ff", "created": true}
+        """;
+        var (client, handler) = Build(_ => Json(HttpStatusCode.OK, body));
+
+        var request = OccultUploadBuilder.Build(
+            characterContentIdHash: new string('a', 64),
+            characterName: "Some Name",
+            homeWorld: "Excalibur",
+            pluginVersion: "1.2.3",
+            territoryTypeId: 1252,
+            trigger: OccultTrigger.Enter,
+            encounters: [],
+            currentWorldId: null);
+
+        var response = await client.PostOccultInstanceStateAsync(request);
+
+        Assert.Equal(ApiStatus.Ok, response.Status);
+        Assert.Equal(OccultOutcomes.Applied, response.Value!.Outcome);
+        Assert.Equal("6f9619ff-8b86-d011-b42d-00cf4fc964ff", response.Value.TrackerId);
+
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal(
+            "https://xiv-shinies.com/api/plugin/v1/occult/instance-state",
+            handler.LastRequest.RequestUri!.ToString());
+        Assert.NotNull(handler.LastContentLength);
+        Assert.Contains("\"trigger\":\"enter\"", handler.LastBody);
     }
 
     [Fact]

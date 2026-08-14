@@ -18,6 +18,12 @@ public sealed record CategorySettingsRow
     /// <summary>The label to draw beside the checkbox.</summary>
     public required string DisplayName { get; init; }
 
+    /// <summary>
+    /// The heading this row is listed under, carried verbatim from the collector's
+    /// self-description (see <see cref="CategoryInfo.Section"/>).
+    /// </summary>
+    public required string Section { get; init; }
+
     /// <summary>The plain-language description of what uploading this category sends.</summary>
     public required string WhatGetsSent { get; init; }
 
@@ -65,6 +71,21 @@ public sealed record CategorySettingsRow
     /// </remarks>
     public string? SkipReason { get; init; }
 
+    /// <summary>
+    /// The category's latest partial-read phrase (see
+    /// <see cref="CollectResult.PartialNote"/>), or null when its last read was whole. The same
+    /// no-name-branch route as <see cref="SkipReason"/>: the collector authors the phrase, the
+    /// panel prints it.
+    /// </summary>
+    public string? PartialNote { get; init; }
+
+    /// <summary>
+    /// The category's latest healthy-chip hover copy (see
+    /// <see cref="CollectResult.CollectedDetail"/>), or null when its chip needs none. The same
+    /// collector-authored route as <see cref="PartialNote"/>.
+    /// </summary>
+    public string? CollectedDetail { get; init; }
+
     /// <summary>True when this category will actually be uploaded as things stand.</summary>
     public bool IsEffectivelyOn => UserEnabled && ServerEnabled;
 
@@ -111,6 +132,22 @@ public sealed record ItemGroupRow
 }
 
 /// <summary>
+/// One heading's worth of the consent list: a section title and the rows listed under it.
+/// </summary>
+/// <remarks>
+/// Produced by <see cref="CategorySettingsView.GroupBySection"/>. The consent surfaces draw a
+/// plain label per section without ever knowing which sections exist.
+/// </remarks>
+public sealed record CategorySection
+{
+    /// <summary>The heading, exactly as the section's collectors declared it.</summary>
+    public required string Title { get; init; }
+
+    /// <summary>This section's rows, in registration order.</summary>
+    public required IReadOnlyList<CategorySettingsRow> Rows { get; init; }
+}
+
+/// <summary>
 /// Assembles the settings window's category list from the registered collectors.
 /// </summary>
 /// <remarks>
@@ -134,11 +171,21 @@ public static class CategorySettingsView
     /// Skip reasons from the most recent collection pass, keyed by category. Empty before the first
     /// pass, which simply means no row shows a hint yet.
     /// </param>
+    /// <param name="lastPartialNotes">
+    /// Each category's latest partial-read phrase, keyed by category. Empty before the first pass
+    /// and for categories whose last read was whole.
+    /// </param>
+    /// <param name="lastCollectedDetails">
+    /// Each category's latest healthy-chip hover copy, keyed by category. Empty before the first
+    /// pass and for categories whose chip needs none.
+    /// </param>
     public static IReadOnlyList<CategorySettingsRow> Build(
         IEnumerable<ICollector> collectors,
         PluginSettings settings,
         ConfigResponse? remoteConfig,
-        IReadOnlyDictionary<string, string>? lastSkipped = null)
+        IReadOnlyDictionary<string, string>? lastSkipped = null,
+        IReadOnlyDictionary<string, string>? lastPartialNotes = null,
+        IReadOnlyDictionary<string, string>? lastCollectedDetails = null)
     {
         var rows = new List<CategorySettingsRow>();
 
@@ -150,6 +197,7 @@ public static class CategorySettingsView
             {
                 Key = key,
                 DisplayName = collector.DisplayName,
+                Section = collector.Section,
                 WhatGetsSent = collector.WhatGetsSent,
                 Details = collector.Details,
                 UserEnabled = settings.IsCategoryEnabled(key),
@@ -169,11 +217,60 @@ public static class CategorySettingsView
                     ? reason
                     : null,
 
+                PartialNote = lastPartialNotes is not null
+                    && lastPartialNotes.TryGetValue(key, out var partialNote)
+                    ? partialNote
+                    : null,
+
+                CollectedDetail = lastCollectedDetails is not null
+                    && lastCollectedDetails.TryGetValue(key, out var collectedDetail)
+                    ? collectedDetail
+                    : null,
+
                 Groups = BuildGroupRows(collector, settings, remoteConfig),
             });
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Buckets rows under the section titles their collectors declared, for the consent surfaces
+    /// to draw one heading at a time.
+    /// </summary>
+    /// <remarks>
+    /// Sections appear in the order their first row appears, and rows keep registration order
+    /// within their section — so the on-screen order is still decided entirely by
+    /// <see cref="CollectorRegistry"/>. There is no fixed section list and no fallback bucket:
+    /// whatever titles the rows carry are the sections that exist, which is what keeps this
+    /// surface free of category knowledge.
+    /// </remarks>
+    /// <param name="rows">The rows to group, from <see cref="Build"/>.</param>
+    public static IReadOnlyList<CategorySection> GroupBySection(
+        IReadOnlyList<CategorySettingsRow> rows)
+    {
+        // Two structures side by side: the list remembers first-appearance order (a Dictionary
+        // alone promises no order), while the dictionary finds each section's bucket in one step.
+        var sections = new List<(string Title, List<CategorySettingsRow> Rows)>();
+        var byTitle = new Dictionary<string, List<CategorySettingsRow>>();
+
+        foreach (var row in rows)
+        {
+            if (!byTitle.TryGetValue(row.Section, out var bucket))
+            {
+                bucket = new List<CategorySettingsRow>();
+                byTitle[row.Section] = bucket;
+                sections.Add((row.Section, bucket));
+            }
+
+            bucket.Add(row);
+        }
+
+        var result = new List<CategorySection>(sections.Count);
+        foreach (var (title, bucketRows) in sections)
+            result.Add(new CategorySection { Title = title, Rows = bucketRows });
+
+        return result;
     }
 
     // Group rows attach only when BOTH sides agree there is something to draw: the collector has

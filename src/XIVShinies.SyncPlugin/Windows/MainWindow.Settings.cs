@@ -19,8 +19,8 @@ internal sealed partial class MainWindow
     private void DrawSettings()
     {
         // The three surfaces that need the category rows — the read-status panel inside the sync card,
-        // the "New" chip on the Collections header, and the consent card itself — are all drawn from
-        // THIS list (see BuildCategoryRows).
+        // the "New" chip on the Collections header, and the consent card itself — are all drawn
+        // from THIS list (see BuildCategoryRows).
         var rows = BuildCategoryRows();
 
         DrawSettingsHeader();
@@ -49,8 +49,8 @@ internal sealed partial class MainWindow
         // whatever the user last chose. Consent is the one thing on this screen a user may want to
         // change at any moment, so it greets them expanded — but it is a long card, so it can be
         // folded away once they have made their choices.
-        // "Collections", not the card's own longer title: the accordion headers name their section
-        // briefly (Account, Privacy, Recent uploads) and the card inside carries the full heading.
+        // "Collections", like the other accordion headers (Account, Privacy, Recent uploads): a
+        // brief section name. The consent list inside labels its own sections in place.
         var collectionsOpen =
             ImGui.CollapsingHeader("Collections", ImGuiTreeNodeFlags.DefaultOpen);
 
@@ -67,7 +67,11 @@ internal sealed partial class MainWindow
         if (collectionsOpen)
         {
             ImGui.Spacing();
-            DrawCategoryRows(rows, showNewChips: true, FontAwesomeIcon.Gem, "Collections to include");
+            DrawCategoryRows(rows, showNewChips: true);
+
+            // The live tracker's consent card, below the collections card it is not part of.
+            ImGui.Spacing();
+            DrawOccultConsentRow();
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

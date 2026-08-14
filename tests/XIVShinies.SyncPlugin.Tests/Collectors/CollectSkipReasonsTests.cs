@@ -60,6 +60,15 @@ public class CollectSkipReasonsTests
             hint);
     }
 
+    [Fact]
+    public void Being_outside_the_occult_instance_asks_the_user_to_enter_the_crescent()
+    {
+        var hint = CollectSkipReasons.Describe(CollectSkipReasons.NotInOccultInstance);
+
+        Assert.Equal(
+            "not read yet — enter the Occult Crescent once; it syncs during your visit.", hint);
+    }
+
     // The checkbox beside the category already says it is off; repeating it would be noise.
     [Fact]
     public void A_disabled_category_needs_no_explanation()

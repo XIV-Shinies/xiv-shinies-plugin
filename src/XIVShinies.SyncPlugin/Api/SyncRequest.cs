@@ -171,6 +171,59 @@ public static class SyncFacts
 
         return facts;
     }
+
+    /// <summary>
+    /// Facts for the <c>occultProgression</c> category: per-job phantom job progress keyed by
+    /// <c>MKDSupportJob</c> row id, plus the optional knowledge sighting.
+    /// </summary>
+    /// <remarks>
+    /// Built by hand like <see cref="Sequences"/>, and for the same key reason — job ids must
+    /// become plain decimal strings. The knowledge key is present
+    /// only when an observation exists: the contract reads its absence as "never sighted", and
+    /// its <c>observedAt</c> must be a second-exact UTC string with a trailing <c>Z</c> (the
+    /// server rejects numeric-offset forms).
+    /// </remarks>
+    public static JsonNode Progression(
+        IReadOnlyDictionary<byte, OccultJobProgress> jobs,
+        KnowledgeObservation? knowledge)
+    {
+        // The schema's ceiling for a job's exp.
+        const int maxExp = 100_000_000;
+
+        var jobsNode = new JsonObject();
+        foreach (var (jobId, progress) in jobs)
+        {
+            // An exp beyond the schema's ceiling is a misread (the game's real values sit far
+            // below it), not a fact about the character. The job is OMITTED, never clamped:
+            // under monotonic writes an absent id means "not read" and costs nothing, whereas
+            // writing the ceiling would pin the job at a maximum the server can never walk
+            // back — every honest later value would look stale. Sending it raw is not an
+            // option either: one out-of-range value makes the server reject the whole upload.
+            if (progress.Exp > maxExp)
+                continue;
+
+            jobsNode[jobId.ToString(CultureInfo.InvariantCulture)] = new JsonObject
+            {
+                // Int-typed for the same JsonValue-CLR-type reason Sequences documents.
+                ["exp"] = (int)progress.Exp,
+                ["level"] = (int)progress.Level,
+            };
+        }
+
+        var facts = new JsonObject { ["jobs"] = jobsNode };
+
+        if (knowledge is not null)
+        {
+            facts["knowledge"] = new JsonObject
+            {
+                ["level"] = (int)knowledge.Level,
+                ["observedAt"] = knowledge.ObservedAt.UtcDateTime.ToString(
+                    "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'", CultureInfo.InvariantCulture),
+            };
+        }
+
+        return facts;
+    }
 }
 
 /// <summary>How many of a manifest item the character possesses.</summary>

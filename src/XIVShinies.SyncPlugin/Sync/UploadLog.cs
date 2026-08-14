@@ -11,7 +11,8 @@ namespace XIVShinies.SyncPlugin.Sync;
 
 /// <summary>
 /// One category's contribution to an upload: its wire key, how many facts went out, a short
-/// content fingerprint, and whether its scope comes from the server's item manifest.
+/// content fingerprint, whether its scope comes from the server's item manifest, and — for a
+/// manifest-driven category — how many of its entries the character holds a copy of.
 /// </summary>
 /// <remarks>
 /// The fingerprint exists because the count alone cannot see an exchange: swapping one fact for
@@ -22,15 +23,28 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// <paramref name="UsesItemManifest"/> mirrors the collector's own
 /// <see cref="Collectors.ICollector.UsesItemManifest"/> flag. It decides the category's change
 /// signal: a manifest-driven category's contents move whenever the server edits the manifest, so
-/// a content diff cannot tell "the player obtained something" from "the manifest grew" — those
-/// categories report the server's proof answer (<see cref="UploadLogEntry.ProvenSteps"/>)
-/// instead of a "(changed)" mark.
+/// a content diff cannot tell "the player obtained something" from "the manifest grew". Its
+/// signal compares <paramref name="OwnedCount"/> instead — how many manifest entries the
+/// character holds at least one copy of, in any quality. That number ignores manifest growth
+/// with items the character lacks (a newly asked-about item adds an unowned entry) and ignores
+/// balance movement on items already held (a currency ticking between two positive values), so
+/// when it moves, the set of items the plugin could see the character holding changed. Usually
+/// that is a pickup — but a storage source becoming readable mid-session (opening the armoire,
+/// glamour dresser, or saddlebag for the first time), a consent-group toggle, or a manifest
+/// edit touching an item already held moves it too, so the mark reads "your visible holdings
+/// changed", not strictly "you looted something". Null for every other category, and for a
+/// manifest-driven one whose facts were not the possession shape — with nothing honest to
+/// compare, no flag is shown.
 /// </para>
 /// </remarks>
 // A "positional record": the parameter list declares init-only properties and a constructor in
 // one line — the C# shorthand for a tiny immutable data shape.
 public sealed record UploadLogCategory(
-    string Key, int Count, string Fingerprint = "", bool UsesItemManifest = false);
+    string Key,
+    int Count,
+    string Fingerprint = "",
+    bool UsesItemManifest = false,
+    int? OwnedCount = null);
 
 /// <summary>
 /// One upload, as shown in the settings window's upload log: when, why, what was sent, and how
@@ -123,11 +137,13 @@ public sealed record UploadLogEntry
         var categories = new List<UploadLogCategory>(snapshot.Collections.Count);
         foreach (var (key, facts) in snapshot.Collections)
         {
+            var manifestDriven = snapshot.ManifestDrivenKeys.Contains(key);
             categories.Add(new UploadLogCategory(
                 key,
                 CountFacts(facts),
                 Fingerprint(facts),
-                snapshot.ManifestDrivenKeys.Contains(key)));
+                manifestDriven,
+                manifestDriven ? CountOwned(facts) : null));
         }
 
         return new UploadLogEntry
@@ -148,17 +164,98 @@ public sealed record UploadLogEntry
 
     /// <summary>
     /// How many facts a category's JSON carries. Array categories (id lists, item-count objects)
-    /// count their elements; object categories (quest id → sequence) count their members. Any
-    /// other shape counts as one fact rather than crashing or hiding it in the log.
+    /// count their elements; object categories count their members, except that a member which
+    /// is itself a container counts its own entries — so a flat map (quest id → sequence byte)
+    /// counts one per quest, and a nested map (a "jobs" object of 24 per-job records) counts one
+    /// per job rather than collapsing to a single fact. Shape alone decides; no category names.
+    /// Any other shape counts as one fact rather than crashing or hiding it in the log.
     /// </summary>
     // A `switch` EXPRESSION: each arm is `pattern => value`, and `_` is the required
     // catch-all — like a chain of ternaries in JS, but the compiler checks the patterns.
     private static int CountFacts(JsonNode facts) => facts switch
     {
         JsonArray array => array.Count,
-        JsonObject members => members.Count,
+        JsonObject members => CountMembers(members),
         _ => 1,
     };
+
+    /// <summary>
+    /// The per-quality count members of the manifest possession shape
+    /// (<see cref="Api.ItemPossession"/> on the wire) — every way an entry can hold copies.
+    /// </summary>
+    // If ItemPossession ever grows another quality, it must be added here too, or entries owned
+    // only in that quality would read as unowned and their pickups would go unflagged.
+    private static readonly string[] PossessionCountMembers = ["count", "hqCount", "collectableCount"];
+
+    /// <summary>
+    /// How many entries of a manifest possession array the character holds at least one copy of,
+    /// in any quality — the number <see cref="UploadLogCategory.OwnedCount"/> carries. Null when
+    /// the facts are not a possession array (not an array at all, or an array of something other
+    /// than objects — an id list, say): there is no possession shape to count, and null keeps
+    /// the change signal honestly silent instead of comparing a guess. An empty array counts as
+    /// zero, not null — "collected, owns none of it" is a real baseline a first pickup can move.
+    /// </summary>
+    private static int? CountOwned(JsonNode facts)
+    {
+        if (facts is not JsonArray entries)
+            return null;
+
+        // Shape-sniff the first element, the same way PayloadCaps tells the two array shapes
+        // apart: possession arrays are homogeneous, so a non-object first element means this
+        // whole array is some other kind of list and a count of zero would be a lie, not an
+        // answer.
+        if (entries.Count > 0 && entries[0] is not JsonObject)
+            return null;
+
+        var owned = 0;
+        foreach (var entry in entries)
+        {
+            if (entry is JsonObject possession && HoldsAnyCopy(possession))
+                owned++;
+        }
+
+        return owned;
+    }
+
+    /// <summary>True when any of the entry's per-quality counts is positive.</summary>
+    private static bool HoldsAnyCopy(JsonObject possession)
+    {
+        foreach (var member in PossessionCountMembers)
+        {
+            // The pattern handles an absent member (the indexer returns null); TryGetValue
+            // handles a present member that is not a whole number a uint can hold — a string,
+            // a negative, a fraction. Both simply mean "no copies in this quality". The uint
+            // read works because possession facts come from SyncFacts.Items, which serializes
+            // the DTOs with SerializeToNode and so hands back JsonElement-backed values; a
+            // hand-built JsonValue remembers its source CLR type and can refuse the read —
+            // the trap SyncFacts.Sequences documents where it widens a byte to int.
+            if (possession[member] is JsonValue value
+                && value.TryGetValue(out uint count)
+                && count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>One fact per scalar member; a container member contributes its own count.</summary>
+    private static int CountMembers(JsonObject members)
+    {
+        var count = 0;
+        foreach (var (_, value) in members)
+        {
+            count += value switch
+            {
+                JsonArray array => array.Count,
+                JsonObject nested => nested.Count,
+                _ => 1,
+            };
+        }
+
+        return count;
+    }
 
     /// <summary>
     /// A short, deterministic hash of a category's facts. Collectors build their facts in a
@@ -248,18 +345,19 @@ public sealed class UploadLog
 public static class UploadLogDiff
 {
     /// <summary>
-    /// The category keys in <c>newestFirst[index]</c> whose contents differ from that category's
-    /// most recent earlier appearance in the log — a different count, or the same count with a
-    /// different fingerprint.
+    /// The category keys in <c>newestFirst[index]</c> whose signal moved against that category's
+    /// most recent earlier appearance in the log — a different count or fingerprint, or, for a
+    /// manifest-driven category, a different owned-entry count.
     /// </summary>
     /// <remarks>
     /// The baseline is the nearest OLDER entry that mentions the category, not simply the
     /// previous entry: an unlock upload carries only the categories that changed, so in-between
     /// entries may not mention a category at all. A category the log has never seen before is
     /// not flagged — with no baseline, "changed" would be a guess, and it would paint the whole
-    /// first upload of every session. Manifest-driven categories are never flagged — their
-    /// change signal is the server's proof answer (<see cref="UploadLogEntry.ProvenSteps"/>);
-    /// <see cref="UploadLogCategory"/> explains why a content diff cannot carry it.
+    /// first upload of every session. Manifest-driven categories compare their owned-entry
+    /// count rather than their contents — <see cref="UploadLogCategory"/> explains why a
+    /// content diff cannot carry their signal — and stay unflagged when either side has no
+    /// owned count to offer.
     /// </remarks>
     public static IReadOnlySet<string> ChangedCategories(
         IReadOnlyList<UploadLogEntry> newestFirst, int index)
@@ -268,14 +366,26 @@ public static class UploadLogDiff
 
         foreach (var category in newestFirst[index].Categories)
         {
-            if (category.UsesItemManifest)
+            // `is not { } baseline` is a null test and an unwrap in one: the loop moves on when
+            // no baseline exists, and every line past it has `baseline` as the record inside
+            // the nullable.
+            if (Baseline(newestFirst, index, category.Key) is not { } baseline)
                 continue;
 
-            // `is { } baseline` is a null test and an unwrap in one: the branch runs only when a
-            // baseline exists, with `baseline` as the record inside the nullable.
-            if (Baseline(newestFirst, index, category.Key) is { } baseline
-                && (baseline.Count != category.Count
-                    || baseline.Fingerprint != category.Fingerprint))
+            if (category.UsesItemManifest)
+            {
+                if (baseline.OwnedCount is { } was
+                    && category.OwnedCount is { } now
+                    && was != now)
+                {
+                    changed.Add(category.Key);
+                }
+
+                continue;
+            }
+
+            if (baseline.Count != category.Count
+                || baseline.Fingerprint != category.Fingerprint)
             {
                 changed.Add(category.Key);
             }
@@ -406,8 +516,9 @@ public static class UploadLogText
     /// answer — or null when there is nothing worth saying.
     /// </summary>
     /// <remarks>
-    /// Manifest-driven categories get no "(changed)" mark (see
-    /// <see cref="UploadLogDiff.ChangedCategories"/>); this is their signal instead. The cases:
+    /// A manifest-driven category's "(changed)" mark tracks possession only (see
+    /// <see cref="UploadLogDiff.ChangedCategories"/>); this note is the server's side of the
+    /// story — what the sent items proved. The cases:
     /// steps were proved → say how many; zero proved → silence (the items applied, nothing new —
     /// no note is the honest rendering); no answer on an accepted upload that sent item facts →
     /// "proof pending", because derivation failed server-side and the next upload retries it. An
@@ -431,6 +542,41 @@ public static class UploadLogText
         }
 
         return CarriesManifestDrivenFacts(entry) ? "proof pending" : null;
+    }
+
+    /// <summary>
+    /// The text spans the window prints for one sent category, each paired with whether it draws
+    /// highlighted (gold). A span-based answer because one category can carry two independently
+    /// colored parts: the label with its "(changed)" mark, and — for a manifest-driven category —
+    /// the server's proof note beside it.
+    /// </summary>
+    /// <remarks>
+    /// The highlight rules: "(changed)" always highlights its span — that is the "you just got
+    /// something" signal. The proof note highlights only when steps were actually proved;
+    /// "proof pending" is not good news and stays plain even when it lands next to a highlighted
+    /// change mark. The proof note only ever attaches to a manifest-driven category — the server
+    /// answers about sent items, so it would be noise beside any other category.
+    /// </remarks>
+    /// <param name="displayName">The category's collector-declared display name.</param>
+    /// <param name="category">The category as the log entry recorded it.</param>
+    /// <param name="changed">Whether the diff flagged this category against its baseline.</param>
+    /// <param name="proof">The entry's proof note (<see cref="ProofText"/>), or null.</param>
+    /// <param name="stepsProven">Whether the server's answer proved at least one step.</param>
+    public static IReadOnlyList<(string Text, bool Highlight)> SentSpans(
+        string displayName,
+        UploadLogCategory category,
+        bool changed,
+        string? proof,
+        bool stepsProven)
+    {
+        var label = $"{displayName} {category.Count:N0}";
+        if (changed)
+            label += " (changed)";
+
+        if (category.UsesItemManifest && proof is not null)
+            return [(label, changed), ($" ({proof})", stepsProven)];
+
+        return [(label, changed)];
     }
 
     /// <summary>
@@ -479,7 +625,15 @@ public static class UploadLogText
 
             text.Append(" | sent:");
             foreach (var category in entry.Categories)
+            {
                 text.Append(' ').Append(category.Key).Append('=').Append(category.Count);
+
+                // A manifest category's "changed:" flag compares this owned-entry count, not the
+                // fact count — printing it makes the flag (and its absence) verifiable from the
+                // paste alone, which is this surface's whole job.
+                if (category.OwnedCount is { } owned)
+                    text.Append(" owned=").Append(owned);
+            }
 
             if (entry.Skipped.Count > 0)
             {
@@ -488,9 +642,9 @@ public static class UploadLogText
                     text.Append(' ').Append(key).Append('=').Append(reason);
             }
 
-            // The same fact the window's gold highlight shows, in text: which categories'
-            // contents differ from their previous appearance. Counts alone cannot carry this —
-            // a one-for-one content swap keeps the count identical.
+            // The same fact the window's gold highlight shows, in text: which categories moved
+            // against their previous appearance. The printed fact counts alone cannot carry
+            // it — a one-for-one content swap leaves an ordinary category's count identical.
             var changed = UploadLogDiff.ChangedCategories(entries, index);
             if (changed.Count > 0)
             {

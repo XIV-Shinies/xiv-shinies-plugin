@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -463,6 +464,59 @@ public class DtoSerializationTests
     }
 
     [Fact]
+    public void ConfigResponse_deserializes_the_occult_tracker_block()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123",
+             "occultTracker":{"enabled":true,"heartbeatSeconds":60}}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.NotNull(config.OccultTracker);
+        Assert.True(config.OccultTracker!.Enabled);
+        Assert.Equal(60, config.OccultTracker.HeartbeatSeconds);
+    }
+
+    [Fact]
+    public void ConfigResponse_without_an_occult_tracker_block_leaves_it_null()
+    {
+        // An older server never sends the block. Null is the signal that this server has no
+        // tracker endpoint at all, so the feature stays off (see OccultGate).
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.Null(config.OccultTracker);
+    }
+
+    // The kill switch is required (guessing it would be trusting a half-parsed block with the
+    // one value that gates uploads), but the cadence is not: the scheduler clamps whatever
+    // arrives, so a block without it must not fail the WHOLE config deserialization — that
+    // would also strand /sync on its last-known manifest.
+    [Fact]
+    public void An_occult_tracker_block_without_a_cadence_still_parses()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123",
+             "occultTracker":{"enabled":true}}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.True(config.OccultTracker!.Enabled);
+        Assert.Equal(60, config.OccultTracker.HeartbeatSeconds);
+    }
+
+    [Fact]
     public void ConfigResponse_deserializes_the_quest_sequence_manifest()
     {
         const string json = """
@@ -512,6 +566,39 @@ public class DtoSerializationTests
 
         Assert.Equal(3, sequences["70562"]!.GetValue<int>());
         Assert.Equal(255, sequences["69208"]!.GetValue<int>());
+    }
+
+    // The one nested-object category: a "jobs" map of per-job records plus an optional knowledge
+    // record. OccultProgressionFactsTests pins the node tree itself; this test pins that the tree
+    // survives a full request serialization through ApiJson.Options intact — keys verbatim,
+    // nothing camel-cased or dropped by the serializer.
+    [Fact]
+    public void Occult_progression_serializes_as_nested_objects_with_verbatim_keys()
+    {
+        var request = MinimalRequest() with
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["occultProgression"] = SyncFacts.Progression(
+                    new Dictionary<byte, OccultJobProgress>
+                    {
+                        [0] = new() { Exp = 1840, Level = 2 },
+                    },
+                    new KnowledgeObservation
+                    {
+                        Level = 40,
+                        ObservedAt = new DateTimeOffset(2026, 8, 12, 20, 0, 0, TimeSpan.Zero),
+                    }),
+            },
+        };
+
+        var progression = Serialize(request)["collections"]!["occultProgression"]!.AsObject();
+
+        Assert.Equal(1840, progression["jobs"]!["0"]!["exp"]!.GetValue<int>());
+        Assert.Equal(2, progression["jobs"]!["0"]!["level"]!.GetValue<int>());
+        Assert.Equal(40, progression["knowledge"]!["level"]!.GetValue<int>());
+        Assert.Equal(
+            "2026-08-12T20:00:00Z", progression["knowledge"]!["observedAt"]!.GetValue<string>());
     }
 
     [Fact]

@@ -61,8 +61,8 @@ public static class ReadStatusView
     /// Every line the panel should draw, split into its collection lines and its container lines.
     /// </summary>
     /// <param name="rows">
-    /// The settings window's category rows — the same list the consent card is drawn from (see
-    /// <see cref="CategorySettingsView.Build"/>). Only rows that are
+    /// The settings window's category rows — the same list the consent card is drawn from
+    /// (see <see cref="CategorySettingsView.Build"/>). Only rows that are
     /// <see cref="CategorySettingsRow.IsEffectivelyOn"/> produce a line: a collection the user (or the
     /// server) switched off is not being uploaded by choice, so it has no read status worth reporting,
     /// and a "not read" line beside it would read as a fault rather than as a decision.
@@ -132,13 +132,14 @@ public static class ReadStatusView
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A collection that was read is a healthy chip: the label is the collection's own display name,
-    /// and the chip's green check is the whole message, so there is no sentence to carry. A collection
-    /// that was missed is a full line whose text completes the pattern
+    /// A collection that was read in full is a healthy chip: the label is the collection's own
+    /// display name, the chip's green check is the whole message, and the only thing it may add is
+    /// optional hover copy the collector attached. A collection read only in part, or missed
+    /// entirely, is a full line whose text completes the pattern
     /// "<c>{DisplayName}: {phrase}</c>" — which is why every string in
     /// <see cref="CollectSkipReasons.Describe"/> is written as a phrase rather than a standalone
-    /// sentence. Nothing here knows which collection it is describing: the name comes from the row and
-    /// the phrase comes from the reason the collector itself reported.
+    /// sentence. Nothing here knows which collection it is describing: the name comes from the row
+    /// and the phrase comes from what the collector itself reported.
     /// </para>
     /// <para>
     /// The null case is the manifest-driven rule. A manifest-driven collection's facts ARE the item
@@ -163,13 +164,38 @@ public static class ReadStatusView
     /// </param>
     private static SourceNote? DescribeCollection(CategorySettingsRow row, bool hasContainerLines)
     {
-        // No skip reason means the pass read this collection — the healthy resting state, with nothing
-        // for the user to do, so the note is a chip carrying only the collection's name.
+        // No skip reason means the pass read this collection. Nested beneath that: whether it
+        // read all of it, or only part.
         if (row.SkipReason is not { } reason)
         {
+            // Read, but only partly: the phrase the collector authored names the unread half and
+            // the in-game action that reads it. Drawn as a Missing line because that is the
+            // honest tone for the unread half — it has contributed nothing yet, and the action
+            // must stay visible rather than hide in a hover. Never suppressed for a
+            // manifest-driven row: unlike the healthy chip below, the phrase says something no
+            // container line says.
+            if (row.PartialNote is { } partialNote)
+            {
+                return new SourceNote
+                {
+                    Label = row.DisplayName,
+                    Text = $"{row.DisplayName}: {partialNote}",
+                    Tone = SourceTone.Missing,
+                };
+            }
+
+            // The healthy resting state, with nothing for the user to do, so the note is a chip
+            // carrying only the collection's name — plus whatever optional hover copy the
+            // collector attached (a hover may carry information, never a required action; see
+            // SourceNote.Detail).
             return row.UsesItemManifest && hasContainerLines
                 ? null
-                : new SourceNote { Label = row.DisplayName, Tone = SourceTone.Live };
+                : new SourceNote
+                {
+                    Label = row.DisplayName,
+                    Tone = SourceTone.Live,
+                    Detail = row.CollectedDetail,
+                };
         }
 
         // A reason with advice: the collection was missed AND the user can do something about it.

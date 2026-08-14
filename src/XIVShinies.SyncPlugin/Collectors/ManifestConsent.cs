@@ -97,7 +97,8 @@ public static class ManifestConsent
     }
 
     /// <summary>
-    /// Whether every consent control on screen is switched on — the state of the "all collections" box.
+    /// Whether every consent control these rows cover is switched on — the state of a
+    /// select-all box over them.
     /// </summary>
     /// <remarks>
     /// Two questions, not one, because "every row it met was on" is only an answer if it met any. A box

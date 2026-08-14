@@ -55,6 +55,10 @@ public sealed class ApiClient : IDisposable
     // flight at unload is cancelled cleanly instead of failing against a disposed HttpClient.
     private readonly CancellationTokenSource lifetime = new();
 
+    // A copy of the token, taken before the source can ever be disposed (see SyncManager's
+    // field of the same name for the full reasoning).
+    private readonly CancellationToken lifetimeToken;
+
     // Read live on every request rather than captured, so a token or backend edited in the
     // settings UI takes effect immediately without rebuilding the client.
     private readonly PluginSettings settings;
@@ -69,6 +73,7 @@ public sealed class ApiClient : IDisposable
     public ApiClient(PluginSettings settings, string pluginVersion, HttpMessageHandler? messageHandler = null)
     {
         this.settings = settings;
+        lifetimeToken = lifetime.Token;
 
         if (messageHandler is null)
         {
@@ -102,8 +107,24 @@ public sealed class ApiClient : IDisposable
         SendAsync<ConfigResponse>(HttpMethod.Get, "config", content: null, cancellationToken);
 
     /// <summary>Uploads a collection snapshot via <c>POST /sync</c>.</summary>
-    public async Task<ApiResponse<SyncResponse>> PostSyncAsync(
-        SyncRequest request, CancellationToken cancellationToken = default)
+    public Task<ApiResponse<SyncResponse>> PostSyncAsync(
+        SyncRequest request, CancellationToken cancellationToken = default) =>
+        PostJsonAsync<SyncRequest, SyncResponse>("sync", request, cancellationToken);
+
+    /// <summary>
+    /// Uploads a live occult instance snapshot via <c>POST /occult/instance-state</c>.
+    /// </summary>
+    public Task<ApiResponse<OccultInstanceStateResponse>> PostOccultInstanceStateAsync(
+        OccultInstanceStateRequest request, CancellationToken cancellationToken = default) =>
+        PostJsonAsync<OccultInstanceStateRequest, OccultInstanceStateResponse>(
+            "occult/instance-state", request, cancellationToken);
+
+    /// <summary>Serializes a request body and POSTs it, funneling into <see cref="SendAsync"/>.</summary>
+    // Generic over the request type (rather than taking `object`) so the serializer works from
+    // the compile-time type — the standard, predictable path.
+    private async Task<ApiResponse<TResponse>> PostJsonAsync<TRequest, TResponse>(
+        string path, TRequest request, CancellationToken cancellationToken)
+        where TResponse : class
     {
         StringContent content;
 
@@ -121,10 +142,10 @@ public sealed class ApiClient : IDisposable
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             // We built a payload we cannot even serialize; the server would reject it too.
-            return new ApiResponse<SyncResponse> { Status = ApiStatus.InvalidPayload };
+            return new ApiResponse<TResponse> { Status = ApiStatus.InvalidPayload };
         }
 
-        return await SendAsync<SyncResponse>(HttpMethod.Post, "sync", content, cancellationToken)
+        return await SendAsync<TResponse>(HttpMethod.Post, path, content, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -185,7 +206,7 @@ public sealed class ApiClient : IDisposable
             // guarantees Dispose runs when the variable leaves scope — the same job as a `finally`
             // block, and the reason we never leak request/response objects.
             using var linked =
-                CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, cancellationToken);
+                CancellationTokenSource.CreateLinkedTokenSource(lifetimeToken, cancellationToken);
 
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);

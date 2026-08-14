@@ -24,6 +24,26 @@ public sealed record CollectionSnapshot
     public required IReadOnlyDictionary<string, string> Skipped { get; init; }
 
     /// <summary>
+    /// Each collected category's partial-read phrase (see <see cref="CollectResult.PartialNote"/>),
+    /// keyed by category. A category collected in full has no entry. The settings UI prints these
+    /// beside the category's name; nothing else interprets them.
+    /// </summary>
+    // Not `required`, like the fields below: an empty dictionary is the honest default for a
+    // test snapshot with nothing partially read.
+    public IReadOnlyDictionary<string, string> PartialNotes { get; init; } =
+        new Dictionary<string, string>();
+
+    /// <summary>
+    /// Each collected category's healthy-chip hover copy (see
+    /// <see cref="CollectResult.CollectedDetail"/>), keyed by category. The settings UI shows
+    /// these on hover; nothing else interprets them.
+    /// </summary>
+    // Not `required`, like its siblings: an empty dictionary is the honest default for a test
+    // snapshot whose chips need no hover.
+    public IReadOnlyDictionary<string, string> CollectedDetails { get; init; } =
+        new Dictionary<string, string>();
+
+    /// <summary>
     /// How long each collector took, keyed by category. Only collectors that actually ran appear.
     /// </summary>
     /// <remarks>
@@ -129,6 +149,8 @@ public static class CollectorRunner
     {
         var collections = new Dictionary<string, JsonNode>();
         var skipped = new Dictionary<string, string>();
+        var partialNotes = new Dictionary<string, string>();
+        var collectedDetails = new Dictionary<string, string>();
         var durations = new Dictionary<string, TimeSpan>();
         var sourceNotes = new Dictionary<string, ItemSourceStatus>();
         var manifestDrivenKeys = new HashSet<string>();
@@ -201,6 +223,16 @@ public static class CollectorRunner
                 if (result.CompleteEnumeration)
                     completeKeys.Add(key);
 
+                // The collector's own partial-read phrase, filed the same way: the settings UI
+                // prints it beside the category's name without knowing which collection it is.
+                if (result.PartialNote is { } partialNote)
+                    partialNotes[key] = partialNote;
+
+                // And its healthy-chip hover copy, filed under the collector's own key by the
+                // same rule.
+                if (result.CollectedDetail is { } collectedDetail)
+                    collectedDetails[key] = collectedDetail;
+
                 // Merge source notes from this collector. Source-keyed: if two collectors both report
                 // on the same source (e.g., both describe inventory), the last one wins because they
                 // describe the same physical storage location. The snapshot iteration order means
@@ -223,6 +255,8 @@ public static class CollectorRunner
         {
             Collections = collections,
             Skipped = skipped,
+            PartialNotes = partialNotes,
+            CollectedDetails = collectedDetails,
             Durations = durations,
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,

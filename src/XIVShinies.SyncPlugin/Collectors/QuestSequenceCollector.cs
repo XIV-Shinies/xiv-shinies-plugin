@@ -67,6 +67,9 @@ public sealed unsafe class QuestSequenceCollector : ICollector
     public string DisplayName => info.DisplayName;
 
     /// <inheritdoc/>
+    public string Section => info.Section;
+
+    /// <inheritdoc/>
     public string WhatGetsSent => info.WhatGetsSent;
 
     /// <inheritdoc/>

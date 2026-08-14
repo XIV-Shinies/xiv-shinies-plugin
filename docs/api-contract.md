@@ -102,6 +102,8 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "items": true,
     "minions": true,
     "mounts": true,
+    "occultProgression": true,
+    "occultRecords": true,
     "questSequences": true,
     "quests": true,
     "tripleTriadCards": true,
@@ -120,6 +122,10 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   ],
   "itemOmitWhenUnseenIds": [45043, 45044], // content-bound ids: omit from uploads when no source saw them
   "manifestVersion": "a1b2c3d4e5f6",
+  "occultTracker": {           // the live occult tracker's switches (see its endpoint below)
+    "enabled": true,           // the tracker's kill switch (global/per-user/category folded in)
+    "heartbeatSeconds": 60     // idle re-upload cadence while inside an instance
+  },
   "questSequenceManifest": [70991] // quests whose journal sequence byte to report
 }
 ```
@@ -192,6 +198,11 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
     "quests": [65575, 66216], // Quest Excel row ids == the server's Quest.id
     "items": [{"id": 7851, "count": 1, "hqCount": 2, "fresh": true}],
     "questSequences": {"70991": 3}, // active journal sequence byte per manifested quest
+    "occultProgression": { // phantom jobs keyed by MKDSupportJob row id (0 = Freelancer, real)
+      "jobs": {"0": {"exp": 1200, "level": 4}},
+      "knowledge": {"level": 40, "observedAt": "2026-08-12T20:00:00Z"} // optional sighting
+    },
+    "occultRecords": [1, 2, 55], // MKDLore row ids — the complete SeenLore list
     "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
     "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
   },
@@ -223,6 +234,7 @@ Field constraints:
 | `items`                  | `{id: positive int, count: non-negative int, hqCount?: non-negative int, collectableCount?: non-negative int, fresh: boolean}[]`, **max 10,000 entries** |
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
+| `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
@@ -284,6 +296,19 @@ Field constraints:
   server's curated tables decide what each byte proves. Observations are **sticky
   server-side**: a quest absent from a later upload (abandoned, completed, never started —
   the plugin cannot tell which) never clears previously derived credit.
+- **Occult id spaces & semantics.** `occultProgression.jobs` is keyed by `MKDSupportJob`
+  row ids (0–23, and **0 — Freelancer — is a real job**); values come from the occult
+  instance director, which the plugin can read only inside an Occult instance. `jobs` may be
+  sent as an **empty map** — the server accepts it and an empty map writes nothing — which is
+  how a knowledge sighting recorded outside an instance still reaches the server. Job writes
+  are monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
+  the TRUE knowledge level from the review window (the in-instance HUD shows only the
+  zone-synced level), sent with the time the window was opened; the server keeps the
+  **freshest** observation across plugin and Lodestone sources, never a maximum — death
+  without a raise can de-level knowledge. `occultRecords` carries `MKDLore` row ids — the
+  game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
+  category declares itself `"full"` (see the `collectionScopes` bullet below). Storage is
+  sticky insert-only, and uncataloged ids drop under the catalog-trailing rule.
 
 #### Response (200)
 
@@ -305,7 +330,9 @@ Field constraints:
   "provenSteps": 3, // present iff items were applied and relic-proof derivation succeeded
   "itemCounts": 1268, // rows written to item-count storage by this upload's items
   "skippedCategories": ["minions"], // present iff the server stripped disabled categories from this payload
-  "storedSequences": 1 // present iff questSequences survived the strip and stored; NEW observations this upload (0 = all already known)
+  "storedSequences": 1, // present iff questSequences survived the strip and stored; NEW observations this upload (0 = all already known)
+  "storedProgression": 3, // present iff occultProgression survived and stored; jobs whose value ADVANCED (knowledge not counted)
+  "storedRecords": 5 // present iff occultRecords survived and stored; NEW sticky rows this upload
 }
 ```
 
@@ -313,8 +340,9 @@ Optional keys are **omitted rather than null**, so the plugin can feature-detect
 `items` never appears in `written` (it feeds relic proofs and count storage, not a
 collection count). The plugin reads `written` as a plain category-keyed map, so a category
 it has never heard of arrives intact and a server that names fewer causes no error.
-`itemCounts` and `storedSequences` are informational, like `written`: the plugin ignores
-them — no plugin logic may branch on them.
+`itemCounts`, `storedSequences`, `storedProgression`, and `storedRecords` are
+informational, like `written`: the plugin ignores them — no plugin logic may branch on
+them.
 
 #### Status codes
 
@@ -329,6 +357,84 @@ them — no plugin logic may branch on them.
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
 | **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent.                                        |
 | **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | Global kill switch is off. Back off the full hour.                                                                   |
+
+### POST /api/plugin/v1/occult/instance-state
+
+The live Occult Crescent tracker upload: one compact **full snapshot** of the instance the
+character is standing in — every CE/tower container slot plus tracked FATEs — sent on
+status change (debounced; never progress ticks), as a heartbeat every
+`occultTracker.heartbeatSeconds` from `/config`, and on enter/leave. Deliberately NOT the
+batch `/sync` endpoint: small, frequent, instance-scoped. A server whose `/config` carries
+no `occultTracker` block does not have this endpoint; the client must stay silent then.
+
+#### Request
+
+`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). A real
+snapshot is ~1.2 KB.
+
+```jsonc
+{
+  "characterContentIdHash": "…64 lowercase hex chars…",
+  "characterName": "Some Name", // same binding identity as /sync
+  "homeWorld": "Excalibur",
+  "pluginVersion": "1.0.0",
+  "trigger": "change",          // "change" | "enter" | "heartbeat" | "leave"
+  "instance": {
+    "territoryTypeId": 1252,    // 1252 South Horn | 1346 North Horn
+    "worldId": 73               // OPTIONAL: the reporter's CURRENT World row id (not home
+                                // world). The server maps world → data center to scope
+                                // matching and the browse list per DC; omitted when
+                                // unreadable, and the tracker then stays un-scoped. An
+                                // unknown id is ignored (catalog-trailing rule).
+  },
+  "encounters": [
+    // Full state every upload. CEs and the Forked Tower by DynamicEvent row id;
+    // FATEs by Fate sheet row id. status is the THREE-word vocabulary only:
+    // "preparing" (CE Register/Warmup) | "active" (Battle / FATE on the table)
+    // | "down" (Inactive / removed).
+    {"dynamicEventId": 43, "status": "active", "sinceUtc": "2026-08-11T16:02:15Z"},
+    {"dynamicEventId": 48, "status": "down", "sinceUtc": null}, // the tower rides along
+    {"fateId": 1972, "status": "active", "sinceUtc": "2026-08-11T15:46:48Z"}
+  ]
+}
+```
+
+- **`sinceUtc` is the fingerprint.** Occult instances have no client-readable id; the
+  server matches an upload to the active tracker (same territory) sharing at least one
+  exact `(encounter, sinceUtc)` pair, bridging quiet gaps with the reporter's presence.
+  So the plugin must send **server-assigned epochs, identical for every observer** — a
+  FATE's start epoch, a CE phase deadline (or battle start derived as deadline −
+  duration) — at exact whole-second precision, formatted `YYYY-MM-DDThh:mm:ssZ`. The
+  plugin's own observation time is the fallback only for transitions the game zeroes
+  (the Battle→Inactive flip). `sinceUtc` must be **present** on every row: null where
+  the game exposes nothing — null entries carry state but never identity, which is why
+  the key is written explicitly rather than omitted.
+- **Exactly one id key per row** — `dynamicEventId` or `fateId`, never both; the other
+  is omitted. Unknown ids are ignored by the server (catalog-trailing rule); the tower
+  ids land on the tracker's tower state rather than an encounter row.
+- **`leave`** (sent on territory exit) clears the character's presence only; the tracker
+  lives on for reporters still inside. A reporter also ages out after ~3 missed
+  heartbeats, so a missed leave self-heals. A leave's `worldId` is sampled at exit, so a
+  deferred leave still clears presence on the data center that was actually left.
+- **Absence self-heal.** Unlike the monotonic `/sync` writes, this endpoint is a
+  replace-style full snapshot: an encounter the tracker holds `active` that is absent
+  from an incoming snapshot (except on `enter`, whose table may still be settling) is
+  flipped `down` server-side, stamped at receipt. So a client that lost its in-memory state
+  mid-visit (a plugin reload, a consent flip) does not strand an encounter as active —
+  the next full snapshot from any reporter corrects it.
+
+#### Response
+
+```jsonc
+200 {"ok": true, "outcome": "applied", "trackerId": "…uuid…", "created": false}
+200 {"ok": true, "outcome": "unresolved", "trackerId": null} // no fingerprintable pair; retry on next change
+200 {"ok": true, "outcome": "left", "trackerId": "…uuid or null…"}
+```
+
+Status codes mirror `/sync` (400 family, 401, 403 with echoed identity, 405, 413, 429
+with its own per-token budget of 240/hour, 503 `sync_disabled`), plus
+**503 `{"error": "tracker_unavailable"}`** when the territory's server-side curation is
+absent — back off, server-side problem.
 
 ## Character binding
 

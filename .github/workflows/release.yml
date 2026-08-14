@@ -1,5 +1,7 @@
 # Release: turns a pushed version tag (v1.2.3) into a published GitHub Release carrying the
-# DalamudPackager zip that repo.json points at, then announces it in Discord.
+# DalamudPackager zip that repo.json points at. Publishing is where this workflow ends: the
+# Discord #releases announcement is a separate, manually-dispatched workflow (announce.yml),
+# run by the maintainer only after they have verified this release actually went out well.
 #
 # Division of labor (deliberate, and different from many plugin repos): this workflow NEVER
 # writes to the repository. The release PR — authored by the /releasing skill — already bumped
@@ -115,6 +117,8 @@ jobs:
 
       # The zip DalamudPackager emitted is attached under a stable, self-describing name — the
       # exact URL repo.json advertises: releases/download/<tag>/XIVShinies.SyncPlugin.zip.
+      # Publishing the Release is this workflow's final act: the Discord announcement waits
+      # in announce.yml for the maintainer's explicit dispatch.
       - name: Publish the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,34 +128,3 @@ jobs:
             --title "XIV Shinies Sync $env:GITHUB_REF_NAME" `
             --notes-file "$env:RUNNER_TEMP/release-notes.md" `
             --verify-tag
-
-      # Announce the release in the shared Discord #releases channel, attaching any
-      # screenshots committed under images/releases/<tag>/. This lives INSIDE the release
-      # job rather than in a `release: published`-triggered workflow because GitHub
-      # deliberately suppresses workflow triggers for events created with the built-in
-      # GITHUB_TOKEN (the anti-recursion rule) — a separate workflow would simply never
-      # run for the Release published above.
-      #
-      # The release's fields are read back from the GitHub API and cross into the Node
-      # script as environment variables — the body is arbitrary changelog markdown and
-      # must never be interpolated into script text. continue-on-error: the Release is
-      # already published by this point, so a Discord outage must not paint the whole
-      # release run failed (and a re-run would fail earlier anyway, at the already-exists
-      # release); the step's own log still carries the error.
-      - name: Announce the release on Discord
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DISCORD_RELEASES_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASES_WEBHOOK_URL }}
-        run: |
-          $release = gh release view $env:GITHUB_REF_NAME --json name,body,url,publishedAt | ConvertFrom-Json
-          $env:RELEASE_NAME = $release.name
-          $env:RELEASE_BODY = $release.body
-          $env:RELEASE_URL = $release.url
-          $env:RELEASE_TAG = $env:GITHUB_REF_NAME
-          # PowerShell 7's ConvertFrom-Json parses the JSON's ISO date string into a DateTime
-          # object, and a DateTime dropped into the environment stringifies in the runner's
-          # culture format. Discord's embed timestamp must be ISO 8601, so the value is
-          # explicitly re-serialized ("o" is the ISO round-trip format).
-          $env:RELEASE_PUBLISHED_AT = ([datetime]$release.publishedAt).ToUniversalTime().ToString("o")
-          node .github/scripts/post-discord-release.mjs

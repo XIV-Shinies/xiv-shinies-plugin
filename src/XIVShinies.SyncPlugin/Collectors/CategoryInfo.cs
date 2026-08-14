@@ -24,6 +24,21 @@ public sealed record CategoryInfo
     public required string DisplayName { get; init; }
 
     /// <summary>
+    /// The heading this collection is listed under on the consent surfaces, for example
+    /// <c>"Triple Triad"</c>. Collections sharing a section title are drawn together.
+    /// </summary>
+    /// <remarks>
+    /// Self-description like <see cref="DisplayName"/>: the consent surfaces group rows by
+    /// whatever section titles the collectors declare, holding no list of their own — a
+    /// collection declaring a brand-new section brings its heading with it, and the UI draws it
+    /// without being taught. This is also what gives a name like "Phantom jobs" its context: the
+    /// section heading says which part of the game it belongs to. The title must not contain
+    /// <c>##</c> — it becomes part of an ImGui header label, where <c>##</c> begins the
+    /// hidden-id syntax and would cut the visible heading short.
+    /// </remarks>
+    public required string Section { get; init; }
+
+    /// <summary>
     /// A plain-language sentence naming exactly what leaves the machine for this category.
     /// </summary>
     /// <remarks>

@@ -40,6 +40,12 @@ public interface ICollector
     string DisplayName { get; }
 
     /// <summary>
+    /// The heading this collection is listed under on the consent surfaces (see
+    /// <see cref="CategoryInfo.Section"/> for the grouping rules).
+    /// </summary>
+    string Section { get; }
+
+    /// <summary>
     /// A plain-language sentence naming exactly what leaves the player's machine for this category.
     /// </summary>
     /// <remarks>

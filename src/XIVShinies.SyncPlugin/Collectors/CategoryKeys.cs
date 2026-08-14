@@ -34,4 +34,10 @@ public static class CategoryKeys
 
     /// <summary>Defeated Triple Triad NPC IDs.</summary>
     public const string TripleTriadNpcs = "tripleTriadNpcs";
+
+    /// <summary>Phantom job levels/EXP and the optional knowledge-level sighting.</summary>
+    public const string OccultProgression = "occultProgression";
+
+    /// <summary>Discovered occult record IDs.</summary>
+    public const string OccultRecords = "occultRecords";
 }

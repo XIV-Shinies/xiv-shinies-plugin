@@ -44,6 +44,15 @@ into:
   have defeated — computer opponents, never other players
 - **Possession counts** for the specific relic-stage items the server asks about — checked
   across your inventory, armoire, glamour dresser, saddlebag, and retainers
+- **Phantom job levels and experience**, read while you are inside the Occult Crescent, and
+  your **knowledge level** when you open the review window yourself
+- Discovered **occult record** IDs
+- **Live Occult Crescent instance state**, while you are inside one: which critical
+  encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
+  are on, powering the site's live occult tracker on the right data center. This is world
+  state — nothing about you beyond your presence in the instance, and never anything about
+  other players. It starts enabled (the setup wizard shows the ticked box before anything
+  sends) and can be switched off any time in the settings
 
 For a collection the plugin can read end to end, the upload also records that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Collectors;
 
@@ -19,10 +20,25 @@ public static class CollectorRegistry
     // to the opt-in toggle before the user consents, so it is a compliance surface: it must stay a
     // true description of what the matching collector actually uploads.
 
+    // The section headings the consent surfaces group by (see CategoryInfo.Section). Named as
+    // constants so two collections meaning the same section cannot drift apart by a typo.
+    private const string CollectionLogSection = "Collection log";
+    private const string TripleTriadSection = "Triple Triad";
+    private const string ItemsSection = "Items & relics";
+
+    /// <summary>
+    /// The Occult Crescent section's heading. Public, unlike its siblings, because the wizard's
+    /// disclosure list places the live tracker — occult data, but not a collection — under the
+    /// same heading, so the title needs one home: the collectors' declared section and the
+    /// wizard's placement of the tracker cannot drift apart by a typo.
+    /// </summary>
+    public const string OccultSection = "The Occult Crescent";
+
     private static readonly CategoryInfo Quests = new()
     {
         Key = CategoryKeys.Quests,
         DisplayName = "Quests",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of quests you have completed.",
     };
 
@@ -30,6 +46,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.QuestSequences,
         DisplayName = "Quest progress",
+        Section = CollectionLogSection,
 
         // Scoped twice over, and the visible line says both halves: only quests the server named
         // are looked at, and only the journal's step position leaves the machine.
@@ -48,6 +65,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Mounts,
         DisplayName = "Mounts",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of mounts you have unlocked.",
     };
 
@@ -55,6 +73,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Minions,
         DisplayName = "Minions",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of minions you have unlocked.",
     };
 
@@ -62,6 +81,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.Achievements,
         DisplayName = "Achievements",
+        Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of achievements you have earned.",
     };
 
@@ -69,6 +89,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.TripleTriadCards,
         DisplayName = "Triple Triad cards",
+        Section = TripleTriadSection,
         WhatGetsSent = "The ID numbers of Triple Triad cards you have collected.",
     };
 
@@ -76,6 +97,7 @@ public static class CollectorRegistry
     {
         Key = CategoryKeys.TripleTriadNpcs,
         DisplayName = "Triple Triad NPCs",
+        Section = TripleTriadSection,
 
         // The game records a per-NPC beaten flag, so the copy names that exact fact: an opponent
         // defeated at least once.
@@ -101,7 +123,10 @@ public static class CollectorRegistry
     private static readonly CategoryInfo Items = new()
     {
         Key = CategoryKeys.Items,
-        DisplayName = "Relic items",
+        // Named without any kind of item: the manifest's set is the server's to change at any
+        // time (see UsesItemManifest below), and a name that named one would go stale.
+        DisplayName = "Tracked items",
+        Section = ItemsSection,
 
         // Currencies are named on the visible line, with gil spelled out: a balance is wealth data,
         // and "items" alone would not tell a reader that consenting to a currency group sends how
@@ -135,12 +160,48 @@ public static class CollectorRegistry
         UsesItemManifest = true,
     };
 
+    private static readonly CategoryInfo OccultProgression = new()
+    {
+        Key = CategoryKeys.OccultProgression,
+        DisplayName = "Phantom jobs",
+        Section = OccultSection,
+
+        // Both halves of the payload on the visible line: the per-job progress, and the
+        // knowledge level with the condition under which it is captured — a window the user
+        // opens themselves, never something the plugin asks the game for.
+        WhatGetsSent =
+            "Your phantom job levels and experience, read while you are inside the Occult " +
+            "Crescent, and your knowledge level when you open the review window yourself.",
+
+        // The knowledge level is the one fact here the plugin cannot refresh on its own, so the
+        // hover names the NPC and the menu option that produce it, and says its capture time
+        // travels with it. Otherwise a level that lags behind the game looks like a broken sync
+        // rather than an old sighting.
+        Details =
+            "All 24 support jobs travel together, updating each time you visit the Crescent. " +
+            "The knowledge level is captured only when you choose \"Review your knowledge " +
+            "level and currencies\" at Jeffroy in Phantom Village, and is sent with the time " +
+            "you opened it.",
+    };
+
+    private static readonly CategoryInfo OccultRecords = new()
+    {
+        Key = CategoryKeys.OccultRecords,
+        DisplayName = "Occult records",
+        Section = OccultSection,
+        WhatGetsSent = "The ID numbers of the occult records you have discovered.",
+    };
+
     /// <summary>Creates every collector, in the order they will be run.</summary>
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="unlockState">Dalamud's local-player unlock state.</param>
     /// <param name="framework">Used by each collector to verify it is on the framework thread.</param>
+    /// <param name="knowledgeObserver">The passive knowledge-level capture the phantom jobs collector reads.</param>
     public static IReadOnlyList<ICollector> Create(
-        IDataManager dataManager, IUnlockState unlockState, IFramework framework) =>
+        IDataManager dataManager,
+        IUnlockState unlockState,
+        IFramework framework,
+        KnowledgeObserver knowledgeObserver) =>
         new ICollector[]
         {
             // `unlockState.IsQuestCompleted` is a "method group": the method is passed as a value
@@ -189,6 +250,14 @@ public static class CollectorRegistry
             // Defeated opponents have no IUnlockState method, so this collector reads the game's
             // UIState directly — see its class remarks for the id space it reports.
             new TripleTriadNpcCollector(TripleTriadNpcs, dataManager, framework),
+
+            // Phantom job progress lives in the occult instance director, so this one reads only
+            // inside the Crescent; the knowledge sighting rides along from the observer.
+            new OccultProgressionCollector(OccultProgression, framework, knowledgeObserver),
+
+            // Discovered occult records — a client-persisted list readable anywhere, so it needs
+            // no instance visit and no sheet walk: the saved list IS the seen-set.
+            new OccultRecordsCollector(OccultRecords, framework),
 
             // The odd one out: it reports possession counts rather than IDs, and it only looks at
             // the items the server named in its manifest. The runner treats it like any other.

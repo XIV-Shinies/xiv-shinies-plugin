@@ -806,13 +806,13 @@ internal static class Widgets
     /// <remarks>
     /// <para>
     /// Reads back the immediately preceding widget's rectangle with <c>GetItemRectMin</c> /
-    /// <c>GetItemRectMax</c> — valid only because nothing else is drawn between that widget and this
-    /// call — to learn the row's actual height, then paints the chip at an explicit screen position
-    /// instead of asking the layout system for a "next" position on that row (there is not one; the
-    /// row is already full). The chip is pure draw-list output with no interactive element of its
-    /// own (see <see cref="PaintChip"/>), so overlapping the header this way does not steal any of
-    /// its clicks — expanding and collapsing the section still works anywhere on the row, chip
-    /// included.
+    /// <c>GetItemRectMax</c> — valid only because nothing else is drawn between that widget and
+    /// this call — to learn the row's actual height, then paints the chip at an explicit screen
+    /// position instead of asking the layout system for a "next" position on that row (there is
+    /// not one; the row is already full). The chip is pure draw-list output with no interactive
+    /// element of its own (see <see cref="PaintChip"/>), so overlapping the header this way does
+    /// not steal any of its clicks — expanding and collapsing the section still works anywhere
+    /// on the row, chip included.
     /// </para>
     /// <para>
     /// The layout cursor is left exactly where the preceding widget put it: painting through the

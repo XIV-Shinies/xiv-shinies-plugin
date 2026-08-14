@@ -55,6 +55,51 @@ public class PluginSettingsTests
         Assert.False(settings.CustomBackendAcknowledged);
         Assert.Equal(BackendUrl.Default, settings.BaseUrl);
         Assert.Equal(string.Empty, settings.Token);
+
+        // The two defaults that ARE true — the occult toggle and the future-features choice —
+        // still send nothing on a fresh install, because everything above gates them (see
+        // OccultGateTests); both boxes are visible and ticked on the wizard's consent step
+        // before any upload can happen.
+        Assert.True(settings.ShareOccultInstanceState);
+        Assert.True(settings.AutoEnableNewFeatures);
+    }
+
+    // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user
+    // the wizard will never show the new toggles to, so defaulting them on would be consent by
+    // omission — they start OFF and the settings screen is where that user opts in.
+    [Fact]
+    public void Migrating_an_onboarded_version0_config_switches_the_new_sharing_defaults_off()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+
+        Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 0));
+
+        Assert.False(settings.ShareOccultInstanceState);
+        Assert.False(settings.AutoEnableNewFeatures);
+    }
+
+    // An install still ahead of its wizard keeps the defaults: the wizard is about to put both
+    // boxes in front of them, which is exactly the consent surface the migration exists to
+    // substitute for.
+    [Fact]
+    public void Migrating_a_config_that_never_finished_onboarding_keeps_the_defaults()
+    {
+        var settings = new PluginSettings();
+
+        Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 0));
+
+        Assert.True(settings.ShareOccultInstanceState);
+        Assert.True(settings.AutoEnableNewFeatures);
+    }
+
+    [Fact]
+    public void A_current_version_config_is_not_migrated()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+
+        Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 1));
+
+        Assert.True(settings.ShareOccultInstanceState);
     }
 
     [Fact]

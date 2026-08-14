@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
+using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -56,39 +57,54 @@ internal sealed partial class MainWindow
         Widgets.SectionGap();
         DrawSectionHeading("What it sends");
 
-        // The description's left edge lines up with the name's, not the gem's: measure the icon
-        // column (glyph plus the spacing SameLine inserts) and indent by exactly that.
-        float iconColumn;
-        using (iconFont.Push())
-        {
-            iconColumn = ImGui.CalcTextSize(FontAwesomeIcon.Gem.ToIconString()).X
-                + ImGui.GetStyle().ItemSpacing.X;
-        }
-
-        // Each collector describes itself. Adding a collection makes it appear here with no change
-        // to this window: a gold gem, the name, and the collector's own plain-language disclosure
-        // beneath it. The disclosure draws at the normal text color, never muted: it is the consent
-        // copy telling the user what leaves their machine, so it has to be comfortably legible.
-        foreach (var collector in collectors)
-        {
-            DrawIcon(FontAwesomeIcon.Gem, Brand.Gold);
-            ImGui.SameLine();
-            ImGui.TextUnformatted(collector.DisplayName);
-
-            // The same elaboration the settings list offers. This screen is the fuller disclosure
-            // of the two — it is what a user reads before consenting to anything — so it must never
-            // carry less than the settings do.
-            if (collector.Details is { } details)
-                DrawDetailsHint(details);
-
-            ImGui.Indent(iconColumn);
-            DrawWrapped(collector.WhatGetsSent, ImGuiCol.Text);
-            ImGui.Unindent(iconColumn);
-        }
-
-        // Closes the category list, the same place the note sits in the settings card.
-        ImGui.Spacing();
+        // The disclosure every consent surface carries, opening the list: a statement about
+        // every collection below, not a caption for any one item.
         DrawCompletenessNote();
+        ImGui.Spacing();
+
+        // Whether the Crescent section existed for the tracker's disclosure to hang on.
+        var trackerDrawn = false;
+
+        // Each collector describes itself. Adding a collection makes it appear here with no
+        // change to this window: a gold gem, then one flowed line — "Name — what it sends" —
+        // under the section heading its collector declared, with the hover elaboration trailing
+        // the sentence when the collector offered one (a category whose one-liner says
+        // everything carries no mark to wonder about). The line is the consent copy telling the
+        // user what leaves their machine, so it draws at full contrast. (See
+        // DrawCompletenessNote for why this pre-consent screen may never disclose less than the
+        // settings.)
+        foreach (var section in CategorySettingsView.GroupBySection(BuildCategoryRows()))
+        {
+            DrawSectionLabel(section.Title);
+
+            foreach (var row in section.Rows)
+            {
+                DrawIcon(FontAwesomeIcon.Gem, Brand.Gold);
+                ImGui.SameLine();
+                DrawWrappedWithTrailingHint(
+                    $"{row.DisplayName} — {row.WhatGetsSent}", row.Details);
+            }
+
+            // The live Occult tracker's disclosure joins the Crescent section: it is occult
+            // data a reader scanning by game area expects to find here, even though it is not a
+            // collection. The one sanctioned title comparison on a consent surface — the title
+            // is the registry's own constant, and the tracker is a bespoke feature, not a
+            // registered collector, so no collector gains a name branch by it.
+            if (section.Title == CollectorRegistry.OccultSection)
+            {
+                DrawOccultTrackerDisclosureLine();
+                trackerDrawn = true;
+            }
+        }
+
+        // The heading above only exists while a registered collector declares it, but the
+        // tracker's disclosure is owed regardless — the feature is live and default-on whatever
+        // the collectors do — so a list without the heading gets it created here.
+        if (!trackerDrawn)
+        {
+            DrawSectionLabel(CollectorRegistry.OccultSection);
+            DrawOccultTrackerDisclosureLine();
+        }
 
         Widgets.SectionGap();
         DrawPrivacyCard(
@@ -98,6 +114,19 @@ internal sealed partial class MainWindow
             "and you choose which of the above to include.");
 
         DrawWizardNav("Get started");
+    }
+
+    /// <summary>
+    /// The welcome screen's tracker disclosure, flowed as one sentence: a broadcast tower — it
+    /// shares live world state rather than adding anything to your collection — then the name
+    /// and copy flowed together, with the what-is-NOT-shared reassurance hover trailing.
+    /// </summary>
+    private void DrawOccultTrackerDisclosureLine()
+    {
+        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
+        ImGui.SameLine();
+        DrawWrappedWithTrailingHint(
+            $"Live Occult instance state — {OccultWhatGetsSent}", OccultTrackerDetails);
     }
 
     private void DrawLinkAccountStep()
@@ -118,9 +147,14 @@ internal sealed partial class MainWindow
 
     private void DrawChooseCategoriesStep()
     {
+        // Two consent regimes, stated plainly: collections start OFF (they describe the
+        // player's own progress), while the live tracker's box starts ticked because it shares
+        // world state — and it is on this very screen, so unticking it is one click before
+        // anything can send.
         ImGui.TextWrapped(
-            "Choose what to upload. Everything starts switched off — nothing is sent unless you " +
-            "turn it on here. You can change any of this later.");
+            "Choose what to upload. Collections start switched off — nothing about your " +
+            "progress is sent unless you turn it on here. Sharing live Occult instance state " +
+            "starts on; untick it below if you would rather not. You can change any of this later.");
 
         Widgets.SectionGap();
 
@@ -129,11 +163,12 @@ internal sealed partial class MainWindow
         // group checkboxes exist by the time its own checkbox can be ticked. That is what makes ticking
         // a category able to tick the groups it means, and it is why no consent here can ever be granted
         // for a checkbox the user was not looking at.
-        //
-        // No "New" badges: the manifest groups drawn beneath a category are all being shown for the
-        // first time, to a user who installed the plugin minutes ago. DrawGroupCheckboxes still marks
-        // every group it draws as seen, so the settings screen greets them badge-free afterwards.
+        // See DrawCategoryRows's showNewChips for why the wizard badges nothing.
         DrawCategoryRows(BuildCategoryRows(), showNewChips: false);
+
+        // The live tracker's own consent card, right below the collections it is not part of.
+        ImGui.Spacing();
+        DrawOccultConsentRow();
 
         ImGui.Spacing();
         DrawWizardNav("Finish");

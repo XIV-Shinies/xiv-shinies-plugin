@@ -29,6 +29,8 @@ public class ManifestConsentTests
 
         public string DisplayName => $"{CategoryKey} display";
 
+        public string Section => "Fakes";
+
         public string WhatGetsSent => $"what {CategoryKey} sends";
 
         public string? Details => null;
@@ -116,6 +118,7 @@ public class ManifestConsentTests
     {
         Key = key,
         DisplayName = $"{key} display",
+        Section = "Fakes",
         WhatGetsSent = $"what {key} sends",
         UserEnabled = userEnabled,
         ServerEnabled = serverEnabled,

@@ -38,6 +38,52 @@ public class PluginSettings
     public bool OnboardingComplete { get; set; }
 
     /// <summary>
+    /// True while the user shares live Occult Crescent instance state (CE/FATE/tower status)
+    /// with the tracker. Defaults ON, unlike every category consent, because it describes
+    /// <b>world</b> state rather than the player (the Universalis precedent) — and it still
+    /// only ever acts behind <see cref="MasterEnabled"/> and <see cref="OnboardingComplete"/>,
+    /// so a fresh install shares nothing until the user finishes the wizard, where this box is
+    /// visible and ticked before anything can send. A config from an install that finished
+    /// onboarding before this setting existed starts it OFF instead (see
+    /// <see cref="ApplyUpgradeMigrations"/>).
+    /// </summary>
+    public bool ShareOccultInstanceState { get; set; } = true;
+
+    /// <summary>
+    /// True when the user chose to have FUTURE sharing features start enabled as updates add
+    /// them. It is a standing answer, not a switch any behavior branches on today: when a
+    /// future update adds a sharing feature that would default on, that feature's migration is
+    /// where this gets consulted — on for a user who ticked it, off for everyone else until
+    /// they enable it in the settings. Defaults ON for the same visible-in-the-wizard reason
+    /// as <see cref="ShareOccultInstanceState"/>, and starts OFF on installs that finished
+    /// onboarding before it existed (see <see cref="ApplyUpgradeMigrations"/>).
+    /// </summary>
+    public bool AutoEnableNewFeatures { get; set; } = true;
+
+    /// <summary>
+    /// Brings a config written by an older plugin version up to the current schema. Called once
+    /// at load when the persisted <see cref="Configuration.Version"/> is behind; returns true
+    /// when anything changed (the caller then saves).
+    /// </summary>
+    /// <remarks>
+    /// The version-1 rule: <see cref="ShareOccultInstanceState"/> and
+    /// <see cref="AutoEnableNewFeatures"/> did not exist before version 1, so on an install
+    /// whose onboarding is already complete — a user the wizard will never show these toggles
+    /// to — both start OFF, and the settings screen is where they opt in. An install still
+    /// ahead of its wizard keeps the defaults: the wizard will put both boxes in front of them.
+    /// </remarks>
+    /// <param name="fromVersion">The version the loaded config was written at.</param>
+    public bool ApplyUpgradeMigrations(int fromVersion)
+    {
+        if (fromVersion >= 1 || !OnboardingComplete)
+            return false;
+
+        ShareOccultInstanceState = false;
+        AutoEnableNewFeatures = false;
+        return true;
+    }
+
+    /// <summary>
     /// The backend server. User-overridable per Dalamud's recommendation; validate any change with
     /// <see cref="BackendUrl.TryNormalize"/> before storing it.
     /// </summary>

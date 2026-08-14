@@ -56,6 +56,14 @@ public sealed record ConfigResponse
     public IReadOnlyList<uint>? ItemOmitWhenUnseenIds { get; init; }
 
     /// <summary>
+    /// The live occult instance tracker's switches, or null when the server does not send the
+    /// block. Null means the server has no tracker endpoint, so the tracker stays off (see
+    /// <see cref="Occult.OccultGate"/> for the reasoning and the rest of the gate ladder).
+    /// </summary>
+    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
+    public OccultTrackerConfig? OccultTracker { get; init; }
+
+    /// <summary>
     /// Quest ids whose journal sequence the server wants reported — quests with several
     /// sequential turn-ins, where knowing which step the journal is on lets the server credit
     /// the batches already handed over. Null when the server does not send the field.
@@ -79,6 +87,27 @@ public sealed record ConfigResponse
     /// </remarks>
     public bool IsCategoryEnabled(string categoryKey) =>
         !Categories.TryGetValue(categoryKey, out var enabled) || enabled;
+}
+
+/// <summary>
+/// The <c>occultTracker</c> block of <c>/config</c>: the live instance tracker's switches.
+/// </summary>
+public sealed record OccultTrackerConfig
+{
+    /// <summary>
+    /// The tracker's kill switch. The server folds the global, per-user, and category switches
+    /// into this one value, so the client honors it alone.
+    /// </summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>Idle re-upload cadence while inside an instance (clamped client-side).</summary>
+    /// <remarks>
+    /// NOT <c>required</c>, unlike <see cref="Enabled"/>: a required member missing from the
+    /// wire fails the WHOLE <c>/config</c> deserialization — which would also strand /sync on
+    /// its last-known manifest — and the scheduler clamps whatever value arrives into a sane
+    /// range anyway, so a defaulted cadence is strictly safe where a guessed kill switch is not.
+    /// </remarks>
+    public int HeartbeatSeconds { get; init; } = 60;
 }
 
 /// <summary>Server-chosen sync cadence.</summary>
