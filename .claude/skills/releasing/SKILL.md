@@ -284,6 +284,8 @@ beats a false record.
 ```
 
 `DalamudApiLevel` must track the SDK major version in the csproj whenever it bumps.
-`ImageUrls` may list up to five raw URLs to `images/screenshots/*.png` — add them when the
-gallery is ready. Do not add `LastUpdate`/`DownloadCount` — server-computed fields other repos
-carry are noise in a hand-maintained pluginmaster.
+`ImageUrls` may list up to five raw URLs to `images/gallery/*.png` — the resized installer
+copies, capped at 730×380 because Dalamud rejects anything larger outright (see
+`images/gallery/README.md`). They are served from `main`, so the gallery can be corrected
+without cutting a release. Do not add `LastUpdate`/`DownloadCount` — server-computed fields
+other repos carry are noise in a hand-maintained pluginmaster.

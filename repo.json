@@ -13,11 +13,9 @@
     "CategoryTags": ["utility"],
     "IconUrl": "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/src/XIVShinies.SyncPlugin/images/icon.png",
     "ImageUrls": [
-      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/screenshots/settings-1-masthead-sync.png",
-      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/screenshots/settings-2-collections.png",
-      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/screenshots/settings-5-uploads.png",
-      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/screenshots/wizard-1-welcome.png",
-      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/screenshots/wizard-3-collections.png"
+      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/gallery/settings-1-masthead-sync.png",
+      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/gallery/settings-2-collections.png",
+      "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/images/gallery/settings-5-uploads.png"
     ],
     "DownloadLinkInstall": "https://github.com/noranda/xiv-shinies-plugin/releases/download/v0.6.0/XIVShinies.SyncPlugin.zip",
     "DownloadLinkUpdate": "https://github.com/noranda/xiv-shinies-plugin/releases/download/v0.6.0/XIVShinies.SyncPlugin.zip",
