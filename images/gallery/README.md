@@ -1,8 +1,11 @@
 # Installer gallery images
 
-These are the screenshots the **in-game plugin installer** shows, listed by `ImageUrls` in
-[`repo.json`](../../repo.json). They are resized copies of the full-size originals in
-[`../screenshots/`](../screenshots), which the project README embeds instead.
+These are the screenshots the **in-game plugin installer** shows. They are listed by
+`ImageUrls` in two places that must agree — [`repo.json`](../../repo.json) and the plugin
+manifest, [`XIVShinies.SyncPlugin.json`](../../src/XIVShinies.SyncPlugin/XIVShinies.SyncPlugin.json)
+— which serve different audiences (step 4 below). The files here are resized copies of the
+full-size originals in [`../screenshots/`](../screenshots), which the project README embeds
+instead.
 
 ## The size limit is a hard reject, not a downscale
 
@@ -27,9 +30,14 @@ easy to ship and never notice.
 3. If the image should appear in the installer, add its raw URL to `ImageUrls` — in **both**
    `repo.json` and `src/XIVShinies.SyncPlugin/XIVShinies.SyncPlugin.json`, which must agree.
    Dalamud accepts at most **five**; once the list is full, adding one means dropping one.
-4. Verify after merging: the URLs are served from `main`, not from a release tag, so the
-   gallery updates as soon as the images land there — no version bump, no release needed.
-   Check `%AppData%\XIVLauncher\dalamud.log` for the resolution error above.
+4. Verify after the next release, not after the merge. Dalamud reads `ImageUrls` from the
+   **installed plugin's own manifest**, which is baked into the release zip — so an already
+   installed copy keeps whatever list shipped with it until a new version replaces it.
+   `repo.json` governs only the *available*-plugins listing, for people who have not installed
+   yet. Both must be updated, but only a release moves the gallery for existing users. Check
+   `%AppData%\XIVLauncher\dalamud.log` after a full game restart: it logs each
+   `Downloading imageN … from <url>` and then the resolution error above for any that are
+   too large.
 
 Tall screenshots pay the most: a portrait capture fits the 380px height long before it
 approaches the 730px width, so it lands near 380px wide and reads small in the gallery. Prefer
