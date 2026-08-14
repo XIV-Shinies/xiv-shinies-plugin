@@ -17,14 +17,16 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// snapshot (see its remarks).
 /// </para>
 /// <para>
-/// The memory matters for two things. First, <b>down-stamping</b>: when a CE flips out of
+/// The memory matters for three things. First, <b>down-stamping</b>: when a CE flips out of
 /// Battle (or a FATE leaves the table), every game-side field is already zero, so the only
 /// honest timestamp is "when this plugin saw it happen" — recorded once and then held, because
 /// re-stamping each tick would walk the respawn countdown forward forever. Second, <b>change
 /// detection</b>: <see cref="Apply"/> reports when a wire status changed, a FATE's start
 /// epoch changed, or an id left the readings — which is what the upload scheduler
 /// debounces on. A preparing CE's phase deadline is not in that set: it shifts at
-/// Register→Warmup without moving the status, and rides out on the next upload.
+/// Register→Warmup without moving the status, and rides out on the next upload. Third,
+/// <b>battle anchoring</b>: a running battle's start is derived once and then held, because
+/// the deadline it comes from can move under it (see <see cref="MapBattle"/>).
 /// </para>
 /// <para>
 /// Everywhere a timestamp appears it is whole seconds. The server fingerprints instances on
@@ -35,7 +37,35 @@ namespace XIVShinies.SyncPlugin.Occult;
 public sealed class OccultEncounterTracker
 {
     /// <summary>What the tracker remembers about one encounter id.</summary>
-    private readonly record struct Entry(OccultEncounterStatus Status, DateTimeOffset? SinceUtc);
+    /// <param name="Status">The wire status last reported for this id.</param>
+    /// <param name="SinceUtc">The timestamp last reported for this id.</param>
+    /// <param name="SawBattleBegin">
+    /// True when this tracker watched the slot enter Battle — it held some other phase for the
+    /// id on an earlier tick — rather than first meeting it already under way. Meaningful only
+    /// while the id is Active, and the reason a derived start can be trusted (see
+    /// <see cref="MapBattle"/>).
+    /// </param>
+    /// <param name="Battle">The start committed to for the running battle, once one could be derived.</param>
+    private readonly record struct Entry(
+        OccultEncounterStatus Status,
+        DateTimeOffset? SinceUtc,
+        bool SawBattleBegin = false,
+        BattleStart? Battle = null);
+
+    /// <summary>
+    /// The battle start the tracker has committed to for one occurrence, and the phase deadline
+    /// it was derived from.
+    /// </summary>
+    /// <remarks>
+    /// A null <see cref="Entry.Battle"/> means no start has been committed yet, so the next tick
+    /// tries again; a non-null one is final for the occurrence. <paramref name="At"/> is itself
+    /// nullable because a committed start can later be proven unreliable, and the distinction
+    /// between "nothing yet" and "nothing usable, ever" is what stops the next tick from
+    /// re-deriving the value that was just discarded.
+    /// </remarks>
+    /// <param name="At">The committed start, or null once it has been proven unreliable.</param>
+    /// <param name="FromDeadline">The phase deadline <paramref name="At"/> was derived from.</param>
+    private readonly record struct BattleStart(DateTimeOffset? At, long FromDeadline);
 
     /// <summary>Last known state per CE id, following whatever ids the container reports.</summary>
     private readonly Dictionary<ushort, Entry> ceStates = [];
@@ -116,11 +146,12 @@ public sealed class OccultEncounterTracker
         var seenFates = new HashSet<ushort>();
         foreach (var reading in fates)
         {
-            // Pre-init row: on the table but not yet synced by the server (zero epoch). An
-            // UNTRACKED id is simply not reported yet — a zero epoch would upload a bogus
-            // fingerprint pair. A TRACKED id counts as still present, keeping its known
+            // No usable epoch: either a pre-init row (on the table but not yet synced by the
+            // server, so zero) or a value no real clock could produce. An UNTRACKED id is
+            // simply not reported yet — a bogus epoch would upload a fingerprint pair that
+            // identifies nothing. A TRACKED id counts as still present, keeping its known
             // state, so a transient unsynced read cannot flap an active FATE down and up.
-            if (reading.StartEpoch <= 0)
+            if (EpochOrNull(reading.StartEpoch) is not { } startUtc)
             {
                 if (fateStates.ContainsKey(reading.FateId))
                     seenFates.Add(reading.FateId);
@@ -129,7 +160,7 @@ public sealed class OccultEncounterTracker
 
             seenFates.Add(reading.FateId);
             var previous = fateStates.TryGetValue(reading.FateId, out var p) ? p : (Entry?)null;
-            var entry = new Entry(OccultEncounterStatus.Active, DateTimeOffset.FromUnixTimeSeconds(reading.StartEpoch));
+            var entry = new Entry(OccultEncounterStatus.Active, startUtc);
 
             // Unlike a CE — whose deadline shifts within one lifecycle — a FATE's start epoch
             // identifies a distinct spawn. A new epoch on an id that stayed Active means a
@@ -193,16 +224,7 @@ public sealed class OccultEncounterTracker
                 return new Entry(OccultEncounterStatus.Preparing, EpochOrNull(reading.PhaseDeadlineEpoch));
 
             case DynamicEventPhase.Battle:
-                // The game reports the battle's END deadline. Every client must derive the
-                // same start, so it comes from deadline − duration — never a local clock. A
-                // nonpositive duration (a torn read of the raw uint) would push the derived
-                // start PAST the deadline: a plausible-looking epoch no other observer would
-                // derive, which is worse than no timestamp — so it degrades to null instead.
-                return new Entry(
-                    OccultEncounterStatus.Active,
-                    EpochOrNull(reading.PhaseDeadlineEpoch > 0 && reading.DurationSeconds > 0
-                        ? reading.PhaseDeadlineEpoch - reading.DurationSeconds
-                        : 0));
+                return MapBattle(reading, previous);
 
             case DynamicEventPhase.Inactive:
             default:
@@ -221,6 +243,110 @@ public sealed class OccultEncounterTracker
 
                 return new Entry(OccultEncounterStatus.Down, null);
         }
+    }
+
+    /// <summary>Maps a Battle-phase reading, committing to a single start for the occurrence.</summary>
+    /// <remarks>
+    /// <para>
+    /// A slot's phase deadline is not fixed for the life of its battle. The Forked Tower's is a
+    /// <b>completion</b> deadline that the game pushes back ten minutes on every boss the party
+    /// kills, so a start re-derived each tick drifts later every time — a different value on
+    /// every tick, never the one a client that watched the battle begin derived, and able to
+    /// overtake the clock entirely, where any elapsed-time reading of it collapses to zero.
+    /// The start is therefore derived once and then held: a start taken while the battle was
+    /// under observation is not improved on by any later reading.
+    /// </para>
+    /// <para>
+    /// Holding is only sound if the value was taken before the deadline could move, which is
+    /// what <see cref="Entry.SawBattleBegin"/> records. A slot first met mid-battle may have
+    /// been read from an already-postponed deadline, putting its "start" later than the real
+    /// one. A deadline that later moves settles that this slot's deadline is the postponing
+    /// kind — which the reading cannot distinguish from one already postponed when it was
+    /// taken — so the value is dropped rather than reported as a start no other observer
+    /// derives. A lower or zero reading is a torn read, and the start is held. A CE's deadline
+    /// never moves within a battle, so zoning in on one already up still yields its real start.
+    /// </para>
+    /// <para>
+    /// A start met mid-battle whose deadline never moves again — the tower's last stretch,
+    /// after the final boss — stays wrong, and no reading the game offers can correct it. The
+    /// server treats an epoch ahead of its own clock as unusable, which is what keeps that
+    /// case from reaching a reader as a bogus elapsed time.
+    /// </para>
+    /// </remarks>
+    private static Entry MapBattle(DynamicEventReading reading, Entry? previous)
+    {
+        // A battle this tracker is already following.
+        if (previous is { Status: OccultEncounterStatus.Active } running)
+        {
+            if (running.Battle is { } committed)
+            {
+                // Direction is the whole test (the remarks above own the reasoning): the game
+                // only ever postpones a completion deadline, never pulls one in, so anything
+                // lower — a zero included — is a torn read and the start stands.
+                var extended = !running.SawBattleBegin
+                    && committed.At is not null
+                    && reading.PhaseDeadlineEpoch > committed.FromDeadline;
+
+                // `with` copies a record and replaces the named members — the closest analog
+                // is object spread ({...committed, At: null}), except the result is a new
+                // value of the same type rather than a loosely shaped object.
+                var held = extended ? committed with { At = null } : committed;
+                return new Entry(OccultEncounterStatus.Active, held.At, running.SawBattleBegin, held);
+            }
+
+            // Still following, but nothing has been derivable yet — the deadline lags the
+            // phase by a tick or two while an instance re-syncs. Try again, carrying forward
+            // whether the battle began under observation.
+            return CommitBattleStart(reading, running.SawBattleBegin);
+        }
+
+        // The first tick of this battle for this id. A previous entry means the tracker held a
+        // different phase for the id a tick ago and so watched the battle begin; no previous
+        // entry means the slot was first met already under way — a zone-in part way through a
+        // run, or an id the container had dropped and brought back.
+        var sawBattleBegin = previous is not null;
+
+        // The phase byte and the deadline sit in separate words of the container, so a slot
+        // can report Battle while its deadline still holds the phase that just ended.
+        // Deriving from that would put the start a whole duration early, and a start taken
+        // under observation is never revisited — the error would last the battle. The
+        // preceding entry's own timestamp IS that stale value, which reduces the test to a
+        // comparison. Committing nothing leaves the next tick to derive from a synced read.
+        if (previous is { Status: OccultEncounterStatus.Preparing } preparing
+            && preparing.SinceUtc is not null
+            && preparing.SinceUtc == EpochOrNull(reading.PhaseDeadlineEpoch))
+        {
+            return new Entry(OccultEncounterStatus.Active, null, sawBattleBegin);
+        }
+
+        return CommitBattleStart(reading, sawBattleBegin);
+    }
+
+    /// <summary>
+    /// Derives the battle start from one reading and commits it, or leaves the entry
+    /// uncommitted when the reading cannot produce one.
+    /// </summary>
+    private static Entry CommitBattleStart(DynamicEventReading reading, bool sawBattleBegin)
+    {
+        // The game reports the battle's END deadline. Every client must derive the same start,
+        // so it comes from deadline − duration — never a local clock. A nonpositive duration (a
+        // torn read of the raw uint) would push the derived start PAST the deadline: a
+        // plausible-looking epoch no other observer would derive, which is worse than no
+        // timestamp — so it degrades to null instead.
+        var start = EpochOrNull(reading.PhaseDeadlineEpoch > 0 && reading.DurationSeconds > 0
+            ? reading.PhaseDeadlineEpoch - reading.DurationSeconds
+            : 0);
+
+        // Nothing usable this tick. Leaving the commitment unset is what lets the next tick
+        // derive one, rather than freezing this occurrence at "no timestamp".
+        if (start is null)
+            return new Entry(OccultEncounterStatus.Active, null, sawBattleBegin);
+
+        return new Entry(
+            OccultEncounterStatus.Active,
+            start,
+            sawBattleBegin,
+            new BattleStart(start, reading.PhaseDeadlineEpoch));
     }
 
     /// <summary>

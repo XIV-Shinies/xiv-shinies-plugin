@@ -19,9 +19,22 @@ public class OccultEncounterTrackerTests
     private const long Deadline = 1786465621;
     private const int CeDuration = 1200;
 
+    // The Forked Tower runs an hour to a CE's twenty minutes, and the game pushes its
+    // deadline ten minutes further out for every boss the party kills.
+    private const int TowerDuration = 3600;
+    private const int BossExtension = 600;
+
     private static DynamicEventReading Ce(
         ushort id, DynamicEventPhase phase, long deadline = Deadline, int duration = CeDuration) =>
         new(id, phase, deadline, duration);
+
+    // The South Horn Forked Tower slot, at the tower's own duration.
+    private static DynamicEventReading Tower(DynamicEventPhase phase, long deadline = Deadline) =>
+        new(48, phase, deadline, TowerDuration);
+
+    // Warmup ends exactly when the battle begins, so a preparing tower's deadline is the
+    // battle's start — one duration before the battle's own deadline.
+    private const long WarmupDeadline = Deadline - TowerDuration;
 
     private static FateReading Fate(ushort id, long startEpoch) => new(id, startEpoch);
 
@@ -74,6 +87,202 @@ public class OccultEncounterTrackerTests
         var state = Single(tracker, 46);
         Assert.Equal(OccultEncounterStatus.Down, state.Status);
         Assert.Null(state.SinceUtc);
+    }
+
+    // --- The battle start anchor -----------------------------------------------------------
+
+    // A tower battle watched from its start keeps the start it was anchored at, even after the
+    // deadline is extended.
+    [Fact]
+    public void A_battle_watched_from_its_start_holds_that_start_when_the_deadline_is_extended()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Warmup, deadline: WarmupDeadline)], [], T0);
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(1));
+        tracker.Apply(
+            [Tower(DynamicEventPhase.Battle, deadline: Deadline + BossExtension)],
+            [], T0 + TimeSpan.FromMinutes(6));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
+    }
+
+    // Until the deadline word catches up with the phase word, nothing is committed; the next
+    // synced tick anchors the start.
+    [Fact]
+    public void A_battle_whose_deadline_still_holds_the_previous_phase_waits_for_the_real_one()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Warmup, deadline: WarmupDeadline)], [], T0);
+        tracker.Apply([Tower(DynamicEventPhase.Battle, deadline: WarmupDeadline)], [], T0 + TimeSpan.FromSeconds(1));
+
+        Assert.Null(Single(tracker, 48).SinceUtc);
+
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
+    }
+
+    // A start anchored under observation is held whatever the deadline later reads — the
+    // deadline is not consulted at all once the battle was watched from its start.
+    [Fact]
+    public void A_held_start_survives_a_deadline_that_stops_reading()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Warmup, deadline: WarmupDeadline)], [], T0);
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(1));
+        tracker.Apply([Tower(DynamicEventPhase.Battle, deadline: 0)], [], T0 + TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
+    }
+
+    // The same for a start derived mid-battle, where a LATER deadline IS grounds for dropping
+    // it: a zero is the container saying "not yet", so the start stands.
+    [Fact]
+    public void A_start_derived_under_way_survives_a_deadline_that_stops_reading()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0);
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle, deadline: 0)], [], T0 + TimeSpan.FromSeconds(1));
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(2));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - CeDuration), Single(tracker, 46).SinceUtc);
+    }
+
+    // A slot first met mid-battle (a zone-in part way through a run) may have been read from an
+    // already-postponed deadline, so its start is provisional. A deadline that later moves
+    // settles that this deadline postpones, and the provisional start is dropped rather than
+    // reported as one no other client shares.
+    [Fact]
+    public void A_battle_first_seen_under_way_drops_its_start_once_the_deadline_moves()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0);
+        var changed = tracker.Apply(
+            [Tower(DynamicEventPhase.Battle, deadline: Deadline + BossExtension)],
+            [], T0 + TimeSpan.FromMinutes(6));
+
+        var state = Single(tracker, 48);
+        Assert.Equal(OccultEncounterStatus.Active, state.Status);
+        Assert.Null(state.SinceUtc);
+
+        // Dropping the start withdraws a timestamp; only a status change is reported as
+        // changed, so this rides out on the next heartbeat rather than prompting an upload.
+        Assert.False(changed);
+    }
+
+    // Once dropped it stays dropped: a later extension must not look like a fresh anchor.
+    [Fact]
+    public void A_dropped_start_is_not_re_derived_by_a_later_extension()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0);
+        tracker.Apply(
+            [Tower(DynamicEventPhase.Battle, deadline: Deadline + BossExtension)],
+            [], T0 + TimeSpan.FromMinutes(6));
+        tracker.Apply(
+            [Tower(DynamicEventPhase.Battle, deadline: Deadline + (BossExtension * 2))],
+            [], T0 + TimeSpan.FromMinutes(13));
+
+        Assert.Null(Single(tracker, 48).SinceUtc);
+    }
+
+    // A CE's deadline never moves within a battle, so meeting one mid-fight still yields the
+    // real start — the common case of zoning into an instance with a CE already up.
+    [Fact]
+    public void A_battle_first_seen_under_way_keeps_its_start_while_the_deadline_holds()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0);
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromMinutes(5));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - CeDuration), Single(tracker, 46).SinceUtc);
+    }
+
+    // The deadline can lag the phase by a tick or two while the instance re-syncs. Until a
+    // start can be derived there is nothing to hold, so each tick tries again.
+    [Fact]
+    public void A_battle_start_is_derived_on_a_later_tick_when_the_deadline_had_not_synced()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle, deadline: 0)], [], T0);
+        Assert.Null(Single(tracker, 46).SinceUtc);
+
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(1));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - CeDuration), Single(tracker, 46).SinceUtc);
+    }
+
+    // Having watched the battle begin is what makes the derived start trustworthy, and that
+    // fact has to outlive the unsynced ticks in between — otherwise the eventual anchor would
+    // be treated as a mid-battle guess and thrown away at the first extension.
+    [Fact]
+    public void Watching_a_battle_begin_still_counts_after_ticks_with_no_deadline()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Warmup, deadline: WarmupDeadline)], [], T0);
+        tracker.Apply([Tower(DynamicEventPhase.Battle, deadline: 0)], [], T0 + TimeSpan.FromSeconds(1));
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(2));
+        tracker.Apply(
+            [Tower(DynamicEventPhase.Battle, deadline: Deadline + BossExtension)],
+            [], T0 + TimeSpan.FromMinutes(6));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
+    }
+
+    // The anchor belongs to one occurrence: the next battle on the same id derives its own.
+    [Fact]
+    public void A_later_battle_on_the_same_id_derives_a_fresh_start()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0);
+        tracker.Apply([Ce(46, DynamicEventPhase.Inactive, deadline: 0)], [], T0 + TimeSpan.FromMinutes(20));
+        tracker.Apply(
+            [Ce(46, DynamicEventPhase.Battle, deadline: Deadline + 9000)], [], T0 + TimeSpan.FromHours(2));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(Deadline + 9000 - CeDuration), Single(tracker, 46).SinceUtc);
+    }
+
+    // Watching an id leave Battle and come back is watching the second battle begin, so its
+    // start is anchored as firmly as one taken at a Warmup→Battle flip and held the same way.
+    [Fact]
+    public void A_battle_that_re_popped_under_observation_holds_its_start()
+    {
+        const long SecondDeadline = Deadline + 9000;
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle)], [], T0);
+        tracker.Apply([Ce(46, DynamicEventPhase.Inactive, deadline: 0)], [], T0 + TimeSpan.FromMinutes(20));
+        tracker.Apply([Ce(46, DynamicEventPhase.Battle, deadline: SecondDeadline)], [], T0 + TimeSpan.FromHours(2));
+        tracker.Apply(
+            [Ce(46, DynamicEventPhase.Battle, deadline: SecondDeadline + BossExtension)],
+            [], T0 + TimeSpan.FromHours(2) + TimeSpan.FromMinutes(6));
+
+        Assert.Equal(
+            DateTimeOffset.FromUnixTimeSeconds(SecondDeadline - CeDuration), Single(tracker, 46).SinceUtc);
+    }
+
+    // An id the container drops takes its history with it, so the battle still running when it
+    // returns is one this tracker did not watch begin — and its start is provisional again.
+    [Fact]
+    public void A_battle_whose_id_left_and_returned_is_treated_as_first_seen_under_way()
+    {
+        var tracker = new OccultEncounterTracker();
+        tracker.Apply([Tower(DynamicEventPhase.Warmup, deadline: WarmupDeadline)], [], T0);
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(1));
+        tracker.Apply([], [], T0 + TimeSpan.FromSeconds(2));
+        tracker.Apply([Tower(DynamicEventPhase.Battle)], [], T0 + TimeSpan.FromSeconds(3));
+        tracker.Apply(
+            [Tower(DynamicEventPhase.Battle, deadline: Deadline + BossExtension)],
+            [], T0 + TimeSpan.FromMinutes(6));
+
+        Assert.Null(Single(tracker, 48).SinceUtc);
     }
 
     // --- The observed down flip ------------------------------------------------------------
