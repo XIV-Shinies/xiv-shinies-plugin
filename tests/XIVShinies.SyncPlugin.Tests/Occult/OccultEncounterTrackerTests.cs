@@ -19,9 +19,9 @@ public class OccultEncounterTrackerTests
     private const long Deadline = 1786465621;
     private const int CeDuration = 1200;
 
-    // The Forked Tower runs longer than a CE, and the game extends its deadline by ten
-    // minutes per boss killed.
-    private const int TowerDuration = 1800;
+    // The Forked Tower runs an hour to a CE's twenty minutes, and the game pushes its
+    // deadline ten minutes further out for every boss the party kills.
+    private const int TowerDuration = 3600;
     private const int BossExtension = 600;
 
     private static DynamicEventReading Ce(
