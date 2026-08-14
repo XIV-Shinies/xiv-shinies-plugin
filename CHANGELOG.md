@@ -7,6 +7,14 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.6.0 — 2026-08-14
+
+- Share your Occult Crescent instance's encounters with the live tracker
+- Sync your phantom jobs, knowledge level, and occult records
+- Show in the sync status when job levels still need a Crescent visit
+- Rename the items list to Tracked items and mark pickups in the log
+- Group the consent list by game area with one line per collection
+
 ## v0.5.0 — 2026-08-02
 
 - Sync the Triple Triad cards you have collected (opt-in)
