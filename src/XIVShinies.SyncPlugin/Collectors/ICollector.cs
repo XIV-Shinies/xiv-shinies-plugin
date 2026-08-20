@@ -12,6 +12,14 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <c>if (key == "quests")</c>, the design has gone wrong.
 /// </para>
 /// <para>
+/// The single sanctioned exception is a collection driven by a server manifest, which also brings
+/// its <c>/config</c> field, a derivation on <see cref="CollectContext"/>, and the
+/// <see cref="ManifestCatalog"/> entry tying them to a category. Deriving a manifest's ids differs
+/// per manifest and has to stay unit-testable, and every manifest-driven collector reads the game
+/// — so the derivation lives in those Dalamud-free classes rather than here. The catalog entry is
+/// the only place a category is named.
+/// </para>
+/// <para>
 /// This interface is deliberately free of Dalamud types even though every real implementation
 /// reads the game. That keeps the runner and the payload assembly unit-testable with a fake
 /// collector, while the implementations themselves are verified by in-game QA.

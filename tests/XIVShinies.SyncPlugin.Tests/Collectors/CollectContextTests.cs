@@ -49,7 +49,7 @@ public class CollectContextTests
     {
         var context = new CollectContext { RemoteConfig = null };
 
-        Assert.Empty(context.ItemManifest);
+        Assert.Empty(context.ManifestFor(CategoryKeys.Items));
     }
 
     // The omit-when-unseen ids reach the item collector through this funnel, as a set it can
@@ -85,7 +85,7 @@ public class CollectContextTests
         var manifest = new uint[] { 10, 20, 30 };
         var context = new CollectContext { RemoteConfig = ConfigWith(manifest) };
 
-        Assert.Same(manifest, context.ItemManifest);
+        Assert.Same(manifest, context.ManifestFor(CategoryKeys.Items));
     }
 
     // A hostile or broken backend could send millions of ids; each one costs several container
@@ -99,7 +99,7 @@ public class CollectContextTests
             .ToArray();
         var context = new CollectContext { RemoteConfig = ConfigWith(oversized) };
 
-        var bounded = context.ItemManifest;
+        var bounded = context.ManifestFor(CategoryKeys.Items);
 
         Assert.Equal(CollectContext.MaxManifestItems, bounded.Count);
         Assert.Equal(1u, bounded[0]);
@@ -117,7 +117,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string> { "relic-proofs", "relic-materials" },
         };
 
-        Assert.Equal(new uint[] { 1, 2, 3 }, context.ItemManifest);  // deduped, first-seen order
+        Assert.Equal(new uint[] { 1, 2, 3 }, context.ManifestFor(CategoryKeys.Items));  // deduped, first-seen order
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string> { "relic-proofs" },
         };
 
-        Assert.Equal(new uint[] { 1, 2 }, context.ItemManifest);
+        Assert.Equal(new uint[] { 1, 2 }, context.ManifestFor(CategoryKeys.Items));
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string>(),
         };
 
-        Assert.Empty(context.ItemManifest);
+        Assert.Empty(context.ManifestFor(CategoryKeys.Items));
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string>(),
         };
 
-        Assert.Equal(new uint[] { 1, 2 }, context.ItemManifest);
+        Assert.Equal(new uint[] { 1, 2 }, context.ManifestFor(CategoryKeys.Items));
     }
 
     // An EMPTY groups array means the same as no groups array: the server is asking the user to choose
@@ -180,7 +180,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string>(),
         };
 
-        Assert.Equal(new uint[] { 1, 2 }, context.ItemManifest);
+        Assert.Equal(new uint[] { 1, 2 }, context.ManifestFor(CategoryKeys.Items));
     }
 
     // The grouped path has its own cap: a hostile or broken backend could stuff millions of ids
@@ -197,7 +197,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string> { "relic-proofs" },
         };
 
-        var bounded = context.ItemManifest;
+        var bounded = context.ManifestFor(CategoryKeys.Items);
 
         Assert.Equal(CollectContext.MaxManifestItems, bounded.Count);
         Assert.Equal(1u, bounded[0]);
@@ -206,53 +206,53 @@ public class CollectContextTests
         Assert.Equal(oversized[CollectContext.MaxManifestItems - 1], bounded[^1]);
     }
 
-    // --- Truncation flag ---------------------------------------------------------------------
-    // The cap truncates silently at the point of use; this flag is how the orchestrator learns a
-    // clip happened so it can say so in the log. "Some ids are not being scanned" must be
-    // observable — a server bug serving an oversized manifest would otherwise read as
+    // --- Truncation reporting ------------------------------------------------------------------
+    // The cap truncates silently at the point of use; the truncated-category set is how the
+    // orchestrator learns a clip happened so it can say so. "Some ids are not being scanned" must
+    // be observable — a server bug serving an oversized manifest would otherwise read as
     // mysteriously missing counts.
 
     [Fact]
-    public void The_truncation_flag_is_off_without_a_config()
+    public void Truncation_is_off_without_a_config()
     {
         var context = new CollectContext { RemoteConfig = null };
 
-        Assert.False(context.ManifestTruncated);
+        Assert.Empty(context.TruncatedManifests);
     }
 
     [Fact]
-    public void The_truncation_flag_is_off_for_a_sane_flat_manifest()
+    public void Truncation_is_off_for_a_sane_flat_manifest()
     {
         var context = new CollectContext { RemoteConfig = ConfigWith(new uint[] { 1, 2, 3 }) };
 
-        Assert.False(context.ManifestTruncated);
+        Assert.Empty(context.TruncatedManifests);
     }
 
     [Fact]
-    public void The_truncation_flag_is_on_for_an_oversized_flat_manifest()
+    public void Truncation_is_on_for_an_oversized_flat_manifest()
     {
         var oversized = Enumerable.Range(1, CollectContext.MaxManifestItems + 1)
             .Select(id => (uint)id)
             .ToArray();
         var context = new CollectContext { RemoteConfig = ConfigWith(oversized) };
 
-        Assert.True(context.ManifestTruncated);
+        Assert.True(context.TruncatedManifests.Contains(CategoryKeys.Items));
     }
 
     // A manifest of exactly the cap fits whole — nothing was clipped, so nothing to warn about.
     [Fact]
-    public void The_truncation_flag_is_off_at_exactly_the_cap()
+    public void Truncation_is_off_at_exactly_the_cap()
     {
         var exact = Enumerable.Range(1, CollectContext.MaxManifestItems)
             .Select(id => (uint)id)
             .ToArray();
         var context = new CollectContext { RemoteConfig = ConfigWith(exact) };
 
-        Assert.False(context.ManifestTruncated);
+        Assert.Empty(context.TruncatedManifests);
     }
 
     [Fact]
-    public void The_truncation_flag_is_on_for_an_oversized_enabled_group_union()
+    public void Truncation_is_on_for_an_oversized_enabled_group_union()
     {
         var oversized = Enumerable.Range(1, CollectContext.MaxManifestItems + 1)
             .Select(id => (uint)id)
@@ -263,13 +263,13 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string> { "relic-proofs" },
         };
 
-        Assert.True(context.ManifestTruncated);
+        Assert.True(context.TruncatedManifests.Contains(CategoryKeys.Items));
     }
 
-    // The union dedupes before it truncates, so the flag must count the way the union does: two
+    // The union dedupes before it truncates, so the verdict must count the way the union does: two
     // groups sharing most of their ids can sum past the cap while the deduped union fits whole.
     [Fact]
-    public void The_truncation_flag_counts_deduped_ids_not_the_raw_group_sum()
+    public void Truncation_counts_deduped_ids_not_the_raw_group_sum()
     {
         var shared = Enumerable.Range(1, CollectContext.MaxManifestItems - 1)
             .Select(id => (uint)id)
@@ -283,14 +283,14 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string> { "a", "b" },
         };
 
-        Assert.False(context.ManifestTruncated);
+        Assert.Empty(context.TruncatedManifests);
     }
 
     // Same fallback the manifest itself takes: an empty groups array means "no groups", so an
-    // oversized FLAT manifest must still raise the flag — routing it into the (empty) group loop
+    // oversized FLAT manifest must still be reported — routing it into the (empty) group loop
     // would return false and mask a real clip.
     [Fact]
-    public void The_truncation_flag_falls_back_to_the_flat_manifest_for_an_empty_group_list()
+    public void Truncation_falls_back_to_the_flat_manifest_for_an_empty_group_list()
     {
         var oversized = Enumerable.Range(1, CollectContext.MaxManifestItems + 1)
             .Select(id => (uint)id)
@@ -302,11 +302,11 @@ public class CollectContextTests
 
         var context = new CollectContext { RemoteConfig = config };
 
-        Assert.True(context.ManifestTruncated);
+        Assert.True(context.TruncatedManifests.Contains(CategoryKeys.Items));
     }
 
     [Fact]
-    public void The_truncation_flag_ignores_disabled_groups()
+    public void Truncation_ignores_disabled_groups()
     {
         var oversized = Enumerable.Range(1, CollectContext.MaxManifestItems + 1)
             .Select(id => (uint)id)
@@ -319,7 +319,7 @@ public class CollectContextTests
             EnabledItemGroupKeys = new HashSet<string> { "small" },
         };
 
-        Assert.False(context.ManifestTruncated);
+        Assert.Empty(context.TruncatedManifests);
     }
 
     // --- Quest sequence manifest ---------------------------------------------------------------
@@ -329,12 +329,12 @@ public class CollectContextTests
     [Fact]
     public void The_quest_sequence_manifest_is_empty_without_a_config_or_the_field()
     {
-        Assert.Empty(new CollectContext { RemoteConfig = null }.QuestSequenceManifest);
+        Assert.Empty(new CollectContext { RemoteConfig = null }.ManifestFor(CategoryKeys.QuestSequences));
 
         // An older server that never sends the field reads the same as "nothing to check".
         Assert.Empty(
             new CollectContext { RemoteConfig = ConfigWith(Array.Empty<uint>()) }
-                .QuestSequenceManifest);
+                .ManifestFor(CategoryKeys.QuestSequences));
     }
 
     [Fact]
@@ -347,7 +347,7 @@ public class CollectContextTests
 
         var context = new CollectContext { RemoteConfig = config };
 
-        Assert.Equal(new uint[] { 70562, 69208 }, context.QuestSequenceManifest);
+        Assert.Equal(new uint[] { 70562, 69208 }, context.ManifestFor(CategoryKeys.QuestSequences));
     }
 
     // Each id costs a walk of the game's active-quest array on the framework thread — cheap, but
@@ -360,7 +360,7 @@ public class CollectContextTests
             .ToArray();
         var config = ConfigWith(Array.Empty<uint>()) with { QuestSequenceManifest = oversized };
 
-        var bounded = new CollectContext { RemoteConfig = config }.QuestSequenceManifest;
+        var bounded = new CollectContext { RemoteConfig = config }.ManifestFor(CategoryKeys.QuestSequences);
 
         Assert.Equal(CollectContext.MaxManifestItems, bounded.Count);
         Assert.Equal(1u, bounded[0]);
@@ -368,30 +368,29 @@ public class CollectContextTests
     }
 
     // The quest-sequence clip gets the same observability as the item clip: silent at the point
-    // of use, surfaced through a flag so the orchestrator can say so in the log.
+    // of use, surfaced as its own key in the truncated set so the orchestrator can say so.
     [Fact]
-    public void The_quest_sequence_truncation_flag_is_off_without_a_config_or_at_the_cap()
+    public void Quest_sequence_truncation_is_off_without_a_config_or_at_the_cap()
     {
-        Assert.False(new CollectContext { RemoteConfig = null }.QuestSequenceManifestTruncated);
+        Assert.Empty(new CollectContext { RemoteConfig = null }.TruncatedManifests);
 
         var exact = Enumerable.Range(1, CollectContext.MaxManifestItems)
             .Select(id => (uint)id)
             .ToArray();
         var config = ConfigWith(Array.Empty<uint>()) with { QuestSequenceManifest = exact };
 
-        Assert.False(
-            new CollectContext { RemoteConfig = config }.QuestSequenceManifestTruncated);
+        Assert.Empty(new CollectContext { RemoteConfig = config }.TruncatedManifests);
     }
 
     [Fact]
-    public void The_quest_sequence_truncation_flag_is_on_for_an_oversized_manifest()
+    public void Quest_sequence_truncation_is_on_for_an_oversized_manifest()
     {
         var oversized = Enumerable.Range(1, CollectContext.MaxManifestItems + 1)
             .Select(id => (uint)id)
             .ToArray();
         var config = ConfigWith(Array.Empty<uint>()) with { QuestSequenceManifest = oversized };
 
-        Assert.True(new CollectContext { RemoteConfig = config }.QuestSequenceManifestTruncated);
+        Assert.True(new CollectContext { RemoteConfig = config }.TruncatedManifests.Contains(CategoryKeys.QuestSequences));
     }
 
     [Fact]
