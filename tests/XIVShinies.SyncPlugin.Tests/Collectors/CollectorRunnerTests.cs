@@ -167,7 +167,7 @@ public class CollectorRunnerTests
         var snapshot = CollectorRunner.Run(
             new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), config);
 
-        Assert.True(snapshot.ManifestTruncated);
+        Assert.True(snapshot.TruncatedManifests.Contains(CategoryKeys.Items));
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class CollectorRunnerTests
         var snapshot = CollectorRunner.Run(
             new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), RemoteConfig());
 
-        Assert.False(snapshot.ManifestTruncated);
+        Assert.Empty(snapshot.TruncatedManifests);
     }
 
     // The quest-sequence clip takes the same runner-to-orchestrator handoff as the item clip.
@@ -192,8 +192,8 @@ public class CollectorRunnerTests
         var snapshot = CollectorRunner.Run(
             new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), config);
 
-        Assert.True(snapshot.QuestSequenceManifestTruncated);
-        Assert.False(snapshot.ManifestTruncated); // the two clips report independently
+        Assert.True(snapshot.TruncatedManifests.Contains(CategoryKeys.QuestSequences));
+        Assert.False(snapshot.TruncatedManifests.Contains(CategoryKeys.Items)); // the two clips report independently
     }
 
     // Facts shaped as a JSON OBJECT (quest id → sequence) must ride the same generic path as
@@ -391,7 +391,7 @@ public class CollectorRunnerTests
         CollectorRunner.Run(new[] { collector }, OptedIn(UnknownCategory), remote);
 
         Assert.Same(remote, collector.LastContext!.RemoteConfig);
-        Assert.Empty(collector.LastContext.ItemManifest);
+        Assert.Empty(collector.LastContext.ManifestFor(CategoryKeys.Items));
     }
 
     [Fact]
@@ -402,7 +402,7 @@ public class CollectorRunnerTests
         CollectorRunner.Run(new[] { collector }, OptedIn(UnknownCategory), remoteConfig: null);
 
         Assert.Null(collector.LastContext!.RemoteConfig);
-        Assert.Empty(collector.LastContext.ItemManifest);
+        Assert.Empty(collector.LastContext.ManifestFor(CategoryKeys.Items));
     }
 
     [Fact]

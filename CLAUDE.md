@@ -207,6 +207,16 @@ category-name branches** (e.g. the achievements "open your list" hint surfaces v
 collector's skip reason, not a special case). Guard this with a test that runs a fake
 registered collector through payload assembly and settings enumeration.
 
+**The one sanctioned exception is a collection driven by a server manifest**, which also
+brings its `/config` field on `ConfigResponse`, a `Read`/`Truncated` derivation on
+`CollectContext`, and the `ManifestCatalog` entry that ties them to a category. The
+derivation differs per manifest (the item manifest is a consent-gated union across enabled
+groups when the server sends groups and a flat list otherwise; the quest-sequence manifest is
+always flat), and it cannot live on the collector: every manifest-driven collector reads the
+game and so is verifiable only by in-game QA, which would put the derivation out of reach of
+the unit suite. Those three pieces are all Dalamud-free and unit-tested, and the catalog entry
+is the only place a category is named — there is never a category-name branch outside it.
+
 ## Commits, PRs, releases
 
 Project-scoped skills live in `.claude/skills/`:

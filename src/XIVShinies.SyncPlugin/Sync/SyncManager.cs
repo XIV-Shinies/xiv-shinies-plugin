@@ -175,27 +175,9 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     private volatile bool hasCollected;
 
-    /// <summary>
-    /// The manifest version the truncation warning was last logged for, or null when none has
-    /// been. Keeps the warning at one line per oversized manifest instead of one per sweep —
-    /// the condition only changes when the server serves a different manifest.
-    /// </summary>
-    /// <remarks>
-    /// Framework thread only (written and read inside the collection pass), so it follows the
-    /// same single-writer discipline as the identity fields: one writer, one thread, no locks.
-    /// </remarks>
-    private string? truncationWarnedForManifest;
-
-    /// <summary>
-    /// True once the quest-sequence truncation warning has been logged this session. A plain
-    /// once-per-session latch (unlike the item warning's once-per-manifest-version gate) because
-    /// the quest-sequence manifest carries no version hash to compare against.
-    /// </summary>
-    /// <remarks>
-    /// Framework thread only, same single-writer discipline as
-    /// <see cref="truncationWarnedForManifest"/>.
-    /// </remarks>
-    private bool questTruncationWarned;
+    /// <summary>Decides which manifest truncation warnings this pass should log.</summary>
+    /// <remarks>Framework thread only, driven from inside the collection pass.</remarks>
+    private readonly ManifestTruncationWarnings truncationWarnings = new();
 
     /// <summary>
     /// Set when the server reported a failure only the user can fix. Suppresses all further work
@@ -860,30 +842,13 @@ internal sealed class SyncManager : IDisposable
             // rejected, or halted).
             hasCollected = true;
 
-            // The manifest cap clips silently at the point of use (a bounded scan must not depend
-            // on anyone noticing), so this is where the clip becomes visible: without it, a server
-            // bug serving an oversized manifest would read as mysteriously missing counts. Warned
-            // once per manifest version — the sweep cadence would otherwise repeat it every pass.
-            // The wording states the manifest fact rather than describing this pass's scan: the
-            // flag is config-derived, so it can be true on a pass that ran no item scan at all
-            // (an unlock pass for another category, or the items category switched off).
-            if (snapshot.ManifestTruncated && truncationWarnedForManifest != config?.ManifestVersion)
+            // Where a clipped manifest becomes visible: without this, a server bug serving an
+            // oversized manifest would read as mysteriously missing counts. ManifestTruncationWarnings
+            // decides which of this pass's clips have not been reported yet.
+            foreach (var warning in truncationWarnings.LinesFor(
+                snapshot.TruncatedManifests, config?.ManifestVersion))
             {
-                truncationWarnedForManifest = config?.ManifestVersion;
-                log.Warning(
-                    $"The server's item manifest exceeds the {CollectContext.MaxManifestItems}-id " +
-                    $"ceiling; ids past the first {CollectContext.MaxManifestItems} will not be " +
-                    "scanned or reported.");
-            }
-
-            // The quest-sequence manifest clips under the same ceiling, made visible the same way.
-            if (snapshot.QuestSequenceManifestTruncated && !questTruncationWarned)
-            {
-                questTruncationWarned = true;
-                log.Warning(
-                    $"The server's quest-sequence manifest exceeds the " +
-                    $"{CollectContext.MaxManifestItems}-id ceiling; quests past the first " +
-                    $"{CollectContext.MaxManifestItems} will not be looked up or reported.");
+                log.Warning(warning);
             }
 
             // Bound every category to the contract's caps before anything downstream sees it.

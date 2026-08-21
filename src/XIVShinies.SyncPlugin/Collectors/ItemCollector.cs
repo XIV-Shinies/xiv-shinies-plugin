@@ -151,9 +151,9 @@ public sealed unsafe class ItemCollector : ICollector
         if (ManifestConsent.GroupsOfferedButNoneEnabled(context))
             return CollectResult.Skipped(CollectSkipReasons.NoItemGroupsEnabled);
 
-        // Read the computed manifest once: it is recomputed on each property read, and the scan below
-        // must see one stable list.
-        var manifest = context.ItemManifest;
+        // Read the manifest once: ManifestFor recomputes on every call, and the scan below must
+        // see one stable list.
+        var manifest = context.ManifestFor(CategoryKeys.Items);
 
         // An empty manifest is a real answer: the server asked about nothing, so we found nothing.
         // No source notes are attached here on purpose — with nothing to look for we never walk a

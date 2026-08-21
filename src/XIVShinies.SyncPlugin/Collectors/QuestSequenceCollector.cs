@@ -30,7 +30,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <para>
 /// Reads game memory through FFXIVClientStructs, so it must run on the framework thread and cannot
 /// be unit-tested; it is verified by in-game QA. The pure logic around it — the manifest funnel
-/// (<see cref="CollectContext.QuestSequenceManifest"/>) and the payload shape
+/// (<see cref="CollectContext.ManifestFor"/>) and the payload shape
 /// (<see cref="CollectResult.Sequences"/>) — is covered by tests.
 /// </para>
 /// <para>
@@ -103,7 +103,7 @@ public sealed unsafe class QuestSequenceCollector : ICollector
         // An empty manifest is a real answer: the server asked about nothing, so we found nothing.
         // The bounded funnel also caps a hostile backend's manifest, same as the item manifest.
         var sequences = new Dictionary<uint, byte>();
-        foreach (var questId in context.QuestSequenceManifest)
+        foreach (var questId in context.ManifestFor(CategoryKeys.QuestSequences))
         {
             // The game stores active quests by the low 16 bits of the Excel row id; both calls
             // below mask the full row id down themselves. IsQuestAccepted gates presence in the

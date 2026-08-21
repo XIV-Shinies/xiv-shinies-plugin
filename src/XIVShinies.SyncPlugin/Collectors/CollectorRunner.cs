@@ -109,22 +109,17 @@ public sealed record CollectionSnapshot
     public IReadOnlySet<string> CompleteKeys { get; init; } = new HashSet<string>();
 
     /// <summary>
-    /// True when this pass's item manifest was clipped at the client's ceiling (see
-    /// <see cref="CollectContext.ManifestTruncated"/>) — the server asked about more ids than
-    /// the plugin will scan. A fact about the config, not about this pass's scan: it holds even
-    /// when the pass ran no item scan at all. Carried here because the orchestrator, which holds
-    /// the logger, sees only the snapshot: the runner reports the fact, the caller decides what
-    /// to do with it.
+    /// The categories whose manifest the server sent over the client's ceiling (see
+    /// <see cref="CollectContext.TruncatedManifests"/>), so the tail is not being reported.
     /// </summary>
-    public bool ManifestTruncated { get; init; }
-
-    /// <summary>
-    /// True when this pass's quest-sequence manifest was clipped at the client's ceiling (see
-    /// <see cref="CollectContext.QuestSequenceManifestTruncated"/>). The same runner-to-caller
-    /// handoff as <see cref="ManifestTruncated"/>, kept separate so the orchestrator's warning
-    /// can name which manifest was clipped.
-    /// </summary>
-    public bool QuestSequenceManifestTruncated { get; init; }
+    /// <remarks>
+    /// Facts about the config, not about this pass's scan: a key holds even when the pass ran no
+    /// scan for that category at all. Carried here because the orchestrator, which holds the
+    /// logger, sees only the snapshot — the runner reports the fact, the caller decides what to
+    /// do with it. Keyed like <see cref="CompleteKeys"/> so a manifest added later needs no new
+    /// member here.
+    /// </remarks>
+    public IReadOnlySet<string> TruncatedManifests { get; init; } = new HashSet<string>();
 }
 
 /// <summary>
@@ -158,7 +153,7 @@ public static class CollectorRunner
 
         // Built once and shared: every collector sees the same view of the world for this pass.
         // EnabledItemGroupKeys carries the user's per-group opt-ins so the item collector scans only
-        // the groups they consented to (CollectContext.ItemManifest unions the enabled groups). Taken
+        // the groups they consented to (the item manifest unions the enabled groups). Taken
         // as a snapshot, because the user can tick a group's checkbox on the UI thread while this pass
         // is running and the live list would not survive being read and written at once.
         var context = new CollectContext
@@ -261,8 +256,7 @@ public static class CollectorRunner
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,
             CompleteKeys = completeKeys,
-            ManifestTruncated = context.ManifestTruncated,
-            QuestSequenceManifestTruncated = context.QuestSequenceManifestTruncated,
+            TruncatedManifests = context.TruncatedManifests,
         };
     }
 }
