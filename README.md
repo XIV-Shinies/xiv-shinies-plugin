@@ -93,7 +93,7 @@ when the plugin unloads.
 2. Add this URL under **Custom Plugin Repositories**:
 
    ```
-   https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/repo.json
+   https://raw.githubusercontent.com/XIV-Shinies/xiv-shinies-plugin/main/repo.json
    ```
 
 3. Save, then install **XIV Shinies Sync** from `/xlplugins`.

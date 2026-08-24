@@ -32,7 +32,7 @@
       hygiene, but note the Dalamud manifest's own "RepoUrl" field is set explicitly in
       XIVShinies.SyncPlugin.json — the SDK does not derive RepoUrl from this property.
     -->
-    <PackageProjectUrl>https://github.com/noranda/xiv-shinies-plugin</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/XIV-Shinies/xiv-shinies-plugin</PackageProjectUrl>
 
     <!-- SPDX license id; matches the repo's MIT LICENSE file. -->
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
