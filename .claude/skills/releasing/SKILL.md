@@ -158,7 +158,7 @@ digraph release_flow {
    - csproj: `<Version>X.Y.Z</Version>`
    - `repo.json` (create from the template below on the first release): set `AssemblyVersion`
      to `X.Y.Z.0` and all three `DownloadLink*` to
-     `https://github.com/noranda/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip`.
+     `https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip`.
      Keep the descriptive fields (Author, Name, Punchline, Description, Tags…) identical to
      the built manifest at `src/XIVShinies.SyncPlugin/bin/Release/XIVShinies.SyncPlugin/XIVShinies.SyncPlugin.json`
      — the manifest is the source; repo.json mirrors it.
@@ -270,15 +270,15 @@ beats a false record.
     "Description": "(copy from the built manifest)",
     "Punchline": "(copy from the built manifest)",
     "ApplicableVersion": "any",
-    "RepoUrl": "https://github.com/noranda/xiv-shinies-plugin",
+    "RepoUrl": "https://github.com/XIV-Shinies/xiv-shinies-plugin",
     "DalamudApiLevel": 15,
     "Tags": ["collection", "sync", "quests", "achievements", "mounts", "minions", "relics"],
     "CategoryTags": ["utility"],
-    "IconUrl": "https://raw.githubusercontent.com/noranda/xiv-shinies-plugin/main/src/XIVShinies.SyncPlugin/images/icon.png",
+    "IconUrl": "https://raw.githubusercontent.com/XIV-Shinies/xiv-shinies-plugin/main/src/XIVShinies.SyncPlugin/images/icon.png",
     "ImageUrls": [],
-    "DownloadLinkInstall": "https://github.com/noranda/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip",
-    "DownloadLinkUpdate": "https://github.com/noranda/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip",
-    "DownloadLinkTesting": "https://github.com/noranda/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip"
+    "DownloadLinkInstall": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip",
+    "DownloadLinkUpdate": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip",
+    "DownloadLinkTesting": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip"
   }
 ]
 ```

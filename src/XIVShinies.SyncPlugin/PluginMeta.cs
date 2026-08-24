@@ -34,7 +34,7 @@ public static class PluginMeta
     public const string DisplayName = "XIV Shinies Sync";
 
     /// <summary>Where the plugin's source lives (mirrors the manifest <c>RepoUrl</c> field).</summary>
-    public const string SourceUrl = "https://github.com/noranda/xiv-shinies-plugin";
+    public const string SourceUrl = "https://github.com/XIV-Shinies/xiv-shinies-plugin";
 
     /// <summary>The community Discord invite (the same one the website links to).</summary>
     public const string DiscordUrl = "https://discord.gg/UuNe5BwAGG";
