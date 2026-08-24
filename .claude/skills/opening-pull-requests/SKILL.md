@@ -99,6 +99,8 @@ diff, not its user-visible behavior.>
 ```
 
 **Body rules:**
+- **Never hard-wrap prose.** Write each paragraph as ONE unbroken line, however long it runs. GitHub renders a single newline inside a paragraph as a literal line break, so text wrapped at 80/100 columns arrives on the PR page broken at those columns instead of flowing to the reader's width. Blank lines separate paragraphs; nothing else in the body may contain a newline mid-sentence. This applies to the body text passed to `gh pr create`/`gh pr edit` — it is not a rule about how Markdown files in the repo are written
+- One line per bullet and per checklist item, for the same reason — a bullet that wraps renders as two broken lines
 - Bullets, not prose. Each bullet ≤ 100 chars
 - Test plan items must be **specific** — "Walk the new feature in-game" is too generic; "Log in on a claimed character, confirm login sync fires and quest rows appear with the plugin badge" is right
 - Always include `dotnet build` and `dotnet test` in the test plan
