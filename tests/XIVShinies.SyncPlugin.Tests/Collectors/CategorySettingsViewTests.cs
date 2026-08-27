@@ -95,6 +95,27 @@ public class CategorySettingsViewTests
         Assert.Equal("facewear display", row.DisplayName);
         Assert.Equal("what facewear sends", row.WhatGetsSent);
         Assert.True(row.UserEnabled);
+
+        // The badge is part of the gate: a collection the plugin has never heard of is one this
+        // install has never shown, so it announces itself like any other.
+        Assert.True(row.IsNew);
+    }
+
+    // The category-level twin of Group_rows_carry_the_users_enabled_and_seen_state_per_group. The
+    // polarity is what matters — inverting it would badge every familiar collection forever, and
+    // IsNew is defaulted rather than required, so nothing else would catch it.
+    [Fact]
+    public void Category_rows_carry_the_installs_seen_state_per_category()
+    {
+        var settings = OptedIn();
+        settings.MarkCategoriesSeen(new[] {"quests"});
+        // "facewear" is left untouched: never marked seen.
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake("quests"), Fake(UnknownCategory)}, settings, RemoteConfig());
+
+        Assert.False(rows[0].IsNew);
+        Assert.True(rows[1].IsNew);
     }
 
     // The section heading is self-description like the display name, and the grouping the consent
@@ -338,6 +359,48 @@ public class CategorySettingsViewTests
 
         Assert.False(groups[1].Enabled);
         Assert.True(groups[1].IsNew);
+    }
+
+    // The folded "Collections" header's chip. With the header shut, none of the per-row badges are
+    // visible, so this is the only thing telling a user something arrived — it has to answer for
+    // both levels, and for a badge that went up earlier in the session.
+    [Fact]
+    public void The_header_chip_answers_for_a_new_collection_a_new_group_and_neither()
+    {
+        var settings = OptedIn();
+        var config = RemoteConfig(itemManifestGroups: new[] {Group("relic-tools", "Relic tools")});
+        var none = new HashSet<string>();
+
+        // A collection this install has never shown.
+        var freshCategory = CategorySettingsView.Build(new[] {Fake("quests")}, settings, RemoteConfig());
+        Assert.True(CategorySettingsView.AnythingIsNew(freshCategory, none, none));
+
+        // Nothing new: the collection has been shown, and it carries no groups.
+        settings.MarkCategoriesSeen(new[] {"quests"});
+        var seenCategory = CategorySettingsView.Build(new[] {Fake("quests")}, settings, RemoteConfig());
+        Assert.False(CategorySettingsView.AnythingIsNew(seenCategory, none, none));
+
+        // A group inside an already-shown collection still raises it.
+        settings.MarkCategoriesSeen(new[] {"items"});
+        var freshGroup = CategorySettingsView.Build(new[] {FakeManifestDriven("items")}, settings, config);
+        Assert.True(CategorySettingsView.AnythingIsNew(freshGroup, none, none));
+    }
+
+    // A badge that went up earlier this session keeps the header chip lit even though drawing the
+    // row already persisted its seen flag — otherwise the chip would blink out one frame after the
+    // badge beneath it appeared.
+    [Fact]
+    public void The_header_chip_stays_lit_for_a_badge_already_shown_this_session()
+    {
+        var settings = OptedIn();
+        settings.MarkCategoriesSeen(new[] {"quests"});
+
+        var rows = CategorySettingsView.Build(new[] {Fake("quests")}, settings, RemoteConfig());
+        var badgedCategories = new HashSet<string> {"quests"};
+        var none = new HashSet<string>();
+
+        Assert.False(rows[0].IsNew);
+        Assert.True(CategorySettingsView.AnythingIsNew(rows, badgedCategories, none));
     }
 
     // No groups in the config means nothing for the UI to draw, even for a collector that announces

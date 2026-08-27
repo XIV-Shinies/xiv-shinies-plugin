@@ -32,8 +32,9 @@ internal sealed partial class MainWindow
         BrandSeparator();
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Whether any manifest group anywhere in the list still counts as "New" (see AnyGroupIsNew).
-        var hasNewGroup = AnyGroupIsNew(rows);
+        // Whether anything in the list still counts as "New" — a whole collection or a manifest group
+        // inside one (see AnythingIsNew).
+        var hasNewCollection = AnythingIsNew(rows);
 
         // Captured immediately before the header so the "New" chip below can be placed on the
         // header's own row: CollapsingHeader always spans the full available width regardless of
@@ -54,10 +55,10 @@ internal sealed partial class MainWindow
         var collectionsOpen =
             ImGui.CollapsingHeader("Collections", ImGuiTreeNodeFlags.DefaultOpen);
 
-        // Drawn in both states, open and collapsed (see AnyGroupIsNew). Positioned by DrawHeaderRightChip
+        // Drawn in both states, open and collapsed (see AnythingIsNew). Positioned by DrawHeaderRightChip
         // rather than a plain SameLine(), because the header above just claimed the ENTIRE row width;
         // see that method's remarks for why SameLine cannot place a widget beside a full-width header.
-        if (hasNewGroup)
+        if (hasNewCollection)
         {
             DrawHeaderRightChip(
                 FontAwesomeIcon.Star, "New", Brand.Gold,

@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 // Path.Combine, for locating the mascot image next to the plugin DLL.
 using System.IO;
+// Select, to project the collectors down to the category keys the seen-baseline needs.
+using System.Linq;
 // Dalamud's command system (registering the /shinies slash command).
 using Dalamud.Game.Command;
 // The windowing system that draws and manages our ImGui windows.
@@ -169,6 +171,13 @@ public sealed class Plugin : IDalamudPlugin
 
             // Build the fact sources. Nothing reads the game until something explicitly runs them.
             collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework, knowledgeObserver);
+
+            // Establishes which collections count as already-seen, so the settings screen can badge
+            // a genuinely new one. It runs here rather than with the migrations above because it
+            // needs the registered collectors, which do not exist until this line — and it is
+            // self-guarding, so running it on every load costs one flag read after the first.
+            if (Configuration.Settings.InitializeSeenCategories(collectors.Select(c => c.CategoryKey)))
+                Configuration.Save();
 
             // Start listening. The manager subscribes to login and unlock events immediately, but
             // every path out of them checks the upload gate first, so a user who has not opted in

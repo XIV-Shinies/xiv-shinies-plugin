@@ -168,6 +168,12 @@ public class PluginSettings
     /// <summary>Group keys the settings UI has already shown once — everything else gets a "New" badge.</summary>
     public List<string> SeenItemGroupKeys { get; set; } = new();
 
+    /// <summary>Category keys the settings UI has already shown once — everything else gets a "New" badge.</summary>
+    public List<string> SeenCategoryKeys { get; set; } = new();
+
+    /// <summary>True once <see cref="InitializeSeenCategories"/> has established this install's baseline.</summary>
+    public bool SeenCategoriesInitialized { get; set; }
+
     /// <summary>True once the one-time pre-group consent migration has run.</summary>
     public bool ItemGroupConsentMigrated { get; set; }
 
@@ -248,6 +254,82 @@ public class PluginSettings
                 EnabledItemGroupKeys.Remove(groupKey);
             }
         }
+    }
+
+    /// <summary>True when the settings UI has already shown the given category once.</summary>
+    public bool IsCategorySeen(string categoryKey)
+    {
+        if (string.IsNullOrEmpty(categoryKey))
+            return false;
+
+        lock (gate)
+            return SeenCategoryKeys.Contains(categoryKey);
+    }
+
+    /// <summary>Mark the given categories as seen in the settings UI.</summary>
+    /// <remarks>
+    /// Idempotent, and best-effort about blanks, for the same reasons
+    /// <see cref="MarkItemGroupsSeen"/> is: it is called from the draw loop, where one malformed
+    /// entry must not take the frame down.
+    /// </remarks>
+    public void MarkCategoriesSeen(IEnumerable<string> categoryKeys)
+    {
+        if (categoryKeys == null)
+        {
+            return;
+        }
+
+        lock (gate)
+        {
+            foreach (var categoryKey in categoryKeys)
+            {
+                if (!string.IsNullOrEmpty(categoryKey) && !SeenCategoryKeys.Contains(categoryKey))
+                {
+                    SeenCategoryKeys.Add(categoryKey);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Establishes, once per install, which categories count as already-seen — the baseline every
+    /// later "New" badge is measured against. Does nothing after the first call.
+    /// </summary>
+    /// <param name="categoryKeys">Every category registered in this build.</param>
+    /// <returns>True when this call established the baseline, so the caller knows to save.</returns>
+    /// <remarks>
+    /// <para>
+    /// The baseline turns on whether the user has been through onboarding. Someone still in the
+    /// wizard is shown every category as part of it, and the wizard marks each one seen as it
+    /// draws — so nothing is pre-marked here and their first genuinely new category is the first
+    /// thing to ever wear a badge.
+    /// </para>
+    /// <para>
+    /// An install that reaches this call with onboarding already complete has been through the
+    /// wizard with no seen-set recorded, and which categories it showed cannot be recovered. Every
+    /// category present at this call is therefore taken as already-seen, which silences a
+    /// screenful of badges on collections the user has been using all along. The cost is that a
+    /// category shipping in the same build as this baseline goes unbadged for those installs —
+    /// accepted deliberately, because over-claiming "New" on a familiar list is the worse error.
+    /// </para>
+    /// </remarks>
+    public bool InitializeSeenCategories(IEnumerable<string> categoryKeys)
+    {
+        lock (gate)
+        {
+            if (SeenCategoriesInitialized)
+                return false;
+
+            SeenCategoriesInitialized = true;
+
+            // Nested inside the lock this method already holds, which C# permits: `lock` is
+            // reentrant for the thread that owns it, so the inner call re-enters rather than
+            // deadlocking. Holding it across both makes the flag and the baseline one atomic step.
+            if (OnboardingComplete)
+                MarkCategoriesSeen(categoryKeys);
+        }
+
+        return true;
     }
 
     /// <summary>True when the settings UI has already shown the given item group once.</summary>

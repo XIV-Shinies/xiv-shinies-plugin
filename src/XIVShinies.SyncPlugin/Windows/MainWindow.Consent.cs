@@ -52,10 +52,10 @@ internal sealed partial class MainWindow
     /// </remarks>
     /// <param name="rows">This frame's category rows, from <see cref="BuildCategoryRows"/>.</param>
     /// <param name="showNewChips">
-    /// Whether a manifest group the user has not been shown before wears a "New" badge. The
-    /// settings pass true; the wizard passes false, because a badge beside every group at once
-    /// distinguishes nothing. Either way the groups drawn are marked seen (see
-    /// <see cref="DrawGroupCheckboxes"/>).
+    /// Whether a collection, or a manifest group inside one, that the user has not been shown
+    /// before wears a "New" badge. The settings pass true; the wizard passes false, because a badge
+    /// beside every row at once distinguishes nothing. Either way everything drawn is marked seen,
+    /// so the wizard retires the badges of the collections it shows.
     /// </param>
     private void DrawCategoryRows(IReadOnlyList<CategorySettingsRow> rows, bool showNewChips)
     {
@@ -75,12 +75,27 @@ internal sealed partial class MainWindow
             BrandSeparator();
             ImGui.Spacing();
 
+            // Null until a category turns out to be new, so the usual case allocates nothing.
+            List<string>? newlySeenCategories = null;
+
             foreach (var section in CategorySettingsView.GroupBySection(rows))
             {
                 DrawSectionLabel(section.Title);
 
                 foreach (var row in section.Rows)
-                    DrawCategoryRow(row, showNewChips, checkboxColumn);
+                {
+                    if (DrawCategoryRow(row, showNewChips, checkboxColumn))
+                        (newlySeenCategories ??= new List<string>()).Add(row.Key);
+                }
+            }
+
+            // One save for the whole batch. Marking them seen makes the next rebuild report
+            // IsNew=false, so this runs once per batch of newly-seen categories rather than every
+            // frame — the same lifecycle DrawGroupCheckboxes uses for groups.
+            if (newlySeenCategories is not null)
+            {
+                configuration.Settings.MarkCategoriesSeen(newlySeenCategories);
+                configuration.Save();
             }
 
             // The category rows end with a single Spacing, which is the gap BETWEEN rows. This note
@@ -100,13 +115,21 @@ internal sealed partial class MainWindow
     /// Shared verbatim by both consent surfaces, so neither can drift to showing less.
     /// </summary>
     /// <param name="row">The row to draw.</param>
-    /// <param name="showNewChips">See <see cref="DrawGroupCheckboxes"/>.</param>
+    /// <param name="showNewChips">
+    /// Whether this row, and the groups beneath it, may wear a "New" badge. See
+    /// <see cref="DrawCategoryRows"/>; the row is reported as needing its seen flag persisted
+    /// either way.
+    /// </param>
     /// <param name="checkboxColumn">
     /// The width from a row's left edge to its checkbox label — the flowed description's home
     /// column, and the indent for the notes and group checkboxes beneath the row. Measured by
     /// the caller inside its ItemInnerSpacing push so it tracks the label's real position.
     /// </param>
-    private void DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
+    /// <returns>
+    /// True when this row was drawn for the first time and its seen flag still needs persisting.
+    /// The caller batches those into one save.
+    /// </returns>
+    private bool DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
     {
         var enabled = row.UserEnabled;
         bool toggled;
@@ -134,6 +157,22 @@ internal sealed partial class MainWindow
             configuration.Save();
         }
 
+        if (showNewChips)
+        {
+            // Remembering the key keeps the chip drawn once the caller's batched save makes the
+            // next rebuild report the row un-new — the same lifecycle DrawGroupCheckboxes uses.
+            if (row.IsNew)
+                categoriesBadgedThisSession.Add(row.Key);
+
+            // Drawn between the name and its description, so the row reads
+            // "Orchestrion rolls ★New — what it sends".
+            if (categoriesBadgedThisSession.Contains(row.Key))
+            {
+                ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+                DrawChip(FontAwesomeIcon.Star, "New", Brand.Gold);
+            }
+        }
+
         // The consent copy flows on the label's own line — "Name — what it sends" — with the
         // collector's hover elaboration trailing the sentence when it offered one, and wrapped
         // lines coming home under the label. It is what the plugin will send if the box is
@@ -158,6 +197,10 @@ internal sealed partial class MainWindow
 
         ImGui.Unindent(checkboxColumn);
         ImGui.Spacing();
+
+        // Drawing a category IS showing it to the user, so it is reported seen regardless of which
+        // surface drew it — the wizard shows a collection just as plainly as the settings screen.
+        return row.IsNew;
     }
 
     /// <summary>
@@ -439,38 +482,17 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// True when at least one manifest-driven category's consent group (see
-    /// <see cref="CategorySettingsRow.Groups"/>) still counts as "New" — the same test
-    /// <see cref="DrawGroupCheckboxes"/> uses to decide whether to draw that group's own badge.
+    /// Whether the folded "Collections" header (see <see cref="DrawSettings"/>) wears a "New" chip.
     /// </summary>
     /// <remarks>
-    /// Used to decide whether the outer "Collections" header (see <see cref="DrawSettings"/>)
-    /// should wear a "New" chip: with the header folded, none of the per-group badges beneath
-    /// it are visible, so a group added since the last session would otherwise go unnoticed
-    /// until the user happened to expand it. This reads the same rows
-    /// <see cref="CategorySettingsView.Build"/> already produces and the same
-    /// <c>seenThisSession</c> set <see cref="DrawGroupCheckboxes"/> already maintains — no new
-    /// state, and no branch on which category or group is being asked about.
+    /// With the header folded, none of the badges beneath it are visible, so something added since
+    /// the last session would go unnoticed until the user happened to expand it. The rule is
+    /// <see cref="CategorySettingsView.AnythingIsNew"/>; this hands it the two session sets the
+    /// draw loop maintains.
     /// </remarks>
     /// <param name="rows">The category rows to scan, from <see cref="CategorySettingsView.Build"/>.</param>
-    private bool AnyGroupIsNew(IReadOnlyList<CategorySettingsRow> rows)
-    {
-        foreach (var row in rows)
-        {
-            if (row.Groups is not { Count: > 0 } groups)
-                continue;
-
-            foreach (var group in groups)
-            {
-                // Mirrors DrawGroupCheckboxes's own badge condition exactly: never displayed by this
-                // install, or shown once already this session and therefore still wearing its badge.
-                if (group.IsNew || seenThisSession.Contains(group.Key))
-                    return true;
-            }
-        }
-
-        return false;
-    }
+    private bool AnythingIsNew(IReadOnlyList<CategorySettingsRow> rows) =>
+        CategorySettingsView.AnythingIsNew(rows, categoriesBadgedThisSession, groupsBadgedThisSession);
 
     /// <summary>
     /// Draws the per-group consent checkboxes beneath a manifest-driven category and persists both
@@ -488,7 +510,7 @@ internal sealed partial class MainWindow
     /// consent step shows it just as plainly as the settings do.
     /// </para>
     /// <para>
-    /// <c>seenThisSession</c> is a separate question — "is this group's badge currently on screen?" — and
+    /// <c>groupsBadgedThisSession</c> is a separate question — "is this group's badge currently on screen?" — and
     /// only the badge-drawing surface adds to it. The badge would otherwise blink out one frame after it
     /// appeared, since the persisted flag we just set makes the very next rebuild report the group as no
     /// longer new; remembering the key keeps it drawn for the rest of the session, while the persisted
@@ -552,13 +574,13 @@ internal sealed partial class MainWindow
             // even though the seen-marking persisted after this loop makes the next rebuild report it
             // as un-new.
             if (group.IsNew)
-                seenThisSession.Add(group.Key);
+                groupsBadgedThisSession.Add(group.Key);
 
             // The badge shows for a group this install has never displayed, and for one whose badge went
             // up earlier this session. It is a small outlined chip with a leading star (see DrawChip),
             // so "New" reads as a compact badge beside the checkbox rather than another line of body
             // copy; Brand.Gold is the "shiny" accent used for highlights elsewhere.
-            if (group.IsNew || seenThisSession.Contains(group.Key))
+            if (group.IsNew || groupsBadgedThisSession.Contains(group.Key))
             {
                 ImGui.SameLine();
                 DrawChip(FontAwesomeIcon.Star, "New", Brand.Gold);

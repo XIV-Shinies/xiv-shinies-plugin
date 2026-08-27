@@ -283,6 +283,121 @@ public class PluginSettingsTests
         Assert.False(settings.IsItemGroupSeen("new"));
     }
 
+    // The category-level twin of the group seen-tracking below. Same contract, one level up: the
+    // settings badge a collection the install has never shown.
+    [Fact]
+    public void Seen_tracking_marks_categories_and_tolerates_duplicates()
+    {
+        var settings = new PluginSettings();
+
+        settings.MarkCategoriesSeen(new[] { "quests", "mounts" });
+
+        Assert.True(settings.IsCategorySeen("quests"));
+        Assert.True(settings.IsCategorySeen("mounts"));
+        Assert.False(settings.IsCategorySeen("orchestrionRolls"));
+
+        settings.MarkCategoriesSeen(new[] { "quests" });
+        Assert.Equal(2, settings.SeenCategoryKeys.Count);
+    }
+
+    [Fact]
+    public void Seen_category_tracking_is_best_effort_about_malformed_input()
+    {
+        var settings = new PluginSettings();
+
+        // Called from the draw loop, so one malformed entry must not take the frame down.
+        settings.MarkCategoriesSeen(null!);
+        Assert.Empty(settings.SeenCategoryKeys);
+
+        settings.MarkCategoriesSeen(new[] { "quests", "", "mounts" });
+        Assert.True(settings.IsCategorySeen("quests"));
+        Assert.True(settings.IsCategorySeen("mounts"));
+        Assert.Equal(2, settings.SeenCategoryKeys.Count);
+
+        // An unrecorded or blank key reads as unseen, the same fail-safe direction
+        // IsCategoryEnabled takes — an unknown collection gets its badge rather than missing one.
+        Assert.False(settings.IsCategorySeen(""));
+        Assert.False(settings.IsCategorySeen("orchestrionRolls"));
+    }
+
+    // A fresh install pre-marks nothing: the wizard is about to show every collection and marks
+    // each one as it draws. Pre-marking would claim they were shown before they were.
+    [Fact]
+    public void The_seen_baseline_marks_nothing_before_onboarding()
+    {
+        var settings = new PluginSettings { OnboardingComplete = false };
+
+        Assert.True(settings.InitializeSeenCategories(new[] { "quests", "mounts" }));
+
+        Assert.False(settings.IsCategorySeen("quests"));
+        Assert.False(settings.IsCategorySeen("mounts"));
+    }
+
+    // The upgrade case. This user has been running the plugin, so the collections they already had
+    // are not news to them — and nothing recorded which ones they were shown, so today's list is
+    // the only available baseline.
+    [Fact]
+    public void The_seen_baseline_takes_todays_categories_as_seen_after_onboarding()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+
+        Assert.True(settings.InitializeSeenCategories(new[] { "quests", "mounts" }));
+
+        Assert.True(settings.IsCategorySeen("quests"));
+        Assert.True(settings.IsCategorySeen("mounts"));
+    }
+
+    // The baseline is one-shot. Were it to re-run, it would swallow every collection added since —
+    // exactly the badge the mechanism exists to show.
+    [Fact]
+    public void The_seen_baseline_is_established_only_once()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+        settings.InitializeSeenCategories(new[] { "quests" });
+
+        Assert.False(settings.InitializeSeenCategories(new[] { "quests", "orchestrionRolls" }));
+
+        Assert.True(settings.IsCategorySeen("quests"));
+        Assert.False(settings.IsCategorySeen("orchestrionRolls"));
+    }
+
+    // The sequence a fresh install actually walks, across the one transition the guard exists to
+    // survive: baseline before onboarding, the wizard marking rows as it draws them, then
+    // onboarding completing. A later launch must NOT re-baseline over a collection added since —
+    // if it did, no addition would ever badge for anyone who installed fresh.
+    [Fact]
+    public void The_seen_baseline_survives_onboarding_completing_after_it_ran()
+    {
+        var settings = new PluginSettings { OnboardingComplete = false };
+        Assert.True(settings.InitializeSeenCategories(new[] { "quests" }));
+
+        // The wizard draws the collections it offers, which is what marks them.
+        settings.MarkCategoriesSeen(new[] { "quests" });
+        settings.OnboardingComplete = true;
+
+        // A later launch of a build that added a collection.
+        Assert.False(settings.InitializeSeenCategories(new[] { "quests", "orchestrionRolls" }));
+
+        Assert.True(settings.IsCategorySeen("quests"));
+        Assert.False(settings.IsCategorySeen("orchestrionRolls"));
+    }
+
+    // The baseline runs unconditionally at plugin load, with no user present. Consent is
+    // ban-enforced by Dalamud, so "it only touches the seen-set" gets a guard rather than resting
+    // on a reading of the code.
+    [Fact]
+    public void The_seen_baseline_grants_no_consent()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+
+        settings.InitializeSeenCategories(new[] { "quests", "orchestrionRolls" });
+
+        Assert.Empty(settings.EnabledCategories);
+        Assert.Empty(settings.EnabledItemGroupKeys);
+        Assert.False(settings.MasterEnabled);
+        Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
+    }
+
     [Fact]
     public void Seen_tracking_marks_groups_and_tolerates_duplicates()
     {

@@ -113,7 +113,14 @@ internal sealed partial class MainWindow : Window, IDisposable
     // badge for the rest of the session by remembering it here — otherwise the badge would vanish one
     // frame after appearing, since the very next frame's rebuild would report it as no longer new.
     // See DrawGroupCheckboxes for the full lifecycle.
-    private readonly HashSet<string> seenThisSession = new();
+    private readonly HashSet<string> groupsBadgedThisSession = new();
+
+    // The same lifecycle as groupsBadgedThisSession, for whole collections rather than the groups
+    // inside one. Kept as its own set rather than sharing that one: a category key and a group key
+    // come from different namespaces — ours and the server's — so nothing stops the two from
+    // colliding, and one shared set would light a collection's badge because a group that happened
+    // to share its key had been drawn.
+    private readonly HashSet<string> categoriesBadgedThisSession = new();
 
     // Whether the wizard has put per-group consent checkboxes on screen during THIS frame. Reset at
     // the top of every wizard frame and set by DrawGroupCheckboxes when it actually draws a group row,

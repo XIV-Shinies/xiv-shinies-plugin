@@ -41,6 +41,19 @@ public sealed record CategorySettingsRow
     public required bool UserEnabled { get; init; }
 
     /// <summary>
+    /// True when the settings UI has never shown this category to this install, so it is worth
+    /// badging as "New".
+    /// </summary>
+    /// <remarks>
+    /// The same shape as <see cref="ItemGroupRow.IsNew"/>, one level up: a collection added in a
+    /// later version is otherwise indistinguishable from one the user has been ignoring since
+    /// install, and the settings' outer header folds, so it could go unnoticed entirely. Defaulted
+    /// rather than required, unlike the group flag, so a caller building rows for a surface that
+    /// does not badge (or a test that does not care) is not forced to answer.
+    /// </remarks>
+    public bool IsNew { get; init; }
+
+    /// <summary>
     /// Whether this row's collector announced itself as manifest-driven (see
     /// <see cref="ICollector.UsesItemManifest"/>).
     /// </summary>
@@ -163,6 +176,46 @@ public sealed record CategorySection
 /// </remarks>
 public static class CategorySettingsView
 {
+    /// <summary>
+    /// True when anything in the consent list still counts as "New" — a whole collection, or a
+    /// manifest group inside one.
+    /// </summary>
+    /// <remarks>
+    /// A row or group qualifies either because this install has never shown it, or because its
+    /// badge already went up during this session — the second half is what keeps a badge from
+    /// vanishing one frame after it appears, since drawing it persists the seen flag and the next
+    /// rebuild reports it un-new. The two session sets are parameters rather than state held here:
+    /// they belong to a window's lifetime, and a pure function of its arguments is one the unit
+    /// suite can reach.
+    /// </remarks>
+    /// <param name="rows">The category rows to scan, from <see cref="Build"/>.</param>
+    /// <param name="badgedCategories">Category keys whose badge went up this session.</param>
+    /// <param name="badgedGroups">Group keys whose badge went up this session.</param>
+    public static bool AnythingIsNew(
+        IReadOnlyList<CategorySettingsRow> rows,
+        IReadOnlySet<string> badgedCategories,
+        IReadOnlySet<string> badgedGroups)
+    {
+        foreach (var row in rows)
+        {
+            // A whole collection the user has never been shown counts, not just a group inside one
+            // — with the header folded, a new collection is exactly as invisible as a new group.
+            if (row.IsNew || badgedCategories.Contains(row.Key))
+                return true;
+
+            if (row.Groups is not { Count: > 0 } groups)
+                continue;
+
+            foreach (var group in groups)
+            {
+                if (group.IsNew || badgedGroups.Contains(group.Key))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Builds one row per registered collector, in registration order.</summary>
     /// <param name="collectors">Every registered collector.</param>
     /// <param name="settings">The user's persisted opt-ins.</param>
@@ -201,6 +254,10 @@ public static class CategorySettingsView
                 WhatGetsSent = collector.WhatGetsSent,
                 Details = collector.Details,
                 UserEnabled = settings.IsCategoryEnabled(key),
+
+                // Never shown by this install, so the window may badge it. The window marks it seen
+                // as it draws, which makes the next rebuild report false.
+                IsNew = !settings.IsCategorySeen(key),
 
                 // Carried through verbatim from the collector's own self-description. Nothing here
                 // decides which collections are manifest-driven; the collector says so itself.
