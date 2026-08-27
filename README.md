@@ -40,6 +40,8 @@ into:
 
 - Completed **quest** IDs
 - Unlocked **achievement**, **mount**, and **minion** IDs
+- Unlocked **orchestrion roll** IDs — the tunes playable from your orchestrion list, not the
+  unused roll items sitting in your bags
 - Collected **Triple Triad card** IDs, and the IDs of the game's own **Triple Triad NPCs** you
   have defeated — computer opponents, never other players
 - **Possession counts** for the specific relic-stage items the server asks about — checked

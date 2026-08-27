@@ -85,6 +85,23 @@ public static class CollectorRegistry
         WhatGetsSent = "The ID numbers of achievements you have earned.",
     };
 
+    private static readonly CategoryInfo OrchestrionRolls = new()
+    {
+        Key = CategoryKeys.OrchestrionRolls,
+        DisplayName = "Orchestrion rolls",
+        Section = CollectionLogSection,
+        WhatGetsSent = "The ID numbers of the orchestrion rolls you have unlocked.",
+
+        // Owning the roll item and having unlocked the tune are separate states, and only the
+        // unlock is readable. Without this sentence a user with unplayed rolls in their bags would
+        // read the missing entries as a broken sync. It is elaboration rather than a kind of data,
+        // so it belongs in the hover instead of the visible line.
+        Details =
+            "A roll counts once you have used it and it is playable from your orchestrion list. " +
+            "An unused roll still sitting in your inventory is not yet unlocked, so it is not " +
+            "reported until you use it.",
+    };
+
     private static readonly CategoryInfo TripleTriadCards = new()
     {
         Key = CategoryKeys.TripleTriadCards,
@@ -236,6 +253,16 @@ public static class CollectorRegistry
                 precondition: () => unlockState.IsAchievementListLoaded
                     ? null
                     : CollectSkipReasons.AchievementListNotLoaded),
+
+            // The tunes, not the items: `Orchestrion` row ids are what the game's unlock state
+            // answers for. The "… Orchestrion Roll" items are a separate Item-sheet id space the
+            // server stores apart, so an item id sent here is dropped as unknown.
+            new ExcelUnlockCollector<Orchestrion>(
+                OrchestrionRolls,
+                dataManager,
+                framework,
+                row => row.RowId,
+                unlockState.IsOrchestrionUnlocked),
 
             // Cards are sheet-backed unlocks, structurally identical to mounts and minions. The
             // sheet's row 0 is a dummy; the game never marks it unlocked, and even if it did, the

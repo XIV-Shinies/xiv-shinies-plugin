@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
@@ -28,13 +27,9 @@ public class ManifestCatalogTests
     private static IReadOnlyList<uint> Ids(int count) =>
         Enumerable.Range(1, count).Select(i => (uint)i).ToList();
 
-    // Every key a collector could pass to ManifestFor. Reflected rather than listed, so a key
-    // added to CategoryKeys is covered here without anyone remembering to update this file.
-    private static readonly HashSet<string> KnownCategoryKeys = typeof(CategoryKeys)
-        .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
-        .Where(f => f.IsLiteral && f.FieldType == typeof(string))
-        .Select(f => (string)f.GetRawConstantValue()!)
-        .ToHashSet();
+    // Every key a collector could pass to ManifestFor, as a set for lookup.
+    private static readonly HashSet<string> KnownCategoryKeys =
+        CategoryKeyReflection.All().ToHashSet();
 
     // A descriptor keyed to something no collector can name is unreachable: ManifestFor would
     // answer empty for the real category and nothing would ever read the manifest.
