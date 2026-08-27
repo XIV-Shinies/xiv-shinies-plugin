@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using XIVShinies.SyncPlugin.Api;
 
@@ -156,7 +157,7 @@ public sealed record CategorySection
     /// <summary>The heading, exactly as the section's collectors declared it.</summary>
     public required string Title { get; init; }
 
-    /// <summary>This section's rows, in registration order.</summary>
+    /// <summary>This section's rows, sorted by display name.</summary>
     public required IReadOnlyList<CategorySettingsRow> Rows { get; init; }
 }
 
@@ -296,11 +297,17 @@ public static class CategorySettingsView
     /// to draw one heading at a time.
     /// </summary>
     /// <remarks>
-    /// Sections appear in the order their first row appears, and rows keep registration order
-    /// within their section — so the on-screen order is still decided entirely by
-    /// <see cref="CollectorRegistry"/>. There is no fixed section list and no fallback bucket:
-    /// whatever titles the rows carry are the sections that exist, which is what keeps this
-    /// surface free of category knowledge.
+    /// <para>
+    /// Sections appear in the order their first row appears, so <see cref="CollectorRegistry"/>
+    /// still decides which heading comes first. <b>Within</b> a section the rows are sorted by
+    /// display name, so a reader scanning for one collection can find it where the alphabet says
+    /// it is rather than wherever its registration line happened to be inserted.
+    /// </para>
+    /// <para>
+    /// There is no fixed section list and no fallback bucket: whatever titles the rows carry are
+    /// the sections that exist, which is what keeps this surface free of category knowledge. The
+    /// sort is the same — it reads a name off the row, and never asks which collection it is.
+    /// </para>
     /// </remarks>
     /// <param name="rows">The rows to group, from <see cref="Build"/>.</param>
     public static IReadOnlyList<CategorySection> GroupBySection(
@@ -325,7 +332,23 @@ public static class CategorySettingsView
 
         var result = new List<CategorySection>(sections.Count);
         foreach (var (title, bucketRows) in sections)
+        {
+            // OrdinalIgnoreCase rather than a culture-aware comparison: these labels are English
+            // strings authored in this repo, and an ordinal sort gives every user the same order
+            // regardless of their machine's locale — which is also what makes it testable. The
+            // key breaks a tie, so two collections that chose the same display name still land in
+            // a fixed order instead of an arbitrary one.
+            bucketRows.Sort((left, right) =>
+            {
+                var byName = string.Compare(
+                    left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+                return byName != 0
+                    ? byName
+                    : string.Compare(left.Key, right.Key, StringComparison.Ordinal);
+            });
+
             result.Add(new CategorySection { Title = title, Rows = bucketRows });
+        }
 
         return result;
     }
