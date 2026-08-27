@@ -29,6 +29,56 @@ public class UploadLogTests
         Skipped = new Dictionary<string, string>(),
     };
 
+    // --- What the log calls unread ---------------------------------------------------------
+
+    // A collection the user switched off is skipped, but nothing failed. Reporting it as unread
+    // would turn their own choice into a standing complaint in the log, and every user who leaves
+    // a collection unticked would carry one forever.
+    [Fact]
+    public void A_switched_off_category_is_not_reported_as_unread()
+    {
+        var entry = SomeEntry() with
+        {
+            Skipped = new Dictionary<string, string>
+            {
+                ["orchestrionRolls"] = CollectSkipReasons.Disabled,
+                ["achievements"] = CollectSkipReasons.AchievementListNotLoaded,
+            },
+        };
+
+        Assert.Equal(new[] { "achievements" }, entry.UnreadableCategoryKeys);
+
+        // The full map still carries it: "disabled" is precisely the answer a pasted diagnostic
+        // needs for "why did this not sync?".
+        Assert.Equal(CollectSkipReasons.Disabled, entry.Skipped["orchestrionRolls"]);
+    }
+
+    // Filtered on the reason, never the category — so a category switched off is silent whichever
+    // one it is, and every other reason still reports.
+    [Fact]
+    public void Every_reason_other_than_disabled_is_reported_as_unread()
+    {
+        var entry = SomeEntry() with
+        {
+            Skipped = new Dictionary<string, string>
+            {
+                ["items"] = CollectSkipReasons.NoRemoteConfig,
+                ["quests"] = CollectSkipReasons.CollectorError,
+                ["mounts"] = CollectSkipReasons.SheetUnavailable,
+                ["facewear"] = CollectSkipReasons.Disabled,
+            },
+        };
+
+        // Sorted, because the underlying map is a Dictionary and its order is not contractual.
+        Assert.Equal(new[] { "items", "mounts", "quests" }, entry.UnreadableCategoryKeys);
+    }
+
+    [Fact]
+    public void A_pass_that_skipped_nothing_reports_nothing_unread()
+    {
+        Assert.Empty(SomeEntry().UnreadableCategoryKeys);
+    }
+
     // --- Draft: summarizing what a snapshot is about to send -----------------------------
 
     [Fact]

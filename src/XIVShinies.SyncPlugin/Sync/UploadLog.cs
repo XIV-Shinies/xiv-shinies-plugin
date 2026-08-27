@@ -83,6 +83,40 @@ public sealed record UploadLogEntry
     /// <summary>The categories this pass could not read, keyed by category, with the reason code.</summary>
     public required IReadOnlyDictionary<string, string> Skipped { get; init; }
 
+    /// <summary>
+    /// The keys from <see cref="Skipped"/> that represent something going wrong, in key order.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A category the user switched off is skipped, but nothing failed — they chose not to send
+    /// it, and the consent list already shows that choice. Listing it as unread would report a
+    /// deliberate decision as a fault, and every user who leaves a collection unticked would carry
+    /// a permanent complaint in their log.
+    /// </para>
+    /// <para>
+    /// Filtered on the REASON, never on a category, so nothing here knows which collections exist.
+    /// The full <see cref="Skipped"/> map is left intact for the pasted diagnostic, where
+    /// "disabled" is exactly the answer to "why did this not sync?".
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> UnreadableCategoryKeys
+    {
+        get
+        {
+            var keys = new List<string>(Skipped.Count);
+            foreach (var (key, reason) in Skipped)
+            {
+                if (!string.Equals(reason, CollectSkipReasons.Disabled, StringComparison.Ordinal))
+                    keys.Add(key);
+            }
+
+            // Sorted so the line reads the same twice running: the underlying map is a Dictionary,
+            // whose enumeration order is not part of its contract.
+            keys.Sort(StringComparer.Ordinal);
+            return keys;
+        }
+    }
+
     // --- Failure diagnostics -----------------------------------------------------------------
     // Optional, and filled at settle time (except the manifest version, known at build time).
     // They exist for the pasted-into-Discord bug report: each answers a "why did it fail"

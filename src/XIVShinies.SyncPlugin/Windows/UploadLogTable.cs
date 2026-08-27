@@ -197,10 +197,13 @@ internal sealed class UploadLogTable
 
             Widgets.DrawWrappedSpans(sent.ToArray());
 
-            if (entry.Skipped.Count > 0)
+            // Only the categories something went wrong for — a collection the user switched off is
+            // skipped by their own choice, not unread (see UploadLogEntry.UnreadableCategoryKeys).
+            var unreadable = entry.UnreadableCategoryKeys;
+            if (unreadable.Count > 0)
             {
-                var skipped = new List<string>(entry.Skipped.Count);
-                foreach (var key in entry.Skipped.Keys)
+                var skipped = new List<string>(unreadable.Count);
+                foreach (var key in unreadable)
                     skipped.Add(DisplayNameFor(key));
                 Widgets.DrawWrapped(
                     $"Could not read: {string.Join(", ", skipped)}", ImGuiCol.Text, null);
