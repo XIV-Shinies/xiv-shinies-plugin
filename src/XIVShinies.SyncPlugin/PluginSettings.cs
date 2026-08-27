@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin;
 
@@ -75,13 +76,71 @@ public class PluginSettings
     /// <param name="fromVersion">The version the loaded config was written at.</param>
     public bool ApplyUpgradeMigrations(int fromVersion)
     {
-        if (fromVersion >= 1 || !OnboardingComplete)
-            return false;
+        var changed = false;
 
-        ShareOccultInstanceState = false;
-        AutoEnableNewFeatures = false;
-        return true;
+        if (fromVersion < 1 && OnboardingComplete)
+        {
+            ShareOccultInstanceState = false;
+            AutoEnableNewFeatures = false;
+            changed = true;
+        }
+
+        // The version-2 rule: a config written before this version predates the seen-set, so its
+        // owner went through a wizard that recorded nothing. The collections of that era are taken
+        // as already-seen without evidence, because over-claiming "New" on a familiar list is the
+        // worse error. The list is frozen, so anything added since still announces itself, and an
+        // install still ahead of its wizard is left alone, because the wizard marks what it shows.
+        if (fromVersion < 2 && OnboardingComplete)
+        {
+            // Held across both writes so the flag and the baseline land as one step, the same
+            // nested-lock shape as InitializeSeenCategories.
+            lock (gate)
+            {
+                MarkCategoriesSeen(CategoriesPresentBeforeSeenTracking);
+                SeenCategoriesInitialized = true;
+            }
+
+            changed = true;
+        }
+
+        return changed;
     }
+
+    /// <summary>
+    /// The collections that existed in the last version to ship without seen-tracking — the
+    /// baseline the version-2 migration writes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This list is a historical fact and must never grow.</b> It records what a config written
+    /// before the seen-set had already had the chance to show its owner, so that a collection
+    /// added afterwards is correctly new to them. Appending a later collection would silence
+    /// exactly the badge it should raise — which is what
+    /// <c>PluginSettingsTests.The_pre_seen_tracking_baseline_never_grows</c> exists to prevent.
+    /// </para>
+    /// <para>
+    /// Naming keys here is not a category-name branch: nothing branches on any of these names —
+    /// the list is handed to <see cref="MarkCategoriesSeen"/> whole — and adding a collector
+    /// requires no change to it. It is a frozen snapshot consulted once per install, in the same
+    /// spirit as a database migration naming the columns of its own era.
+    /// </para>
+    /// </remarks>
+    // IReadOnlyList rather than an array: `static readonly` freezes only the reference, so a
+    // public array's elements stay reassignable and the "never changes" promise above would be
+    // one the type does not actually make.
+    public static readonly IReadOnlyList<string> CategoriesPresentBeforeSeenTracking = new[]
+    {
+        CategoryKeys.Achievements,
+        CategoryKeys.Items,
+        CategoryKeys.Minions,
+        CategoryKeys.Mounts,
+        CategoryKeys.OccultProgression,
+        CategoryKeys.OccultRecords,
+        CategoryKeys.QuestSequences,
+        CategoryKeys.Quests,
+        CategoryKeys.TripleTriadCards,
+        CategoryKeys.TripleTriadNpcs,
+    };
 
     /// <summary>
     /// The backend server. User-overridable per Dalamud's recommendation; validate any change with
@@ -305,12 +364,13 @@ public class PluginSettings
     /// thing to ever wear a badge.
     /// </para>
     /// <para>
-    /// An install that reaches this call with onboarding already complete has been through the
-    /// wizard with no seen-set recorded, and which categories it showed cannot be recovered. Every
-    /// category present at this call is therefore taken as already-seen, which silences a
-    /// screenful of badges on collections the user has been using all along. The cost is that a
-    /// category shipping in the same build as this baseline goes unbadged for those installs —
-    /// accepted deliberately, because over-claiming "New" on a familiar list is the worse error.
+    /// An install that reaches this call with onboarding complete has no recorded baseline and no
+    /// way to recover which categories its wizard showed, so every category present at this call
+    /// is taken as already-seen — silencing a screenful of badges on collections the user has been
+    /// using all along, at the cost of a category shipping alongside the baseline going unbadged.
+    /// A config written before the seen-set existed does not arrive in that state:
+    /// <see cref="ApplyUpgradeMigrations"/> writes its baseline from the frozen pre-tracking list
+    /// first, so a collection added after that list still badges for those installs.
     /// </para>
     /// </remarks>
     public bool InitializeSeenCategories(IEnumerable<string> categoryKeys)

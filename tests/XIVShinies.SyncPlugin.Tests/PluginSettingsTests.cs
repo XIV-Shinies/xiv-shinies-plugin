@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 using XIVShinies.SyncPlugin;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests;
 
@@ -76,6 +78,12 @@ public class PluginSettingsTests
 
         Assert.False(settings.ShareOccultInstanceState);
         Assert.False(settings.AutoEnableNewFeatures);
+
+        // A version-0 config predates the seen-set too, so the later rule applies as well. This is
+        // the only case where both fire, so without these two lines a rule that had drifted to
+        // `fromVersion >= 1 && fromVersion < 2` would pass every test in the file.
+        Assert.True(settings.SeenCategoriesInitialized);
+        Assert.True(settings.IsCategorySeen(CategoryKeys.Quests));
     }
 
     // An install still ahead of its wizard keeps the defaults: the wizard is about to put both
@@ -92,14 +100,17 @@ public class PluginSettingsTests
         Assert.True(settings.AutoEnableNewFeatures);
     }
 
+    // Read from the constant rather than a literal, so bumping the schema cannot leave this test
+    // quietly asserting that an OLD version is not migrated — which is the opposite of its point.
     [Fact]
     public void A_current_version_config_is_not_migrated()
     {
         var settings = new PluginSettings { OnboardingComplete = true };
 
-        Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 1));
+        Assert.False(settings.ApplyUpgradeMigrations(Configuration.CurrentVersion));
 
         Assert.True(settings.ShareOccultInstanceState);
+        Assert.Empty(settings.SeenCategoryKeys);
     }
 
     [Fact]
@@ -320,6 +331,58 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategorySeen("orchestrionRolls"));
     }
 
+    // The version-2 migration. An onboarded config written before the seen-set gets the era's
+    // collections marked seen, so anything added since is the first thing to wear a badge.
+    [Fact]
+    public void Migrating_an_onboarded_pre_seen_tracking_config_marks_the_collections_of_that_era()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+
+        Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 1));
+
+        Assert.True(settings.SeenCategoriesInitialized);
+        Assert.All(
+            PluginSettings.CategoriesPresentBeforeSeenTracking,
+            key => Assert.True(settings.IsCategorySeen(key)));
+
+        // The whole point: a collection added after that baseline is new to this user.
+        Assert.False(settings.IsCategorySeen(CategoryKeys.OrchestrionRolls));
+    }
+
+    // An install still ahead of its wizard is left alone — the wizard marks what it shows, so
+    // pre-marking here would retire badges for collections it is about to display.
+    [Fact]
+    public void Migrating_a_pre_seen_tracking_config_that_never_onboarded_marks_nothing()
+    {
+        var settings = new PluginSettings();
+
+        Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 1));
+
+        Assert.False(settings.SeenCategoriesInitialized);
+        Assert.Empty(settings.SeenCategoryKeys);
+    }
+
+    // Guards the freeze documented on CategoriesPresentBeforeSeenTracking. If this fails because a
+    // collection was added, the fix is to leave the list alone, not to update it.
+    [Fact]
+    public void The_pre_seen_tracking_baseline_never_grows()
+    {
+        var expected = new[]
+        {
+            "achievements", "items", "minions", "mounts", "occultProgression",
+            "occultRecords", "questSequences", "quests", "tripleTriadCards", "tripleTriadNpcs",
+        };
+
+        // Compared order-insensitively: order means nothing to MarkCategoriesSeen, so a re-sort
+        // should not fail here and send the next reader hunting for a problem that is not there.
+        // The count is asserted first so an addition fails as a plain count mismatch rather than a
+        // sequence diff.
+        Assert.Equal(expected.Length, PluginSettings.CategoriesPresentBeforeSeenTracking.Count);
+        Assert.Equal(
+            expected.OrderBy(key => key, StringComparer.Ordinal),
+            PluginSettings.CategoriesPresentBeforeSeenTracking.OrderBy(key => key, StringComparer.Ordinal));
+    }
+
     // A fresh install pre-marks nothing: the wizard is about to show every collection and marks
     // each one as it draws. Pre-marking would claim they were shown before they were.
     [Fact]
@@ -333,9 +396,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategorySeen("mounts"));
     }
 
-    // The upgrade case. This user has been running the plugin, so the collections they already had
-    // are not news to them — and nothing recorded which ones they were shown, so today's list is
-    // the only available baseline.
+    // Onboarding complete with no baseline recorded: nothing says which categories the wizard
+    // showed, so today's list is the only baseline this entry point can build from.
     [Fact]
     public void The_seen_baseline_takes_todays_categories_as_seen_after_onboarding()
     {

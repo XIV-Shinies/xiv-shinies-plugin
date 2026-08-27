@@ -157,28 +157,22 @@ internal sealed partial class MainWindow
             configuration.Save();
         }
 
-        if (showNewChips)
-        {
-            // Remembering the key keeps the chip drawn once the caller's batched save makes the
-            // next rebuild report the row un-new — the same lifecycle DrawGroupCheckboxes uses.
-            if (row.IsNew)
-                categoriesBadgedThisSession.Add(row.Key);
+        // Remembering the key keeps the chip drawn once the caller's batched save makes the next
+        // rebuild report the row un-new — the same lifecycle DrawGroupCheckboxes uses.
+        if (showNewChips && row.IsNew)
+            categoriesBadgedThisSession.Add(row.Key);
 
-            // Drawn between the name and its description, so the row reads
-            // "Orchestrion rolls ★New — what it sends".
-            if (categoriesBadgedThisSession.Contains(row.Key))
-            {
-                ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
-                DrawChip(FontAwesomeIcon.Star, "New", Brand.Gold);
-            }
-        }
+        (FontAwesomeIcon Icon, string Text, Vector4 Color)? badge =
+            showNewChips && categoriesBadgedThisSession.Contains(row.Key)
+                ? (FontAwesomeIcon.Star, "New", Brand.Gold)
+                : null;
 
         // The consent copy flows on the label's own line — "Name — what it sends" — with the
-        // collector's hover elaboration trailing the sentence when it offered one, and wrapped
-        // lines coming home under the label. It is what the plugin will send if the box is
-        // ticked, so it draws at full contrast.
+        // collector's hover elaboration trailing the sentence when it offered one, the badge
+        // trailing that, and wrapped lines coming home under the label. It is what the plugin will
+        // send if the box is ticked, so it draws at full contrast.
         ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
-        DrawWrappedWithTrailingHint($"— {row.WhatGetsSent}", row.Details, labelColumn);
+        DrawWrappedWithTrailingHint($"— {row.WhatGetsSent}", row.Details, labelColumn, badge);
 
         ImGui.Indent(checkboxColumn);
 
@@ -346,8 +340,9 @@ internal sealed partial class MainWindow
     /// <summary>
     /// Draws a wrapped paragraph from wherever the cursor stands — continuation lines come back
     /// to the first word's own column by default, so a paragraph started beside an icon stays
-    /// aligned under itself — with a muted question mark flowing as its final word when
-    /// <paramref name="details"/> offers hover text.
+    /// aligned under itself — with a muted question mark flowing after the sentence when
+    /// <paramref name="details"/> offers hover text, and <paramref name="trailingChip"/> flowing
+    /// last of all.
     /// </summary>
     /// <remarks>
     /// The paragraph sibling of <see cref="DrawDetailsHint"/>, which trails a one-line label:
@@ -366,8 +361,19 @@ internal sealed partial class MainWindow
     /// belongs under an earlier column (a checkbox label) rather than under its own first word.
     /// Null returns them to the first word's column.
     /// </param>
+    /// <param name="trailingChip">
+    /// A badge to flow after the hover mark as the sentence's very last word, or null for none.
+    /// Taken as a parameter because only this method can place it: the chip has to be submitted
+    /// inside the word flow to be fit-tested against the same right edge, and the paragraph's last
+    /// line may have less room left than the chip is wide. A caller cannot append it afterwards —
+    /// this method closes the line, so a <c>SameLine</c> of theirs anchors at the start of the row
+    /// below.
+    /// </param>
     private void DrawWrappedWithTrailingHint(
-        string text, string? details, float? homeXOverride = null)
+        string text,
+        string? details,
+        float? homeXOverride = null,
+        (FontAwesomeIcon Icon, string Text, Vector4 Color)? trailingChip = null)
     {
         var spaceWidth = ImGui.CalcTextSize(" ").X;
         var innerRight = activeCardInnerRight
@@ -380,8 +386,10 @@ internal sealed partial class MainWindow
 
         // The word flow is the only wrapping authority (see DrawWrappedSpans for why the
         // surrounding wrap scope is switched off), and the zero vertical item spacing keeps the
-        // flowed lines as tight as a single wrapped text call's. Both pushes end before the
-        // mark below, so whatever the caller draws after this paragraph gets its normal gap.
+        // flowed lines as tight as a single wrapped text call's. The mark and the badge are
+        // submitted inside the same scope as the words: an item submitted outside it advances the
+        // cursor by a full ItemSpacing.Y of its own, which the single Spacing() below would then
+        // double.
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemSpacing,
                    new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f)))
@@ -414,36 +422,89 @@ internal sealed partial class MainWindow
                 ImGui.TextUnformatted(word);
                 first = false;
             }
-        }
 
-        if (details is null)
-        {
-            // The words above were submitted with zero vertical spacing; a zero-size advance
-            // outside the push restores the normal gap before whatever the caller draws next.
-            ImGui.Spacing();
-            return;
-        }
-
-        // The mark, flowed as the sentence's last word. Drawn as a real item (unlike a
-        // draw-list glyph), so the hover test below is the ordinary one.
-        using (iconFont.Push())
-        {
-            var glyph = FontAwesomeIcon.QuestionCircle.ToIconString();
-            if (!first)
+            if (details is not null)
             {
-                ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
-                if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(glyph).X)
+                // The mark, flowed as the sentence's last word. Drawn as a real item (unlike a
+                // draw-list glyph), so the hover test below is the ordinary one.
+                using (iconFont.Push())
                 {
-                    ImGui.NewLine();
-                    ImGui.SetCursorPosX(homeX);
+                    var glyph = FontAwesomeIcon.QuestionCircle.ToIconString();
+                    if (!first)
+                    {
+                        ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+                        if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(glyph).X)
+                        {
+                            ImGui.NewLine();
+                            ImGui.SetCursorPosX(homeX);
+                        }
+                    }
+
+                    ImGui.TextDisabled(glyph);
                 }
+
+                if (ImGui.IsItemHovered())
+                    Widgets.DrawTooltip(details);
+
+                // The mark occupies the line now, so the badge after it is never the first item.
+                first = false;
             }
 
-            ImGui.TextDisabled(glyph);
+            // Last of all, so a row reads "name — what it sends (?) ★New": the disclosure and its
+            // hover stay adjacent, and the badge decorates the end of the row rather than
+            // interrupting the sentence.
+            DrawTrailingChip(trailingChip, innerRight, homeX, homeXOverride, first);
         }
 
-        if (ImGui.IsItemHovered())
-            Widgets.DrawTooltip(details);
+        // Everything above was submitted with zero vertical spacing; a zero-size advance outside
+        // the push restores the normal gap before whatever the caller draws next.
+        ImGui.Spacing();
+    }
+
+    /// <summary>
+    /// Flows a badge as one more word of the paragraph <see cref="DrawWrappedWithTrailingHint"/>
+    /// just laid out, wrapping home when the line has no room left for it.
+    /// </summary>
+    /// <param name="chip">The badge, or null when there is none.</param>
+    /// <param name="innerRight">The edge the paragraph measured its own words against.</param>
+    /// <param name="homeX">The column wrapped lines return to.</param>
+    /// <param name="homeXOverride">The caller's home column, or null when home is the first word's own.</param>
+    /// <param name="first">
+    /// True when the paragraph itself has drawn nothing yet, so the cursor still sits where the
+    /// caller left it — possibly mid-line, beside a checkbox label.
+    /// </param>
+    private void DrawTrailingChip(
+        (FontAwesomeIcon Icon, string Text, Vector4 Color)? chip,
+        float innerRight,
+        float homeX,
+        float? homeXOverride,
+        bool first)
+    {
+        if (chip is not { } badge)
+            return;
+
+        // Measured rather than guessed: a chip is padding plus an icon plus its label, and Widgets
+        // owns that arithmetic. ChipWidth returns exactly what DrawChip reserves, so the fit test
+        // and the draw can never disagree.
+        var width = ChipWidth(badge.Icon, badge.Text);
+
+        // The same two-branch fit test the words use, for the same reasons — see the flow loop.
+        if (!first)
+        {
+            ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
+            if (innerRight - ImGui.GetCursorPosX() < width)
+            {
+                ImGui.NewLine();
+                ImGui.SetCursorPosX(homeX);
+            }
+        }
+        else if (homeXOverride is not null && innerRight - ImGui.GetCursorPosX() < width)
+        {
+            ImGui.NewLine();
+            ImGui.SetCursorPosX(homeX);
+        }
+
+        DrawChip(badge.Icon, badge.Text, badge.Color);
     }
 
     /// <summary>

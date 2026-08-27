@@ -278,6 +278,21 @@ internal sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
+    /// Retires the badges shown during this visit, so reopening the window does not show them again.
+    /// </summary>
+    /// <remarks>
+    /// The two session sets keep a badge on screen after its seen flag is persisted (see the
+    /// fields' own note). Closing the window is the user finishing with the list, which makes it
+    /// the moment to drop them: the window object lives as long as the plugin, so without this the
+    /// chips would linger until the plugin unloaded, long after they had been seen and acted on.
+    /// </remarks>
+    public override void OnClose()
+    {
+        categoriesBadgedThisSession.Clear();
+        groupsBadgedThisSession.Clear();
+    }
+
+    /// <summary>
     /// Called once per frame by the WindowSystem while the window is open, so everything here runs
     /// roughly sixty times a second.
     /// </summary>
