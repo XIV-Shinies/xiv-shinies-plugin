@@ -177,4 +177,64 @@ public class OccultProgressionFactsTests
 
         Assert.Equal(24, result.Facts!["jobs"]!.AsObject().Count);
     }
+
+    // --- What the pass counted ---------------------------------------------------------------
+
+    // These facts wrap two unrelated things, so their shape cannot be counted: 24 jobs beside a
+    // two-field knowledge sighting would add up to 26. The jobs are what the collection is about,
+    // so the result carries their number itself.
+    [Fact]
+    public void Read_jobs_are_counted_without_the_knowledge_sighting()
+    {
+        var observation = new KnowledgeObservation { Level = 40, ObservedAt = ObservedAt };
+
+        var result = CollectResult.Progression(Jobs((0, 0, 1), (11, 1840, 2)), observation);
+
+        Assert.Equal(2, result.FactCount);
+        Assert.False(result.NothingReadThisPass);
+    }
+
+    // Outside the instance the jobs are unreadable, while a knowledge sighting remembered from
+    // earlier still travels — so the facts go out with an empty jobs map. Reporting that as a
+    // count of zero would say the character holds no phantom job progress, which is a loss that
+    // cannot happen; the result reports the state instead and lets the log name it.
+    [Fact]
+    public void An_empty_jobs_map_reports_nothing_read_rather_than_a_count_of_zero()
+    {
+        var observation = new KnowledgeObservation { Level = 40, ObservedAt = ObservedAt };
+
+        var result = CollectResult.Progression(
+            new Dictionary<byte, OccultJobProgress>(), observation);
+
+        Assert.True(result.NothingReadThisPass);
+        Assert.Null(result.FactCount);
+    }
+
+    // The count follows the wire, not the jobs handed in: a job dropped at the exp ceiling never
+    // reached the server, so counting it would make the log claim more than it sent.
+    [Fact]
+    public void A_job_omitted_at_the_exp_ceiling_is_not_counted()
+    {
+        var result = CollectResult.Progression(
+            Jobs((3, uint.MaxValue, 5), (4, 1840, 2)), knowledge: null);
+
+        Assert.Equal(1, result.FactCount);
+    }
+
+    // The corner the wire-derived count exists for: if the game's memory layout shifts under a
+    // patch, every job can read as garbage and be dropped, leaving a payload identical to the
+    // one sent from outside the instance. Counting the jobs handed in would print a confident
+    // full total for an upload that carried nothing — exactly when an honest log matters most.
+    [Fact]
+    public void A_pass_whose_every_job_was_dropped_reports_nothing_read()
+    {
+        var misread = new Dictionary<byte, OccultJobProgress>();
+        for (byte i = 0; i < 24; i++)
+            misread[i] = new OccultJobProgress { Exp = uint.MaxValue, Level = 1 };
+
+        var result = CollectResult.Progression(misread, knowledge: null);
+
+        Assert.True(result.NothingReadThisPass);
+        Assert.Null(result.FactCount);
+    }
 }

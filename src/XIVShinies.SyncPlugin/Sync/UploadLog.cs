@@ -20,6 +20,13 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// facts, so the log still carries no ids — just enough to answer "did this category's contents
 /// change since last time?".
 /// <para>
+/// <paramref name="Count"/> is null when the pass read none of what the category is about while
+/// still having something to send (see <see cref="CollectResult.NothingReadThisPass"/>). That is
+/// not the same as a count of zero: zero is a measurement, null is the absence of one. A null
+/// count makes no claim about the category's contents, so the content diff passes over it; a
+/// manifest-driven category is still compared on its owned-entry count.
+/// </para>
+/// <para>
 /// <paramref name="UsesItemManifest"/> mirrors the collector's own
 /// <see cref="Collectors.ICollector.UsesItemManifest"/> flag. It decides the category's change
 /// signal: a manifest-driven category's contents move whenever the server edits the manifest, so
@@ -41,7 +48,7 @@ namespace XIVShinies.SyncPlugin.Sync;
 // one line — the C# shorthand for a tiny immutable data shape.
 public sealed record UploadLogCategory(
     string Key,
-    int Count,
+    int? Count,
     string Fingerprint = "",
     bool UsesItemManifest = false,
     int? OwnedCount = null);
@@ -172,9 +179,20 @@ public sealed record UploadLogEntry
         foreach (var (key, facts) in snapshot.Collections)
         {
             var manifestDriven = snapshot.ManifestDrivenKeys.Contains(key);
+
+            // No count at all where the collector read none of what it is about; otherwise the
+            // collector's own count wins where it gave one, since it knows which part of its facts
+            // is the thing being counted and the shape count below cannot (see
+            // CollectResult.FactCount). Most categories give none, and are counted from shape.
+            var count = snapshot.NothingReadKeys.Contains(key)
+                ? (int?)null
+                : snapshot.FactCounts.TryGetValue(key, out var reported)
+                    ? reported
+                    : CountFacts(facts);
+
             categories.Add(new UploadLogCategory(
                 key,
-                CountFacts(facts),
+                count,
                 Fingerprint(facts),
                 manifestDriven,
                 manifestDriven ? CountOwned(facts) : null));
@@ -384,14 +402,14 @@ public static class UploadLogDiff
     /// manifest-driven category, a different owned-entry count.
     /// </summary>
     /// <remarks>
-    /// The baseline is the nearest OLDER entry that mentions the category, not simply the
-    /// previous entry: an unlock upload carries only the categories that changed, so in-between
-    /// entries may not mention a category at all. A category the log has never seen before is
-    /// not flagged — with no baseline, "changed" would be a guess, and it would paint the whole
-    /// first upload of every session. Manifest-driven categories compare their owned-entry
-    /// count rather than their contents — <see cref="UploadLogCategory"/> explains why a
-    /// content diff cannot carry their signal — and stay unflagged when either side has no
-    /// owned count to offer.
+    /// The baseline is the nearest OLDER entry that MEASURED the category — not simply the
+    /// previous entry, and not merely one that mentions it: an unlock upload carries only the
+    /// categories that changed, and a carried category may go out with no reading of its own.
+    /// A category the log has never seen before is not flagged — with no baseline, "changed"
+    /// would be a guess, and it would paint the whole first upload of every session.
+    /// Manifest-driven categories compare their owned-entry count rather than their contents —
+    /// <see cref="UploadLogCategory"/> explains why a content diff cannot carry their signal —
+    /// and stay unflagged when either side has no owned count to offer.
     /// </remarks>
     public static IReadOnlySet<string> ChangedCategories(
         IReadOnlyList<UploadLogEntry> newestFirst, int index)
@@ -403,7 +421,7 @@ public static class UploadLogDiff
             // `is not { } baseline` is a null test and an unwrap in one: the loop moves on when
             // no baseline exists, and every line past it has `baseline` as the record inside
             // the nullable.
-            if (Baseline(newestFirst, index, category.Key) is not { } baseline)
+            if (Baseline(newestFirst, index, category) is not { } baseline)
                 continue;
 
             if (category.UsesItemManifest)
@@ -418,6 +436,12 @@ public static class UploadLogDiff
                 continue;
             }
 
+            // A category that read nothing this pass makes no claim about its contents, so it
+            // cannot have changed. The baseline it would otherwise be compared against is the last
+            // pass that measured, and "different from a reading taken earlier" is not movement.
+            if (category.Count is null)
+                continue;
+
             if (baseline.Count != category.Count
                 || baseline.Fingerprint != category.Fingerprint)
             {
@@ -430,16 +454,36 @@ public static class UploadLogDiff
 
     /// <summary>
     /// The category's entry in the nearest log row older than <paramref name="index"/> that
-    /// mentions it, or null when no older row does.
+    /// measured it, or null when no older row did.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Rows that carried the category without measuring it are passed over, not treated as the
+    /// baseline: they hold nothing to compare against. Skipping them means the last row that
+    /// actually measured stays the point of comparison, so an unmeasured pass in the middle
+    /// neither hides a real change nor invents one.
+    /// </para>
+    /// <para>
+    /// Which number counts as the measurement depends on the category, so the caller's own
+    /// category decides it — a manifest-driven one is compared on its owned-entry count, every
+    /// other on its fact count (<see cref="UploadLogCategory"/> explains why they differ).
+    /// </para>
+    /// </remarks>
     private static UploadLogCategory? Baseline(
-        IReadOnlyList<UploadLogEntry> newestFirst, int index, string categoryKey)
+        IReadOnlyList<UploadLogEntry> newestFirst, int index, UploadLogCategory category)
     {
         for (var older = index + 1; older < newestFirst.Count; older++)
         {
             foreach (var baseline in newestFirst[older].Categories)
             {
-                if (baseline.Key == categoryKey)
+                if (baseline.Key != category.Key)
+                    continue;
+
+                var measured = category.UsesItemManifest
+                    ? baseline.OwnedCount is not null
+                    : baseline.Count is not null;
+
+                if (measured)
                     return baseline;
             }
         }
@@ -603,7 +647,14 @@ public static class UploadLogText
         string? proof,
         bool stepsProven)
     {
-        var label = $"{displayName} {category.Count:N0}";
+        // No count means the pass read none of what this category is about, so the column names
+        // that state instead of printing a number. Deliberately not worded around "read": that
+        // word belongs to the categories that never went out at all, both in this window's
+        // "Could not read:" line and in the settings panel's "not read yet" hints. This category
+        // was sent — the plugin simply saw none of the collection it is about.
+        var label = category.Count is { } count
+            ? $"{displayName} {count:N0}"
+            : $"{displayName} (none seen)";
         if (changed)
             label += " (changed)";
 
@@ -618,11 +669,17 @@ public static class UploadLogText
     /// matters: an empty category carries no information, so the server applies nothing and owes
     /// no proof answer for it.
     /// </summary>
+    /// <remarks>
+    /// A measured zero and an absent count are decided differently on purpose. Zero is a reading —
+    /// the category was measured and holds nothing — so the server owes no answer. Null is the
+    /// absence of a reading, and the facts went out regardless, so an answer may well be owed;
+    /// treating it as empty would silence the proof note exactly where a reader needs it.
+    /// </remarks>
     private static bool CarriesManifestDrivenFacts(UploadLogEntry entry)
     {
         foreach (var category in entry.Categories)
         {
-            if (category.UsesItemManifest && category.Count > 0)
+            if (category.UsesItemManifest && category.Count is > 0 or null)
                 return true;
         }
 
@@ -660,7 +717,14 @@ public static class UploadLogText
             text.Append(" | sent:");
             foreach (var category in entry.Categories)
             {
-                text.Append(' ').Append(category.Key).Append('=').Append(category.Count);
+                text.Append(' ').Append(category.Key).Append('=');
+
+                // A word rather than an empty slot or a zero: the paste is a diagnostic, and "the
+                // category went out carrying no reading" is exactly the fact a reader needs.
+                // Underscored to sit alongside the skip reason codes further down the same line.
+                text.Append(category.Count is { } sentCount
+                    ? sentCount.ToString(CultureInfo.InvariantCulture)
+                    : "none_seen");
 
                 // A manifest category's "changed:" flag compares this owned-entry count, not the
                 // fact count — printing it makes the flag (and its absence) verifiable from the

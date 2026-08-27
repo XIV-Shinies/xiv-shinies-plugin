@@ -240,6 +240,43 @@ public class CollectorRunnerTests
         Assert.Empty(snapshot.PartialNotes);
     }
 
+    // "I read none of what I am about" rides the same generic route: the runner files the key
+    // without knowing which collection said it, and the upload log reads the set.
+    [Fact]
+    public void A_collector_that_read_nothing_lands_in_the_snapshots_nothing_read_keys()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Progression(
+            new Dictionary<byte, OccultJobProgress>(), knowledge: null));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Contains(UnknownCategory, snapshot.NothingReadKeys);
+
+        // Reading nothing is not skipping: the facts still went out, so the category is carried.
+        Assert.True(snapshot.Collections.ContainsKey(UnknownCategory));
+        Assert.DoesNotContain(UnknownCategory, snapshot.FactCounts.Keys);
+    }
+
+    // A collector that read its collection reports a count and no unmeasured key, so a category is
+    // never both measured and unmeasured.
+    [Fact]
+    public void A_collector_that_read_its_collection_leaves_no_unmeasured_key()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Progression(
+            new Dictionary<byte, OccultJobProgress>
+            {
+                [3] = new OccultJobProgress { Exp = 10, Level = 2 },
+            },
+            knowledge: null));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Empty(snapshot.NothingReadKeys);
+        Assert.Equal(1, snapshot.FactCounts[UnknownCategory]);
+    }
+
     // The healthy-chip hover copy rides the same generic route as the partial note.
     [Fact]
     public void A_collectors_chip_detail_lands_in_the_snapshot_under_its_key()

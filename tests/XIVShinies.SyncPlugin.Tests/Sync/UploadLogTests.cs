@@ -29,6 +29,73 @@ public class UploadLogTests
         Skipped = new Dictionary<string, string>(),
     };
 
+    // --- What the "Sent" column counts -----------------------------------------------------
+
+    // A collector whose facts wrap several unrelated things says how many it is about, and the log
+    // takes its word. Counting the shape instead sums the wrapper's parts: a progression payload
+    // of 24 jobs beside a two-field knowledge sighting would read as 26, and the same payload with
+    // no jobs read would read as 2 — a number that moves for reasons the reader cannot see.
+    [Fact]
+    public void A_categorys_own_count_is_preferred_over_the_shape_of_its_facts()
+    {
+        var facts = JsonNode.Parse(
+            """{"jobs":{"0":{"exp":0,"level":18},"1":{"exp":0,"level":6}},"knowledge":{"level":40,"observedAt":"x"}}""")!;
+
+        var entry = UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode> { ["occultProgression"] = facts },
+                Skipped = new Dictionary<string, string>(),
+                FactCounts = new Dictionary<string, int> { ["occultProgression"] = 2 },
+            });
+
+        // Two jobs, not the four the wrapper's members add up to.
+        Assert.Equal(2, Assert.Single(entry.Categories).Count);
+    }
+
+    // Every other category leaves the count to the facts' shape, which is the right answer when
+    // the facts ARE the collection.
+    [Fact]
+    public void A_category_that_reports_no_count_is_counted_from_its_facts()
+    {
+        var entry = UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            SnapshotWith(new Dictionary<string, JsonNode>
+            {
+                ["quests"] = SyncFacts.Ids(new uint[] { 1, 2, 3 }),
+            }));
+
+        Assert.Equal(3, Assert.Single(entry.Categories).Count);
+    }
+
+    // A collector can read none of what it is about and still have something to send — phantom
+    // jobs are only legible inside the instance, while a knowledge sighting remembered from
+    // earlier travels from anywhere. The category went out, so it is not skipped; nothing was
+    // counted, so it carries no count rather than a zero.
+    [Fact]
+    public void A_category_that_read_nothing_this_pass_carries_no_count()
+    {
+        var facts = JsonNode.Parse("""{"jobs":{},"knowledge":{"level":40,"observedAt":"x"}}""")!;
+
+        var entry = UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode> { ["occultProgression"] = facts },
+                Skipped = new Dictionary<string, string>(),
+                NothingReadKeys = new HashSet<string> { "occultProgression" },
+            });
+
+        var category = Assert.Single(entry.Categories);
+
+        // Not 2, which is what the knowledge sighting's own fields would count to.
+        Assert.Null(category.Count);
+    }
+
     // --- What the log calls unread ---------------------------------------------------------
 
     // A collection the user switched off is skipped, but nothing failed. Reporting it as unread
@@ -320,7 +387,9 @@ public class UploadLogTests
                 ["items"] = JsonNode.Parse("""[{"id":1,"count":1},{"id":3,"count":1}]""")!,
             }));
 
-        // Same count, different contents — the fingerprints must differ.
+        // Same count, different contents — the fingerprints must differ. Both passes count 2, so
+        // the fingerprint is the only signal that can carry the change.
+        Assert.Equal(2, before.Categories[0].Count);
         Assert.Equal(before.Categories[0].Count, after.Categories[0].Count);
         Assert.NotEqual(before.Categories[0].Fingerprint, after.Categories[0].Fingerprint);
     }
@@ -358,6 +427,144 @@ public class UploadLogTests
         };
 
         Assert.Contains("quests", UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // A pass that read none of the category makes no claim about its contents, so it cannot have
+    // changed. Its facts really are different from the readable pass before it — no jobs against
+    // 24 — so a plain count-and-fingerprint comparison would flag it.
+    [Fact]
+    public void A_category_that_read_nothing_is_not_flagged_as_changed()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // The other half of the same rule, and the one a reader feels: an unmeasured pass sitting between
+    // two identical readable ones must not make the later one look like movement. The baseline
+    // search passes over the unmeasured row and lands on the last pass that actually measured.
+    [Fact]
+    public void An_unmeasured_pass_is_not_the_baseline_for_the_pass_after_it()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+            SomeEntry(2) with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // The other direction of the same rule: passing over unmeasured rows must not HIDE real movement.
+    // The baseline search walks past the unmeasured row to the last pass that measured, so a genuine
+    // gain across the gap still flags.
+    [Fact]
+    public void A_change_across_an_unmeasured_pass_is_still_flagged()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 25, "bbbb2222") },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+            SomeEntry(2) with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+        };
+
+        Assert.Contains("occultProgression", UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // An unmeasured row as the OLDEST row leaves the category with no measurement anywhere behind it,
+    // so the first readable pass after it is deliberately not flagged — the same rule that keeps a
+    // category the log has never seen from painting the whole first upload of a session.
+    [Fact]
+    public void A_first_measured_pass_after_an_unmeasured_history_is_not_flagged()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // A manifest-driven category is compared on its owned-entry count, so that is what makes a row
+    // a usable baseline for one — not the fact count the other categories are measured by. A row
+    // with no owned count is walked past, and the comparison lands on the last row that had one.
+    [Fact]
+    public void A_manifest_categorys_baseline_is_the_last_row_with_an_owned_count()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("items", 189, "aaaa1111", UsesItemManifest: true, OwnedCount: 44),
+                },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("items", 189, "aaaa1111", UsesItemManifest: true, OwnedCount: null),
+                },
+            },
+            SomeEntry(2) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("items", 189, "aaaa1111", UsesItemManifest: true, OwnedCount: 43),
+                },
+            },
+        };
+
+        Assert.Contains("items", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
     // A manifest-driven category's contents move whenever the SERVER edits its manifest, so a
@@ -803,6 +1010,26 @@ public class UploadLogTests
             text);
     }
 
+    // The paste is a diagnostic, so a category that went out carrying no reading has to say so.
+    // Printing nothing after the "=" would look like a truncated dump, and printing 0 would tell
+    // the person debugging that the collector measured something when it measured nothing.
+    [Fact]
+    public void Clipboard_text_reports_an_unmeasured_category_as_none_seen()
+    {
+        var entry = SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory("occultProgression", Count: null),
+                new UploadLogCategory("quests", 3120),
+            },
+        };
+
+        var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });
+
+        Assert.Contains("sent: occultProgression=none_seen quests=3120", text);
+    }
+
     // The backend is user-overridable, and "you are pointed at the wrong server" is a classic
     // support case — the dump must say which server the log is about.
     [Fact]
@@ -1101,5 +1328,18 @@ public class UploadLogTests
             "Quests", category, changed: false, proof: "proof pending", stepsProven: false);
 
         Assert.Equal(new[] { ("Quests 903", false) }, spans);
+    }
+
+    // The span text, not just the record: "(none seen)" has to reach the rendered column, where a
+    // bare display name would look like a rendering bug.
+    [Fact]
+    public void Sent_spans_say_none_seen_for_a_category_with_no_count()
+    {
+        var category = new UploadLogCategory("occultProgression", Count: null);
+
+        var spans = UploadLogText.SentSpans(
+            "Phantom jobs", category, changed: false, proof: null, stepsProven: false);
+
+        Assert.Equal(new[] { ("Phantom jobs (none seen)", false) }, spans);
     }
 }

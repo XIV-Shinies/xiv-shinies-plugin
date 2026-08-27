@@ -44,6 +44,30 @@ public sealed record CollectionSnapshot
         new Dictionary<string, string>();
 
     /// <summary>
+    /// Each collected category's own count of what it is about (see
+    /// <see cref="CollectResult.FactCount"/>), keyed by category. A category that left the count
+    /// to the facts' shape has no entry. The upload log prints these; nothing else interprets them.
+    /// </summary>
+    // Not `required`, like its siblings: an empty dictionary is the honest default for a test
+    // snapshot where every category is counted from its shape.
+    public IReadOnlyDictionary<string, int> FactCounts { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// The categories that read none of what they are about this pass, though they still had
+    /// something to send (see <see cref="CollectResult.NothingReadThisPass"/>). The upload log
+    /// names these without a count.
+    /// </summary>
+    /// <remarks>
+    /// Named for what it holds, to keep it distinct from
+    /// <see cref="Sync.UploadLogEntry.UnreadableCategoryKeys"/>, which lists categories that were
+    /// never sent at all. A category here <b>was</b> sent — it simply carried no reading of its
+    /// own collection.
+    /// </remarks>
+    // Not `required`, like the sets below: an empty set is the honest default for a test snapshot
+    // where every category read something.
+    public IReadOnlySet<string> NothingReadKeys { get; init; } = new HashSet<string>();
+
+    /// <summary>
     /// How long each collector took, keyed by category. Only collectors that actually ran appear.
     /// </summary>
     /// <remarks>
@@ -146,6 +170,8 @@ public static class CollectorRunner
         var skipped = new Dictionary<string, string>();
         var partialNotes = new Dictionary<string, string>();
         var collectedDetails = new Dictionary<string, string>();
+        var factCounts = new Dictionary<string, int>();
+        var nothingReadKeys = new HashSet<string>();
         var durations = new Dictionary<string, TimeSpan>();
         var sourceNotes = new Dictionary<string, ItemSourceStatus>();
         var manifestDrivenKeys = new HashSet<string>();
@@ -228,6 +254,16 @@ public static class CollectorRunner
                 if (result.CollectedDetail is { } collectedDetail)
                     collectedDetails[key] = collectedDetail;
 
+                // And "I read none of what I am about this pass" — filed as a bare key, since there
+                // is no number to file. The upload log names such a category without a count.
+                if (result.NothingReadThisPass)
+                    nothingReadKeys.Add(key);
+
+                // And its own count of what it is about, when the facts' shape would not give the
+                // number a reader expects. Same rule again: the collector says, nothing here reads it.
+                if (result.FactCount is { } factCount)
+                    factCounts[key] = factCount;
+
                 // Merge source notes from this collector. Source-keyed: if two collectors both report
                 // on the same source (e.g., both describe inventory), the last one wins because they
                 // describe the same physical storage location. The snapshot iteration order means
@@ -252,6 +288,8 @@ public static class CollectorRunner
             Skipped = skipped,
             PartialNotes = partialNotes,
             CollectedDetails = collectedDetails,
+            FactCounts = factCounts,
+            NothingReadKeys = nothingReadKeys,
             Durations = durations,
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,
