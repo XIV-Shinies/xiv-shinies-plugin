@@ -519,6 +519,22 @@ public class PluginSettingsTests
         Assert.True(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
+    // The un-overturn guarantee reads the stored answer itself, so it holds even for a config
+    // whose seen-set does not list the category — an entry of "no" is an answer, and no later
+    // load may reverse it.
+    [Fact]
+    public void A_category_answered_no_is_never_switched_back_on()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+        settings.MarkCategoriesSeen(new[] { "quests" });
+
+        // Answered, and answered NO — but never announced, so it is absent from the seen-set.
+        settings.SetCategoryEnabled("orchestrionRolls", false);
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(new[] { "orchestrionRolls" }));
+        Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
+    }
+
     // Called at load with the registered collectors, so it takes the same best-effort line the
     // other bulk writers do rather than throwing into the plugin's constructor.
     [Fact]

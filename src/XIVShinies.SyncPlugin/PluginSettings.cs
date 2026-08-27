@@ -469,9 +469,12 @@ public class PluginSettings
                 if (string.IsNullOrEmpty(categoryKey) || SeenCategoryKeys.Contains(categoryKey))
                     continue;
 
-                // Already on — the user ticked it before this ever ran, and saying so again would
-                // report a change that did not happen.
-                if (EnabledCategories.TryGetValue(categoryKey, out var already) && already)
+                // A present entry is a value someone already decided — a click, or an earlier run
+                // of this method — and re-deciding it here would overwrite a standing state. In
+                // particular an answer of "no" is left alone. The guard above asks whether the
+                // collection has been announced; this one asks whether it already has a value,
+                // and the two are recorded separately.
+                if (EnabledCategories.ContainsKey(categoryKey))
                     continue;
 
                 // The accessor takes the same lock this method already holds; C#'s lock is

@@ -104,6 +104,40 @@ public sealed record CategorySettingsRow
     public bool IsEffectivelyOn => UserEnabled && ServerEnabled;
 
     /// <summary>
+    /// False when the latest <c>/config</c> has not been fetched yet, so
+    /// <see cref="ServerEnabled"/> is an assumption rather than the server's answer.
+    /// </summary>
+    /// <remarks>
+    /// What tells a caller whether <see cref="ServerEnabled"/> may be spent on rather than merely
+    /// drawn from. See <see cref="WasDrawnAsUsable"/>.
+    /// </remarks>
+    public bool ServerStateKnown { get; init; } = true;
+
+    /// <summary>True when this row should announce itself as new.</summary>
+    /// <remarks>
+    /// A collection the server has switched off cannot be used, so badging it would say "here is
+    /// something new for you" about something that is not. While the server's answer is still
+    /// unknown the badge shows, because a user whose config poll is failing should still learn a
+    /// collection exists.
+    /// </remarks>
+    public bool IsEffectivelyNew => IsNew && ServerEnabled;
+
+    /// <summary>
+    /// True when this row was drawn in a state the user could actually act on — the server
+    /// permits it, and that is the server's answer rather than an assumption.
+    /// </summary>
+    /// <remarks>
+    /// The server half of the retire condition, shared by this row (see
+    /// <see cref="ShowingItRetiresTheBadge"/>) and by the groups beneath it. Retiring an
+    /// announcement costs it outright, while showing one early costs only a repeat — so an
+    /// unanswered <c>/config</c> is enough to draw on but not enough to spend on.
+    /// </remarks>
+    public bool WasDrawnAsUsable => ServerEnabled && ServerStateKnown;
+
+    /// <summary>True when drawing this row on a badging surface should retire its badge.</summary>
+    public bool ShowingItRetiresTheBadge => IsNew && WasDrawnAsUsable;
+
+    /// <summary>
     /// One row per item-manifest consent group, for a manifest-driven collector — or null when this
     /// row has no groups to draw.
     /// </summary>
@@ -183,7 +217,8 @@ public static class CategorySettingsView
     /// </summary>
     /// <remarks>
     /// A row or group qualifies either because this install has never shown it, or because its
-    /// badge already went up during this session — the second half is what keeps a badge from
+    /// badge already went up during this session — in either case only while the server still
+    /// permits the collection — the second half is what keeps a badge from
     /// vanishing one frame after it appears, since drawing it persists the seen flag and the next
     /// rebuild reports it un-new. The two session sets are parameters rather than state held here:
     /// they belong to a window's lifetime, and a pure function of its arguments is one the unit
@@ -201,10 +236,15 @@ public static class CategorySettingsView
         {
             // A whole collection the user has never been shown counts, not just a group inside one
             // — with the header folded, a new collection is exactly as invisible as a new group.
-            if (row.IsNew || badgedCategories.Contains(row.Key))
+            // The session set is re-checked against ServerEnabled, matching the row badge in
+            // MainWindow.DrawCategoryRow.
+            if (row.IsEffectivelyNew || (row.ServerEnabled && badgedCategories.Contains(row.Key)))
                 return true;
 
-            if (row.Groups is not { Count: > 0 } groups)
+            // A group under a collection the server has switched off is as unusable as the
+            // collection, so it raises no chip either — otherwise the header would invite the user
+            // to open a list where nothing is actionable.
+            if (!row.ServerEnabled || row.Groups is not { Count: > 0 } groups)
                 continue;
 
             foreach (var group in groups)
@@ -268,6 +308,9 @@ public static class CategorySettingsView
                 // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
                 // category as disabled by the server, which would be a lie.
                 ServerEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true,
+
+                // Whether the line above is the server's answer or our assumption.
+                ServerStateKnown = remoteConfig is not null,
 
                 // `TryGetValue` fills the out parameter and returns whether the key existed. The
                 // discard-style pattern below just means "null when it was not there".

@@ -361,6 +361,126 @@ public class CategorySettingsViewTests
         Assert.True(groups[1].IsNew);
     }
 
+    // A collection the server has switched off cannot be used, so it does not announce itself yet.
+    // This is what a beta gate looks like from the plugin's side: the server sends the category
+    // disabled for everyone outside the test group, and they see a quiet greyed row rather than a
+    // badge pointing at something they cannot turn on.
+    [Fact]
+    public void A_collection_the_server_switched_off_does_not_announce_itself()
+    {
+        var settings = OptedIn();
+        var config = RemoteConfig(categories: new Dictionary<string, bool> {[UnknownCategory] = false});
+
+        var rows = CategorySettingsView.Build(new[] {Fake(UnknownCategory)}, settings, config);
+        var row = Assert.Single(rows);
+
+        // Never shown by this install, so it stays unseen — but not announced while it is off.
+        Assert.True(row.IsNew);
+        Assert.False(row.ServerEnabled);
+        Assert.False(row.IsEffectivelyNew);
+
+        // And drawing it does not spend the announcement.
+        Assert.False(row.WasDrawnAsUsable);
+        Assert.False(row.ShowingItRetiresTheBadge);
+    }
+
+    // The permitted case: the server has answered and allows the collection, so the row announces
+    // itself, and showing it is what spends the announcement.
+    [Fact]
+    public void A_collection_announces_itself_once_the_server_switches_it_on()
+    {
+        var settings = OptedIn();
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, settings, RemoteConfig());
+
+        var row = Assert.Single(rows);
+        Assert.True(row.IsEffectivelyNew);
+
+        // The mainline: the server has answered, it permits the collection, so showing the row is
+        // the introduction and spends it.
+        Assert.True(row.ServerStateKnown);
+        Assert.True(row.WasDrawnAsUsable);
+        Assert.True(row.ShowingItRetiresTheBadge);
+    }
+
+    // The invariant DrawGroupCheckboxes' correctness rests on: group rows exist only once a config
+    // has been fetched, so a group can never be drawn in the "server has not answered" state.
+    [Fact]
+    public void A_manifest_driven_collector_has_no_group_rows_before_the_server_answers()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, OptedIn(), remoteConfig: null);
+
+        Assert.Null(Assert.Single(rows).Groups);
+    }
+
+    // The folded header follows the same rule, so a server-disabled collection cannot raise a chip
+    // on a header the user then opens to find nothing new.
+    [Fact]
+    public void The_header_chip_ignores_a_collection_the_server_switched_off()
+    {
+        var settings = OptedIn();
+        var config = RemoteConfig(categories: new Dictionary<string, bool> {[UnknownCategory] = false});
+        var none = new HashSet<string>();
+
+        var rows = CategorySettingsView.Build(new[] {Fake(UnknownCategory)}, settings, config);
+
+        Assert.False(CategorySettingsView.AnythingIsNew(rows, none, none));
+    }
+
+    // The same, one level down. A switched-off collection's GROUPS are equally unusable, so they
+    // must not raise the header chip either — without this the chip would still light for a
+    // manifest-driven collection the server has switched off.
+    [Fact]
+    public void The_header_chip_ignores_the_groups_of_a_collection_the_server_switched_off()
+    {
+        var settings = OptedIn();
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {["items"] = false},
+            itemManifestGroups: new[] {Group("relic-tools", "Relic tools")});
+        var none = new HashSet<string>();
+
+        var rows = CategorySettingsView.Build(new[] {FakeManifestDriven("items")}, settings, config);
+
+        // The group really is unseen — the chip is suppressed by the parent's state, not because
+        // there was nothing to announce.
+        Assert.True(rows[0].Groups![0].IsNew);
+        Assert.False(CategorySettingsView.AnythingIsNew(rows, none, none));
+    }
+
+    // Before the first /config answers, the server's permission is an assumption. The badge still
+    // shows — someone whose poll is failing should still learn a collection exists — but drawing it
+    // must not retire it, or a collection gated for them would be announced to nobody.
+    [Fact]
+    public void A_row_drawn_before_the_server_answers_is_shown_but_not_retired()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(), remoteConfig: null);
+
+        var row = Assert.Single(rows);
+        Assert.True(row.ServerEnabled);          // assumed, so the row draws normally
+        Assert.False(row.ServerStateKnown);      // but it is only an assumption
+        Assert.True(row.IsEffectivelyNew);       // so the badge shows
+        Assert.False(row.ShowingItRetiresTheBadge); // and showing it costs nothing
+    }
+
+    // Pins both conjuncts of the predicate: a seen row is not new even when the server permits it,
+    // so IsEffectivelyNew cannot degenerate into ServerEnabled alone.
+    [Fact]
+    public void A_collection_already_shown_is_not_new_even_when_the_server_permits_it()
+    {
+        var settings = OptedIn();
+        settings.MarkCategoriesSeen(new[] {UnknownCategory});
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, settings, RemoteConfig());
+
+        var row = Assert.Single(rows);
+        Assert.True(row.ServerEnabled);
+        Assert.False(row.IsEffectivelyNew);
+    }
+
     // The folded "Collections" header's chip. With the header shut, none of the per-row badges are
     // visible, so this is the only thing telling a user something arrived — it has to answer for
     // both levels, and for a badge that went up earlier in the session.

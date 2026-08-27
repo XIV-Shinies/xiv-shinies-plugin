@@ -49,16 +49,22 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
 
         // Scoped twice over, and the visible line says both halves: only quests the server named
-        // are looked at, and only the journal's step position leaves the machine.
+        // are looked at, and only the step position leaves the machine.
+        //
+        // The game calls the quest log the Journal, and XIV Shinies has a Journal feature of its
+        // own, so this copy says "in game" instead: the word would read as a fact about the site
+        // rather than about a multi-part quest the user is part-way through — a relic chain,
+        // typically.
         WhatGetsSent =
-            "For the specific quests XIV Shinies asks about, which step of that quest your " +
-            "journal is currently on.",
+            "For the specific quests XIV Shinies asks about, how far through that quest you have " +
+            "got in game.",
 
-        // What the step position is NOT: the journal also holds objective text and map locations,
-        // and a reader has no way to know those stay behind unless it is said.
+        // What the step position is NOT: the game also tracks objective text and map locations
+        // against an active quest, and a reader has no way to know those stay behind unless it is
+        // said.
         Details =
-            "Nothing is sent about any other quest, and nothing else from your journal — no " +
-            "objective text, no locations.",
+            "Nothing is sent about any other quest, and nothing else about the ones it does ask " +
+            "about — no objective text, no locations.",
     };
 
     private static readonly CategoryInfo Mounts = new()

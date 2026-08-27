@@ -54,8 +54,9 @@ internal sealed partial class MainWindow
     /// <param name="showNewChips">
     /// Whether a collection, or a manifest group inside one, that the user has not been shown
     /// before wears a "New" badge. The settings pass true; the wizard passes false, because a badge
-    /// beside every row at once distinguishes nothing. Either way everything drawn is marked seen,
-    /// so the wizard retires the badges of the collections it shows.
+    /// beside every row at once distinguishes nothing. It also decides how strict the record is:
+    /// the wizard records what it drew even before the server has answered, while a badging
+    /// surface waits for the answer, since there the record is what the badge is spent from.
     /// </param>
     private void DrawCategoryRows(IReadOnlyList<CategorySettingsRow> rows, bool showNewChips)
     {
@@ -116,9 +117,8 @@ internal sealed partial class MainWindow
     /// </summary>
     /// <param name="row">The row to draw.</param>
     /// <param name="showNewChips">
-    /// Whether this row, and the groups beneath it, may wear a "New" badge. See
-    /// <see cref="DrawCategoryRows"/>; the row is reported as needing its seen flag persisted
-    /// either way.
+    /// Whether this row, and the groups beneath it, may wear a "New" badge, and how strict the
+    /// record of having shown it is. See <see cref="DrawCategoryRows"/>.
     /// </param>
     /// <param name="checkboxColumn">
     /// The width from a row's left edge to its checkbox label — the flowed description's home
@@ -126,8 +126,9 @@ internal sealed partial class MainWindow
     /// the caller inside its ItemInnerSpacing push so it tracks the label's real position.
     /// </param>
     /// <returns>
-    /// True when this row was drawn for the first time and its seen flag still needs persisting.
-    /// The caller batches those into one save.
+    /// True when this drawing should retire the row's announcement: for a row with one left to
+    /// spend that the server permits, and — on a badging surface only — that the server has
+    /// actually answered about. The caller batches those into one save.
     /// </returns>
     private bool DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
     {
@@ -154,16 +155,25 @@ internal sealed partial class MainWindow
         if (toggled)
         {
             ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
+
+            // Clicking a row is proof it was shown, even before the server has answered about it.
+            // Recorded here rather than left to the caller's batch, because that batch withholds
+            // the record for a row drawn before the answer arrived, and a row the user has just
+            // acted on must not be caught by that.
+            configuration.Settings.MarkCategoriesSeen(new[] { row.Key });
             configuration.Save();
         }
 
         // Remembering the key keeps the chip drawn once the caller's batched save makes the next
         // rebuild report the row un-new — the same lifecycle DrawGroupCheckboxes uses.
-        if (showNewChips && row.IsNew)
+        if (showNewChips && row.IsEffectivelyNew)
             categoriesBadgedThisSession.Add(row.Key);
 
+        // ServerEnabled is re-checked rather than trusted from when the key went into the set: a
+        // config poll landing mid-session can switch a collection off under a badge already on
+        // screen, and the chip must not keep promising something new beside a greyed-out row.
         (FontAwesomeIcon Icon, string Text, Vector4 Color)? badge =
-            showNewChips && categoriesBadgedThisSession.Contains(row.Key)
+            showNewChips && row.ServerEnabled && categoriesBadgedThisSession.Contains(row.Key)
                 ? (FontAwesomeIcon.Star, "New", Brand.Gold)
                 : null;
 
@@ -192,9 +202,17 @@ internal sealed partial class MainWindow
         ImGui.Unindent(checkboxColumn);
         ImGui.Spacing();
 
-        // Drawing a category IS showing it to the user, so it is reported seen regardless of which
-        // surface drew it — the wizard shows a collection just as plainly as the settings screen.
-        return row.IsNew;
+        // Drawing a category IS showing it to the user, and only a row with an announcement left
+        // to spend is ever reported — otherwise every row would report on every frame and the
+        // caller would save the config sixty times a second.
+        //
+        // The surfaces differ only in whether an unanswered /config still counts. A surface that
+        // draws no badges is showing the whole list as its purpose — the wizard puts every
+        // collection in front of the user before they can finish — so a failed config poll must
+        // not stop it recording what it plainly showed. A badging surface waits for the answer,
+        // because there the record is what the badge is spent from. Neither counts a row the
+        // server has switched off: greyed and unusable is not an introduction.
+        return row.IsNew && row.ServerEnabled && (row.ServerStateKnown || !showNewChips);
     }
 
     /// <summary>
@@ -571,7 +589,9 @@ internal sealed partial class MainWindow
     /// stops writing for that group — the config is saved once per batch of newly-seen groups, never per
     /// frame (a per-frame save would be a real bug). Marking seen happens on <b>whichever surface drew
     /// the group</b>, wizard or settings: it records that the user has been shown it, and the wizard's
-    /// consent step shows it just as plainly as the settings do.
+    /// consent step shows it just as plainly as the settings do. The one exception is a group under a
+    /// collection the server has switched off, which was drawn greyed and unusable and so has not been
+    /// introduced yet (see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>).
     /// </para>
     /// <para>
     /// <c>groupsBadgedThisSession</c> is a separate question — "is this group's badge currently on screen?" — and
@@ -627,11 +647,14 @@ internal sealed partial class MainWindow
 
             // Drawing a group IS showing it to the user, so it is marked seen regardless of which
             // surface drew it — the wizard's consent step shows a group just as plainly as the
-            // settings screen does.
-            if (group.IsNew)
+            // settings screen does. A group under a collection the server has switched off is the
+            // exception, for the same reason the collection itself is (see
+            // CategorySettingsRow.WasDrawnAsUsable): it was drawn greyed and unusable, so its turn
+            // has not come.
+            if (group.IsNew && row.WasDrawnAsUsable)
                 (newlySeen ??= new List<string>()).Add(group.Key);
 
-            if (!showNewChips)
+            if (!showNewChips || !row.ServerEnabled)
                 continue;
 
             // Remember that this group's badge went up, so it keeps drawing for the rest of the session
@@ -700,12 +723,20 @@ internal sealed partial class MainWindow
 
         if (ImGui.Checkbox("All collections##selectAll", ref allEnabled))
         {
+            // Answered rather than merely drawn, so each row written here is recorded as shown for
+            // the same reason a row's own checkbox does it (see DrawCategoryRow).
+            var answered = new List<string>(rows.Count);
+
             foreach (var row in rows)
             {
-                if (row.ServerEnabled)
-                    ManifestConsent.SetRowConsent(row, allEnabled, configuration.Settings);
+                if (!row.ServerEnabled)
+                    continue;
+
+                ManifestConsent.SetRowConsent(row, allEnabled, configuration.Settings);
+                answered.Add(row.Key);
             }
 
+            configuration.Settings.MarkCategoriesSeen(answered);
             configuration.Save();
         }
 
