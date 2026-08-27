@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using Lumina.Excel;
 using Lumina.Excel.Sheets;
 
 namespace XIVShinies.SyncPlugin.Collectors;
@@ -94,9 +96,16 @@ public sealed unsafe class TripleTriadNpcCollector : ICollector
         // resulting access violation cannot be caught — so refuse.
         GameThread.EnsureFrameworkThread(framework, nameof(TripleTriadNpcCollector));
 
-        var sheet = dataManager.GetExcelSheet<TripleTriadResident>();
-        if (sheet is null)
+        // See CollectSkipReasons.SheetUnavailable for why this is a catch rather than a null check.
+        ExcelSheet<TripleTriadResident> sheet;
+        try
+        {
+            sheet = dataManager.GetExcelSheet<TripleTriadResident>();
+        }
+        catch (Exception)
+        {
             return CollectResult.Skipped(CollectSkipReasons.SheetUnavailable);
+        }
 
         var uiState = UIState.Instance();
         if (uiState is null)

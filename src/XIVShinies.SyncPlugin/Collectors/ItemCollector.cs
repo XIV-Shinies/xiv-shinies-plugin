@@ -401,9 +401,9 @@ public sealed unsafe class ItemCollector : ICollector
         }
 
         // GLAMOUR DRESSER. Readable once opened this session; the game caches the stored ids. The
-        // outfit-expansion index is resolved once here rather than inside the per-slot loop; a
-        // momentarily unreadable sheet leaves it null, and the walk still counts individually-stored
-        // gear, only skipping outfit expansion for this pass (the next pass retries the sheet).
+        // outfit-expansion index is resolved once here rather than inside the per-slot loop, so the
+        // walk below always has a real index to expand an outfit through (see BuildMirageSetIndex
+        // for what an unreadable sheet does instead).
         if (finder->IsGlamourDresserCached)
         {
             TallyGlamourDresser(finder, GetMirageSetIndex(), manifestIds, cached);
@@ -542,7 +542,7 @@ public sealed unsafe class ItemCollector : ICollector
     /// </remarks>
     private static void TallyGlamourDresser(
         ItemFinderModule* finder,
-        IReadOnlyDictionary<uint, uint[]>? setIndex,
+        IReadOnlyDictionary<uint, uint[]> setIndex,
         HashSet<uint> manifestIds,
         Dictionary<uint, ItemTally> cached)
     {
@@ -563,7 +563,7 @@ public sealed unsafe class ItemCollector : ICollector
                 AccumulateNq(cached, storedId, 1);
 
             // If the slot holds an outfit, expand its set id into the pieces currently stored inside.
-            if (setIndex is not null && setIndex.TryGetValue(storedId, out var pieces))
+            if (setIndex.TryGetValue(storedId, out var pieces))
             {
                 foreach (var pieceId in MirageSetIndex.StoredPieces(pieces, bits[slot]))
                 {
@@ -621,30 +621,25 @@ public sealed unsafe class ItemCollector : ICollector
         if (!uiState->Cabinet.IsCabinetLoaded())
             return false;
 
-        // Built once and reused; the sheet cannot change while the game runs. Deliberately NOT
-        // `armoireIndex ??= Build()`: if the sheet were momentarily unreadable, that would cache an
-        // empty index forever and silently disable armoire detection for the rest of the session.
-        // A failed build leaves the field null so the next call retries.
-        if (armoireIndex is null)
-        {
-            var built = TryBuildArmoireIndex();
-            if (built is null)
-                return false;
-
-            armoireIndex = built;
-        }
+        // Built once and reused; the sheet cannot change while the game runs. An unreadable sheet
+        // throws rather than caching anything, so the field only ever holds a real index.
+        armoireIndex ??= BuildArmoireIndex();
 
         // The game answers by armoire row, not by item, hence the lookup.
         return armoireIndex.TryGetValue(itemId, out var cabinetId)
                && uiState->Cabinet.IsItemInCabinet(cabinetId);
     }
 
-    // Returns null when the sheet could not be read, so the caller knows not to cache the result.
-    private IReadOnlyDictionary<uint, uint>? TryBuildArmoireIndex()
+    /// <remarks>
+    /// An unreadable sheet throws out of here rather than being caught, and that is deliberate: the
+    /// throw reaches <see cref="CollectorRunner"/>, which omits the whole <c>items</c> category — a
+    /// report the server reads as "not read this time". Catching it here would instead send counts
+    /// alongside an Armoire source note already set to <c>Loaded</c>, claiming a scan that never
+    /// happened. Saying nothing beats saying something wrong confidently.
+    /// </remarks>
+    private IReadOnlyDictionary<uint, uint> BuildArmoireIndex()
     {
         var sheet = dataManager.GetExcelSheet<CabinetSheet>();
-        if (sheet is null)
-            return null;
 
         var rows = new List<(uint CabinetId, uint ItemId)>();
         foreach (var row in sheet)
@@ -653,28 +648,19 @@ public sealed unsafe class ItemCollector : ICollector
         return ArmoireIndex.Build(rows);
     }
 
-    // Resolves the outfit-expansion index, building it on first use. Same retry-on-null discipline as
-    // the armoire index (see IsStoredInArmoire): a momentarily unreadable sheet leaves the field null
-    // so the next pass retries, rather than caching an empty index that would disable expansion for
-    // the rest of the session. Returns null when the sheet still cannot be read.
-    private IReadOnlyDictionary<uint, uint[]>? GetMirageSetIndex()
-    {
-        if (mirageSetIndex is not null)
-            return mirageSetIndex;
+    // Resolves the outfit-expansion index, building it on first use. Built once and reused; the
+    // sheet cannot change while the game runs.
+    private IReadOnlyDictionary<uint, uint[]> GetMirageSetIndex() =>
+        mirageSetIndex ??= BuildMirageSetIndex();
 
-        var built = TryBuildMirageSetIndex();
-        if (built is not null)
-            mirageSetIndex = built;
-
-        return built;
-    }
-
-    // Returns null when the sheet could not be read, so the caller knows not to cache the result.
-    private IReadOnlyDictionary<uint, uint[]>? TryBuildMirageSetIndex()
+    /// <remarks>
+    /// Throws on an unreadable sheet for the same reason <see cref="BuildArmoireIndex"/> does: an
+    /// omitted category is honest, where counts that silently skipped every outfit the dresser
+    /// holds are not.
+    /// </remarks>
+    private IReadOnlyDictionary<uint, uint[]> BuildMirageSetIndex()
     {
         var sheet = dataManager.GetExcelSheet<MirageSetSheet>();
-        if (sheet is null)
-            return null;
 
         var rows = new List<(uint SetItemId, uint[] PieceItemIds)>();
         foreach (var row in sheet)

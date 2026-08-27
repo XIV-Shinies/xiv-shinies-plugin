@@ -14,6 +14,14 @@ public static class CollectSkipReasons
     public const string CollectorError = "collector_error";
 
     /// <summary>The game data sheet could not be loaded.</summary>
+    /// <remarks>
+    /// Reaching this reason takes a catch rather than a null check: <c>GetExcelSheet</c> reports a
+    /// sheet it cannot supply by throwing — missing, a column layout the game patched out from
+    /// under the bindings, a language it does not carry. A collector that let the throw escape
+    /// would instead be recorded as <see cref="CollectorError"/>, which asserts the collector
+    /// itself misbehaved. Both read the same to the user; keeping them apart is what lets a pasted
+    /// diagnostic tell an unloadable game sheet from a plugin bug.
+    /// </remarks>
     public const string SheetUnavailable = "sheet_unavailable";
 
     /// <summary>
