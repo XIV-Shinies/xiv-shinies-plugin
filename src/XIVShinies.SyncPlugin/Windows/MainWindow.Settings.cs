@@ -187,8 +187,9 @@ internal sealed partial class MainWindow
             {
                 // The dump names the EFFECTIVE backend (the user-overridable setting, not the
                 // default): "you are pointed at the wrong server" is a classic support case.
+                // diagnosticVersion, not the masthead's copy.
                 ImGui.SetClipboardText(UploadLogText.ClipboardText(
-                    pluginVersion, configuration.Settings.BaseUrl, history));
+                    diagnosticVersion, configuration.Settings.BaseUrl, history));
                 logCopyFeedbackUntil = DateTime.UtcNow.AddSeconds(1.5);
             }
 

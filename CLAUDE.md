@@ -111,6 +111,33 @@ registers and `/xlplugins` shows no Dev Tools section at all. Then enable the pl
 `/xlplugins` → Dev Tools → Installed Dev Plugins and run `/shinies`. Use `/xllog` to see the
 plugin's log output.
 
+### Screenshots of the upload log
+
+The log's interesting rows are slow or expensive to reach honestly — the scheduled sync is half
+an hour away, a "(changed)" mark needs a real acquisition, and the proof note needs the server to
+derive a relic step. A **Debug** build can stage all of them at once:
+
+```powershell
+dotnet build                      # Debug; the seeding is compiled out of Release entirely
+```
+
+Point Dev Plugin Locations at `src\XIVShinies.SyncPlugin\bin\Debug\XIVShinies.SyncPlugin.dll`
+instead, then in game:
+
+```
+/shinies seedlog          # fill the log with plausible rows
+/shinies seedlog 0.7.0    # …and draw that version in the masthead
+```
+
+The version is typed rather than derived because screenshots are taken **before** the release
+flow sets `<Version>`, and that flow is the only thing that may write it. It changes the masthead
+only — uploads and the pasted diagnostic still carry the real one.
+
+Capture promptly: a real sync records a genuine row that diffs against the seeded ones and lights
+up "(changed)" everywhere, and logging out or switching character clears the log. On the shipped
+**Release** build the argument is not compiled in, so `/shinies seedlog` just toggles the window
+like any other unrecognized argument.
+
 ## Testing philosophy — pure logic vs. game surfaces
 
 Be honest about this split; do not fake it.

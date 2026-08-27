@@ -1,3 +1,8 @@
+#if DEBUG
+// DateTimeOffset, StringComparison and StringSplitOptions, for the development-build upload-log
+// seeding command. Guarded with the command itself: a Release compile of this file needs none.
+using System;
+#endif
 using System.Collections.Generic;
 // Path.Combine, for locating the mascot image next to the plugin DLL.
 using System.IO;
@@ -323,9 +328,41 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     // The command handler. Its signature (string command, string args) is what CommandInfo
-    // expects: `command` is what was typed (/shinies), `args` is anything after it. We ignore
-    // both and just toggle the window open/closed.
-    private void OnCommand(string command, string args) => mainWindow.Toggle();
+    // expects: `command` is what was typed (/shinies), `args` is anything after it. Bare
+    // /shinies toggles the window open/closed.
+    private void OnCommand(string command, string args)
+    {
+#if DEBUG
+        // A development build recognizes one argument, for filling the upload log with plausible
+        // rows so its screenshots can be taken without waiting on real syncs. Compiled out of
+        // Release entirely, so the shipped plugin recognizes no arguments at all.
+        //
+        //   /shinies seedlog              — seed the log
+        //   /shinies seedlog <version>    — seed it and draw that version in the masthead
+        //                                   (see MainWindow.OverrideVersionForScreenshots)
+        var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
+        {
+            syncManager.SeedUploadHistoryForScreenshots(collectors, DateTimeOffset.Now);
+
+            if (words.Length > 1)
+                mainWindow.OverrideVersionForScreenshots(words[1]);
+
+            // Says what undoes it, because both are silent: a real sync lands a genuine row at the
+            // front whose counts diff against the fabricated ones and light up "(changed)" across
+            // the board, and a logout or character switch clears the log outright.
+            Log.Information(
+                "Upload log seeded for screenshots. Capture before the next sync; logging out clears it.");
+
+            // Opened rather than toggled: the point of the command is to look at the log, and a
+            // toggle would close the window when it is already open.
+            mainWindow.IsOpen = true;
+            return;
+        }
+#endif
+
+        mainWindow.Toggle();
+    }
 
     // Small helper wired to the installer's open/config buttons above. `Toggle()` comes from the
     // Window base class (show if hidden, hide if shown).

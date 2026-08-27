@@ -394,6 +394,43 @@ internal sealed class SyncManager : IDisposable
     /// <summary>Empties the upload log, for the settings window's clear button.</summary>
     public void ClearUploadHistory() => uploadLog.Clear();
 
+#if DEBUG
+    /// <summary>
+    /// Replaces the upload log with fabricated entries for capturing screenshots of it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// DEBUG-only, like <see cref="UploadLogSeed"/> itself — a released plugin must never be able
+    /// to show a user invented sync history. Clears first so repeated runs give the same picture
+    /// rather than piling seeded rows on top of each other and on top of real ones.
+    /// </para>
+    /// <para>
+    /// The sync card's own state is moved to match. Leaving it alone prints "nothing has been
+    /// uploaded yet this session" on a page whose log shows four accepted uploads, the newest a
+    /// minute old. A seeded window has to be self-consistent everywhere the shutter can see, not
+    /// only in the surface being aimed at.
+    /// </para>
+    /// </remarks>
+    public void SeedUploadHistoryForScreenshots(
+        IReadOnlyList<ICollector> collectors, DateTimeOffset now)
+    {
+        uploadLog.Clear();
+
+        var entries = UploadLogSeed.Build(collectors, now);
+        foreach (var entry in entries)
+            uploadLog.Record(entry);
+
+        // Taken from the newest seeded entry rather than restated, so the card and the log's top
+        // row can never disagree about when the last upload happened.
+        if (entries.Count > 0)
+        {
+            var newest = entries[^1];
+            lastStatusCode = (int)newest.Status;
+            lastSyncedAtBox = newest.At;
+        }
+    }
+#endif
+
     /// <summary>
     /// Why each category was skipped by the last collection pass. Empty before the first pass.
     /// </summary>

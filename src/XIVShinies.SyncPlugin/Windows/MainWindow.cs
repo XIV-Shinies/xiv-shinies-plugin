@@ -86,9 +86,25 @@ internal sealed partial class MainWindow : Window, IDisposable
     // background and is never disposed here.
     private readonly ISharedImmediateTexture mascotTexture;
 
-    // The running version, shown in the masthead — the same string the uploads carry, so what a
-    // user reads in a bug report matches what the server saw.
+    // The version drawn in the masthead. Cosmetic only — uploads and the pasted diagnostic read
+    // the real assembly version.
+#if DEBUG
+    // Assignable in a development build so screenshots can be captured showing the version the
+    // release will carry, before the release flow sets it. See OverrideVersionForScreenshots.
+    //
+    // volatile because the seeding command writes it from the framework thread while the draw
+    // thread reads it — the same reason UploadLog marks its entry list volatile. A reference
+    // assignment is atomic, so the worst case is a frame of staleness.
+    private volatile string pluginVersion;
+#else
     private readonly string pluginVersion;
+#endif
+
+    // The version the plugin is actually running, for the pasted diagnostic. Held apart from the
+    // masthead's copy so the screenshot override cannot reach it: the dump's whole job is to be
+    // trusted by whoever reads a bug report, and a version it cannot vouch for makes every other
+    // line in it suspect too.
+    private readonly string diagnosticVersion;
 
     // The upload log's table renderer, which captures each collector's display name at
     // construction — the collector list is fixed for the plugin's lifetime.
@@ -181,6 +197,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         this.mascotTexture = mascotTexture;
         this.iconFont = iconFont;
         this.pluginVersion = pluginVersion;
+        this.diagnosticVersion = pluginVersion;
         verifier = new TokenVerifier(apiClient);
         uploadLogTable = new UploadLogTable(collectors);
 
@@ -215,6 +232,31 @@ internal sealed partial class MainWindow : Window, IDisposable
         // like the token vanished.
         tokenInput = configuration.Settings.Token;
     }
+
+#if DEBUG
+    /// <summary>
+    /// Shows a different version in the masthead, for capturing screenshots that carry the version
+    /// a release will ship as.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Screenshots for a release are taken before the release flow bumps the version, so a window
+    /// captured now shows the version being replaced. The flow that sets the real version is the
+    /// only thing allowed to write it, and a screenshot's needs are not a reason to bump it early
+    /// — so a development build is told what to draw instead, and the project file is untouched.
+    /// </para>
+    /// <para>
+    /// DEBUG-only, and confined to the masthead: the uploads carry the real assembly version, and
+    /// so does the pasted diagnostic, which reads <c>diagnosticVersion</c> instead.
+    /// </para>
+    /// <para>
+    /// A leading "v" is dropped because the masthead adds one itself — typing a version the way it
+    /// is written in a tag would otherwise photograph with the letter doubled.
+    /// </para>
+    /// </remarks>
+    public void OverrideVersionForScreenshots(string version) =>
+        pluginVersion = version.TrimStart('v', 'V');
+#endif
 
     /// <summary>Cancels any token probe still in flight and releases the owned fonts.</summary>
     /// <remarks>The icon font is borrowed from Dalamud and deliberately not disposed here.</remarks>
