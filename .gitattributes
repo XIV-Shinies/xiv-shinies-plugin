@@ -1,0 +1,16 @@
+# Line endings, declared here rather than left to each contributor's Git configuration.
+#
+# Without this file the result depends on `core.autocrlf`, which is set per machine: the same
+# checkout gives one contributor LF files and another CRLF ones, and a commit made on the wrong
+# setting rewrites every line of a file it barely touched. .editorconfig already asks editors for
+# LF (`end_of_line = lf`); this asks Git for the same thing, so what is checked out matches what
+# an editor will write, on every platform.
+
+# Every text file: stored LF in the repository and written LF into the working tree. Git decides
+# which files are text by inspecting them, so anything binary is left alone even here.
+* text=auto eol=lf
+
+# The plugin's icon and gallery images. Already covered by the auto-detection above; named
+# explicitly so a hand-edited or unusually-encoded image can never be mistaken for text and have
+# its bytes rewritten.
+*.png binary
