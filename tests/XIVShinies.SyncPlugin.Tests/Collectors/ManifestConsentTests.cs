@@ -40,6 +40,30 @@ public class ManifestConsentTests
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] { 1 });
     }
 
+    // Pins the exclusion the one no-click consent path depends on: a category whose groups the
+    // user answers separately is left out. See ManifestConsent.FixedScopeCategoryKeys for why.
+    [Fact]
+    public void Only_categories_a_tick_settles_on_their_own_have_a_fixed_scope()
+    {
+        var keys = ManifestConsent.FixedScopeCategoryKeys(new[]
+        {
+            new FakeCollector("quests", usesItemManifest: false),
+            new FakeCollector("items", usesItemManifest: true),
+            new FakeCollector("orchestrionRolls", usesItemManifest: false),
+        });
+
+        Assert.Equal(new[] { "quests", "orchestrionRolls" }, keys);
+    }
+
+    [Fact]
+    public void A_list_of_only_manifest_driven_categories_has_no_fixed_scope_keys()
+    {
+        Assert.Empty(ManifestConsent.FixedScopeCategoryKeys(new[]
+        {
+            new FakeCollector("items", usesItemManifest: true),
+        }));
+    }
+
     [Fact]
     public void A_manifest_driven_category_the_user_opted_into_is_found()
     {

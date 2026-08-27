@@ -151,9 +151,11 @@ internal sealed partial class MainWindow
         // player's own progress), while the live tracker's box starts ticked because it shares
         // world state — and it is on this very screen, so unticking it is one click before
         // anything can send.
+        // Scoped to the collections on this screen, because the last box below offers to start
+        // collections added by later updates switched on.
         ImGui.TextWrapped(
-            "Choose what to upload. Collections start switched off — nothing about your " +
-            "progress is sent unless you turn it on here. Sharing live Occult instance state " +
+            "Choose what to upload. The collections below all start switched off — nothing about " +
+            "your progress is sent unless you turn it on here. Sharing live Occult instance state " +
             "starts on; untick it below if you would rather not. You can change any of this later.");
 
         Widgets.SectionGap();

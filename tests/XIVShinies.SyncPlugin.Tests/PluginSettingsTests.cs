@@ -58,21 +58,28 @@ public class PluginSettingsTests
         Assert.Equal(BackendUrl.Default, settings.BaseUrl);
         Assert.Equal(string.Empty, settings.Token);
 
-        // The two defaults that ARE true — the occult toggle and the future-features choice —
-        // still send nothing on a fresh install, because everything above gates them (see
-        // OccultGateTests); both boxes are visible and ticked on the wizard's consent step
-        // before any upload can happen.
+        // The one default that IS true still sends nothing on a fresh install, because everything
+        // above gates it (see OccultGateTests); its box is visible and ticked on the wizard's
+        // consent step before any upload can happen.
         Assert.True(settings.ShareOccultInstanceState);
-        Assert.True(settings.AutoEnableNewFeatures);
+
+        // The standing answer about collections added later is deliberately NOT ticked by
+        // default — see PluginSettings.AutoEnableNewFeatures.
+        Assert.False(settings.AutoEnableNewFeatures);
     }
 
-    // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user
-    // the wizard will never show the new toggles to, so defaulting them on would be consent by
-    // omission — they start OFF and the settings screen is where that user opts in.
+    // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user the
+    // wizard will never show the occult toggle to, so leaving it on would be consent by omission —
+    // it starts OFF and the settings screen is where that user opts in. The standing answer about
+    // collections is cleared here too, by the version-3 rule.
     [Fact]
     public void Migrating_an_onboarded_version0_config_switches_the_new_sharing_defaults_off()
     {
-        var settings = new PluginSettings { OnboardingComplete = true };
+        // Seeded true rather than left at the default: an assertion that something is false is
+        // worth nothing when false is what it started as, and the rule that clears this one spans
+        // every version below 3 — so without a value that could differ, narrowing its lower bound
+        // would pass every test in this file.
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
 
         Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 0));
 
@@ -86,9 +93,9 @@ public class PluginSettingsTests
         Assert.True(settings.IsCategorySeen(CategoryKeys.Quests));
     }
 
-    // An install still ahead of its wizard keeps the defaults: the wizard is about to put both
-    // boxes in front of them, which is exactly the consent surface the migration exists to
-    // substitute for.
+    // An install still ahead of its wizard keeps the default: the wizard is about to put the box
+    // in front of them, which is exactly the consent surface the migration exists to substitute
+    // for.
     [Fact]
     public void Migrating_a_config_that_never_finished_onboarding_keeps_the_defaults()
     {
@@ -97,7 +104,6 @@ public class PluginSettingsTests
         Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 0));
 
         Assert.True(settings.ShareOccultInstanceState);
-        Assert.True(settings.AutoEnableNewFeatures);
     }
 
     // Read from the constant rather than a literal, so bumping the schema cannot leave this test
@@ -336,9 +342,12 @@ public class PluginSettingsTests
     [Fact]
     public void Migrating_an_onboarded_pre_seen_tracking_config_marks_the_collections_of_that_era()
     {
-        var settings = new PluginSettings { OnboardingComplete = true };
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
 
         Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 1));
+
+        // The version-3 rule spans this version too, so the standing answer is cleared here as well.
+        Assert.False(settings.AutoEnableNewFeatures);
 
         Assert.True(settings.SeenCategoriesInitialized);
         Assert.All(
@@ -442,6 +451,210 @@ public class PluginSettingsTests
 
         Assert.True(settings.IsCategorySeen("quests"));
         Assert.False(settings.IsCategorySeen("orchestrionRolls"));
+    }
+
+    // --- Auto-enabling a collection the install has never been shown -------------------------
+
+    // The feature itself: a user who asked not to be asked again gets a newly added collection
+    // switched on, while the collections they have already judged are left exactly as they are.
+    [Fact]
+    public void An_unseen_category_is_switched_on_for_a_user_who_asked_for_that()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+        settings.MarkCategoriesSeen(new[] { "quests", "mounts" });
+        settings.SetCategoryEnabled("mounts", false);
+
+        var enabled = settings.AutoEnableUnseenCategories(new[] { "quests", "mounts", "orchestrionRolls" });
+
+        Assert.Equal(new[] { "orchestrionRolls" }, enabled);
+        Assert.True(settings.IsCategoryEnabled("orchestrionRolls"));
+
+        // A collection they were shown and switched off stays off — being seen is what makes
+        // their answer theirs, and nothing here may overturn it.
+        Assert.False(settings.IsCategoryEnabled("mounts"));
+    }
+
+    // The standing answer is the whole licence for switching anything on without a click. Without
+    // it there is no consent to lean on, so nothing happens.
+    [Fact]
+    public void Nothing_is_switched_on_when_the_user_did_not_ask_for_that()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = false };
+
+        var enabled = settings.AutoEnableUnseenCategories(new[] { "orchestrionRolls" });
+
+        Assert.Empty(enabled);
+        Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
+    }
+
+    // An install still ahead of its wizard has given no standing answer yet, even with the flag
+    // set: ticking the box in the wizard persists it immediately, so a load that happens before
+    // onboarding finishes must not act on it. The wizard is that user's consent surface, and it
+    // puts every collection in front of them.
+    [Fact]
+    public void Nothing_is_switched_on_before_onboarding_is_complete()
+    {
+        var settings = new PluginSettings { OnboardingComplete = false, AutoEnableNewFeatures = true };
+
+        var enabled = settings.AutoEnableUnseenCategories(new[] { "quests", "orchestrionRolls" });
+
+        Assert.Empty(enabled);
+        Assert.Empty(settings.EnabledCategories);
+    }
+
+    // Reports only what it changed. A collection already switched on was the user's own doing, and
+    // saying otherwise would put a change in the log that never happened.
+    [Fact]
+    public void A_category_already_switched_on_is_not_reported_as_changed()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+
+        // A baseline that does NOT cover orchestrionRolls, so it really is judged unseen and the
+        // already-on skip is what returns nothing. Without this the empty-baseline floor would
+        // short-circuit first and the assertion would pass without reaching the skip at all.
+        settings.MarkCategoriesSeen(new[] { "quests" });
+        settings.SetCategoryEnabled("orchestrionRolls", true);
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(new[] { "orchestrionRolls" }));
+        Assert.True(settings.IsCategoryEnabled("orchestrionRolls"));
+    }
+
+    // Called at load with the registered collectors, so it takes the same best-effort line the
+    // other bulk writers do rather than throwing into the plugin's constructor.
+    [Fact]
+    public void Auto_enabling_tolerates_a_null_sequence_and_skips_blanks()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+
+        // A baseline has to exist for anything to be judged new against — see
+        // Nothing_is_switched_on_when_the_seen_baseline_is_missing.
+        settings.MarkCategoriesSeen(new[] { "quests" });
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(null!));
+
+        Assert.Equal(
+            new[] { "orchestrionRolls" },
+            settings.AutoEnableUnseenCategories(new[] { "", "orchestrionRolls" }));
+    }
+
+    // The user's answer survives. Once a collection has been drawn it is seen, so switching it
+    // back off sticks across every later load rather than being undone on the next launch.
+    [Fact]
+    public void Switching_an_auto_enabled_category_back_off_survives_the_next_load()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+
+        // A baseline from an earlier load, so the collection below is genuinely judged unseen and
+        // the first call really does switch it on — otherwise the empty-baseline floor stops it
+        // and the sequence never gets started.
+        settings.MarkCategoriesSeen(new[] { "quests" });
+
+        Assert.Equal(
+            new[] { "orchestrionRolls" },
+            settings.AutoEnableUnseenCategories(new[] { "orchestrionRolls" }));
+
+        // Drawing the settings list is what marks it seen; the user then unticks it.
+        settings.MarkCategoriesSeen(new[] { "orchestrionRolls" });
+        settings.SetCategoryEnabled("orchestrionRolls", false);
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(new[] { "orchestrionRolls" }));
+        Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
+    }
+
+    // The version-3 rule: an onboarded config's standing answer is cleared, so the user re-answers
+    // against copy that names collections. See the rule itself for why.
+    [Fact]
+    public void Migrating_an_onboarded_pre_collection_config_switches_the_standing_answer_off()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+
+        Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 2));
+
+        Assert.False(settings.AutoEnableNewFeatures);
+    }
+
+    // Mid-wizard too: this rule is not gated on OnboardingComplete, while the occult rule is.
+    [Fact]
+    public void Migrating_a_pre_collection_config_clears_the_standing_answer_mid_wizard_too()
+    {
+        var settings = new PluginSettings { OnboardingComplete = false, AutoEnableNewFeatures = true };
+
+        Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 2));
+
+        Assert.False(settings.AutoEnableNewFeatures);
+
+        // The occult toggle's own rule IS gated on onboarding, and stays that way — the wizard is
+        // about to put that box in front of them.
+        Assert.True(settings.ShareOccultInstanceState);
+    }
+
+    // Nothing to clear means nothing changed. The caller saves regardless (the version bump has to
+    // persist), but the return value is a contract and should not claim a write that did not happen.
+    [Fact]
+    public void Migrating_a_config_whose_standing_answer_is_already_off_reports_no_change()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = false };
+
+        Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 2));
+    }
+
+    // The floor under a lost baseline: an empty seen-set switches nothing on. See
+    // AutoEnableUnseenCategories for why an empty one means the record was lost.
+    [Fact]
+    public void Nothing_is_switched_on_when_the_seen_baseline_is_missing()
+    {
+        var settings = new PluginSettings
+        {
+            OnboardingComplete = true,
+            AutoEnableNewFeatures = true,
+            SeenCategoriesInitialized = true,
+        };
+        settings.SetCategoryEnabled("mounts", false);
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(new[] { "quests", "mounts" }));
+        Assert.False(settings.IsCategoryEnabled("quests"));
+        Assert.False(settings.IsCategoryEnabled("mounts"));
+    }
+
+    // The load sequence Plugin.cs runs, in its order: the baseline first, so an onboarded install
+    // has every collection marked seen by the time auto-enable looks, and it finds nothing to do.
+    [Fact]
+    public void The_load_sequence_switches_nothing_on_for_an_install_with_no_new_collections()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+        var registered = new[] { "quests", "mounts" };
+
+        settings.InitializeSeenCategories(registered);
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(registered));
+        Assert.Empty(settings.EnabledCategories);
+    }
+
+    // The full load sequence in order: migrate, baseline, auto-enable. Only the collection added
+    // after the frozen pre-tracking list is switched on; every collection on that list is left
+    // off. The standing answer is re-ticked after the migration, because the version-3 rule
+    // clears it.
+    [Fact]
+    public void The_upgrade_sequence_switches_on_only_the_collection_added_since_the_baseline()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true };
+        var registered = new List<string>(PluginSettings.CategoriesPresentBeforeSeenTracking)
+        {
+            CategoryKeys.OrchestrionRolls,
+        };
+
+        settings.ApplyUpgradeMigrations(fromVersion: 1);
+
+        // The user re-opts in on the settings screen, where the copy names collections.
+        settings.AutoEnableNewFeatures = true;
+        settings.InitializeSeenCategories(registered);
+
+        Assert.Equal(
+            new[] { CategoryKeys.OrchestrionRolls },
+            settings.AutoEnableUnseenCategories(registered));
+        Assert.All(
+            PluginSettings.CategoriesPresentBeforeSeenTracking,
+            key => Assert.False(settings.IsCategoryEnabled(key)));
     }
 
     // The baseline runs unconditionally at plugin load, with no user present. Consent is

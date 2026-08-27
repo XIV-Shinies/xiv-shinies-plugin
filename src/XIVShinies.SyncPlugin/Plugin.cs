@@ -179,6 +179,27 @@ public sealed class Plugin : IDalamudPlugin
             if (Configuration.Settings.InitializeSeenCategories(collectors.Select(c => c.CategoryKey)))
                 Configuration.Save();
 
+            // Honors the user's standing "turn on new collections and sharing features
+            // automatically" answer. It runs after the baseline above, because that is what
+            // decides which collections count as never-shown — and before the window exists, so a
+            // collection is switched on before anything can draw it and mark it shown.
+            //
+            // Only the collections a tick settles on its own — see
+            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
+            // separately must not be switched on for them.
+            var autoEnabled = Configuration.Settings.AutoEnableUnseenCategories(
+                ManifestConsent.FixedScopeCategoryKeys(collectors));
+            if (autoEnabled.Count > 0)
+            {
+                Configuration.Save();
+
+                // Logged because this is the one path that switches a collection on without a
+                // click, so the reason it happened should be findable afterwards.
+                Log.Information(
+                    $"Switched on {string.Join(", ", autoEnabled)} — new since this install was " +
+                    "last shown the list, and new collections are set to start on.");
+            }
+
             // Start listening. The manager subscribes to login and unlock events immediately, but
             // every path out of them checks the upload gate first, so a user who has not opted in
             // sends nothing and the plugin never contacts the server.

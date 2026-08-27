@@ -29,7 +29,7 @@ public class Configuration : IPluginConfiguration
     /// number is from an older install and runs through
     /// <see cref="PluginSettings.ApplyUpgradeMigrations"/> before anything reads it.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     // A C# "property" looks like a field but is really a get/set pair. `{ get; set; }` is an
     // "auto-property" — the compiler generates the backing storage for you. IPluginConfiguration

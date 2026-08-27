@@ -281,12 +281,14 @@ internal sealed partial class MainWindow
 
             ImGui.Spacing();
 
-            // The standing choice for features that do not exist yet — see
-            // PluginSettings.AutoEnableNewFeatures for what a future feature's migration does
-            // with it. Ticking it here is the explicit consent that answer rests on, which is
-            // why the copy promises anything enabled this way shows up on this screen.
+            // The standing choice for collections and sharing features that do not exist yet, and
+            // it governs both — see PluginSettings.AutoEnableUnseenCategories for what acts on it
+            // at load. Ticking it here is the explicit consent that answer rests on, which is why
+            // the copy promises anything enabled this way shows up on this screen.
             var autoEnable = configuration.Settings.AutoEnableNewFeatures;
-            if (ImGui.Checkbox("Turn on future sharing features automatically##autoEnableNew", ref autoEnable))
+            if (ImGui.Checkbox(
+                    "Turn on new collections and sharing features automatically##autoEnableNew",
+                    ref autoEnable))
             {
                 configuration.Settings.AutoEnableNewFeatures = autoEnable;
                 configuration.Save();
@@ -294,9 +296,10 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
             DrawWrapped(
-                "When an update adds a new kind of sharing (like the live tracker above), start " +
-                "it switched on. Anything added this way always appears on this screen, where " +
-                "you can turn it off.",
+                "Tick this and anything a later update adds — a new collection to sync, or a new " +
+                "kind of sharing like the live tracker above — starts switched on instead of " +
+                "waiting for you. It is marked New on this screen either way, so you will see it " +
+                "whichever you choose.",
                 ImGuiCol.Text);
             ImGui.Unindent(checkboxColumn);
         }
