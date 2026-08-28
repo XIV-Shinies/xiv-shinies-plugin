@@ -14,6 +14,14 @@ public static class CollectSkipReasons
     public const string CollectorError = "collector_error";
 
     /// <summary>The game data sheet could not be loaded.</summary>
+    /// <remarks>
+    /// Reaching this reason takes a catch rather than a null check: <c>GetExcelSheet</c> reports a
+    /// sheet it cannot supply by throwing — missing, a column layout the game patched out from
+    /// under the bindings, a language it does not carry. A collector that let the throw escape
+    /// would instead be recorded as <see cref="CollectorError"/>, which asserts the collector
+    /// itself misbehaved. Both read the same to the user; keeping them apart is what lets a pasted
+    /// diagnostic tell an unloadable game sheet from a plugin bug.
+    /// </remarks>
     public const string SheetUnavailable = "sheet_unavailable";
 
     /// <summary>
@@ -186,6 +194,37 @@ public sealed record CollectResult
     /// </remarks>
     public string? CollectedDetail { get; private init; }
 
+    /// <summary>
+    /// How many things these facts are about, for the upload log's "Sent" column — or null to let
+    /// the log count the facts itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The log counts a category's facts from their shape: an array's entries, a map's entries.
+    /// That is the right answer for a category whose facts ARE the collection. It is the wrong
+    /// answer for one whose facts are a wrapper holding several unrelated things, where the shape
+    /// count sums them into a number that means nothing to a reader.
+    /// </para>
+    /// <para>
+    /// Self-description like <see cref="PartialNote"/> and <see cref="CollectedDetail"/>: only the
+    /// collector knows which part of its facts is the thing being counted, so it says, and nothing
+    /// downstream interprets it. Null is the ordinary case.
+    /// </para>
+    /// </remarks>
+    public int? FactCount { get; private init; }
+
+    /// <summary>
+    /// True when this pass read none of what the category is about, though it still had something
+    /// to send — so the upload log names the category without a count.
+    /// </summary>
+    /// <remarks>
+    /// A count would have to be zero here, and zero is a claim: for a collection that cannot
+    /// shrink, it reads as a loss rather than as "not read this time". The category still went
+    /// out on the wire, carrying whatever else its facts hold (a remembered observation, say),
+    /// so reporting it as unsent would be equally wrong.
+    /// </remarks>
+    public bool NothingReadThisPass { get; private init; }
+
     /// <summary>The source could not be read; omit this category from the upload.</summary>
     /// <param name="reason">
     /// A short, stable, machine-readable reason (for example <c>"achievement_list_not_loaded"</c>).
@@ -244,13 +283,36 @@ public sealed record CollectResult
         IReadOnlyDictionary<byte, OccultJobProgress> jobs,
         KnowledgeObservation? knowledge,
         string? partialNote = null,
-        string? collectedDetail = null) =>
-        new()
+        string? collectedDetail = null)
+    {
+        var facts = SyncFacts.Progression(jobs, knowledge);
+
+        // Counted off the BUILT facts, never off the jobs handed in: a job whose exp lands beyond
+        // the schema's ceiling is omitted on the way to the wire, so the two numbers disagree
+        // exactly when something went wrong. The log's whole job is to report what shipped, and a
+        // misread that drops every job is the moment its honesty matters most.
+        var sentJobs = facts["jobs"]!.AsObject().Count;
+
+        return new CollectResult
         {
-            Facts = SyncFacts.Progression(jobs, knowledge),
+            Facts = facts,
             PartialNote = partialNote,
             CollectedDetail = collectedDetail,
+
+            // The jobs alone. These facts are a wrapper around two unrelated things, so counting
+            // their shape would add the knowledge sighting's own fields to the job total — a
+            // number that grows and shrinks for reasons a reader cannot see. The jobs are what
+            // this collection is about.
+            FactCount = sentJobs > 0 ? sentJobs : null,
+
+            // No jobs on the wire means none were readable this pass — the character was outside
+            // the instance that holds them, or every job read past the exp ceiling and was dropped
+            // on the way to the wire. Anything else the facts hold (a knowledge sighting, when one
+            // is remembered) still travels. Derived from the same number as FactCount so the two
+            // can never contradict: exactly one ever describes a pass.
+            NothingReadThisPass = sentJobs == 0,
         };
+    }
 
     /// <summary>
     /// Facts for the <c>questSequences</c> category: which step of each asked-about quest the

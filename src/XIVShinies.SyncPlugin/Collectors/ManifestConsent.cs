@@ -37,6 +37,36 @@ public static class ManifestConsent
     }
 
     /// <summary>
+    /// The categories whose whole scope is settled by ticking them — every collection except one
+    /// whose contents come from consent groups the user answers separately.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What this exists for: switching a category on without its groups leaves it ticked and
+    /// collecting nothing, reporting itself skipped — the state <see cref="SetGroupConsent"/> calls
+    /// the one a consent surface must never reach. Anything that enables a category on the user's
+    /// behalf must therefore ask for this list rather than the full one.
+    /// </para>
+    /// <para>
+    /// Asked of the collectors, so no category is named. The flag names the item manifest
+    /// specifically, which is also the only thing that attaches per-group consent rows — so a
+    /// collection driven by some other manifest has no groups to strand and stays included.
+    /// </para>
+    /// </remarks>
+    /// <param name="collectors">Every registered collector.</param>
+    public static IReadOnlyList<string> FixedScopeCategoryKeys(IEnumerable<ICollector> collectors)
+    {
+        var keys = new List<string>();
+        foreach (var collector in collectors)
+        {
+            if (!collector.UsesItemManifest)
+                keys.Add(collector.CategoryKey);
+        }
+
+        return keys;
+    }
+
+    /// <summary>
     /// Writes one category's consent, and every manifest group nested under it, together.
     /// </summary>
     /// <remarks>
@@ -131,6 +161,26 @@ public static class ManifestConsent
         }
 
         return allEnabled && sawServerEnabledRow;
+    }
+
+    /// <summary>
+    /// Whether any collection on screen is one the server currently permits — so whether the
+    /// select-all has anything at all to act on.
+    /// </summary>
+    /// <remarks>
+    /// The select-all reads and writes only the collections the server allows, so with none of them
+    /// allowed it is a control that visibly does nothing when clicked. The window disables it
+    /// instead, the same way each individual row is disabled.
+    /// </remarks>
+    public static bool AnyServerEnabled(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (row.ServerEnabled)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

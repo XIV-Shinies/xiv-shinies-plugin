@@ -29,6 +29,9 @@ public static class CategoryKeys
     /// <summary>Journal sequence positions for the quests the server asked about.</summary>
     public const string QuestSequences = "questSequences";
 
+    /// <summary>Unlocked orchestrion roll IDs.</summary>
+    public const string OrchestrionRolls = "orchestrionRolls";
+
     /// <summary>Unlocked Triple Triad card IDs.</summary>
     public const string TripleTriadCards = "tripleTriadCards";
 

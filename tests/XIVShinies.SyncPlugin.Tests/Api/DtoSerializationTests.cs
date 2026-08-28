@@ -273,6 +273,185 @@ public class DtoSerializationTests
         Assert.True(config.IsCategoryEnabled("facewear")); // never mentioned by the server
     }
 
+    // --- Category notes ------------------------------------------------------------------------
+
+    // The server explains a switched-off category in its own words, keyed like the switches. The
+    // plugin prints the sentence and never reads it — no keyword, no parsing — so the two sides
+    // can reword this without a plugin release.
+    [Fact]
+    public void ConfigResponse_deserializes_a_category_note()
+    {
+        const string body = """
+        {"categories": {"orchestrionRolls": false, "quests": true},
+         "categoryNotes": {"orchestrionRolls": "In testing — it switches on once it is ready."},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Equal(
+            "In testing — it switches on once it is ready.",
+            config.CategoryNote("orchestrionRolls"));
+
+        // No note for a category the server did not explain, and none for one it never mentioned.
+        Assert.Null(config.CategoryNote("quests"));
+        Assert.Null(config.CategoryNote("facewear"));
+    }
+
+    // The field is additive, so a server that predates it stays a supported peer: no note anywhere
+    // rather than a deserialization failure.
+    [Fact]
+    public void A_config_without_category_notes_reports_none()
+    {
+        const string body = """
+        {"categories": {"orchestrionRolls": false},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Null(config.CategoryNotes);
+        Assert.Null(config.CategoryNote("orchestrionRolls"));
+    }
+
+    // The backend is user-overridable and therefore untrusted, and this text renders in ImGui.
+    // Clamped at the door, like every other adopted server string, and marked so a reader can
+    // tell a cut sentence from one the server wrote that way.
+    [Fact]
+    public void An_overlong_category_note_is_clamped()
+    {
+        var body = $$"""
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": "{{new string('n', ServerText.MaxAdoptedLength + 250)}}"},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        var note = config.CategoryNote("quests")!;
+        Assert.Equal(new string('n', ServerText.MaxAdoptedLength) + "...", note);
+    }
+
+    // A note exactly at the ceiling is not "too long", so it passes through whole and unmarked.
+    // The boundary is pinned because the marker makes an off-by-one visible to the user: a
+    // sentence that fits would otherwise be reported as truncated.
+    [Fact]
+    public void A_category_note_exactly_at_the_ceiling_is_untouched()
+    {
+        var body = $$"""
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": "{{new string('n', ServerText.MaxAdoptedLength)}}"},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Equal(new string('n', ServerText.MaxAdoptedLength), config.CategoryNote("quests"));
+    }
+
+    // The contract says a note is always a non-empty string, and the deserializer does not enforce
+    // the non-nullable declaration — a JSON null lands in the map as one. Reading it must give the
+    // same answer as no note at all, because the alternative is throwing on the draw path.
+    [Fact]
+    public void A_null_category_note_reports_none()
+    {
+        const string body = """
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": null},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Null(config.CategoryNote("quests"));
+    }
+
+    // Padding is the server's, not the reader's.
+    [Fact]
+    public void A_padded_category_note_is_trimmed()
+    {
+        const string body = """
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": "   In testing.   "},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Equal("In testing.", config.CategoryNote("quests"));
+    }
+
+    // A length cap does not bound the SHAPE of what is drawn: a note well inside it can still be
+    // hundreds of blank lines, which would bury the rest of the consent list. Folded to one line,
+    // so the server cannot lay out its own copy inside a panel it does not own.
+    [Fact]
+    public void A_multi_line_category_note_is_folded_onto_one_line()
+    {
+        const string body = """
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": "In testing.\n\n\n\n\nSwitching on soon."},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Equal("In testing. Switching on soon.", config.CategoryNote("quests"));
+    }
+
+    // Pins that a cut landing inside a surrogate pair drops the whole character; ServerText.Clamp
+    // explains why half of one must never survive.
+    [Fact]
+    public void A_category_note_cut_mid_character_drops_the_whole_character()
+    {
+        // One char short of the ceiling, so the emoji's two code units straddle the cut.
+        var note = new string('n', ServerText.MaxAdoptedLength - 1) + "😀tail";
+        var body = $$"""
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": "{{note}}"},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        var clamped = config.CategoryNote("quests")!;
+        Assert.Equal(new string('n', ServerText.MaxAdoptedLength - 1) + "...", clamped);
+        Assert.DoesNotContain(clamped, char.IsSurrogate);
+    }
+
+    // A blank note is the server saying nothing in a roundabout way. Treated as nothing, so the
+    // panel falls back to its own line rather than drawing an empty gap where a reason belongs.
+    [Fact]
+    public void A_blank_category_note_reports_none()
+    {
+        const string body = """
+        {"categories": {"quests": false},
+         "categoryNotes": {"quests": "   "},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.Null(config.CategoryNote("quests"));
+    }
+
     // Optional keys are OMITTED rather than null, so the plugin can feature-detect them.
     [Fact]
     public void SyncResponse_leaves_omitted_optional_keys_null()
@@ -647,5 +826,22 @@ public class DtoSerializationTests
         var json = Serialize(MinimalRequest());
 
         Assert.False(json.ContainsKey("itemSources"));
+    }
+
+    // An explicit JSON null gets past `required` (see ApiJson), and this lookup runs once per
+    // row per frame — so a backend sending null must read as "the server named nothing", the
+    // same answer as a key the map does not carry, rather than throwing.
+    [Fact]
+    public void A_null_categories_map_reads_as_every_category_enabled()
+    {
+        const string json = """
+            {"categories":null,"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.True(config.IsCategoryEnabled("quests"));
     }
 }

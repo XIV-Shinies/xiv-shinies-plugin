@@ -678,7 +678,8 @@ internal static class Widgets
     /// <param name="metrics">The chip's measurements, from <see cref="MeasureChip"/>.</param>
     /// <param name="topLeft">The chip outline's top-left corner, in screen coordinates.</param>
     /// <param name="color">The color shared by the outline, the icon, and the text.</param>
-    private static void PaintChip(IFontHandle iconFont, ChipMetrics metrics, Vector2 topLeft, Vector4 color)
+    private static void PaintChip(
+        IFontHandle iconFont, ChipMetrics metrics, Vector2 topLeft, Vector4 color, bool filled)
     {
         var contentOrigin = topLeft + new Vector2(metrics.PaddingX, metrics.PaddingY);
         var contentHeight = Math.Max(metrics.IconSize.Y, metrics.TextSize.Y);
@@ -693,8 +694,19 @@ internal static class Widgets
         var drawList = ImGui.GetWindowDrawList();
         var colorU32 = ImGui.GetColorU32(color);
 
-        // Outline only, no fill — a filled or heavy chip would compete with Brand.Gold's other use
-        // as a prominent "shiny" accent, when this is meant to read as a light badge.
+        // A faint wash of the chip's own color, for a chip that has to be noticed rather than
+        // merely found. Off by default: an accent chip is already prominent from its color alone,
+        // and filling it would make it compete with the surrounding copy. A muted chip has the
+        // opposite problem — the color that keeps it from shouting also keeps it from registering
+        // — so weight substitutes for the loudness it deliberately gives up.
+        if (filled)
+        {
+            var wash = color with { W = color.W * 0.16f };
+            drawList.AddRectFilled(
+                topLeft, topLeft + metrics.ChipSize, ImGui.GetColorU32(wash), metrics.Rounding);
+        }
+
+        // Always drawn: it is what gives an unfilled chip its shape.
         drawList.AddRect(
             topLeft, topLeft + metrics.ChipSize, colorU32, metrics.Rounding, ImDrawFlags.None,
             metrics.Thickness);
@@ -769,7 +781,12 @@ internal static class Widgets
     /// <param name="icon">The glyph drawn before the text, at a smaller scale than the text.</param>
     /// <param name="text">The chip's label.</param>
     /// <param name="color">The color shared by the outline, the icon, and the text.</param>
-    internal static void DrawChip(IFontHandle iconFont, FontAwesomeIcon icon, string text, Vector4 color)
+    /// <param name="filled">
+    /// True to wash the chip with a faint tint of its own color. For a chip whose color is muted
+    /// on purpose and would otherwise be easy to skim past.
+    /// </param>
+    internal static void DrawChip(
+        IFontHandle iconFont, FontAwesomeIcon icon, string text, Vector4 color, bool filled = false)
     {
         var metrics = MeasureChip(iconFont, icon, text);
 
@@ -784,7 +801,7 @@ internal static class Widgets
         // regardless of each item's own height. Offsetting by half the leftover height centers the
         // shorter chip inside that shared row.
         var topLeft = ImGui.GetCursorScreenPos() + new Vector2(0f, (rowHeight - metrics.ChipSize.Y) / 2f);
-        PaintChip(iconFont, metrics, topLeft, color);
+        PaintChip(iconFont, metrics, topLeft, color, filled);
 
         // Reserve the full row height (not just the chip's own, shorter height) so the chip's
         // footprint matches what every other item on this row already occupies — keeping the row's
@@ -849,6 +866,6 @@ internal static class Widgets
             rightEdgeScreenX - margin - metrics.ChipSize.X,
             rowMin.Y + ((rowHeight - metrics.ChipSize.Y) / 2f));
 
-        PaintChip(iconFont, metrics, topLeft, color);
+        PaintChip(iconFont, metrics, topLeft, color, filled: false);
     }
 }

@@ -221,6 +221,27 @@ explicitly** and list the in-game QA steps needed — do NOT imply the build/tes
 classified ✓, zero un-reviewed sites. "We fixed the ones we found" ≠ "we found them all";
 re-grep to confirm no site of the pattern remains unhandled.
 
+#### Two rules for QA that only looks like it passed
+
+**For a deliberately-absent state, absence on screen is not evidence.** A badge that failed to
+draw and a badge the code *deliberately withheld* look identical in a screenshot — one is a bug,
+the other is the feature working. So do not accept "I didn't see it" as a pass. Read the state the
+code actually persisted or returned: the config key, the settings file, the collection the method
+handed back. That step routinely reverses what a result meant, on changes where the screen alone
+would have recorded a pass.
+
+The same trap has a quieter form: a value that fell back. A server string that never arrived
+renders as the generic fallback, which looks perfectly correct on its own. When a test's subject is
+*which* of two texts appeared, assert the exact string — "the tooltip showed something" is not the
+claim being tested.
+
+**When the claim is "nothing happened", prove a positive instead.** Observing an absence is weak
+(you cannot distinguish "it correctly did nothing" from "it never ran"), and it usually costs more
+to set up than it is worth. Look for a signal that only fires on the path you care about and assert
+*that*: a log line emitted only after the match you are testing, a counter that moves, a returned
+list whose contents you can diff before and after. Turning "nothing was uploaded" into "the
+collector recognized the item and refused it" makes the same guarantee observable.
+
 ### 7.5 Comment Sweep — the last gate, every time
 
 **Run this AFTER every fix is applied and the build is green.** One `general-purpose` subagent
@@ -277,6 +298,35 @@ replacement stating the durable fact. End with a count.
 again** — your fixes are new comments, and they are exactly as suspect as the ones they
 replace. Iterate until a sweep comes back clean.
 
+#### Length is part of the sweep
+
+A comment or doc row that keeps growing stops being read. Every sweep must also **measure** what
+the change touched and rewrite or split anything over its budget — a long entry is a finding, not
+a style preference:
+
+| Surface | Budget | What to do when it's over |
+|---|---|---|
+| `docs/dalamud-compliance.md` table row | **1200 characters** | Keep the rule, its enforcement, and the file refs in the row. Move case-by-case reasoning to a bullet in "Project conventions that go beyond the letter of the rules" below the table, and point at it from the row. |
+| A source line this change ADDED | **110 characters** | Rewrap. (The repo has no `max_line_length`; its own distribution is p95=100, p99=105, so 110 is the tail, not a new rule. Judge added lines only — the file's existing lines are not this change's business.) |
+| A single XML `<remarks>` block | ~15 lines | Split into `<para>`s, or move the argument to the one canonical home and cross-reference. |
+
+Measure, don't eyeball — a table row grows a clause at a time, and no reviewer notices the
+tenth one:
+
+```bash
+# Compliance rows, longest first. Anything over 1200 gets rewritten or split.
+perl -ne 'chomp; print length($_)."  ".substr($_,0,60)."\n" if /^\| \*\*/' \
+  docs/dalamud-compliance.md | sort -rn | head
+
+# Over-long lines among the ones this change ADDED (the leading + is stripped before measuring).
+git diff HEAD -U0 -- '*.cs' | grep '^+[^+]' | cut -c2- \
+  | perl -ne 'chomp; print length($_).": ".$_."\n" if length($_) > 110'
+```
+
+`perl` rather than `awk`: skill arguments are substituted into `$1` and `$2` before this file is
+read, so an awk snippet using positional variables arrives corrupted whenever the skill is invoked
+with arguments. Perl's `$_` is untouched.
+
 #### The grep is a hint, never the check
 
 ```bash
@@ -325,3 +375,5 @@ If every reviewer found nothing, "All reviewers passed with no findings" is a va
 | Treating a clean grep as a clean comment check | The grep matches phrasing. A comment that is simply FALSE now matches nothing. Run the sweep. |
 | Sweeping once and shipping | Your comment fixes are new comments. Re-sweep until a round comes back clean. |
 | Assuming a comment that was true when written is still true | A later fix can make it unreachable. Rule 4 exists for exactly this. |
+| Accepting "I did not see it" as a pass | A withheld state and a broken one look identical on screen. Read what the code persisted or returned. |
+| Testing that nothing happened by watching for nothing | You cannot tell "correctly did nothing" from "never ran". Assert a signal that only the path you care about emits. |

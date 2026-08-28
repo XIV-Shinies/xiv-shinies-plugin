@@ -86,9 +86,25 @@ internal sealed partial class MainWindow : Window, IDisposable
     // background and is never disposed here.
     private readonly ISharedImmediateTexture mascotTexture;
 
-    // The running version, shown in the masthead — the same string the uploads carry, so what a
-    // user reads in a bug report matches what the server saw.
+    // The version drawn in the masthead. Cosmetic only — uploads and the pasted diagnostic read
+    // the real assembly version.
+#if DEBUG
+    // Assignable in a development build so screenshots can be captured showing the version the
+    // release will carry, before the release flow sets it. See OverrideVersionForScreenshots.
+    //
+    // volatile because the seeding command writes it from the framework thread while the draw
+    // thread reads it — the same reason UploadLog marks its entry list volatile. A reference
+    // assignment is atomic, so the worst case is a frame of staleness.
+    private volatile string pluginVersion;
+#else
     private readonly string pluginVersion;
+#endif
+
+    // The version the plugin is actually running, for the pasted diagnostic. Held apart from the
+    // masthead's copy so the screenshot override cannot reach it: the dump's whole job is to be
+    // trusted by whoever reads a bug report, and a version it cannot vouch for makes every other
+    // line in it suspect too.
+    private readonly string diagnosticVersion;
 
     // The upload log's table renderer, which captures each collector's display name at
     // construction — the collector list is fixed for the plugin's lifetime.
@@ -100,6 +116,8 @@ internal sealed partial class MainWindow : Window, IDisposable
     private static readonly (FontAwesomeIcon Icon, Vector4 IconColor, string Label, string Id, string Url)[]
         LinkButtons =
         {
+            // The project's website, not the configured backend: this row is brand links, sitting
+            // beside Discord and the source repository, rather than anything about the sync target.
             (FontAwesomeIcon.Globe, Brand.Teal, "xiv-shinies.com", "###linkSite", BackendUrl.Default),
             (FontAwesomeIcon.Comments, Brand.Teal, "Discord", "###linkDiscord", PluginMeta.DiscordUrl),
             (FontAwesomeIcon.Code, Brand.Teal, "Source code", "###linkSource", PluginMeta.SourceUrl),
@@ -113,7 +131,14 @@ internal sealed partial class MainWindow : Window, IDisposable
     // badge for the rest of the session by remembering it here — otherwise the badge would vanish one
     // frame after appearing, since the very next frame's rebuild would report it as no longer new.
     // See DrawGroupCheckboxes for the full lifecycle.
-    private readonly HashSet<string> seenThisSession = new();
+    private readonly HashSet<string> groupsBadgedThisSession = new();
+
+    // The same lifecycle as groupsBadgedThisSession, for whole collections rather than the groups
+    // inside one. Kept as its own set rather than sharing that one: a category key and a group key
+    // come from different namespaces — ours and the server's — so nothing stops the two from
+    // colliding, and one shared set would light a collection's badge because a group that happened
+    // to share its key had been drawn.
+    private readonly HashSet<string> categoriesBadgedThisSession = new();
 
     // Whether the wizard has put per-group consent checkboxes on screen during THIS frame. Reset at
     // the top of every wizard frame and set by DrawGroupCheckboxes when it actually draws a group row,
@@ -174,6 +199,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         this.mascotTexture = mascotTexture;
         this.iconFont = iconFont;
         this.pluginVersion = pluginVersion;
+        this.diagnosticVersion = pluginVersion;
         verifier = new TokenVerifier(apiClient);
         uploadLogTable = new UploadLogTable(collectors);
 
@@ -208,6 +234,31 @@ internal sealed partial class MainWindow : Window, IDisposable
         // like the token vanished.
         tokenInput = configuration.Settings.Token;
     }
+
+#if DEBUG
+    /// <summary>
+    /// Shows a different version in the masthead, for capturing screenshots that carry the version
+    /// a release will ship as.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Screenshots for a release are taken before the release flow bumps the version, so a window
+    /// captured now shows the version being replaced. The flow that sets the real version is the
+    /// only thing allowed to write it, and a screenshot's needs are not a reason to bump it early
+    /// — so a development build is told what to draw instead, and the project file is untouched.
+    /// </para>
+    /// <para>
+    /// DEBUG-only, and confined to the masthead: the uploads carry the real assembly version, and
+    /// so does the pasted diagnostic, which reads <c>diagnosticVersion</c> instead.
+    /// </para>
+    /// <para>
+    /// A leading "v" is dropped because the masthead adds one itself — typing a version the way it
+    /// is written in a tag would otherwise photograph with the letter doubled.
+    /// </para>
+    /// </remarks>
+    public void OverrideVersionForScreenshots(string version) =>
+        pluginVersion = version.TrimStart('v', 'V');
+#endif
 
     /// <summary>Cancels any token probe still in flight and releases the owned fonts.</summary>
     /// <remarks>The icon font is borrowed from Dalamud and deliberately not disposed here.</remarks>
@@ -268,6 +319,21 @@ internal sealed partial class MainWindow : Window, IDisposable
         Size = new Vector2(
             Math.Min(560f, displayLogical.X * 0.45f),
             Math.Min(620f, displayLogical.Y * 0.70f));
+    }
+
+    /// <summary>
+    /// Retires the badges shown during this visit, so reopening the window does not show them again.
+    /// </summary>
+    /// <remarks>
+    /// The two session sets keep a badge on screen after its seen flag is persisted (see the
+    /// fields' own note). Closing the window is the user finishing with the list, which makes it
+    /// the moment to drop them: the window object lives as long as the plugin, so without this the
+    /// chips would linger until the plugin unloaded, long after they had been seen and acted on.
+    /// </remarks>
+    public override void OnClose()
+    {
+        categoriesBadgedThisSession.Clear();
+        groupsBadgedThisSession.Clear();
     }
 
     /// <summary>
@@ -507,8 +573,40 @@ internal sealed partial class MainWindow : Window, IDisposable
         Widgets.DrawSectionLabel(label, activeCardInnerRight);
 
     /// <summary>Binds this window's icon font to <see cref="Widgets.DrawChip"/>.</summary>
-    private void DrawChip(FontAwesomeIcon icon, string text, Vector4 color) =>
-        Widgets.DrawChip(iconFont, icon, text, color);
+    private void DrawChip(FontAwesomeIcon icon, string text, Vector4 color, bool filled = false) =>
+        Widgets.DrawChip(iconFont, icon, text, color, filled);
+
+    // The configured host and the setting it was derived from, so BackendHost can tell a repeat
+    // question from a changed answer. Empty until first asked.
+    private string? backendHostSource;
+    private string backendHost = string.Empty;
+
+    /// <summary>The server this plugin is configured to talk to, named for the reader.</summary>
+    /// <remarks>
+    /// <para>
+    /// Every sentence in this window that names the service asks here, so they all name the same
+    /// server. <see cref="BackendUrl.DisplayHost"/> owns the reasoning and the fallback.
+    /// </para>
+    /// <para>
+    /// Derived once per distinct setting rather than once per call. Several callers sit in
+    /// always-visible draw paths, and deriving a host means parsing a URL — the same per-frame
+    /// garbage the link row above is static to avoid. The cached value is keyed on the setting it
+    /// came from, so editing the config still takes effect without a restart.
+    /// </para>
+    /// </remarks>
+    private string BackendHost()
+    {
+        var configured = configuration.Settings.BaseUrl;
+
+        // DisplayHost never answers with an empty string, so an empty cache means "not yet asked".
+        if (backendHost.Length == 0 || backendHostSource != configured)
+        {
+            backendHostSource = configured;
+            backendHost = BackendUrl.DisplayHost(configured);
+        }
+
+        return backendHost;
+    }
 
     /// <summary>Binds this window's icon font to <see cref="Widgets.ChipWidth"/>.</summary>
     private float ChipWidth(FontAwesomeIcon icon, string text) =>

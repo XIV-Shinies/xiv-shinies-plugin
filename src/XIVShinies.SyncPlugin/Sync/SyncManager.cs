@@ -394,6 +394,78 @@ internal sealed class SyncManager : IDisposable
     /// <summary>Empties the upload log, for the settings window's clear button.</summary>
     public void ClearUploadHistory() => uploadLog.Clear();
 
+#if DEBUG
+    /// <summary>
+    /// Replaces the upload log with fabricated entries for capturing screenshots of it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// DEBUG-only, like <see cref="UploadLogSeed"/> itself — a released plugin must never be able
+    /// to show a user invented sync history. Clears first so repeated runs give the same picture
+    /// rather than piling seeded rows on top of each other and on top of real ones.
+    /// </para>
+    /// <para>
+    /// A seeded window has to be self-consistent everywhere the shutter can see, not only in the
+    /// surface being aimed at — so the sync card's own state and the remembered read statuses are
+    /// moved to match, and only collections that would really be collected are seeded. Each of
+    /// those is explained where it happens below.
+    /// </para>
+    /// </remarks>
+    public void SeedUploadHistoryForScreenshots(
+        IReadOnlyList<ICollector> collectors, DateTimeOffset now)
+    {
+        uploadLog.Clear();
+
+        // The remembered per-COLLECTION statuses. They survive across passes and are only reset at
+        // logout, so a collection a real pass could not read keeps saying "not read yet" under a
+        // seeded log whose newest rows say it synced. Cleared rather than invented: every seeded row
+        // read everything it carried, which is what an unmarked list already says.
+        //
+        // The per-CONTAINER notes are deliberately left alone. They are real readings of the
+        // player's own storage, and the log makes no claim about any individual container — "Tracked
+        // items 156" beside "Saddlebag not scanned" is what a real session looks like, not a
+        // contradiction. Clearing them would empty the panel's Containers row entirely, which is a
+        // feature the screenshot exists to show.
+        lastSkipped = new Dictionary<string, string>();
+        lastPartialNotes = new Dictionary<string, string>();
+        lastCollectedDetails = new Dictionary<string, string>();
+
+        // Only what would really be collected, decided by the gate a real pass asks. A collection
+        // the user or the server has switched off draws no chip in the panel above, so a row
+        // claiming it synced would contradict the same window — and which collections are off
+        // depends on the backend the developer is pointed at, which is exactly the sort of thing a
+        // screenshot records without anyone noticing.
+        var config = remoteConfig;
+        var collectable = new List<ICollector>(collectors.Count);
+        foreach (var collector in collectors)
+        {
+            if (CollectorGate.IsEnabled(collector.CategoryKey, settings, config))
+                collectable.Add(collector);
+        }
+
+        var entries = UploadLogSeed.Build(collectable, now);
+        foreach (var entry in entries)
+            uploadLog.Record(entry);
+
+        // The "Reading from:" panel is drawn only once a pass has run, so without this a seeded
+        // window shows a full upload log above the empty space where the panel belongs — and the
+        // panel is one of the surfaces the screenshots exist to capture. The cleared status maps
+        // above make it report every switched-on collection as read, which is what the seeded rows
+        // already claim.
+        if (entries.Count > 0)
+            hasCollected = true;
+
+        // Taken from the newest seeded entry rather than restated, so the card and the log's top
+        // row can never disagree about when the last upload happened.
+        if (entries.Count > 0)
+        {
+            var newest = entries[^1];
+            lastStatusCode = (int)newest.Status;
+            lastSyncedAtBox = newest.At;
+        }
+    }
+#endif
+
     /// <summary>
     /// Why each category was skipped by the last collection pass. Empty before the first pass.
     /// </summary>
@@ -1132,8 +1204,17 @@ internal sealed class SyncManager : IDisposable
             // Categories the server refused (a per-category kill switch). Surfaced so the user is not
             // left wondering why a collection never appears on the website.
             var skipped = response.Value?.SkippedCategories;
-            if (skipped is {Count: > 0})
-                log.Information($"Server skipped: {string.Join(", ", skipped)}");
+
+            // Folded and bounded like every other adopted server string: the log is a durable
+            // sink the user pastes into bug reports, and these names come from an overridable
+            // backend — a newline inside one would let it forge its own log lines. The join runs
+            // before the bound, which is safe only because the response body these names were
+            // parsed from is itself capped at ApiClient.MaxResponseBytes.
+            if (skipped is {Count: > 0}
+                && ServerText.SingleLine(string.Join(", ", skipped)) is { } names)
+            {
+                log.Information($"Server skipped: {names}");
+            }
 
             return true;
         }

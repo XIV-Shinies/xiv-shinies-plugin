@@ -40,6 +40,30 @@ public class ManifestConsentTests
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] { 1 });
     }
 
+    // Pins the exclusion the one no-click consent path depends on: a category whose groups the
+    // user answers separately is left out. See ManifestConsent.FixedScopeCategoryKeys for why.
+    [Fact]
+    public void Only_categories_a_tick_settles_on_their_own_have_a_fixed_scope()
+    {
+        var keys = ManifestConsent.FixedScopeCategoryKeys(new[]
+        {
+            new FakeCollector("quests", usesItemManifest: false),
+            new FakeCollector("items", usesItemManifest: true),
+            new FakeCollector("orchestrionRolls", usesItemManifest: false),
+        });
+
+        Assert.Equal(new[] { "quests", "orchestrionRolls" }, keys);
+    }
+
+    [Fact]
+    public void A_list_of_only_manifest_driven_categories_has_no_fixed_scope_keys()
+    {
+        Assert.Empty(ManifestConsent.FixedScopeCategoryKeys(new[]
+        {
+            new FakeCollector("items", usesItemManifest: true),
+        }));
+    }
+
     [Fact]
     public void A_manifest_driven_category_the_user_opted_into_is_found()
     {
@@ -107,8 +131,17 @@ public class ManifestConsentTests
     // written together. These rules decide what the user actually consented to, which is why they live
     // here and not in the draw code.
 
-    private static ItemGroupRow GroupRow(string key, bool enabled = false) =>
-        new() { Key = key, Label = $"{key} label", Enabled = enabled, IsNew = false };
+    // The parent defaults to server-permitted: these tests are about the consent rules between a
+    // category and its groups, and a server-off parent is a separate concern with its own tests.
+    private static ItemGroupRow GroupRow(string key, bool enabled = false, bool parentServerEnabled = true) =>
+        new()
+        {
+            Key = key,
+            Label = $"{key} label",
+            Enabled = enabled,
+            ParentServerEnabled = parentServerEnabled,
+            IsNew = false,
+        };
 
     private static CategorySettingsRow Row(
         string key,
@@ -353,5 +386,30 @@ public class ManifestConsentTests
     public void No_config_at_all_is_not_a_consent_problem()
     {
         Assert.False(ManifestConsent.GroupsOfferedButNoneEnabled(new CollectContext()));
+    }
+
+    // --- Whether the select-all has anything to act on ---------------------------------------
+
+    // No permitted row means nothing to act on.
+    [Fact]
+    public void No_server_enabled_row_means_the_select_all_has_nothing_to_act_on()
+    {
+        var rows = new[] {Row("quests", serverEnabled: false), Row("mounts", serverEnabled: false)};
+
+        Assert.False(ManifestConsent.AnyServerEnabled(rows));
+    }
+
+    [Fact]
+    public void One_server_enabled_row_is_enough_for_the_select_all_to_act_on()
+    {
+        var rows = new[] {Row("quests", serverEnabled: false), Row("mounts", serverEnabled: true)};
+
+        Assert.True(ManifestConsent.AnyServerEnabled(rows));
+    }
+
+    [Fact]
+    public void An_empty_list_means_the_select_all_has_nothing_to_act_on()
+    {
+        Assert.False(ManifestConsent.AnyServerEnabled(Array.Empty<CategorySettingsRow>()));
     }
 }

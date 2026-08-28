@@ -49,9 +49,13 @@ internal sealed partial class MainWindow
     {
         // The website's name is picked out in the brand gold mid-sentence, which TextWrapped cannot
         // do — hence the span helper.
+        //
+        // The configured server rather than the official name: this sentence states where the
+        // user's collections are sent, on the first screen they see and before they have consented
+        // to anything, so it has to name the server that will actually receive them.
         Widgets.DrawWrappedSpans(
             ($"{PluginMeta.DisplayName} reads what you have collected in game and uploads it to", null),
-            ("xiv-shinies.com,", Brand.Gold),
+            ($"{BackendHost()},", Brand.Gold),
             ("so the website knows what you own without you ticking it off by hand.", null));
 
         Widgets.SectionGap();
@@ -107,9 +111,10 @@ internal sealed partial class MainWindow
         }
 
         Widgets.SectionGap();
+        // Names the server the data is actually sent to — see MainWindow.BackendHost.
         DrawPrivacyCard(
             "Your character is identified by a one-way fingerprint computed on this machine. " +
-            "Your character's name and home world are sent so xiv-shinies.com can match the " +
+            $"Your character's name and home world are sent so {BackendHost()} can match the " +
             "character you already claimed. Nothing is uploaded until you finish this setup, " +
             "and you choose which of the above to include.");
 
@@ -151,9 +156,11 @@ internal sealed partial class MainWindow
         // player's own progress), while the live tracker's box starts ticked because it shares
         // world state — and it is on this very screen, so unticking it is one click before
         // anything can send.
+        // Scoped to the collections on this screen, because the last box below offers to start
+        // collections added by later updates switched on.
         ImGui.TextWrapped(
-            "Choose what to upload. Collections start switched off — nothing about your " +
-            "progress is sent unless you turn it on here. Sharing live Occult instance state " +
+            "Choose what to upload. The collections below all start switched off — nothing about " +
+            "your progress is sent unless you turn it on here. Sharing live Occult instance state " +
             "starts on; untick it below if you would rather not. You can change any of this later.");
 
         Widgets.SectionGap();

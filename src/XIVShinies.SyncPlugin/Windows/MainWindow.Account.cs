@@ -42,8 +42,10 @@ internal sealed partial class MainWindow
             Widgets.AlignRight(openWidth, innerRight);
             var openButtonPos = ImGui.GetCursorPos();
 
+            // The configured server rather than the official one, and validated on the way out —
+            // see BackendUrl.ProfileUrl.
             if (BoldButton("###openProfile", new Vector2(openWidth, 0f)))
-                Util.OpenLink($"{BackendUrl.Default}/profile");
+                Util.OpenLink(BackendUrl.ProfileUrl(configuration.Settings.BaseUrl));
 
             DrawButtonFeedback(
                 openButtonPos, openWidth, FontAwesomeIcon.Globe, Brand.Teal,
@@ -51,8 +53,9 @@ internal sealed partial class MainWindow
 
             CloseCardHeader();
 
+            // Names the configured server, matching where the button above actually goes.
             DrawWrapped(
-                "Create a plugin token in your profile settings on xiv-shinies.com, then paste " +
+                $"Create a plugin token in your profile settings on {BackendHost()}, then paste " +
                 "it below. The token is shown once and can be revoked at any time.",
                 ImGuiCol.Text);
 
@@ -161,7 +164,7 @@ internal sealed partial class MainWindow
                 break;
 
             case TokenFeedbackKind.Checking:
-                ImGui.TextUnformatted("Checking with xiv-shinies.com...");
+                ImGui.TextUnformatted($"Checking with {BackendHost()}...");
                 break;
 
             case TokenFeedbackKind.Accepted:
@@ -179,7 +182,8 @@ internal sealed partial class MainWindow
                 break;
 
             case TokenFeedbackKind.Unreachable:
-                DrawWarning("Could not reach xiv-shinies.com. Your token may be fine — try again.");
+                DrawWarning(
+                    $"Could not reach {BackendHost()}. Your token may be fine — try again.");
                 break;
         }
     }
@@ -190,14 +194,17 @@ internal sealed partial class MainWindow
     /// </summary>
     private void DrawClaimedCharacters()
     {
-        if (account is null)
+        // `is not { } characters` also catches an explicit JSON null, which gets past `required`
+        // (see ApiJson) — and this runs on the draw path, where a throw takes the whole window
+        // down with it.
+        if (account?.Characters is not { } characters)
             return;
 
-        if (account.Characters.Count == 0)
+        if (characters.Count == 0)
         {
             DrawWarning(
                 "This account has not claimed any characters yet. Claim your character on " +
-                "xiv-shinies.com first, or uploads will be refused.");
+                $"{BackendHost()} first, or uploads will be refused.");
             return;
         }
 
@@ -206,13 +213,34 @@ internal sealed partial class MainWindow
         // A caption over the list; the character names beneath it are what the user reads.
         ImGui.TextDisabled("Claimed characters:");
 
-        foreach (var character in account.Characters)
+        // Bounded like every server-sized list this window draws each frame: the count is the
+        // server's to choose, and no honest account carries dozens of characters, so the ceiling
+        // only ever cuts a hostile backend.
+        const int MaxDrawnCharacters = 32;
+        var drawn = 0;
+
+        foreach (var character in characters)
         {
+            // A null element is server data gone wrong; skipped rather than thrown on.
+            if (character is null)
+                continue;
+
+            if (drawn == MaxDrawnCharacters)
+            {
+                ImGui.TextDisabled($"…and {characters.Count - drawn} more.");
+                break;
+            }
+
+            drawn++;
+
             // A person glyph rather than ImGui.Bullet — the round bullet reads like a radio button
             // next to this window's checkboxes.
             DrawIcon(FontAwesomeIcon.User, Brand.Teal);
             ImGui.SameLine();
-            ImGui.TextUnformatted($"{character.Name} ({character.World})");
+            // Folded and bounded like every other adopted server string: these are Lodestone
+            // values on an honest backend, and the backend is user-overridable.
+            ImGui.TextUnformatted(
+                $"{ServerText.SingleLine(character.Name)} ({ServerText.SingleLine(character.World)})");
         }
 
         // The list is a snapshot from the last probe, and nothing about it says so — a user who
@@ -224,7 +252,7 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
         DrawWrapped(
-            "Claimed a new character on xiv-shinies.com? Press Verify to refresh this list.",
+            $"Claimed a new character on {BackendHost()}? Press Verify to refresh this list.",
             ImGuiCol.Text);
     }
 
@@ -236,8 +264,8 @@ internal sealed partial class MainWindow
     /// <remarks>
     /// Runs through the upload gate: a Verify press is direct user action, but this is automatic,
     /// so it must respect the same consent switches as every other unprompted request. The flag is
-    /// deliberately not reset on failure — "could not reach xiv-shinies.com" plus the Verify
-    /// button to retry by hand is the honest resting state, not a silent retry loop.
+    /// deliberately not reset on failure — the unreachable notice plus the Verify button to retry
+    /// by hand is the honest resting state, not a silent retry loop.
     /// </remarks>
     private void TryAutoVerifyToken()
     {

@@ -20,6 +20,13 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// facts, so the log still carries no ids — just enough to answer "did this category's contents
 /// change since last time?".
 /// <para>
+/// <paramref name="Count"/> is null when the pass read none of what the category is about while
+/// still having something to send (see <see cref="CollectResult.NothingReadThisPass"/>). That is
+/// not the same as a count of zero: zero is a measurement, null is the absence of one. A null
+/// count makes no claim about the category's contents, so the content diff passes over it; a
+/// manifest-driven category is still compared on its owned-entry count.
+/// </para>
+/// <para>
 /// <paramref name="UsesItemManifest"/> mirrors the collector's own
 /// <see cref="Collectors.ICollector.UsesItemManifest"/> flag. It decides the category's change
 /// signal: a manifest-driven category's contents move whenever the server edits the manifest, so
@@ -41,7 +48,7 @@ namespace XIVShinies.SyncPlugin.Sync;
 // one line — the C# shorthand for a tiny immutable data shape.
 public sealed record UploadLogCategory(
     string Key,
-    int Count,
+    int? Count,
     string Fingerprint = "",
     bool UsesItemManifest = false,
     int? OwnedCount = null);
@@ -69,7 +76,7 @@ public sealed record UploadLogEntry
     /// version). The backend is user-overridable and therefore untrusted; entries persist for up
     /// to twenty uploads and render in ImGui, so adopted text is clamped at the door.
     /// </summary>
-    public const int MaxServerStringLength = 500;
+    public const int MaxServerStringLength = ServerText.MaxAdoptedLength;
 
     /// <summary>
     /// How the attempt ended. A draft carries <see cref="ApiStatus.Unknown"/> until the response
@@ -82,6 +89,40 @@ public sealed record UploadLogEntry
 
     /// <summary>The categories this pass could not read, keyed by category, with the reason code.</summary>
     public required IReadOnlyDictionary<string, string> Skipped { get; init; }
+
+    /// <summary>
+    /// The keys from <see cref="Skipped"/> that represent something going wrong, in key order.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A category the user switched off is skipped, but nothing failed — they chose not to send
+    /// it, and the consent list already shows that choice. Listing it as unread would report a
+    /// deliberate decision as a fault, and every user who leaves a collection unticked would carry
+    /// a permanent complaint in their log.
+    /// </para>
+    /// <para>
+    /// Filtered on the REASON, never on a category, so nothing here knows which collections exist.
+    /// The full <see cref="Skipped"/> map is left intact for the pasted diagnostic, where
+    /// "disabled" is exactly the answer to "why did this not sync?".
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> UnreadableCategoryKeys
+    {
+        get
+        {
+            var keys = new List<string>(Skipped.Count);
+            foreach (var (key, reason) in Skipped)
+            {
+                if (!string.Equals(reason, CollectSkipReasons.Disabled, StringComparison.Ordinal))
+                    keys.Add(key);
+            }
+
+            // Sorted so the line reads the same twice running: the underlying map is a Dictionary,
+            // whose enumeration order is not part of its contract.
+            keys.Sort(StringComparer.Ordinal);
+            return keys;
+        }
+    }
 
     // --- Failure diagnostics -----------------------------------------------------------------
     // Optional, and filled at settle time (except the manifest version, known at build time).
@@ -138,9 +179,20 @@ public sealed record UploadLogEntry
         foreach (var (key, facts) in snapshot.Collections)
         {
             var manifestDriven = snapshot.ManifestDrivenKeys.Contains(key);
+
+            // No count at all where the collector read none of what it is about; otherwise the
+            // collector's own count wins where it gave one, since it knows which part of its facts
+            // is the thing being counted and the shape count below cannot (see
+            // CollectResult.FactCount). Most categories give none, and are counted from shape.
+            var count = snapshot.NothingReadKeys.Contains(key)
+                ? (int?)null
+                : snapshot.FactCounts.TryGetValue(key, out var reported)
+                    ? reported
+                    : CountFacts(facts);
+
             categories.Add(new UploadLogCategory(
                 key,
-                CountFacts(facts),
+                count,
                 Fingerprint(facts),
                 manifestDriven,
                 manifestDriven ? CountOwned(facts) : null));
@@ -155,10 +207,10 @@ public sealed record UploadLogEntry
             Skipped = snapshot.Skipped,
 
             // A content hash (12 chars from our server), but the backend is user-overridable, so
-            // clamp it like every other adopted server string before it persists in the log.
-            ManifestVersion = manifestVersion is { Length: > MaxServerStringLength }
-                ? manifestVersion[..MaxServerStringLength]
-                : manifestVersion,
+            // clamp it like every other adopted server string before it persists in the log. No
+            // ellipsis: this is a hash a reader checks back against the server's, so a trailing
+            // marker would make it unrecognizable.
+            ManifestVersion = manifestVersion is null ? null : ServerText.Clamp(manifestVersion),
         };
     }
 
@@ -350,14 +402,14 @@ public static class UploadLogDiff
     /// manifest-driven category, a different owned-entry count.
     /// </summary>
     /// <remarks>
-    /// The baseline is the nearest OLDER entry that mentions the category, not simply the
-    /// previous entry: an unlock upload carries only the categories that changed, so in-between
-    /// entries may not mention a category at all. A category the log has never seen before is
-    /// not flagged — with no baseline, "changed" would be a guess, and it would paint the whole
-    /// first upload of every session. Manifest-driven categories compare their owned-entry
-    /// count rather than their contents — <see cref="UploadLogCategory"/> explains why a
-    /// content diff cannot carry their signal — and stay unflagged when either side has no
-    /// owned count to offer.
+    /// The baseline is the nearest OLDER entry that MEASURED the category — not simply the
+    /// previous entry, and not merely one that mentions it: an unlock upload carries only the
+    /// categories that changed, and a carried category may go out with no reading of its own.
+    /// A category the log has never seen before is not flagged — with no baseline, "changed"
+    /// would be a guess, and it would paint the whole first upload of every session.
+    /// Manifest-driven categories compare their owned-entry count rather than their contents —
+    /// <see cref="UploadLogCategory"/> explains why a content diff cannot carry their signal —
+    /// and stay unflagged when either side has no owned count to offer.
     /// </remarks>
     public static IReadOnlySet<string> ChangedCategories(
         IReadOnlyList<UploadLogEntry> newestFirst, int index)
@@ -369,7 +421,7 @@ public static class UploadLogDiff
             // `is not { } baseline` is a null test and an unwrap in one: the loop moves on when
             // no baseline exists, and every line past it has `baseline` as the record inside
             // the nullable.
-            if (Baseline(newestFirst, index, category.Key) is not { } baseline)
+            if (Baseline(newestFirst, index, category) is not { } baseline)
                 continue;
 
             if (category.UsesItemManifest)
@@ -384,6 +436,12 @@ public static class UploadLogDiff
                 continue;
             }
 
+            // A category that read nothing this pass makes no claim about its contents, so it
+            // cannot have changed. The baseline it would otherwise be compared against is the last
+            // pass that measured, and "different from a reading taken earlier" is not movement.
+            if (category.Count is null)
+                continue;
+
             if (baseline.Count != category.Count
                 || baseline.Fingerprint != category.Fingerprint)
             {
@@ -396,16 +454,36 @@ public static class UploadLogDiff
 
     /// <summary>
     /// The category's entry in the nearest log row older than <paramref name="index"/> that
-    /// mentions it, or null when no older row does.
+    /// measured it, or null when no older row did.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Rows that carried the category without measuring it are passed over, not treated as the
+    /// baseline: they hold nothing to compare against. Skipping them means the last row that
+    /// actually measured stays the point of comparison, so an unmeasured pass in the middle
+    /// neither hides a real change nor invents one.
+    /// </para>
+    /// <para>
+    /// Which number counts as the measurement depends on the category, so the caller's own
+    /// category decides it — a manifest-driven one is compared on its owned-entry count, every
+    /// other on its fact count (<see cref="UploadLogCategory"/> explains why they differ).
+    /// </para>
+    /// </remarks>
     private static UploadLogCategory? Baseline(
-        IReadOnlyList<UploadLogEntry> newestFirst, int index, string categoryKey)
+        IReadOnlyList<UploadLogEntry> newestFirst, int index, UploadLogCategory category)
     {
         for (var older = index + 1; older < newestFirst.Count; older++)
         {
             foreach (var baseline in newestFirst[older].Categories)
             {
-                if (baseline.Key == categoryKey)
+                if (baseline.Key != category.Key)
+                    continue;
+
+                var measured = category.UsesItemManifest
+                    ? baseline.OwnedCount is not null
+                    : baseline.Count is not null;
+
+                if (measured)
                     return baseline;
             }
         }
@@ -489,7 +567,11 @@ public static class UploadLogText
         if (issues.FieldErrors is { } fieldErrors)
         {
             foreach (var (field, messages) in fieldErrors)
-                parts.Add($"{field}: {string.Join("; ", messages)}");
+            {
+                // A null array is an explicit JSON null, which gets past `required` (see ApiJson)
+                // — and Join throws on a null collection even though it tolerates null elements.
+                parts.Add($"{field}: {string.Join("; ", messages ?? Array.Empty<string>())}");
+            }
         }
 
         if (parts.Count == 0)
@@ -497,10 +579,10 @@ public static class UploadLogText
 
         var text = string.Join(" · ", parts);
 
-        // Three periods, not the single "…" glyph — see MainWindow's Verify label for why.
-        return text.Length <= UploadLogEntry.MaxServerStringLength
-            ? text
-            : text[..UploadLogEntry.MaxServerStringLength] + "...";
+        // Folded as well as bounded: this is drawn in the log table, where a newline inside a
+        // server complaint would push the rest of the cell out of sight. SingleLine marks a cut
+        // the same way, and its null-for-blank answer matches this method's contract.
+        return ServerText.SingleLine(text);
     }
 
     /// <summary>
@@ -545,6 +627,78 @@ public static class UploadLogText
     }
 
     /// <summary>
+    /// The entry's categories ordered by the name the reader sees, for the window's Sent column.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The settings checklist and the sync card's chips both name the collections alphabetically, and
+    /// this column names the same collections a third time. Ordering all three the same way is what
+    /// lets a reader compare them by position instead of hunting for a name in each list.
+    /// </para>
+    /// <para>
+    /// A COPY is returned rather than the list being sorted in place. The entry records the order the
+    /// collectors ran in, which is a fact about the upload, and the clipboard export prints the
+    /// categories in exactly that order for whoever is debugging a payload — sorting the entry itself
+    /// would quietly rewrite that surface too.
+    /// </para>
+    /// </remarks>
+    /// <param name="categories">The entry's categories, in the order the collectors ran.</param>
+    /// <param name="displayNameFor">
+    /// The label the window draws for a category key. Passed in rather than looked up here so this
+    /// stays Dalamud-free and testable: the names come from the registered collectors, which only the
+    /// window can reach. Ordering on this rather than on the key matters because a key is a wire
+    /// identifier that need not resemble its label, so a key order would put the words on screen in an
+    /// order the reader cannot account for. Compared with OrdinalIgnoreCase: these labels are English
+    /// strings authored in this repo, so every user gets the same order whatever their locale.
+    /// </param>
+    public static IReadOnlyList<UploadLogCategory> InDisplayOrder(
+        IReadOnlyList<UploadLogCategory> categories,
+        Func<string, string> displayNameFor)
+    {
+        var ordered = new List<UploadLogCategory>(categories);
+
+        // A category key is unique within an entry, so the key breaks a tie between two collections
+        // that chose the same display name. List.Sort is unstable, so without a tie-break their
+        // order could differ between two runs over equal input.
+        ordered.Sort((left, right) =>
+        {
+            var byName = string.Compare(
+                displayNameFor(left.Key), displayNameFor(right.Key), StringComparison.OrdinalIgnoreCase);
+            return byName != 0 ? byName : string.Compare(left.Key, right.Key, StringComparison.Ordinal);
+        });
+
+        return ordered;
+    }
+
+    /// <summary>
+    /// The category keys ordered by the name the reader sees, for the window's "Could not read" line.
+    /// </summary>
+    /// <remarks>
+    /// The same rule as <see cref="InDisplayOrder"/> and for the same reason — the two lines sit in
+    /// one table cell, so a reader meets both orders at once. Keys rather than categories because
+    /// an unreadable category has nothing recorded about it beyond its key: it is named precisely
+    /// because nothing was collected for it.
+    /// </remarks>
+    /// <param name="categoryKeys">The unreadable category keys.</param>
+    /// <param name="displayNameFor">The label the window draws for a category key.</param>
+    public static IReadOnlyList<string> KeysInDisplayOrder(
+        IReadOnlyList<string> categoryKeys,
+        Func<string, string> displayNameFor)
+    {
+        var ordered = new List<string>(categoryKeys);
+
+        // Tie broken by the key, as in InDisplayOrder.
+        ordered.Sort((left, right) =>
+        {
+            var byName = string.Compare(
+                displayNameFor(left), displayNameFor(right), StringComparison.OrdinalIgnoreCase);
+            return byName != 0 ? byName : string.Compare(left, right, StringComparison.Ordinal);
+        });
+
+        return ordered;
+    }
+
+    /// <summary>
     /// The text spans the window prints for one sent category, each paired with whether it draws
     /// highlighted (gold). A span-based answer because one category can carry two independently
     /// colored parts: the label with its "(changed)" mark, and — for a manifest-driven category —
@@ -569,7 +723,14 @@ public static class UploadLogText
         string? proof,
         bool stepsProven)
     {
-        var label = $"{displayName} {category.Count:N0}";
+        // No count means the pass read none of what this category is about, so the column names
+        // that state instead of printing a number. Deliberately not worded around "read": that
+        // word belongs to the categories that never went out at all, both in this window's
+        // "Could not read:" line and in the settings panel's "not read yet" hints. This category
+        // was sent — the plugin simply saw none of the collection it is about.
+        var label = category.Count is { } count
+            ? $"{displayName} {count:N0}"
+            : $"{displayName} (none seen)";
         if (changed)
             label += " (changed)";
 
@@ -584,11 +745,17 @@ public static class UploadLogText
     /// matters: an empty category carries no information, so the server applies nothing and owes
     /// no proof answer for it.
     /// </summary>
+    /// <remarks>
+    /// A measured zero and an absent count are decided differently on purpose. Zero is a reading —
+    /// the category was measured and holds nothing — so the server owes no answer. Null is the
+    /// absence of a reading, and the facts went out regardless, so an answer may well be owed;
+    /// treating it as empty would silence the proof note exactly where a reader needs it.
+    /// </remarks>
     private static bool CarriesManifestDrivenFacts(UploadLogEntry entry)
     {
         foreach (var category in entry.Categories)
         {
-            if (category.UsesItemManifest && category.Count > 0)
+            if (category.UsesItemManifest && category.Count is > 0 or null)
                 return true;
         }
 
@@ -626,7 +793,14 @@ public static class UploadLogText
             text.Append(" | sent:");
             foreach (var category in entry.Categories)
             {
-                text.Append(' ').Append(category.Key).Append('=').Append(category.Count);
+                text.Append(' ').Append(category.Key).Append('=');
+
+                // A word rather than an empty slot or a zero: the paste is a diagnostic, and "the
+                // category went out carrying no reading" is exactly the fact a reader needs.
+                // Underscored to sit alongside the skip reason codes further down the same line.
+                text.Append(category.Count is { } sentCount
+                    ? sentCount.ToString(CultureInfo.InvariantCulture)
+                    : "none_seen");
 
                 // A manifest category's "changed:" flag compares this owned-entry count, not the
                 // fact count — printing it makes the flag (and its absence) verifiable from the

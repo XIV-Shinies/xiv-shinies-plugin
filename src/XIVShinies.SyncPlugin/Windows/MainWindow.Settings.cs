@@ -32,8 +32,9 @@ internal sealed partial class MainWindow
         BrandSeparator();
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Whether any manifest group anywhere in the list still counts as "New" (see AnyGroupIsNew).
-        var hasNewGroup = AnyGroupIsNew(rows);
+        // Whether anything in the list still counts as "New" — a whole collection or a manifest group
+        // inside one (see AnythingIsNew).
+        var hasNewCollection = AnythingIsNew(rows);
 
         // Captured immediately before the header so the "New" chip below can be placed on the
         // header's own row: CollapsingHeader always spans the full available width regardless of
@@ -54,10 +55,10 @@ internal sealed partial class MainWindow
         var collectionsOpen =
             ImGui.CollapsingHeader("Collections", ImGuiTreeNodeFlags.DefaultOpen);
 
-        // Drawn in both states, open and collapsed (see AnyGroupIsNew). Positioned by DrawHeaderRightChip
+        // Drawn in both states, open and collapsed (see AnythingIsNew). Positioned by DrawHeaderRightChip
         // rather than a plain SameLine(), because the header above just claimed the ENTIRE row width;
         // see that method's remarks for why SameLine cannot place a widget beside a full-width header.
-        if (hasNewGroup)
+        if (hasNewCollection)
         {
             DrawHeaderRightChip(
                 FontAwesomeIcon.Star, "New", Brand.Gold,
@@ -95,9 +96,10 @@ internal sealed partial class MainWindow
         if (ImGui.CollapsingHeader("Privacy"))
         {
             ImGui.Spacing();
+            // Names the server the data is actually sent to — see MainWindow.BackendHost.
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
-                "Your character's name and home world are sent so xiv-shinies.com can match the " +
+                $"Your character's name and home world are sent so {BackendHost()} can match the " +
                 "character you already claimed. Nothing is uploaded unless syncing is switched " +
                 "on, and you choose which collections to include.");
         }
@@ -186,8 +188,9 @@ internal sealed partial class MainWindow
             {
                 // The dump names the EFFECTIVE backend (the user-overridable setting, not the
                 // default): "you are pointed at the wrong server" is a classic support case.
+                // diagnosticVersion, not the masthead's copy.
                 ImGui.SetClipboardText(UploadLogText.ClipboardText(
-                    pluginVersion, configuration.Settings.BaseUrl, history));
+                    diagnosticVersion, configuration.Settings.BaseUrl, history));
                 logCopyFeedbackUntil = DateTime.UtcNow.AddSeconds(1.5);
             }
 
@@ -242,9 +245,13 @@ internal sealed partial class MainWindow
             Widgets.AlignRight(ImGui.CalcTextSize(versionLabel).X);
             ImGui.TextDisabled(versionLabel);
 
-            // The manifest punchline, with the site picked out in gold like the wizard intro. The
-            // rest is a null span color, meaning the normal text color: it is the one sentence
-            // that says what the plugin is for, so it reads at full contrast.
+            // The manifest punchline, with the site picked out in gold. The rest is a null span
+            // color, meaning the normal text color: it is the one sentence that says what the
+            // plugin is for, so it reads at full contrast.
+            //
+            // The official name is hardcoded here, unlike the sentences that state where data
+            // goes. This is the project's tagline quoted from the manifest, and a tagline naming
+            // whatever server a developer happens to be pointed at would be quoting nothing.
             Widgets.DrawWrappedSpans(
                 ("Your collections, on", null),
                 ("xiv-shinies.com,", Brand.Gold),

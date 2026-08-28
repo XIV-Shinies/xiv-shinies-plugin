@@ -110,9 +110,17 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
         if (skipReason is not null)
             return CollectResult.Skipped(skipReason);
 
-        var sheet = dataManager.GetExcelSheet<TRow>();
-        if (sheet is null)
+        // Wraps the sheet fetch alone: a throw from the loop below is a different failure and must
+        // not be relabelled. See CollectSkipReasons.SheetUnavailable for why this is a catch.
+        ExcelSheet<TRow> sheet;
+        try
+        {
+            sheet = dataManager.GetExcelSheet<TRow>();
+        }
+        catch (Exception)
+        {
             return CollectResult.Skipped(CollectSkipReasons.SheetUnavailable);
+        }
 
         var ids = new List<uint>();
         foreach (var row in sheet)

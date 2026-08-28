@@ -1,6 +1,13 @@
+#if DEBUG
+// DateTimeOffset, StringComparison and StringSplitOptions, for the development-build upload-log
+// seeding command. Guarded with the command itself: a Release compile of this file needs none.
+using System;
+#endif
 using System.Collections.Generic;
 // Path.Combine, for locating the mascot image next to the plugin DLL.
 using System.IO;
+// Select, to project the collectors down to the category keys the seen-baseline needs.
+using System.Linq;
 // Dalamud's command system (registering the /shinies slash command).
 using Dalamud.Game.Command;
 // The windowing system that draws and manages our ImGui windows.
@@ -170,6 +177,34 @@ public sealed class Plugin : IDalamudPlugin
             // Build the fact sources. Nothing reads the game until something explicitly runs them.
             collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework, knowledgeObserver);
 
+            // Establishes which collections count as already-seen, so the settings screen can badge
+            // a genuinely new one. It runs here rather than with the migrations above because it
+            // needs the registered collectors, which do not exist until this line — and it is
+            // self-guarding, so running it on every load costs one flag read after the first.
+            if (Configuration.Settings.InitializeSeenCategories(collectors.Select(c => c.CategoryKey)))
+                Configuration.Save();
+
+            // Honors the user's standing "turn on new collections and sharing features
+            // automatically" answer. It runs after the baseline above, because that is what
+            // decides which collections count as never-shown — and before the window exists, so a
+            // collection is switched on before anything can draw it and mark it shown.
+            //
+            // Only the collections a tick settles on its own — see
+            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
+            // separately must not be switched on for them.
+            var autoEnabled = Configuration.Settings.AutoEnableUnseenCategories(
+                ManifestConsent.FixedScopeCategoryKeys(collectors));
+            if (autoEnabled.Count > 0)
+            {
+                Configuration.Save();
+
+                // Logged because this is the one path that switches a collection on without a
+                // click, so the reason it happened should be findable afterwards.
+                Log.Information(
+                    $"Switched on {string.Join(", ", autoEnabled)} — new since this install was " +
+                    "last shown the list, and new collections are set to start on.");
+            }
+
             // Start listening. The manager subscribes to login and unlock events immediately, but
             // every path out of them checks the upload gate first, so a user who has not opted in
             // sends nothing and the plugin never contacts the server.
@@ -293,9 +328,41 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     // The command handler. Its signature (string command, string args) is what CommandInfo
-    // expects: `command` is what was typed (/shinies), `args` is anything after it. We ignore
-    // both and just toggle the window open/closed.
-    private void OnCommand(string command, string args) => mainWindow.Toggle();
+    // expects: `command` is what was typed (/shinies), `args` is anything after it. Bare
+    // /shinies toggles the window open/closed.
+    private void OnCommand(string command, string args)
+    {
+#if DEBUG
+        // A development build recognizes one argument, for filling the upload log with plausible
+        // rows so its screenshots can be taken without waiting on real syncs. Compiled out of
+        // Release entirely, so the shipped plugin recognizes no arguments at all.
+        //
+        //   /shinies seedlog              — seed the log
+        //   /shinies seedlog <version>    — seed it and draw that version in the masthead
+        //                                   (see MainWindow.OverrideVersionForScreenshots)
+        var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
+        {
+            syncManager.SeedUploadHistoryForScreenshots(collectors, DateTimeOffset.Now);
+
+            if (words.Length > 1)
+                mainWindow.OverrideVersionForScreenshots(words[1]);
+
+            // Says what undoes it, because both are silent: a real sync lands a genuine row at the
+            // front whose counts diff against the fabricated ones and light up "(changed)" across
+            // the board, and a logout or character switch clears the log outright.
+            Log.Information(
+                "Upload log seeded for screenshots. Capture before the next sync; logging out clears it.");
+
+            // Opened rather than toggled: the point of the command is to look at the log, and a
+            // toggle would close the window when it is already open.
+            mainWindow.IsOpen = true;
+            return;
+        }
+#endif
+
+        mainWindow.Toggle();
+    }
 
     // Small helper wired to the installer's open/config buttons above. `Toggle()` comes from the
     // Window base class (show if hidden, hide if shown).

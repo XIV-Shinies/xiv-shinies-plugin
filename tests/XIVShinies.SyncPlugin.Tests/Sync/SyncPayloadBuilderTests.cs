@@ -292,4 +292,28 @@ public class SyncPayloadBuilderTests
 
         Assert.DoesNotContain(CollectionScopeValues.Partial, request.CollectionScopes!.Values);
     }
+
+    // The contract caps manifestVersion at 100 characters and a 400 is terminal, so an over-long
+    // echo sent verbatim would stop syncing outright. Dropped rather than shortened: the field is
+    // optional, and a shortened version string is just a different wrong value.
+    [Fact]
+    public void An_over_long_manifest_echo_is_dropped_rather_than_sent()
+    {
+        var request = SyncPayloadBuilder.Build(
+            Identity, "1.0.0", SyncTrigger.Manual, Snapshot("quests"),
+            new string('v', SyncPayloadBuilder.MaxManifestVersionLength + 1));
+
+        Assert.Null(request.ManifestVersion);
+    }
+
+    [Fact]
+    public void A_manifest_echo_at_the_ceiling_is_kept()
+    {
+        var version = new string('v', SyncPayloadBuilder.MaxManifestVersionLength);
+
+        var request = SyncPayloadBuilder.Build(
+            Identity, "1.0.0", SyncTrigger.Manual, Snapshot("quests"), version);
+
+        Assert.Equal(version, request.ManifestVersion);
+    }
 }

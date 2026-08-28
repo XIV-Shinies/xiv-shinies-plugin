@@ -1,3 +1,5 @@
+// StringComparison, for ordering the panel's chips by label.
+using System;
 using System.Collections.Generic;
 using XIVShinies.SyncPlugin.Api;
 
@@ -16,12 +18,12 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </remarks>
 public sealed record ReadStatus
 {
-    /// <summary>One line per collection worth reporting on, in the order its row was registered.</summary>
+    /// <summary>One line per collection worth reporting on, ordered by label.</summary>
     public required IReadOnlyList<SourceNote> Collections { get; init; }
 
     /// <summary>
     /// One line per storage container the item pass looked at (inventory, saddlebag, armoire, …), in
-    /// whatever order the pass reported them.
+    /// the order the pass reported them.
     /// </summary>
     public required IReadOnlyList<SourceNote> Containers { get; init; }
 }
@@ -123,7 +125,36 @@ public static class ReadStatusView
                 collections.Add(note);
         }
 
+        // Alphabetical, matching the consent checklist the user reads these against — the two lists
+        // name the same collections, so a reader comparing them should not have to search.
+        //
+        // OrdinalIgnoreCase for the same reason GroupBySection uses it: these labels are English
+        // strings authored in this repo, and an ordinal sort gives every user the same order
+        // whatever their machine's locale — which is also what makes it testable.
+        //
+        // The CONTAINERS are deliberately left in the order the pass reported them, because that
+        // order groups the sources by how they behave — the ones a user can act on ahead of the one
+        // nothing can change — and alphabetising would scatter that grouping. It is the pass's
+        // emission order rather than a guarantee this type makes: the notes arrive in a dictionary,
+        // whose enumeration order the runtime does not promise, so nothing here can assert where any
+        // particular container lands. Sorting them would trade a helpful order for a merely
+        // different one, which is why it is not worth doing on top of an unpromised order.
+        collections.Sort(ByLabel);
+
         return new ReadStatus { Collections = collections, Containers = containers };
+    }
+
+    /// <summary>Orders two chips by the label the user actually reads.</summary>
+    /// <remarks>
+    /// A label can repeat — two collections may choose the same display name — so the note's own
+    /// text breaks the tie, leaving a fixed order rather than an arbitrary one.
+    /// </remarks>
+    private static int ByLabel(SourceNote left, SourceNote right)
+    {
+        var byLabel = string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase);
+        return byLabel != 0
+            ? byLabel
+            : string.Compare(left.Text, right.Text, StringComparison.Ordinal);
     }
 
     /// <summary>

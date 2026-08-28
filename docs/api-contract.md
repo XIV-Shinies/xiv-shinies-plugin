@@ -104,10 +104,15 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "mounts": true,
     "occultProgression": true,
     "occultRecords": true,
+    "orchestrionRolls": true,
     "questSequences": true,
     "quests": true,
     "tripleTriadCards": true,
     "tripleTriadNpcs": true
+  },
+  // optional — why a false category is off, when it is worth saying
+  "categoryNotes": {
+    "orchestrionRolls": "In testing — it will switch on once it is ready."
   },
   "enabled": true,             // global kill switch
   "intervals": {
@@ -133,7 +138,30 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
 - **Kill switches.** `enabled` is the global switch; `categories` is per-category. **The
   client must honor both**: stop uploading entirely when `enabled` is false, and skip
   collecting/sending disabled categories. The server enforces them too, but a compliant
-  client saves the round trips.
+  client saves the round trips. A gated category ships as an explicit `false`, never omitted —
+  an absent key means "the server has never heard of it", which the client reads as enabled.
+- **Category notes.** `categoryNotes` is optional, keyed like `categories`, and explains why a
+  category is off. It is absent entirely when nothing needs explaining, never an empty map.
+  **Presence is the whole signal** — the client prints the sentence verbatim and never parses
+  it, so either side can reword without a release. The two reasons a category is false are not
+  equal, and only one carries a note:
+
+  | Why the category is false | `categories` | `categoryNotes` | What the client shows |
+  | --- | --- | --- | --- |
+  | Ops kill switch (off for everyone) | `false` | *absent* | its own generic line |
+  | Feature flag this account cannot see | `false` | present | the note |
+  | Both at once | `false` | *absent* | its own generic line |
+
+  The kill switch is deliberately the louder signal: during an outage a specific explanation
+  would be a guess. A note against an **enabled** category is legal and ignored. A note value is
+  a **non-empty string** — never `null`, and a category with nothing to say is left out of the map
+  rather than mapped to `null` or `""`. Treat the text as untrusted like every other server string
+  — the backend is user-overridable, so a client must survive a peer that breaks any of the above.
+  The plugin folds a note to a single line and clamps it to **500 characters**, marking a shortened
+  one with an ellipsis, so copy written longer than that will be cut. It also drops invisible
+  formatting that could misrepresent the sentence — bidirectional controls and zero-width spaces —
+  while keeping the zero-width joiner and non-joiner, so emoji sequences and Persian or Arabic
+  spellings survive intact.
 - **Item manifest.** The item IDs the server wants possession counts for. The plugin checks
   possession of **only** these items. When `itemManifestGroups` is present it takes
   precedence; the flat list stays in the config permanently for clients without group
@@ -203,11 +231,13 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
       "knowledge": {"level": 40, "observedAt": "2026-08-12T20:00:00Z"} // optional sighting
     },
     "occultRecords": [1, 2, 55], // MKDLore row ids — the complete SeenLore list
+    "orchestrionRolls": [1, 113, 580], // Orchestrion sheet row ids — the tunes, not the roll items
     "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
     "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
   },
   "collectionScopes": { // optional — per-category completeness; omitted key/object == "partial"
-    "tripleTriadCards": "full" // "full" | "partial"
+    "orchestrionRolls": "full", // "full" | "partial"
+    "tripleTriadCards": "full"
   },
   "itemSources": { // optional — how each storage source was read this pass
     "inventory": {"state": "live"},
@@ -277,6 +307,16 @@ Field constraints:
 - `fresh: false` means the count came from a cache rather than a live container read. The
   server treats a stale positive as a positive (the item *was* there), so the flag does not
   change the outcome.
+- **Orchestrion id space.** `orchestrionRolls` carries `Orchestrion` sheet row ids — the tunes
+  themselves, the same ids the game's unlock state answers for. Do **not** send the
+  `"… Orchestrion Roll"` **item** ids; those live in the `Item` sheet, the server stores
+  them separately, and it silently drops them here as unknown. The sheet is **sparse**: the
+  server's catalog holds 883 rolls in the range 1–891, the gaps being rows it skips (rows
+  with no English name, for instance). Row 0 is a dummy and must never be sent — every
+  id-list category is validated as strictly positive, so a single `0` rejects the **whole
+  upload**, unlike an unknown id. Unlock state is readable anywhere, in or out of content,
+  so a full sheet sweep is always possible; see `collectionScopes` below for what declaring
+  that sweep complete buys.
 - **Triple Triad id spaces.** `tripleTriadCards` carries `TripleTriadCard` sheet row ids
   (1–475, dense; row 0 is a dummy). `tripleTriadNpcs` carries `TripleTriadResident` row ids
   **exactly as the sheet reports them** — they live in the game's event-handler id range
@@ -477,28 +517,31 @@ Lodestone id, so it never auto-creates characters).
   evidence of absence. The server **never infers** completeness (a short list is
   indistinguishable from a small collection). An `unlock` upload is a delta and should
   report `"partial"` — the server accepts and acts on whatever it is told, so this one is
-  the client's discipline rather than a validation the server enforces. Today only
-  `tripleTriadCards` acts on it: a `"full"` card list stamps the
-  character's snapshot marker, which lets the site flag a manual mark made *before* that
-  moment that the complete list contradicts ("Marked by you — the plugin didn't find
+  the client's discipline rather than a validation the server enforces. Today
+  `tripleTriadCards` and `orchestrionRolls` act on it: a `"full"` list stamps that category's
+  snapshot marker on the character, which lets the site flag a manual mark made *before*
+  that moment that the complete list contradicts ("Marked by you — the plugin didn't find
   it"). Nothing is ever auto-unmarked, and other categories' declarations are recorded
   and ignored. In this plugin the claim originates on the collector's `CollectResult`
   (`completeEnumeration`), so a new collector opts in without any downstream change.
   A category may only declare `"full"` when its collector can enumerate everything the
   **server's catalog** may contain, not merely everything the game will answer for —
   `tripleTriadNpcs` withholds the claim for exactly that reason (see the id-space note
-  above). For cards the two agree, and the server has confirmed its catalog is never
-  *ahead* of a live client: it is imported from released-patch sheet data, and the game
+  above). For cards and orchestrion rolls the two agree, and the server has confirmed its
+  catalog is never *ahead* of a live client: it is imported from released-patch sheet data, and the game
   forces a client patch before login, so "client behind catalog" is unreachable while
   playing. The reverse skew — catalog behind a just-patched client — is harmless, because
   an id the catalog does not know is dropped and never becomes markable.
 - **`acquiredAt` timestamps.** An `unlock`-triggered upload stamps the upload moment as the
   acquisition time for every category in it. Snapshot uploads (`interval`/`login`/`manual`)
-  stamp the upload time for achievements, minions, and mounts, and leave quests' date null.
-  An existing acquisition date is **never overwritten**. The Triple Triad categories stamp
-  the upload time on the first write that marks a row acquired/beaten, identically for
-  snapshot and unlock uploads (they share one write path), and the date is immutable
-  thereafter — for `tripleTriadNpcs` that date is the row's "beaten at" moment.
+  stamp the upload time for achievements, minions, mounts, and Triple Triad cards, for
+  Triple Triad NPCs (whose `acquiredAt` IS the "beaten at" moment), and for
+  `orchestrionRolls` — whose acquisition comes from the provenance flags, but whose panel
+  renders the date and for which the plugin is the only automatic channel, since the
+  Lodestone does not publish rolls. **Quests are the one category left null.** An existing
+  acquisition date is **never overwritten** by any upload. The Triple Triad categories stamp
+  on the first write that marks a row acquired/beaten, identically for snapshot and unlock
+  uploads (they share one write path), and the date is immutable thereafter.
 - **Relic proofs from the item manifest.** Possession (`count > 0`) of a proof-scope item
   (the `relic-proofs` group, or the flat manifest) proves that relic stage **and every
   lower-order stage of the same relic**. Proofs are sticky: because possession is volatile
@@ -517,7 +560,11 @@ Lodestone id, so it never auto-creates characters).
   `Retry-After` on 429 and 503 and back off — do not tight-loop retries.
 - **Kill switches are server-enforced too.** A disabled category is stripped from the payload
   before any write; the stripped keys ride back in `skippedCategories` so the plugin can tell
-  the user why a category didn't sync.
+  the user why a category didn't sync. Stripping covers both reasons a category can be off: the
+  ops kill switch, and a feature flag the uploading account cannot see. `/config` only
+  advertises a gate, so a client polling a stale config — or one that never reads `/config` at
+  all — would otherwise still write rows it should not. A client that honors `categories` never
+  reaches this: it simply changes the failure mode from a silent write to a visible strip.
 
 ## Forward compatibility
 

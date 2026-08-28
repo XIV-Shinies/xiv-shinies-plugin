@@ -7,6 +7,12 @@ namespace XIVShinies.SyncPlugin.Api;
 /// The single JSON policy every API request and response is (de)serialized with. Centralizing it
 /// means the wire format can't drift between call sites.
 /// </summary>
+/// <remarks>
+/// One trap every DTO consumer inherits: <c>required</c> rejects an ABSENT field at
+/// deserialization, but not a field set to an explicit JSON <c>null</c> — that lands as a null
+/// reference despite the property's non-nullable type. The backend is user-overridable, so every
+/// read of a required collection or string must survive a peer that sends null anyway.
+/// </remarks>
 public static class ApiJson
 {
     /// <summary>Serializer settings matching the server contract exactly.</summary>

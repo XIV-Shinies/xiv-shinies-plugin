@@ -51,6 +51,17 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build
 
+      # Release is what ships, but some development tooling — the upload-log screenshot seeding —
+      # is compiled only into Debug, and so are its tests. Without this leg that code is invisible
+      # to CI: a renamed category key or a new interface member would break the Debug build while
+      # every check stayed green, and nobody would find out until the next time a screenshot was
+      # needed. -warnaserror matches the Release leg so both configurations stay warning-clean.
+      - name: Build (Debug — the development-only tooling)
+        run: dotnet build --configuration Debug -warnaserror
+
+      - name: Test (Debug — the suites that only exist there)
+        run: dotnet test --configuration Debug --no-build
+
       # The Release build already produced the DalamudPackager output (the same latest.zip a
       # release would ship). Uploading it lets anyone grab a PR's build from the Actions run and
       # point XIVLauncher's Dev Plugin Locations at it for in-game QA.

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using XIVShinies.SyncPlugin.Api;
 
@@ -41,6 +42,19 @@ public sealed record CategorySettingsRow
     public required bool UserEnabled { get; init; }
 
     /// <summary>
+    /// True when the settings UI has never shown this category to this install, so it is worth
+    /// badging as "New".
+    /// </summary>
+    /// <remarks>
+    /// The same shape as <see cref="ItemGroupRow.IsNew"/>, one level up: a collection added in a
+    /// later version is otherwise indistinguishable from one the user has been ignoring since
+    /// install, and the settings' outer header folds, so it could go unnoticed entirely. Defaulted
+    /// rather than required, unlike the group flag, so a caller building rows for a surface that
+    /// does not badge (or a test that does not care) is not forced to answer.
+    /// </remarks>
+    public bool IsNew { get; init; }
+
+    /// <summary>
     /// Whether this row's collector announced itself as manifest-driven (see
     /// <see cref="ICollector.UsesItemManifest"/>).
     /// </summary>
@@ -60,6 +74,42 @@ public sealed record CategorySettingsRow
     /// turns it back on.
     /// </summary>
     public required bool ServerEnabled { get; init; }
+
+    /// <summary>
+    /// The server's own explanation for this category being switched off, or null when it offered
+    /// none. Only meaningful while <see cref="ServerEnabled"/> is false.
+    /// </summary>
+    /// <remarks>
+    /// The same no-name-branch route as <see cref="SkipReason"/> and <see cref="PartialNote"/>,
+    /// one level further out: there the collector authors the phrase, here the server does, and
+    /// the panel prints whichever it is handed. <see cref="ServerOffText"/> is what decides
+    /// between this and the generic line.
+    /// </remarks>
+    public string? ServerNote { get; init; }
+
+    /// <summary>
+    /// What to print under a category the server has switched off, or null when it is on and
+    /// nothing needs saying.
+    /// </summary>
+    /// <remarks>
+    /// The server's note when it sent one, otherwise the generic line — see
+    /// <see cref="ConfigResponse.CategoryNotes"/> for why only one of the two off-states carries a
+    /// note. Null while the category is enabled, including when a note came with it: a note has
+    /// nowhere to go under a live checkbox, so it is dropped here rather than special-cased at the
+    /// place it arrives.
+    /// </remarks>
+    public string? ServerOffText => ServerEnabled ? null : ServerNote ?? ServerOffFallback;
+
+    /// <summary>
+    /// What a switched-off row says when the server offered no explanation of its own.
+    /// </summary>
+    /// <remarks>
+    /// One string, used verbatim by every surface that reports something the server has switched
+    /// off — the collections list and the live tracker's own row, which sit on the same screen.
+    /// Two copies would let a reword leave them saying different things about the same state, in
+    /// view of each other.
+    /// </remarks>
+    public const string ServerOffFallback = "Temporarily switched off by XIV Shinies.";
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.
@@ -88,6 +138,40 @@ public sealed record CategorySettingsRow
 
     /// <summary>True when this category will actually be uploaded as things stand.</summary>
     public bool IsEffectivelyOn => UserEnabled && ServerEnabled;
+
+    /// <summary>
+    /// False when the latest <c>/config</c> has not been fetched yet, so
+    /// <see cref="ServerEnabled"/> is an assumption rather than the server's answer.
+    /// </summary>
+    /// <remarks>
+    /// What tells a caller whether <see cref="ServerEnabled"/> may be spent on rather than merely
+    /// drawn from. See <see cref="WasDrawnAsUsable"/>.
+    /// </remarks>
+    public bool ServerStateKnown { get; init; } = true;
+
+    /// <summary>True when this row should announce itself as new.</summary>
+    /// <remarks>
+    /// A collection the server has switched off cannot be used, so badging it would say "here is
+    /// something new for you" about something that is not. While the server's answer is still
+    /// unknown the badge shows, because a user whose config poll is failing should still learn a
+    /// collection exists.
+    /// </remarks>
+    public bool IsEffectivelyNew => IsNew && ServerEnabled;
+
+    /// <summary>
+    /// True when this row was drawn in a state the user could actually act on — the server
+    /// permits it, and that is the server's answer rather than an assumption.
+    /// </summary>
+    /// <remarks>
+    /// The server half of the retire condition, shared by this row (see
+    /// <see cref="ShowingItRetiresTheBadge"/>) and by the groups beneath it. Retiring an
+    /// announcement costs it outright, while showing one early costs only a repeat — so an
+    /// unanswered <c>/config</c> is enough to draw on but not enough to spend on.
+    /// </remarks>
+    public bool WasDrawnAsUsable => ServerEnabled && ServerStateKnown;
+
+    /// <summary>True when drawing this row on a badging surface should retire its badge.</summary>
+    public bool ShowingItRetiresTheBadge => IsNew && WasDrawnAsUsable;
 
     /// <summary>
     /// One row per item-manifest consent group, for a manifest-driven collector — or null when this
@@ -124,6 +208,25 @@ public sealed record ItemGroupRow
     public required bool Enabled { get; init; }
 
     /// <summary>
+    /// Whether the collection this group belongs to is one the server currently permits.
+    /// </summary>
+    /// <remarks>
+    /// Carried down from the parent row so a group can answer the same question its parent does.
+    /// A group is only ever scanned as part of its collection's pass, so a collection the server
+    /// has switched off takes every group beneath it with it, whatever each group's own consent
+    /// says.
+    /// </remarks>
+    public required bool ParentServerEnabled { get; init; }
+
+    /// <summary>True when this group's items will actually be scanned as things stand.</summary>
+    /// <remarks>
+    /// What the checkbox draws: a ticked box under a parent drawn unticked, one indent below it,
+    /// states the opposite of what is happening, and the parent is the one telling the truth. The
+    /// stored consent is untouched and returns on its own.
+    /// </remarks>
+    public bool IsEffectivelyOn => Enabled && ParentServerEnabled;
+
+    /// <summary>
     /// True when the settings window has never shown this group before, so it should carry a "New"
     /// badge. A group the server just added is new for everyone until each user's settings window has
     /// rendered it once.
@@ -143,8 +246,21 @@ public sealed record CategorySection
     /// <summary>The heading, exactly as the section's collectors declared it.</summary>
     public required string Title { get; init; }
 
-    /// <summary>This section's rows, in registration order.</summary>
+    /// <summary>This section's rows, sorted by display name.</summary>
     public required IReadOnlyList<CategorySettingsRow> Rows { get; init; }
+}
+
+/// <summary>Which mark, if any, a collection's row wears at the end of its description.</summary>
+public enum CategoryBadgeKind
+{
+    /// <summary>Nothing to say about this row beyond its own copy.</summary>
+    None,
+
+    /// <summary>The server has switched this collection off for everyone.</summary>
+    Off,
+
+    /// <summary>This settings window has never shown the collection before.</summary>
+    New,
 }
 
 /// <summary>
@@ -163,6 +279,115 @@ public sealed record CategorySection
 /// </remarks>
 public static class CategorySettingsView
 {
+    /// <summary>The mark a row should wear, given what the server says and what the user has seen.</summary>
+    /// <remarks>
+    /// <para>
+    /// A row wears at most one mark, and "off" outranks "new". The two would otherwise be able to
+    /// appear together on a collection that is both freshly added and switched off — and inviting
+    /// the user to look at something they cannot use is worse than saying nothing, so the switched-off
+    /// state is answered first and the announcement waits for a viewing the user can act on.
+    /// </para>
+    /// <para>
+    /// Pure so the precedence is testable: a rule stated only inside a draw method is a rule no test
+    /// can reach, and this one is a promise about what the user sees rather than an implementation
+    /// detail. The window supplies the two facts it alone knows — whether this surface badges at all,
+    /// and whether the key is already badged for this session — and turns the answer into a chip.
+    /// </para>
+    /// </remarks>
+    /// <param name="row">The row being drawn.</param>
+    /// <param name="showNewChips">
+    /// Whether this surface announces new collections. The first-run wizard shows every collection
+    /// by definition, so it badges nothing; the settings window does.
+    /// </param>
+    /// <param name="badgedThisSession">
+    /// Whether this key has already been badged since the window opened. It keeps the chip on screen
+    /// for the rest of the viewing after the row has been recorded as seen.
+    /// </param>
+    public static CategoryBadgeKind BadgeFor(
+        CategorySettingsRow row, bool showNewChips, bool badgedThisSession)
+    {
+        // Re-checked rather than trusted from when the key was recorded: a config poll landing
+        // mid-session can switch a collection off under a badge already on screen, and the chip must
+        // not keep promising something new beside a greyed-out row.
+        if (!row.ServerEnabled)
+            return CategoryBadgeKind.Off;
+
+        // Either fact is enough on its own. The row's flag answers for a caller holding no
+        // session record; the session set is what keeps the chip up once the batched save makes
+        // the next rebuild report IsNew=false. Neither is required, so the rule does not depend
+        // on any caller's bookkeeping.
+        return showNewChips && (row.IsEffectivelyNew || badgedThisSession)
+            ? CategoryBadgeKind.New
+            : CategoryBadgeKind.None;
+    }
+
+    /// <summary>
+    /// True when drawing this row on the given surface should record it as seen, retiring its
+    /// "New" announcement.
+    /// </summary>
+    /// <remarks>
+    /// The two consent surfaces differ only in whether an unanswered /config still counts. A
+    /// surface that draws no badges is showing the whole list as its purpose — the first-run
+    /// wizard puts every collection in front of the user before they can finish — so a failed
+    /// config poll must not stop it recording what it plainly showed. A badging surface waits
+    /// for the answer (<see cref="CategorySettingsRow.ShowingItRetiresTheBadge"/>): there the
+    /// record is what the badge is spent from — see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>
+    /// for why spending demands more than drawing. Neither surface counts a row the server has
+    /// switched off — greyed and unusable is not an introduction.
+    /// </remarks>
+    /// <param name="row">The row that was just drawn.</param>
+    /// <param name="showNewChips">Whether the drawing surface announces new collections.</param>
+    public static bool ShowingRetiresTheBadge(CategorySettingsRow row, bool showNewChips) =>
+        showNewChips
+            ? row.ShowingItRetiresTheBadge
+            : row.IsNew && row.ServerEnabled;
+
+    /// <summary>
+    /// True when anything in the consent list still counts as "New" — a whole collection, or a
+    /// manifest group inside one.
+    /// </summary>
+    /// <remarks>
+    /// A row or group qualifies either because this install has never shown it, or because its
+    /// badge already went up during this session — in either case only while the server still
+    /// permits the collection — the second half is what keeps a badge from
+    /// vanishing one frame after it appears, since drawing it persists the seen flag and the next
+    /// rebuild reports it un-new. The two session sets are parameters rather than state held here:
+    /// they belong to a window's lifetime, and a pure function of its arguments is one the unit
+    /// suite can reach.
+    /// </remarks>
+    /// <param name="rows">The category rows to scan, from <see cref="Build"/>.</param>
+    /// <param name="badgedCategories">Category keys whose badge went up this session.</param>
+    /// <param name="badgedGroups">Group keys whose badge went up this session.</param>
+    public static bool AnythingIsNew(
+        IReadOnlyList<CategorySettingsRow> rows,
+        IReadOnlySet<string> badgedCategories,
+        IReadOnlySet<string> badgedGroups)
+    {
+        foreach (var row in rows)
+        {
+            // A whole collection the user has never been shown counts, not just a group inside one
+            // — with the header folded, a new collection is exactly as invisible as a new group.
+            // The session set is re-checked against ServerEnabled, matching the row badge in
+            // MainWindow.DrawCategoryRow.
+            if (row.IsEffectivelyNew || (row.ServerEnabled && badgedCategories.Contains(row.Key)))
+                return true;
+
+            // A group under a collection the server has switched off is as unusable as the
+            // collection, so it raises no chip either — otherwise the header would invite the user
+            // to open a list where nothing is actionable.
+            if (!row.ServerEnabled || row.Groups is not { Count: > 0 } groups)
+                continue;
+
+            foreach (var group in groups)
+            {
+                if (group.IsNew || badgedGroups.Contains(group.Key))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Builds one row per registered collector, in registration order.</summary>
     /// <param name="collectors">Every registered collector.</param>
     /// <param name="settings">The user's persisted opt-ins.</param>
@@ -193,6 +418,16 @@ public static class CategorySettingsView
         {
             var key = collector.CategoryKey;
 
+            // Read once and shared with the group rows below. The row's effective state and each
+            // group's are two expressions of the same server answer, and the disabled scopes that
+            // keep a click from rewriting stored consent assume the two agree — so they are given
+            // no way to disagree.
+            //
+            // A config we have not fetched forbids nothing, matching how the collectors and the
+            // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
+            // category as disabled by the server, which would be a lie.
+            var serverEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true;
+
             rows.Add(new CategorySettingsRow
             {
                 Key = key,
@@ -202,14 +437,21 @@ public static class CategorySettingsView
                 Details = collector.Details,
                 UserEnabled = settings.IsCategoryEnabled(key),
 
+                // Never shown by this install, so the window may badge it. The window marks it seen
+                // as it draws, which makes the next rebuild report false.
+                IsNew = !settings.IsCategorySeen(key),
+
                 // Carried through verbatim from the collector's own self-description. Nothing here
                 // decides which collections are manifest-driven; the collector says so itself.
                 UsesItemManifest = collector.UsesItemManifest,
 
-                // A config we have not fetched forbids nothing, matching how the collectors and the
-                // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
-                // category as disabled by the server, which would be a lie.
-                ServerEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true,
+                ServerEnabled = serverEnabled,
+
+                // Carried verbatim from the server, bounded on the way in.
+                ServerNote = remoteConfig?.CategoryNote(key),
+
+                // Whether the line above is the server's answer or our assumption.
+                ServerStateKnown = remoteConfig is not null,
 
                 // `TryGetValue` fills the out parameter and returns whether the key existed. The
                 // discard-style pattern below just means "null when it was not there".
@@ -227,7 +469,7 @@ public static class CategorySettingsView
                     ? collectedDetail
                     : null,
 
-                Groups = BuildGroupRows(collector, settings, remoteConfig),
+                Groups = BuildGroupRows(collector, settings, remoteConfig, serverEnabled),
             });
         }
 
@@ -239,11 +481,17 @@ public static class CategorySettingsView
     /// to draw one heading at a time.
     /// </summary>
     /// <remarks>
-    /// Sections appear in the order their first row appears, and rows keep registration order
-    /// within their section — so the on-screen order is still decided entirely by
-    /// <see cref="CollectorRegistry"/>. There is no fixed section list and no fallback bucket:
-    /// whatever titles the rows carry are the sections that exist, which is what keeps this
-    /// surface free of category knowledge.
+    /// <para>
+    /// Sections appear in the order their first row appears, so <see cref="CollectorRegistry"/>
+    /// still decides which heading comes first. <b>Within</b> a section the rows are sorted by
+    /// display name, so a reader scanning for one collection can find it where the alphabet says
+    /// it is rather than wherever its registration line happened to be inserted.
+    /// </para>
+    /// <para>
+    /// There is no fixed section list and no fallback bucket: whatever titles the rows carry are
+    /// the sections that exist, which is what keeps this surface free of category knowledge. The
+    /// sort is the same — it reads a name off the row, and never asks which collection it is.
+    /// </para>
     /// </remarks>
     /// <param name="rows">The rows to group, from <see cref="Build"/>.</param>
     public static IReadOnlyList<CategorySection> GroupBySection(
@@ -268,7 +516,23 @@ public static class CategorySettingsView
 
         var result = new List<CategorySection>(sections.Count);
         foreach (var (title, bucketRows) in sections)
+        {
+            // OrdinalIgnoreCase rather than a culture-aware comparison: these labels are English
+            // strings authored in this repo, and an ordinal sort gives every user the same order
+            // regardless of their machine's locale — which is also what makes it testable. The
+            // key breaks a tie, so two collections that chose the same display name still land in
+            // a fixed order instead of an arbitrary one.
+            bucketRows.Sort((left, right) =>
+            {
+                var byName = string.Compare(
+                    left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+                return byName != 0
+                    ? byName
+                    : string.Compare(left.Key, right.Key, StringComparison.Ordinal);
+            });
+
             result.Add(new CategorySection { Title = title, Rows = bucketRows });
+        }
 
         return result;
     }
@@ -280,14 +544,31 @@ public static class CategorySettingsView
     // tells the window there is nothing here at all, so absence is never papered over with
     // `Array.Empty`.
     private static IReadOnlyList<ItemGroupRow>? BuildGroupRows(
-        ICollector collector, PluginSettings settings, ConfigResponse? remoteConfig)
+        ICollector collector,
+        PluginSettings settings,
+        ConfigResponse? remoteConfig,
+        bool parentServerEnabled)
     {
         if (!collector.UsesItemManifest || remoteConfig?.ItemManifestGroups is not { } manifestGroups)
             return null;
 
         var groupRows = new List<ItemGroupRow>();
+
+        // A consent identifier, not prose: long enough for any key a person would write, short
+        // enough that one cannot bloat the config it is stored in.
+        const int MaxGroupKeyLength = 128;
+
+        // This list is rebuilt every frame the settings window is open, and each row costs
+        // consent bookkeeping per frame after that. No honest manifest carries more than a
+        // handful of groups, so the ceiling only ever cuts a hostile or broken config — which
+        // must not be able to turn the settings window into a frame-time sink.
+        const int MaxGroupRows = 100;
+
         foreach (var group in manifestGroups)
         {
+            if (groupRows.Count >= MaxGroupRows)
+                break;
+
             // A blank key is server data gone wrong, and it can never behave: consent reads treat it
             // as off, seen-marking skips it (so it would wear a "New" badge forever and re-trigger a
             // config save every frame), and the consent write would throw. Dropping it here, at the
@@ -295,11 +576,31 @@ public static class CategorySettingsView
             if (string.IsNullOrEmpty(group.Key))
                 continue;
 
+            // An over-long key is dropped rather than shortened, and the difference matters: a
+            // group key is a consent IDENTITY, not copy. Shortening it would consent on behalf of
+            // a group the user was never shown, and two long keys sharing a prefix would collapse
+            // into one consent. Dropping is also what keeps it out of the config, where seen-keys
+            // are appended and never pruned — so an unbounded key would persist forever, outliving
+            // the group that introduced it.
+            if (group.Key.Length > MaxGroupKeyLength)
+                continue;
+
+            // The drawn copy, folded and bounded like every adopted server string — label first,
+            // then the key standing in for a missing label. A clipped or folded label still names
+            // the right consent, because consent is written and read under the raw key beside it.
+            // A key that folds to NOTHING has no visible spelling at all, so its checkbox would
+            // carry a blank label — and a consent control the user cannot read is no consent
+            // control, so the group is dropped.
+            var label = ServerText.SingleLine(group.Label) ?? ServerText.SingleLine(group.Key);
+            if (label is null)
+                continue;
+
             groupRows.Add(new ItemGroupRow
             {
                 Key = group.Key,
-                Label = group.Label,
+                Label = label,
                 Enabled = settings.IsItemGroupEnabled(group.Key),
+                ParentServerEnabled = parentServerEnabled,
                 IsNew = !settings.IsItemGroupSeen(group.Key),
             });
         }

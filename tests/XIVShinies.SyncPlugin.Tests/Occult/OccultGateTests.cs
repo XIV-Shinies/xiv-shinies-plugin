@@ -100,4 +100,58 @@ public class OccultGateTests
     {
         Assert.True(OccultGate.CanTrack(OptedIn(), ConfigWithTracker()));
     }
+
+    // --- What the settings toggle draws ------------------------------------------------------
+
+    // ServerHasSwitchedOff decides whether the toggle draws greyed and chipped "Off". It has to
+    // agree with CanTrack about what the server allows, or the control describes something other
+    // than what happens — so the three arms are pinned separately from the gate's own tests.
+
+    [Fact]
+    public void A_server_that_switched_the_tracker_off_is_reported_off()
+    {
+        Assert.True(OccultGate.ServerHasSwitchedOff(ConfigWithTracker(trackerEnabled: false)));
+    }
+
+    // A server that never advertised the endpoint cannot serve it, so the control must not offer
+    // it either. This is the arm that differs from the unknown-category rule.
+    [Fact]
+    public void A_config_carrying_no_tracker_block_is_reported_off()
+    {
+        // `with` copies the record and replaces one property — the block is init-only.
+        var config = ConfigWithTracker() with { OccultTracker = null };
+
+        Assert.True(OccultGate.ServerHasSwitchedOff(config));
+    }
+
+    // The arm most likely to regress: before the first /config answers, the server has forbidden
+    // nothing, so the toggle keeps showing the user's own choice rather than greying out.
+    [Fact]
+    public void A_config_that_has_not_arrived_is_not_reported_off()
+    {
+        Assert.False(OccultGate.ServerHasSwitchedOff(null));
+    }
+
+    [Fact]
+    public void An_enabled_tracker_is_not_reported_off()
+    {
+        Assert.False(OccultGate.ServerHasSwitchedOff(ConfigWithTracker()));
+    }
+
+    // The control and the gate must refuse on the same terms. Asserted as a pair rather than
+    // separately, because the failure they guard against is the two drifting apart.
+    [Fact]
+    public void Whenever_the_server_is_reported_off_the_gate_also_refuses()
+    {
+        foreach (var config in new[]
+                 {
+                     ConfigWithTracker(trackerEnabled: false),
+                     ConfigWithTracker(globallyEnabled: false),
+                     ConfigWithTracker(),
+                 })
+        {
+            if (OccultGate.ServerHasSwitchedOff(config))
+                Assert.False(OccultGate.CanTrack(OptedIn(), config));
+        }
+    }
 }

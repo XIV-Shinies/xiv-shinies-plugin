@@ -24,6 +24,12 @@ public static class BackendUrl
     private static readonly string DefaultAuthority =
         new Uri(Default).GetLeftPart(UriPartial.Authority);
 
+    // The official server's host and profile page, for the fallbacks in DisplayHost and ProfileUrl.
+    private static readonly string DefaultHost = new Uri(Default).Host;
+
+    private static readonly string DefaultProfileUrl =
+        new Uri(new Uri(Default), "/profile").ToString();
+
     /// <summary>
     /// True when the given URL points at the official server. Used to decide whether the user
     /// must first acknowledge that their token will be sent to a server we do not run.
@@ -31,6 +37,81 @@ public static class BackendUrl
     public static bool IsDefault(Uri uri) =>
         string.Equals(
             uri.GetLeftPart(UriPartial.Authority), DefaultAuthority, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The host to name in any sentence that has to identify the configured server.</summary>
+    /// <remarks>
+    /// <para>
+    /// The base URL is user-overridable, so a sentence naming the service has to name the one the
+    /// plugin is actually talking to. A privacy card naming a host nothing is sent to is untrue, an
+    /// instruction naming the wrong site sends the user somewhere that cannot help them, and an
+    /// outage notice naming the wrong server sends a developer hunting a failure elsewhere.
+    /// </para>
+    /// <para>
+    /// The host alone, since this lands mid-sentence where a scheme and a trailing slash read as
+    /// debris, and in its <c>IdnHost</c> form — punycode for an international host, because
+    /// characters from other scripts can spell a domain indistinguishable from another at a glance.
+    /// Judged by <see cref="TryNormalize"/>, the gate <see cref="ProfileUrl"/> also uses, so the two
+    /// can never name different servers; a value it rejects is one the client refuses to contact.
+    /// </para>
+    /// </remarks>
+    /// <param name="baseUrl">The configured base URL, which may be absent or unparseable.</param>
+    public static string DisplayHost(string? baseUrl) =>
+        TryNormalize(baseUrl, out var uri, out _) && uri is not null ? uri.IdnHost : DefaultHost;
+
+
+    /// <summary>Why the configured server cannot be contacted, as a sentence for the user.</summary>
+    /// <remarks>
+    /// <para>
+    /// Two different settings produce the same refusal, and they need opposite actions: an address
+    /// that breaks the scheme or hostname rules has to be rewritten, while a perfectly good address
+    /// the user has not confirmed they meant is waiting on one flag. Telling the second user to fix
+    /// their address would send them looking for a fault that is not there.
+    /// </para>
+    /// <para>
+    /// A malformed address borrows <see cref="TryNormalize"/>'s own complaint rather than restating
+    /// it, so the sentence names the rule that was actually broken.
+    /// </para>
+    /// </remarks>
+    /// <param name="baseUrl">The configured base URL.</param>
+    /// <param name="customBackendAcknowledged">
+    /// Whether the user has confirmed they meant to send their token to a server this project does
+    /// not run. Nothing leaves until they have.
+    /// </param>
+    public static string DescribeUnusableSetting(string? baseUrl, bool customBackendAcknowledged)
+    {
+        if (!TryNormalize(baseUrl, out var uri, out var error))
+            return $"The server address in the plugin's configuration file cannot be used. {error}";
+
+        if (uri is not null && !IsDefault(uri) && !customBackendAcknowledged)
+        {
+            return "The plugin is set to a server this project does not run, which has not been "
+                + "acknowledged. Nothing is sent until it is.";
+        }
+
+        // Neither setting explains it, so say only what is certain rather than guessing at a cause.
+        return "The plugin is not configured to contact a server.";
+    }
+
+    /// <summary>Where to send a user who needs to create or manage a plugin token.</summary>
+    /// <remarks>
+    /// <para>
+    /// On the configured server, because a token is only valid on the server that issued it.
+    /// Opening the official site while the plugin talks to another would hand the user a
+    /// credential their backend rejects, with nothing on screen explaining why.
+    /// </para>
+    /// <para>
+    /// Built through <see cref="TryNormalize"/> rather than by joining strings, because this value
+    /// is handed to the operating system to open. Normalizing here means only a URL that already
+    /// satisfies the scheme and hostname rules can be opened, and anything else falls back to the
+    /// official site rather than launching whatever the config file happened to contain.
+    /// </para>
+    /// </remarks>
+    /// <param name="baseUrl">The configured base URL, which may be absent or unparseable.</param>
+    public static string ProfileUrl(string? baseUrl) =>
+        TryNormalize(baseUrl, out var uri, out _) && uri is not null
+            ? new Uri(uri, "/profile").ToString()
+            : DefaultProfileUrl;
+
 
     /// <summary>
     /// Validates and normalizes a user-entered URL.
@@ -78,6 +159,19 @@ public static class BackendUrl
             || System.Net.IPAddress.TryParse(uri.Host, out _))
         {
             error = "Enter the server by domain name (use localhost, not 127.0.0.1).";
+            return false;
+        }
+
+        // A URL may carry "user:password@" before the host, and nothing here wants it. The plugin
+        // authenticates with its own token, so credentials in the URL buy nothing — while they
+        // cost two real things. They ride along into the address the request is built from, and
+        // into the profile link handed to the operating system, where the password would land in
+        // the browser's address bar and history. They also make one host impersonate another:
+        // "https://xiv-shinies.com@evil.example" reads as the official site at a glance, and it
+        // is the userinfo, not the host, that the eye lands on first.
+        if (uri.UserInfo.Length > 0)
+        {
+            error = "The URL must not contain a username or password.";
             return false;
         }
 

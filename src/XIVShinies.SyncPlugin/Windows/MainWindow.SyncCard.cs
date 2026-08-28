@@ -87,7 +87,7 @@ internal sealed partial class MainWindow
             // name and world for exactly this purpose; the local identity is the same information.
             var claimTarget = syncManager.LastStatus == ApiStatus.CharacterNotClaimed
                 && syncManager.CharacterName is { } name
-                    ? $"Claim {name} on xiv-shinies.com, then press Sync now."
+                    ? $"Claim {name} on {BackendHost()}, then press Sync now."
                     : "Your token may have been revoked, or this character is not claimed on the " +
                       "website. Fix it there, then press Sync now.";
 
@@ -397,8 +397,8 @@ internal sealed partial class MainWindow
             case ApiStatus.CharacterNotClaimed:
                 DrawWarning(
                     syncManager.CharacterName is { } name
-                        ? $"Claim {name} on xiv-shinies.com before it can sync."
-                        : "Claim this character on xiv-shinies.com before it can sync.");
+                        ? $"Claim {name} on {BackendHost()} before it can sync."
+                        : $"Claim this character on {BackendHost()} before it can sync.");
                 break;
 
             case ApiStatus.InvalidToken:
@@ -414,7 +414,17 @@ internal sealed partial class MainWindow
                 break;
 
             case ApiStatus.NetworkError:
-                ImGui.TextUnformatted("Could not reach xiv-shinies.com. Will try again.");
+                ImGui.TextUnformatted($"Could not reach {BackendHost()}. Will try again.");
+                break;
+
+            // The settings-side refusal, as opposed to NetworkError's unreachable server: the
+            // request never left, so "will try again" would be false — nothing changes until the
+            // configuration file does. Which setting is at fault decides the sentence, so the
+            // wording comes from BackendUrl rather than being written here.
+            case ApiStatus.NotConfigured:
+                DrawWarning(BackendUrl.DescribeUnusableSetting(
+                    configuration.Settings.BaseUrl,
+                    configuration.Settings.CustomBackendAcknowledged));
                 break;
 
             default:

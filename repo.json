@@ -3,7 +3,7 @@
     "Author": "Noranda",
     "Name": "XIV Shinies Sync",
     "InternalName": "XIVShinies.SyncPlugin",
-    "AssemblyVersion": "0.6.0.0",
+    "AssemblyVersion": "0.7.0.0",
     "Description": "Automatically records your collection progress on XIV Shinies (https://xiv-shinies.com). New quest, achievement, mount, and minion unlocks appear on the site within seconds; Triple Triad cards, Occult Crescent progress, and the items the site tracks sync automatically in the background. Fully opt-in: nothing uploads until you finish the short setup, and you choose exactly which collections to send. Use /shinies to get started.",
     "Punchline": "Your collections, on xiv-shinies.com, the moment you earn them.",
     "ApplicableVersion": "any",
@@ -17,8 +17,8 @@
       "https://raw.githubusercontent.com/XIV-Shinies/xiv-shinies-plugin/main/images/gallery/settings-2-collections.png",
       "https://raw.githubusercontent.com/XIV-Shinies/xiv-shinies-plugin/main/images/gallery/settings-5-uploads.png"
     ],
-    "DownloadLinkInstall": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/v0.6.0/XIVShinies.SyncPlugin.zip",
-    "DownloadLinkUpdate": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/v0.6.0/XIVShinies.SyncPlugin.zip",
-    "DownloadLinkTesting": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/v0.6.0/XIVShinies.SyncPlugin.zip"
+    "DownloadLinkInstall": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/v0.7.0/XIVShinies.SyncPlugin.zip",
+    "DownloadLinkUpdate": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/v0.7.0/XIVShinies.SyncPlugin.zip",
+    "DownloadLinkTesting": "https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/v0.7.0/XIVShinies.SyncPlugin.zip"
   }
 ]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin;
 
@@ -50,15 +51,29 @@ public class PluginSettings
     public bool ShareOccultInstanceState { get; set; } = true;
 
     /// <summary>
-    /// True when the user chose to have FUTURE sharing features start enabled as updates add
-    /// them. It is a standing answer, not a switch any behavior branches on today: when a
-    /// future update adds a sharing feature that would default on, that feature's migration is
-    /// where this gets consulted — on for a user who ticked it, off for everyone else until
-    /// they enable it in the settings. Defaults ON for the same visible-in-the-wizard reason
-    /// as <see cref="ShareOccultInstanceState"/>, and starts OFF on installs that finished
-    /// onboarding before it existed (see <see cref="ApplyUpgradeMigrations"/>).
+    /// True when the user chose to have sharing features added by later updates start switched
+    /// on, rather than being asked each time.
     /// </summary>
-    public bool AutoEnableNewFeatures { get; set; } = true;
+    /// <remarks>
+    /// <para>
+    /// Read by <see cref="AutoEnableUnseenCategories"/>, which switches on every collection this
+    /// install has never been shown — the whole point being that a user who always opts in does
+    /// not have to keep ticking boxes.
+    /// </para>
+    /// <para>
+    /// Defaults OFF, unlike <see cref="ShareOccultInstanceState"/>. That toggle defaults on for a
+    /// defence that does not carry here: it is one named thing, disclosed in full on the same
+    /// screen, and what it shares is world state. This is open-ended — an answer about collections
+    /// that do not exist yet, whose disclosure the user cannot have read — and it governs uploads
+    /// of their own collection data. A ticked-by-default box would collect that answer from
+    /// everyone who did not think to untick it, which is the weakest form consent takes.
+    /// </para>
+    /// <para>
+    /// A collection nobody switched on still announces itself with a "New" badge, so this setting
+    /// is convenience rather than the way anything gets discovered.
+    /// </para>
+    /// </remarks>
+    public bool AutoEnableNewFeatures { get; set; }
 
     /// <summary>
     /// Brings a config written by an older plugin version up to the current schema. Called once
@@ -66,22 +81,96 @@ public class PluginSettings
     /// when anything changed (the caller then saves).
     /// </summary>
     /// <remarks>
-    /// The version-1 rule: <see cref="ShareOccultInstanceState"/> and
-    /// <see cref="AutoEnableNewFeatures"/> did not exist before version 1, so on an install
-    /// whose onboarding is already complete — a user the wizard will never show these toggles
-    /// to — both start OFF, and the settings screen is where they opt in. An install still
-    /// ahead of its wizard keeps the defaults: the wizard will put both boxes in front of them.
+    /// The version-1 rule: <see cref="ShareOccultInstanceState"/> did not exist before version 1
+    /// and defaults ON, so on an install whose onboarding is already complete — a user the wizard
+    /// will never show that toggle to — it starts OFF, and the settings screen is where they opt
+    /// in. An install still ahead of its wizard keeps the default: the wizard will put the box in
+    /// front of them.
     /// </remarks>
     /// <param name="fromVersion">The version the loaded config was written at.</param>
     public bool ApplyUpgradeMigrations(int fromVersion)
     {
-        if (fromVersion >= 1 || !OnboardingComplete)
-            return false;
+        var changed = false;
 
-        ShareOccultInstanceState = false;
-        AutoEnableNewFeatures = false;
-        return true;
+        if (fromVersion < 1 && OnboardingComplete)
+        {
+            ShareOccultInstanceState = false;
+            changed = true;
+        }
+
+        // The version-2 rule: a config written before this version predates the seen-set, so its
+        // owner went through a wizard that recorded nothing. The collections of that era are taken
+        // as already-seen without evidence, because over-claiming "New" on a familiar list is the
+        // worse error. The list is frozen, so anything added since still announces itself, and an
+        // install still ahead of its wizard is left alone, because the wizard marks what it shows.
+        if (fromVersion < 2 && OnboardingComplete)
+        {
+            // Held across both writes so the flag and the baseline land as one step, the same
+            // nested-lock shape as InitializeSeenCategories.
+            lock (gate)
+            {
+                MarkCategoriesSeen(CategoriesPresentBeforeSeenTracking);
+                SeenCategoriesInitialized = true;
+            }
+
+            changed = true;
+        }
+
+        // The version-3 rule: AutoEnableNewFeatures decides whether a newly added COLLECTION starts
+        // switched on (see AutoEnableUnseenCategories), and a config written before this version
+        // stored its answer against copy that named only "a new kind of sharing" — a narrower
+        // question than the one now asked of it. The build that wrote those configs defaulted this
+        // on, so nearly all of them carry a true nobody ticked. It starts off, and the settings
+        // screen, where the copy names collections, is where that user opts back in.
+        //
+        // Not gated on OnboardingComplete, unlike the rule above: a config saved part-way through
+        // the wizard carries that same untouched true, and leaving it would hand that user a
+        // second pre-ticked box the wizard's own copy does not account for. A genuinely fresh
+        // install is untouched either way, because it never runs migrations at all.
+        if (fromVersion < 3 && AutoEnableNewFeatures)
+        {
+            AutoEnableNewFeatures = false;
+            changed = true;
+        }
+
+        return changed;
     }
+
+    /// <summary>
+    /// The collections that existed in the last version to ship without seen-tracking — the
+    /// baseline the version-2 migration writes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This list is a historical fact and must never grow.</b> It records what a config written
+    /// before the seen-set had already had the chance to show its owner, so that a collection
+    /// added afterwards is correctly new to them. Appending a later collection would silence
+    /// exactly the badge it should raise — which is what
+    /// <c>PluginSettingsTests.The_pre_seen_tracking_baseline_never_grows</c> exists to prevent.
+    /// </para>
+    /// <para>
+    /// Naming keys here is not a category-name branch: nothing branches on any of these names —
+    /// the list is handed to <see cref="MarkCategoriesSeen"/> whole — and adding a collector
+    /// requires no change to it. It is a frozen snapshot consulted once per install, in the same
+    /// spirit as a database migration naming the columns of its own era.
+    /// </para>
+    /// </remarks>
+    // IReadOnlyList rather than an array: `static readonly` freezes only the reference, so a
+    // public array's elements stay reassignable and the "never changes" promise above would be
+    // one the type does not actually make.
+    public static readonly IReadOnlyList<string> CategoriesPresentBeforeSeenTracking = new[]
+    {
+        CategoryKeys.Achievements,
+        CategoryKeys.Items,
+        CategoryKeys.Minions,
+        CategoryKeys.Mounts,
+        CategoryKeys.OccultProgression,
+        CategoryKeys.OccultRecords,
+        CategoryKeys.QuestSequences,
+        CategoryKeys.Quests,
+        CategoryKeys.TripleTriadCards,
+        CategoryKeys.TripleTriadNpcs,
+    };
 
     /// <summary>
     /// The backend server. User-overridable per Dalamud's recommendation; validate any change with
@@ -166,7 +255,34 @@ public class PluginSettings
     public List<string> EnabledItemGroupKeys { get; set; } = new();
 
     /// <summary>Group keys the settings UI has already shown once — everything else gets a "New" badge.</summary>
-    public List<string> SeenItemGroupKeys { get; set; } = new();
+    /// <remarks>
+    /// A list for the config file, mirrored by a set for the reads: the settings window asks
+    /// <see cref="IsItemGroupSeen"/> once per group per frame, and the keys come from a server
+    /// whose manifest can grow — so the per-frame cost must not scale with how many groups this
+    /// install has ever been shown. The mirror is discarded when the list is replaced (which is how
+    /// deserialization hands it in), rebuilt on the next read, and kept in step by
+    /// <see cref="MarkItemGroupsSeen"/>.
+    /// </remarks>
+    public List<string> SeenItemGroupKeys
+    {
+        get => seenItemGroupKeys;
+        set
+        {
+            seenItemGroupKeys = value ?? new List<string>();
+            seenItemGroupLookup = null;
+        }
+    }
+
+    private List<string> seenItemGroupKeys = new();
+
+    // Null until first asked, so a fresh or freshly-loaded settings object costs nothing extra.
+    private HashSet<string>? seenItemGroupLookup;
+
+    /// <summary>Category keys the settings UI has already shown once — everything else gets a "New" badge.</summary>
+    public List<string> SeenCategoryKeys { get; set; } = new();
+
+    /// <summary>True once <see cref="InitializeSeenCategories"/> has established this install's baseline.</summary>
+    public bool SeenCategoriesInitialized { get; set; }
 
     /// <summary>True once the one-time pre-group consent migration has run.</summary>
     public bool ItemGroupConsentMigrated { get; set; }
@@ -250,6 +366,148 @@ public class PluginSettings
         }
     }
 
+    /// <summary>True when the settings UI has already shown the given category once.</summary>
+    public bool IsCategorySeen(string categoryKey)
+    {
+        if (string.IsNullOrEmpty(categoryKey))
+            return false;
+
+        lock (gate)
+            return SeenCategoryKeys.Contains(categoryKey);
+    }
+
+    /// <summary>Mark the given categories as seen in the settings UI.</summary>
+    /// <remarks>
+    /// Idempotent, and best-effort about blanks, for the same reasons
+    /// <see cref="MarkItemGroupsSeen"/> is: it is called from the draw loop, where one malformed
+    /// entry must not take the frame down.
+    /// </remarks>
+    public void MarkCategoriesSeen(IEnumerable<string> categoryKeys)
+    {
+        if (categoryKeys == null)
+        {
+            return;
+        }
+
+        lock (gate)
+        {
+            foreach (var categoryKey in categoryKeys)
+            {
+                if (!string.IsNullOrEmpty(categoryKey) && !SeenCategoryKeys.Contains(categoryKey))
+                {
+                    SeenCategoryKeys.Add(categoryKey);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Establishes, once per install, which categories count as already-seen — the baseline every
+    /// later "New" badge is measured against. Does nothing after the first call.
+    /// </summary>
+    /// <param name="categoryKeys">Every category registered in this build.</param>
+    /// <returns>True when this call established the baseline, so the caller knows to save.</returns>
+    /// <remarks>
+    /// <para>
+    /// The baseline turns on whether the user has been through onboarding. Someone still in the
+    /// wizard is shown every category as part of it, and the wizard marks each one seen as it
+    /// draws — so nothing is pre-marked here and their first genuinely new category is the first
+    /// thing to ever wear a badge.
+    /// </para>
+    /// <para>
+    /// An install that reaches this call with onboarding complete has no recorded baseline and no
+    /// way to recover which categories its wizard showed, so every category present at this call
+    /// is taken as already-seen — silencing a screenful of badges on collections the user has been
+    /// using all along, at the cost of a category shipping alongside the baseline going unbadged.
+    /// A config written before the seen-set existed does not arrive in that state:
+    /// <see cref="ApplyUpgradeMigrations"/> writes its baseline from the frozen pre-tracking list
+    /// first, so a collection added after that list still badges for those installs.
+    /// </para>
+    /// </remarks>
+    public bool InitializeSeenCategories(IEnumerable<string> categoryKeys)
+    {
+        lock (gate)
+        {
+            if (SeenCategoriesInitialized)
+                return false;
+
+            SeenCategoriesInitialized = true;
+
+            // Nested inside the lock this method already holds, which C# permits: `lock` is
+            // reentrant for the thread that owns it, so the inner call re-enters rather than
+            // deadlocking. Holding it across both makes the flag and the baseline one atomic step.
+            if (OnboardingComplete)
+                MarkCategoriesSeen(categoryKeys);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Switches on every collection this install has never been shown, for a user who asked not to
+    /// be asked again.
+    /// </summary>
+    /// <param name="categoryKeys">Every category registered in this build.</param>
+    /// <returns>The keys switched on, in the order given — empty when nothing changed.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the one place a collection is switched on without the user ticking its own box.
+    /// What licenses it: <see cref="AutoEnableNewFeatures"/> is an explicit, visible, disclosed
+    /// standing answer to exactly this question, ticked on a consent surface that says collections
+    /// added later start switched on. A user who did not tick it gets nothing here, and neither
+    /// does one still ahead of their wizard — for them the wizard is the consent surface, and it
+    /// puts every collection in front of them.
+    /// </para>
+    /// <para>
+    /// Keyed on the seen-set rather than on a list of what is new, so it needs no per-release
+    /// bookkeeping: a collection the install has been shown is one the user has had the chance to
+    /// judge, and their answer — including switching it back off — is left alone forever after.
+    /// The badge is deliberately not suppressed: a collection that turned itself on is one the
+    /// user has MORE reason to be told about, not less.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> AutoEnableUnseenCategories(IEnumerable<string> categoryKeys)
+    {
+        if (categoryKeys == null)
+            return Array.Empty<string>();
+
+        List<string>? enabled = null;
+
+        lock (gate)
+        {
+            if (!OnboardingComplete || !AutoEnableNewFeatures)
+                return Array.Empty<string>();
+
+            // No recorded baseline means nothing can be known to be new. An onboarded install
+            // always has one — the wizard marks every collection it shows — so reaching here with
+            // an empty set means the record was lost rather than never written, and treating every
+            // collection as never-shown would switch on ones the user declined.
+            if (SeenCategoryKeys.Count == 0)
+                return Array.Empty<string>();
+
+            foreach (var categoryKey in categoryKeys)
+            {
+                if (string.IsNullOrEmpty(categoryKey) || SeenCategoryKeys.Contains(categoryKey))
+                    continue;
+
+                // A present entry is a value someone already decided — a click, or an earlier run
+                // of this method — and re-deciding it here would overwrite a standing state. In
+                // particular an answer of "no" is left alone. The guard above asks whether the
+                // collection has been announced; this one asks whether it already has a value,
+                // and the two are recorded separately.
+                if (EnabledCategories.ContainsKey(categoryKey))
+                    continue;
+
+                // The accessor takes the same lock this method already holds; C#'s lock is
+                // reentrant for the owning thread, so this re-enters rather than deadlocking.
+                SetCategoryEnabled(categoryKey, true);
+                (enabled ??= new List<string>()).Add(categoryKey);
+            }
+        }
+
+        return enabled ?? (IReadOnlyList<string>)Array.Empty<string>();
+    }
+
     /// <summary>True when the settings UI has already shown the given item group once.</summary>
     public bool IsItemGroupSeen(string groupKey)
     {
@@ -257,7 +515,10 @@ public class PluginSettings
             return false;
 
         lock (gate)
-            return SeenItemGroupKeys.Contains(groupKey);
+        {
+            seenItemGroupLookup ??= new HashSet<string>(seenItemGroupKeys, StringComparer.Ordinal);
+            return seenItemGroupLookup.Contains(groupKey);
+        }
     }
 
     /// <summary>Mark the given item groups as seen in the settings UI.</summary>
@@ -284,12 +545,15 @@ public class PluginSettings
 
         lock (gate)
         {
+            seenItemGroupLookup ??= new HashSet<string>(seenItemGroupKeys, StringComparer.Ordinal);
+
             foreach (var groupKey in groupKeys)
             {
-                // Add to the list only if it is not already there (idempotent, no duplicates).
-                if (!string.IsNullOrEmpty(groupKey) && !SeenItemGroupKeys.Contains(groupKey))
+                // The set answers "already there?" and the list keeps what the config file
+                // stores; both are written together so they cannot disagree.
+                if (!string.IsNullOrEmpty(groupKey) && seenItemGroupLookup.Add(groupKey))
                 {
-                    SeenItemGroupKeys.Add(groupKey);
+                    seenItemGroupKeys.Add(groupKey);
                 }
             }
         }

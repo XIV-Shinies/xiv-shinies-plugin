@@ -49,16 +49,22 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
 
         // Scoped twice over, and the visible line says both halves: only quests the server named
-        // are looked at, and only the journal's step position leaves the machine.
+        // are looked at, and only the step position leaves the machine.
+        //
+        // The game calls the quest log the Journal, and XIV Shinies has a Journal feature of its
+        // own, so this copy says "in game" instead: the word would read as a fact about the site
+        // rather than about a multi-part quest the user is part-way through — a relic chain,
+        // typically.
         WhatGetsSent =
-            "For the specific quests XIV Shinies asks about, which step of that quest your " +
-            "journal is currently on.",
+            "For the specific quests XIV Shinies asks about, how far through that quest you have " +
+            "got in game.",
 
-        // What the step position is NOT: the journal also holds objective text and map locations,
-        // and a reader has no way to know those stay behind unless it is said.
+        // What the step position is NOT: the game also tracks objective text and map locations
+        // against an active quest, and a reader has no way to know those stay behind unless it is
+        // said.
         Details =
-            "Nothing is sent about any other quest, and nothing else from your journal — no " +
-            "objective text, no locations.",
+            "Nothing is sent about any other quest, and nothing else about the ones it does ask " +
+            "about — no objective text, no locations.",
     };
 
     private static readonly CategoryInfo Mounts = new()
@@ -83,6 +89,23 @@ public static class CollectorRegistry
         DisplayName = "Achievements",
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of achievements you have earned.",
+    };
+
+    private static readonly CategoryInfo OrchestrionRolls = new()
+    {
+        Key = CategoryKeys.OrchestrionRolls,
+        DisplayName = "Orchestrion rolls",
+        Section = CollectionLogSection,
+        WhatGetsSent = "The ID numbers of the orchestrion rolls you have unlocked.",
+
+        // Owning the roll item and having unlocked the tune are separate states, and only the
+        // unlock is readable. Without this sentence a user with unplayed rolls in their bags would
+        // read the missing entries as a broken sync. It is elaboration rather than a kind of data,
+        // so it belongs in the hover instead of the visible line.
+        Details =
+            "A roll counts once you have used it and it is playable from your orchestrion list. " +
+            "An unused roll still sitting in your inventory is not yet unlocked, so it is not " +
+            "reported until you use it.",
     };
 
     private static readonly CategoryInfo TripleTriadCards = new()
@@ -236,6 +259,16 @@ public static class CollectorRegistry
                 precondition: () => unlockState.IsAchievementListLoaded
                     ? null
                     : CollectSkipReasons.AchievementListNotLoaded),
+
+            // The tunes, not the items: `Orchestrion` row ids are what the game's unlock state
+            // answers for. The "… Orchestrion Roll" items are a separate Item-sheet id space the
+            // server stores apart, so an item id sent here is dropped as unknown.
+            new ExcelUnlockCollector<Orchestrion>(
+                OrchestrionRolls,
+                dataManager,
+                framework,
+                row => row.RowId,
+                unlockState.IsOrchestrionUnlocked),
 
             // Cards are sheet-backed unlocks, structurally identical to mounts and minions. The
             // sheet's row 0 is a dummy; the game never marks it unlocked, and even if it did, the

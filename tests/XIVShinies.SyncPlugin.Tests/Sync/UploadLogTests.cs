@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
@@ -28,6 +29,123 @@ public class UploadLogTests
         Categories = Array.Empty<UploadLogCategory>(),
         Skipped = new Dictionary<string, string>(),
     };
+
+    // --- What the "Sent" column counts -----------------------------------------------------
+
+    // A collector whose facts wrap several unrelated things says how many it is about, and the log
+    // takes its word. Counting the shape instead sums the wrapper's parts: a progression payload
+    // of 24 jobs beside a two-field knowledge sighting would read as 26, and the same payload with
+    // no jobs read would read as 2 — a number that moves for reasons the reader cannot see.
+    [Fact]
+    public void A_categorys_own_count_is_preferred_over_the_shape_of_its_facts()
+    {
+        var facts = JsonNode.Parse(
+            """{"jobs":{"0":{"exp":0,"level":18},"1":{"exp":0,"level":6}},"knowledge":{"level":40,"observedAt":"x"}}""")!;
+
+        var entry = UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode> { ["occultProgression"] = facts },
+                Skipped = new Dictionary<string, string>(),
+                FactCounts = new Dictionary<string, int> { ["occultProgression"] = 2 },
+            });
+
+        // Two jobs, not the four the wrapper's members add up to.
+        Assert.Equal(2, Assert.Single(entry.Categories).Count);
+    }
+
+    // Every other category leaves the count to the facts' shape, which is the right answer when
+    // the facts ARE the collection.
+    [Fact]
+    public void A_category_that_reports_no_count_is_counted_from_its_facts()
+    {
+        var entry = UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            SnapshotWith(new Dictionary<string, JsonNode>
+            {
+                ["quests"] = SyncFacts.Ids(new uint[] { 1, 2, 3 }),
+            }));
+
+        Assert.Equal(3, Assert.Single(entry.Categories).Count);
+    }
+
+    // A collector can read none of what it is about and still have something to send — phantom
+    // jobs are only legible inside the instance, while a knowledge sighting remembered from
+    // earlier travels from anywhere. The category went out, so it is not skipped; nothing was
+    // counted, so it carries no count rather than a zero.
+    [Fact]
+    public void A_category_that_read_nothing_this_pass_carries_no_count()
+    {
+        var facts = JsonNode.Parse("""{"jobs":{},"knowledge":{"level":40,"observedAt":"x"}}""")!;
+
+        var entry = UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode> { ["occultProgression"] = facts },
+                Skipped = new Dictionary<string, string>(),
+                NothingReadKeys = new HashSet<string> { "occultProgression" },
+            });
+
+        var category = Assert.Single(entry.Categories);
+
+        // Not 2, which is what the knowledge sighting's own fields would count to.
+        Assert.Null(category.Count);
+    }
+
+    // --- What the log calls unread ---------------------------------------------------------
+
+    // A collection the user switched off is skipped, but nothing failed. Reporting it as unread
+    // would turn their own choice into a standing complaint in the log, and every user who leaves
+    // a collection unticked would carry one forever.
+    [Fact]
+    public void A_switched_off_category_is_not_reported_as_unread()
+    {
+        var entry = SomeEntry() with
+        {
+            Skipped = new Dictionary<string, string>
+            {
+                ["orchestrionRolls"] = CollectSkipReasons.Disabled,
+                ["achievements"] = CollectSkipReasons.AchievementListNotLoaded,
+            },
+        };
+
+        Assert.Equal(new[] { "achievements" }, entry.UnreadableCategoryKeys);
+
+        // The full map still carries it: "disabled" is precisely the answer a pasted diagnostic
+        // needs for "why did this not sync?".
+        Assert.Equal(CollectSkipReasons.Disabled, entry.Skipped["orchestrionRolls"]);
+    }
+
+    // Filtered on the reason, never the category — so a category switched off is silent whichever
+    // one it is, and every other reason still reports.
+    [Fact]
+    public void Every_reason_other_than_disabled_is_reported_as_unread()
+    {
+        var entry = SomeEntry() with
+        {
+            Skipped = new Dictionary<string, string>
+            {
+                ["items"] = CollectSkipReasons.NoRemoteConfig,
+                ["quests"] = CollectSkipReasons.CollectorError,
+                ["mounts"] = CollectSkipReasons.SheetUnavailable,
+                ["facewear"] = CollectSkipReasons.Disabled,
+            },
+        };
+
+        // Sorted, because the underlying map is a Dictionary and its order is not contractual.
+        Assert.Equal(new[] { "items", "mounts", "quests" }, entry.UnreadableCategoryKeys);
+    }
+
+    [Fact]
+    public void A_pass_that_skipped_nothing_reports_nothing_unread()
+    {
+        Assert.Empty(SomeEntry().UnreadableCategoryKeys);
+    }
 
     // --- Draft: summarizing what a snapshot is about to send -----------------------------
 
@@ -270,7 +388,9 @@ public class UploadLogTests
                 ["items"] = JsonNode.Parse("""[{"id":1,"count":1},{"id":3,"count":1}]""")!,
             }));
 
-        // Same count, different contents — the fingerprints must differ.
+        // Same count, different contents — the fingerprints must differ. Both passes count 2, so
+        // the fingerprint is the only signal that can carry the change.
+        Assert.Equal(2, before.Categories[0].Count);
         Assert.Equal(before.Categories[0].Count, after.Categories[0].Count);
         Assert.NotEqual(before.Categories[0].Fingerprint, after.Categories[0].Fingerprint);
     }
@@ -308,6 +428,144 @@ public class UploadLogTests
         };
 
         Assert.Contains("quests", UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // A pass that read none of the category makes no claim about its contents, so it cannot have
+    // changed. Its facts really are different from the readable pass before it — no jobs against
+    // 24 — so a plain count-and-fingerprint comparison would flag it.
+    [Fact]
+    public void A_category_that_read_nothing_is_not_flagged_as_changed()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // The other half of the same rule, and the one a reader feels: an unmeasured pass sitting between
+    // two identical readable ones must not make the later one look like movement. The baseline
+    // search passes over the unmeasured row and lands on the last pass that actually measured.
+    [Fact]
+    public void An_unmeasured_pass_is_not_the_baseline_for_the_pass_after_it()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+            SomeEntry(2) with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // The other direction of the same rule: passing over unmeasured rows must not HIDE real movement.
+    // The baseline search walks past the unmeasured row to the last pass that measured, so a genuine
+    // gain across the gap still flags.
+    [Fact]
+    public void A_change_across_an_unmeasured_pass_is_still_flagged()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 25, "bbbb2222") },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+            SomeEntry(2) with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+        };
+
+        Assert.Contains("occultProgression", UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // An unmeasured row as the OLDEST row leaves the category with no measurement anywhere behind it,
+    // so the first readable pass after it is deliberately not flagged — the same rule that keeps a
+    // category the log has never seen from painting the whole first upload of a session.
+    [Fact]
+    public void A_first_measured_pass_after_an_unmeasured_history_is_not_flagged()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[] { new UploadLogCategory("occultProgression", 24, "aaaa1111") },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("occultProgression", Count: null, "empty000"),
+                },
+            },
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    // A manifest-driven category is compared on its owned-entry count, so that is what makes a row
+    // a usable baseline for one — not the fact count the other categories are measured by. A row
+    // with no owned count is walked past, and the comparison lands on the last row that had one.
+    [Fact]
+    public void A_manifest_categorys_baseline_is_the_last_row_with_an_owned_count()
+    {
+        var newestFirst = new[]
+        {
+            SomeEntry() with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("items", 189, "aaaa1111", UsesItemManifest: true, OwnedCount: 44),
+                },
+            },
+            SomeEntry(1) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("items", 189, "aaaa1111", UsesItemManifest: true, OwnedCount: null),
+                },
+            },
+            SomeEntry(2) with
+            {
+                Categories = new[]
+                {
+                    new UploadLogCategory("items", 189, "aaaa1111", UsesItemManifest: true, OwnedCount: 43),
+                },
+            },
+        };
+
+        Assert.Contains("items", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
     // A manifest-driven category's contents move whenever the SERVER edits its manifest, so a
@@ -753,6 +1011,26 @@ public class UploadLogTests
             text);
     }
 
+    // The paste is a diagnostic, so a category that went out carrying no reading has to say so.
+    // Printing nothing after the "=" would look like a truncated dump, and printing 0 would tell
+    // the person debugging that the collector measured something when it measured nothing.
+    [Fact]
+    public void Clipboard_text_reports_an_unmeasured_category_as_none_seen()
+    {
+        var entry = SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory("occultProgression", Count: null),
+                new UploadLogCategory("quests", 3120),
+            },
+        };
+
+        var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });
+
+        Assert.Contains("sent: occultProgression=none_seen quests=3120", text);
+    }
+
     // The backend is user-overridable, and "you are pointed at the wrong server" is a classic
     // support case — the dump must say which server the log is about.
     [Fact]
@@ -1051,5 +1329,233 @@ public class UploadLogTests
             "Quests", category, changed: false, proof: "proof pending", stepsProven: false);
 
         Assert.Equal(new[] { ("Quests 903", false) }, spans);
+    }
+
+    // The span text, not just the record: "(none seen)" has to reach the rendered column, where a
+    // bare display name would look like a rendering bug.
+    [Fact]
+    public void Sent_spans_say_none_seen_for_a_category_with_no_count()
+    {
+        var category = new UploadLogCategory("occultProgression", Count: null);
+
+        var spans = UploadLogText.SentSpans(
+            "Phantom jobs", category, changed: false, proof: null, stepsProven: false);
+
+        Assert.Equal(new[] { ("Phantom jobs (none seen)", false) }, spans);
+    }
+
+    // --- The Sent column's order ---------------------------------------------------------------
+
+    // InDisplayOrder is the pure rule behind the Sent column's ordering. The window names the same
+    // collections in three places - this column, the consent checklist, and the sync card's chips -
+    // and a reader compares them by position, so the three have to agree.
+
+    // Alphabetical by the label the reader sees, not the order the collectors happened to run in.
+    [Fact]
+    public void Categories_are_listed_by_display_name()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("quests", Count: 2847),
+            new UploadLogCategory("achievements", Count: 1183),
+            new UploadLogCategory("mounts", Count: 214),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(categories, key => Names[key]);
+
+        Assert.Equal(
+            new[] { "achievements", "mounts", "quests" },
+            ordered.Select(c => c.Key).ToArray());
+    }
+
+    // The whole reason the order is taken from the display name: a key need not resemble the label
+    // drawn for it, so sorting on keys would put the words on screen in an order the reader cannot
+    // account for. Here the two orders are exact opposites, which no key-based sort can produce.
+    [Fact]
+    public void Categories_are_ordered_by_label_rather_than_by_category_key()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("aaa", Count: 1),
+            new UploadLogCategory("zzz", Count: 2),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(
+            categories, key => key == "aaa" ? "Zebra" : "Apple");
+
+        Assert.Equal(new[] { "zzz", "aaa" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // Two collections may choose the same display name, and an arbitrary order between them would
+    // let the column reshuffle itself between frames. The key settles it.
+    [Fact]
+    public void Categories_sharing_a_display_name_are_settled_by_their_key()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("second", Count: 2),
+            new UploadLogCategory("first", Count: 1),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(categories, _ => "Same");
+
+        Assert.Equal(new[] { "first", "second" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // The entry records the order the collectors ran in, and the clipboard export prints the
+    // categories in exactly that order for whoever is debugging a payload. Sorting in place would
+    // rewrite that surface as a side effect of drawing this one.
+    [Fact]
+    public void Ordering_for_display_leaves_the_entrys_own_order_alone()
+    {
+        var categories = new List<UploadLogCategory>
+        {
+            new("quests", Count: 2847),
+            new("achievements", Count: 1183),
+        };
+
+        UploadLogText.InDisplayOrder(categories, key => Names[key]);
+
+        Assert.Equal(new[] { "quests", "achievements" }, categories.Select(c => c.Key).ToArray());
+    }
+
+    // A category whose collector is not registered falls back to its raw key as a label, which is
+    // still a string and still has to sort - the column must not drop it or throw.
+    [Fact]
+    public void A_category_with_no_registered_display_name_still_sorts_by_its_key()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("mounts", Count: 214),
+            new UploadLogCategory("facewear", Count: 12),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(
+            categories, key => Names.TryGetValue(key, out var name) ? name : key);
+
+        // "facewear" has no display name, so it sorts under its own key, ahead of "Mounts".
+        Assert.Equal(new[] { "facewear", "mounts" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // Display names are English strings authored in this repo, so the order must not turn on
+    // casing - every user's log reads the same whatever their machine's locale.
+    [Fact]
+    public void Ordering_ignores_case()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("upper", Count: 1),
+            new UploadLogCategory("lower", Count: 2),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(
+            categories, key => key == "upper" ? "ZEBRA" : "apple");
+
+        Assert.Equal(new[] { "lower", "upper" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // An entry carrying nothing is an ordinary state (a sweep with every collection switched off),
+    // and the column simply draws nothing.
+    [Fact]
+    public void Ordering_an_empty_category_list_returns_nothing()
+    {
+        Assert.Empty(UploadLogText.InDisplayOrder([], key => key));
+    }
+
+    // The "Could not read" line sits in the same table cell as the Sent column, so a reader meets
+    // both orders at once and they have to agree.
+
+    [Fact]
+    public void Unreadable_keys_are_listed_by_display_name()
+    {
+        var ordered = UploadLogText.KeysInDisplayOrder(
+            new[] { "quests", "achievements", "mounts" }, key => Names[key]);
+
+        Assert.Equal(new[] { "achievements", "mounts", "quests" }, ordered.ToArray());
+    }
+
+    // The same reason the Sent column orders on the label: a key need not resemble the name drawn
+    // for it, so a key-ordered line would read in an order the user cannot account for.
+    [Fact]
+    public void Unreadable_keys_are_ordered_by_label_rather_than_by_key()
+    {
+        var ordered = UploadLogText.KeysInDisplayOrder(
+            new[] { "aaa", "zzz" }, key => key == "aaa" ? "Zebra" : "Apple");
+
+        Assert.Equal(new[] { "zzz", "aaa" }, ordered.ToArray());
+    }
+
+    // List.Sort is unstable, so two keys sharing a display name need a tie-break or their order can
+    // differ between two runs over equal input.
+    [Fact]
+    public void Unreadable_keys_sharing_a_display_name_are_settled_by_their_key()
+    {
+        var ordered = UploadLogText.KeysInDisplayOrder(new[] { "second", "first" }, _ => "Same");
+
+        Assert.Equal(new[] { "first", "second" }, ordered.ToArray());
+    }
+
+    [Fact]
+    public void Ordering_an_empty_key_list_returns_nothing()
+    {
+        Assert.Empty(UploadLogText.KeysInDisplayOrder([], key => key));
+    }
+
+    // The display names the window would supply for the keys these tests use.
+    private static readonly Dictionary<string, string> Names = new()
+    {
+        ["quests"] = "Quests",
+        ["achievements"] = "Achievements",
+        ["mounts"] = "Mounts",
+    };
+
+    // An explicit JSON null lands as a null array despite `required` (see ApiJson), and the one
+    // place it could throw is inside response handling, where an exception silently skips the
+    // terminal-400 bookkeeping for that attempt.
+    [Fact]
+    public void A_null_field_error_array_does_not_break_the_issues_text()
+    {
+        var error = new ErrorResponse
+        {
+            Error = "validation_failed",
+            Issues = new ValidationIssues
+            {
+                FieldErrors = new Dictionary<string, string[]> {["quests"] = null!},
+            },
+        };
+
+        Assert.Equal("quests:", UploadLogText.IssuesText(error));
+    }
+
+    // The complaint is drawn in the log table, where a newline would push the rest of the cell
+    // out of sight — so the text is folded onto one line, not merely bounded.
+    [Fact]
+    public void A_multi_line_server_complaint_is_folded_onto_one_line()
+    {
+        var error = new ErrorResponse
+        {
+            Error = "validation_failed",
+            Issues = new ValidationIssues {FormErrors = new[] {"line one\nline two"}},
+        };
+
+        Assert.Equal("line one line two", UploadLogText.IssuesText(error));
+    }
+
+    // Pins the null-vs-zero distinction CarriesManifestDrivenFacts draws: a measured zero owes
+    // no answer, but an absent count means the facts went out unmeasured, so the note is still
+    // owed.
+    [Fact]
+    public void A_manifest_category_with_no_reading_still_reports_proof_pending()
+    {
+        var entry = SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory("items", null, "aaaa1111", UsesItemManifest: true),
+            },
+            ProvenSteps = null,
+        };
+
+        Assert.Equal("proof pending", UploadLogText.ProofText(entry));
     }
 }

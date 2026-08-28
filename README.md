@@ -29,9 +29,9 @@ sends only raw facts the game knows and never computes site concepts like relic 
 keeps it stable as the site grows new collections and rules.
 
 New unlocks (quests, achievements, mounts, minions) upload within seconds of earning them.
-Anything the plugin gets no unlock signal for — Triple Triad cards, and item possession used
-to prove relic progress — travels with periodic full syncs, or immediately with the **Sync
-now** button.
+Anything the plugin gets no unlock signal for — Triple Triad cards, orchestrion rolls, and
+item possession used to prove relic progress — travels with periodic full syncs, or
+immediately with the **Sync now** button.
 
 ## What gets sent
 
@@ -40,6 +40,8 @@ into:
 
 - Completed **quest** IDs
 - Unlocked **achievement**, **mount**, and **minion** IDs
+- Unlocked **orchestrion roll** IDs — the tunes playable from your orchestrion list, not the
+  unused roll items sitting in your bags
 - Collected **Triple Triad card** IDs, and the IDs of the game's own **Triple Triad NPCs** you
   have defeated — computer opponents, never other players
 - **Possession counts** for the specific relic-stage items the server asks about — checked
@@ -72,6 +74,10 @@ rule-by-rule in [`docs/dalamud-compliance.md`](docs/dalamud-compliance.md).
 Nothing uploads until you finish a short first-run setup that shows exactly what each
 collection sends and asks you to switch categories on explicitly. Every category — and syncing
 as a whole — can be toggled at any time from the settings window (`/shinies`).
+
+Setup also offers to start collections added by later updates already switched on, so that if you
+always opt in you are not asked every time. It is off unless you tick it, and either way a new
+collection is marked **New** in the settings until you have seen it.
 
 ![The first-run wizard: what it sends, and your privacy, before anything uploads](images/screenshots/wizard-1-welcome.png)
 
