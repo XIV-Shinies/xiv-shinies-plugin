@@ -106,17 +106,11 @@ const name = process.env.RELEASE_NAME || tag;
 // here, so the post goes out either way rather than silently skipping a release.
 const body = process.env.RELEASE_BODY ?? "";
 
-// The embed's timestamp is the release's own publish time when the workflow provides it;
-// the moment this script happens to run is only a fallback. Discord rejects the whole
-// embed unless the timestamp is ISO 8601, and the value's spelling depends on the calling
-// shell — PowerShell 7's ConvertFrom-Json turns ISO date strings into DateTime objects,
-// which stringify into a culture-formatted date on the way into the environment — so
-// whatever arrives is parsed and re-emitted in the one form Discord accepts.
-const publishedAtMs = Date.parse(process.env.RELEASE_PUBLISHED_AT ?? "");
-const timestamp = Number.isNaN(publishedAtMs)
-    ? new Date().toISOString()
-    : new Date(publishedAtMs).toISOString();
-
+// The embed deliberately carries NO timestamp field, so the only clock a reader sees is
+// the one Discord stamps on the message itself. The announcement can trail its release
+// by design — it waits for verification and an explicit go-ahead — and an embed stamped
+// with the earlier publish time reads out of order beside the web app's announcements in
+// the same channel, which carry no embed timestamp either. One convention, two products.
 const payload = {
   username: USERNAME,
   avatar_url: AVATAR_URL,
@@ -126,7 +120,6 @@ const payload = {
       url,
       description: truncate(body),
       color: EMBED_COLOR,
-      timestamp,
     },
   ],
 };
