@@ -96,9 +96,10 @@ internal sealed partial class MainWindow
         if (ImGui.CollapsingHeader("Privacy"))
         {
             ImGui.Spacing();
+            // Names the server the data is actually sent to — see MainWindow.BackendHost.
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
-                "Your character's name and home world are sent so xiv-shinies.com can match the " +
+                $"Your character's name and home world are sent so {BackendHost()} can match the " +
                 "character you already claimed. Nothing is uploaded unless syncing is switched " +
                 "on, and you choose which collections to include.");
         }
@@ -244,9 +245,13 @@ internal sealed partial class MainWindow
             Widgets.AlignRight(ImGui.CalcTextSize(versionLabel).X);
             ImGui.TextDisabled(versionLabel);
 
-            // The manifest punchline, with the site picked out in gold like the wizard intro. The
-            // rest is a null span color, meaning the normal text color: it is the one sentence
-            // that says what the plugin is for, so it reads at full contrast.
+            // The manifest punchline, with the site picked out in gold. The rest is a null span
+            // color, meaning the normal text color: it is the one sentence that says what the
+            // plugin is for, so it reads at full contrast.
+            //
+            // The official name is hardcoded here, unlike the sentences that state where data
+            // goes. This is the project's tagline quoted from the manifest, and a tagline naming
+            // whatever server a developer happens to be pointed at would be quoting nothing.
             Widgets.DrawWrappedSpans(
                 ("Your collections, on", null),
                 ("xiv-shinies.com,", Brand.Gold),

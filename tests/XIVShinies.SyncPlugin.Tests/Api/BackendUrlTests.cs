@@ -1,3 +1,4 @@
+using System;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
 
@@ -42,7 +43,7 @@ public class BackendUrlTests
     [Theory]
     [InlineData("http://localhost.evil.com")]
     [InlineData("http://127.0.0.1.evil.com")]
-    [InlineData("http://localhost@evil.com")] // userinfo — the real host is evil.com
+    [InlineData("http://localhost@evil.com")] // caught by the userinfo gate before the loopback rule
     public void Rejects_loopback_lookalike_hosts_over_plaintext(string raw)
     {
         Assert.False(BackendUrl.TryNormalize(raw, out var uri, out var error));
@@ -101,5 +102,201 @@ public class BackendUrlTests
         Assert.False(BackendUrl.TryNormalize(raw, out var uri, out var error));
         Assert.Null(uri);
         Assert.NotNull(error);
+    }
+
+    // --- The host named in an unreachable message -----------------------------------------------
+
+    // Every sentence naming the service names the configured one — see BackendUrl.DisplayHost.
+
+    [Fact]
+    public void The_official_backend_is_named_by_its_host()
+    {
+        Assert.Equal("xiv-shinies.com", BackendUrl.DisplayHost(BackendUrl.Default));
+    }
+
+    [Fact]
+    public void A_custom_backend_is_named_by_its_own_host()
+    {
+        Assert.Equal(
+            "dev.example.com", BackendUrl.DisplayHost("https://dev.example.com/api"));
+    }
+
+    // The host alone, because this lands mid-sentence — a scheme, a port and a path read as debris
+    // there, and the host is the part that identifies the server.
+    [Fact]
+    public void Only_the_host_is_named_not_the_whole_url()
+    {
+        Assert.Equal("localhost", BackendUrl.DisplayHost("https://localhost:5173/api/plugin/v1"));
+    }
+
+    // A stored value too malformed to parse has no host to show. Naming the official server is the
+    // honest fallback: printing raw config text would put unparsed settings on screen.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not a url")]
+    [InlineData("/relative/only")]
+    public void An_unusable_setting_falls_back_to_the_official_host(string? raw)
+    {
+        Assert.Equal("xiv-shinies.com", BackendUrl.DisplayHost(raw));
+    }
+
+    // The values that PARSE but are refused, which is the class a "does it parse" check would let
+    // through. Naming one of these would promise a destination the client will not send to: a
+    // refused address means every request answers NotConfigured, so the privacy cards would state
+    // a recipient that never receives anything.
+    [Theory]
+    [InlineData("http://example.com")]
+    [InlineData("https://127.0.0.1")]
+    [InlineData("https://[::1]")]
+    [InlineData("ftp://example.com")]
+    [InlineData("file://server/share")]
+    [InlineData("mailto:someone@example.com")]
+    public void A_setting_the_client_refuses_to_use_is_never_named(string raw)
+    {
+        Assert.Equal("xiv-shinies.com", BackendUrl.DisplayHost(raw));
+    }
+
+    // The named host and the opened link answer to one gate, so the sentence and the button beneath
+    // it can never describe different servers.
+    [Theory]
+    [InlineData("https://dev.example.com")]
+    [InlineData("http://localhost:5173")]
+    [InlineData("https://127.0.0.1")]
+    [InlineData("http://example.com")]
+    [InlineData("not a url")]
+    public void The_named_host_and_the_profile_link_always_agree(string raw)
+    {
+        // Whichever server DisplayHost names is the one ProfileUrl opens, fallback included.
+        Assert.Equal(BackendUrl.DisplayHost(raw), new Uri(BackendUrl.ProfileUrl(raw)).IdnHost);
+    }
+
+    // An international host is named in the punycode form, which cannot impersonate another domain.
+    [Fact]
+    public void An_international_host_is_named_in_punycode()
+    {
+        Assert.Equal(
+            "xn--e1afmkfd.example",
+            BackendUrl.DisplayHost("https://\u043F\u0440\u0438\u043C\u0435\u0440.example"));
+    }
+
+    // --- Credentials in the URL ------------------------------------------------------------------
+
+    // A URL carrying credentials is refused outright — see the userinfo gate in TryNormalize.
+    [Fact]
+    public void A_url_carrying_credentials_is_refused()
+    {
+        Assert.False(
+            BackendUrl.TryNormalize("https://user:pass@dev.example.com", out var uri, out var error));
+        Assert.Null(uri);
+        Assert.NotNull(error);
+    }
+
+    // The impersonation this closes: the official name sits where the eye lands first, while the
+    // host that would actually be opened is something else entirely.
+    [Fact]
+    public void A_url_impersonating_the_official_host_through_credentials_is_refused()
+    {
+        Assert.False(BackendUrl.TryNormalize("https://xiv-shinies.com@evil.example", out _, out _));
+        Assert.Equal("xiv-shinies.com", BackendUrl.DisplayHost("https://xiv-shinies.com@evil.example"));
+        Assert.Equal(
+            "https://xiv-shinies.com/profile",
+            BackendUrl.ProfileUrl("https://xiv-shinies.com@evil.example"));
+    }
+
+    // --- Where the Open profile button goes -----------------------------------------------------
+
+    // The link follows the configured backend, and is validated before it is opened — see ProfileUrl.
+
+    [Fact]
+    public void The_profile_page_is_on_the_official_server_by_default()
+    {
+        Assert.Equal("https://xiv-shinies.com/profile", BackendUrl.ProfileUrl(BackendUrl.Default));
+    }
+
+    [Fact]
+    public void The_profile_page_follows_a_custom_backend()
+    {
+        Assert.Equal(
+            "https://dev.example.com/profile", BackendUrl.ProfileUrl("https://dev.example.com"));
+    }
+
+    // A base URL carrying a path is still only a server address here — the profile page lives at
+    // the root, so an api prefix must not end up inside the link.
+    [Fact]
+    public void A_base_url_with_a_path_still_points_at_the_profile_root()
+    {
+        Assert.Equal(
+            "https://dev.example.com/profile", BackendUrl.ProfileUrl("https://dev.example.com/api/"));
+    }
+
+    // The port belongs to the server, so a local backend keeps it.
+    [Fact]
+    public void A_local_backend_keeps_its_port()
+    {
+        Assert.Equal("http://localhost:5173/profile", BackendUrl.ProfileUrl("http://localhost:5173"));
+    }
+
+    // The stored setting can be hand-edited and so need never have passed validation. Anything that
+    // fails the scheme and hostname rules falls back to the official site rather than being opened:
+    // this value is handed to the operating system, so a non-web scheme must never reach it.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not a url")]
+    [InlineData("file:///C:/Windows/System32")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("http://example.com")]
+    [InlineData("https://127.0.0.1")]
+    public void An_unusable_or_disallowed_setting_falls_back_to_the_official_profile(string? raw)
+    {
+        Assert.Equal("https://xiv-shinies.com/profile", BackendUrl.ProfileUrl(raw));
+    }
+
+    // --- Why a configured server cannot be contacted ---------------------------------------------
+
+    // Two different settings produce the same refusal and need opposite actions, so the sentence has
+    // to tell them apart — see BackendUrl.DescribeUnusableSetting.
+
+    // A broken address borrows TryNormalize's own complaint, so the user reads the rule they broke
+    // rather than a generic one.
+    [Fact]
+    public void A_malformed_address_is_explained_by_the_rule_it_breaks()
+    {
+        BackendUrl.TryNormalize("http://example.com", out _, out var rule);
+        var sentence = BackendUrl.DescribeUnusableSetting("http://example.com", true);
+
+        Assert.NotNull(rule);
+        Assert.Contains(rule, sentence);
+    }
+
+    // The case a developer actually hits: the address is fine and the acknowledgment is missing.
+    // Telling them to fix the address would send them looking for a fault that is not there.
+    [Fact]
+    public void An_unacknowledged_custom_server_is_not_reported_as_a_bad_address()
+    {
+        var sentence = BackendUrl.DescribeUnusableSetting("https://dev.example.com", false);
+
+        Assert.Contains("acknowledged", sentence);
+        Assert.DoesNotContain("cannot be used", sentence);
+    }
+
+    // The official server needs no acknowledgment, so the flag cannot be the explanation there.
+    [Fact]
+    public void The_official_server_is_never_reported_as_unacknowledged()
+    {
+        Assert.DoesNotContain(
+            "acknowledged", BackendUrl.DescribeUnusableSetting(BackendUrl.Default, false));
+    }
+
+    // Neither setting explains it, so the sentence claims only what is certain rather than guessing.
+    [Fact]
+    public void A_usable_acknowledged_setting_gets_no_invented_cause()
+    {
+        var sentence = BackendUrl.DescribeUnusableSetting("https://dev.example.com", true);
+
+        Assert.DoesNotContain("acknowledged", sentence);
+        Assert.DoesNotContain("cannot be used", sentence);
     }
 }

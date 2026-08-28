@@ -42,8 +42,10 @@ internal sealed partial class MainWindow
             Widgets.AlignRight(openWidth, innerRight);
             var openButtonPos = ImGui.GetCursorPos();
 
+            // The configured server rather than the official one, and validated on the way out —
+            // see BackendUrl.ProfileUrl.
             if (BoldButton("###openProfile", new Vector2(openWidth, 0f)))
-                Util.OpenLink($"{BackendUrl.Default}/profile");
+                Util.OpenLink(BackendUrl.ProfileUrl(configuration.Settings.BaseUrl));
 
             DrawButtonFeedback(
                 openButtonPos, openWidth, FontAwesomeIcon.Globe, Brand.Teal,
@@ -51,8 +53,9 @@ internal sealed partial class MainWindow
 
             CloseCardHeader();
 
+            // Names the configured server, matching where the button above actually goes.
             DrawWrapped(
-                "Create a plugin token in your profile settings on xiv-shinies.com, then paste " +
+                $"Create a plugin token in your profile settings on {BackendHost()}, then paste " +
                 "it below. The token is shown once and can be revoked at any time.",
                 ImGuiCol.Text);
 
@@ -161,7 +164,7 @@ internal sealed partial class MainWindow
                 break;
 
             case TokenFeedbackKind.Checking:
-                ImGui.TextUnformatted("Checking with xiv-shinies.com...");
+                ImGui.TextUnformatted($"Checking with {BackendHost()}...");
                 break;
 
             case TokenFeedbackKind.Accepted:
@@ -179,7 +182,8 @@ internal sealed partial class MainWindow
                 break;
 
             case TokenFeedbackKind.Unreachable:
-                DrawWarning("Could not reach xiv-shinies.com. Your token may be fine — try again.");
+                DrawWarning(
+                    $"Could not reach {BackendHost()}. Your token may be fine — try again.");
                 break;
         }
     }
@@ -197,7 +201,7 @@ internal sealed partial class MainWindow
         {
             DrawWarning(
                 "This account has not claimed any characters yet. Claim your character on " +
-                "xiv-shinies.com first, or uploads will be refused.");
+                $"{BackendHost()} first, or uploads will be refused.");
             return;
         }
 
@@ -227,7 +231,7 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
         DrawWrapped(
-            "Claimed a new character on xiv-shinies.com? Press Verify to refresh this list.",
+            $"Claimed a new character on {BackendHost()}? Press Verify to refresh this list.",
             ImGuiCol.Text);
     }
 
@@ -239,8 +243,8 @@ internal sealed partial class MainWindow
     /// <remarks>
     /// Runs through the upload gate: a Verify press is direct user action, but this is automatic,
     /// so it must respect the same consent switches as every other unprompted request. The flag is
-    /// deliberately not reset on failure — "could not reach xiv-shinies.com" plus the Verify
-    /// button to retry by hand is the honest resting state, not a silent retry loop.
+    /// deliberately not reset on failure — the unreachable notice plus the Verify button to retry
+    /// by hand is the honest resting state, not a silent retry loop.
     /// </remarks>
     private void TryAutoVerifyToken()
     {

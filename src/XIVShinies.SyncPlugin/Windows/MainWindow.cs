@@ -116,6 +116,8 @@ internal sealed partial class MainWindow : Window, IDisposable
     private static readonly (FontAwesomeIcon Icon, Vector4 IconColor, string Label, string Id, string Url)[]
         LinkButtons =
         {
+            // The project's website, not the configured backend: this row is brand links, sitting
+            // beside Discord and the source repository, rather than anything about the sync target.
             (FontAwesomeIcon.Globe, Brand.Teal, "xiv-shinies.com", "###linkSite", BackendUrl.Default),
             (FontAwesomeIcon.Comments, Brand.Teal, "Discord", "###linkDiscord", PluginMeta.DiscordUrl),
             (FontAwesomeIcon.Code, Brand.Teal, "Source code", "###linkSource", PluginMeta.SourceUrl),
@@ -573,6 +575,38 @@ internal sealed partial class MainWindow : Window, IDisposable
     /// <summary>Binds this window's icon font to <see cref="Widgets.DrawChip"/>.</summary>
     private void DrawChip(FontAwesomeIcon icon, string text, Vector4 color, bool filled = false) =>
         Widgets.DrawChip(iconFont, icon, text, color, filled);
+
+    // The configured host and the setting it was derived from, so BackendHost can tell a repeat
+    // question from a changed answer. Empty until first asked.
+    private string? backendHostSource;
+    private string backendHost = string.Empty;
+
+    /// <summary>The server this plugin is configured to talk to, named for the reader.</summary>
+    /// <remarks>
+    /// <para>
+    /// Every sentence in this window that names the service asks here, so they all name the same
+    /// server. <see cref="BackendUrl.DisplayHost"/> owns the reasoning and the fallback.
+    /// </para>
+    /// <para>
+    /// Derived once per distinct setting rather than once per call. Several callers sit in
+    /// always-visible draw paths, and deriving a host means parsing a URL — the same per-frame
+    /// garbage the link row above is static to avoid. The cached value is keyed on the setting it
+    /// came from, so editing the config still takes effect without a restart.
+    /// </para>
+    /// </remarks>
+    private string BackendHost()
+    {
+        var configured = configuration.Settings.BaseUrl;
+
+        // DisplayHost never answers with an empty string, so an empty cache means "not yet asked".
+        if (backendHost.Length == 0 || backendHostSource != configured)
+        {
+            backendHostSource = configured;
+            backendHost = BackendUrl.DisplayHost(configured);
+        }
+
+        return backendHost;
+    }
 
     /// <summary>Binds this window's icon font to <see cref="Widgets.ChipWidth"/>.</summary>
     private float ChipWidth(FontAwesomeIcon icon, string text) =>
