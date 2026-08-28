@@ -221,6 +221,27 @@ explicitly** and list the in-game QA steps needed — do NOT imply the build/tes
 classified ✓, zero un-reviewed sites. "We fixed the ones we found" ≠ "we found them all";
 re-grep to confirm no site of the pattern remains unhandled.
 
+#### Two rules for QA that only looks like it passed
+
+**For a deliberately-absent state, absence on screen is not evidence.** A badge that failed to
+draw and a badge the code *deliberately withheld* look identical in a screenshot — one is a bug,
+the other is the feature working. So do not accept "I didn't see it" as a pass. Read the state the
+code actually persisted or returned: the config key, the settings file, the collection the method
+handed back. That step routinely reverses what a result meant, on changes where the screen alone
+would have recorded a pass.
+
+The same trap has a quieter form: a value that fell back. A server string that never arrived
+renders as the generic fallback, which looks perfectly correct on its own. When a test's subject is
+*which* of two texts appeared, assert the exact string — "the tooltip showed something" is not the
+claim being tested.
+
+**When the claim is "nothing happened", prove a positive instead.** Observing an absence is weak
+(you cannot distinguish "it correctly did nothing" from "it never ran"), and it usually costs more
+to set up than it is worth. Look for a signal that only fires on the path you care about and assert
+*that*: a log line emitted only after the match you are testing, a counter that moves, a returned
+list whose contents you can diff before and after. Turning "nothing was uploaded" into "the
+collector recognized the item and refused it" makes the same guarantee observable.
+
 ### 7.5 Comment Sweep — the last gate, every time
 
 **Run this AFTER every fix is applied and the build is green.** One `general-purpose` subagent
@@ -354,3 +375,5 @@ If every reviewer found nothing, "All reviewers passed with no findings" is a va
 | Treating a clean grep as a clean comment check | The grep matches phrasing. A comment that is simply FALSE now matches nothing. Run the sweep. |
 | Sweeping once and shipping | Your comment fixes are new comments. Re-sweep until a round comes back clean. |
 | Assuming a comment that was true when written is still true | A later fix can make it unreachable. Rule 4 exists for exactly this. |
+| Accepting "I did not see it" as a pass | A withheld state and a broken one look identical on screen. Read what the code persisted or returned. |
+| Testing that nothing happened by watching for nothing | You cannot tell "correctly did nothing" from "never ran". Assert a signal that only the path you care about emits. |
