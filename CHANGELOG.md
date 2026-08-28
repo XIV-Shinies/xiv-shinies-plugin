@@ -7,6 +7,15 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.7.0 — 2026-08-28
+
+- Mark a switched-off collection with an Off chip and the site's reason
+- Mark a collection you have never been shown with a New badge
+- Extend auto-enable to collections, asking for your choice afresh
+- Sort collections alphabetically in settings, status, and the log
+- Fix the phantom job count shown in the upload log
+- Stop listing a collection you switched off as unreadable
+
 ## v0.6.0 — 2026-08-14
 
 - Share your Occult Crescent instance's encounters with the live tracker
