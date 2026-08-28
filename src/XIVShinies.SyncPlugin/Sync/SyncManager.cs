@@ -1205,11 +1205,14 @@ internal sealed class SyncManager : IDisposable
             // left wondering why a collection never appears on the website.
             var skipped = response.Value?.SkippedCategories;
 
-            // Clamped like every other adopted server string: the log is a durable sink the user
-            // pastes into bug reports, and these names come from an overridable backend.
-            if (skipped is {Count: > 0})
+            // Folded and bounded like every other adopted server string: the log is a durable
+            // sink the user pastes into bug reports, and these names come from an overridable
+            // backend — a newline inside one would let it forge its own log lines. The join runs
+            // before the bound, which is safe only because the response body these names were
+            // parsed from is itself capped at ApiClient.MaxResponseBytes.
+            if (skipped is {Count: > 0}
+                && ServerText.SingleLine(string.Join(", ", skipped)) is { } names)
             {
-                var names = ServerText.Clamp(string.Join(", ", skipped), ellipsis: true);
                 log.Information($"Server skipped: {names}");
             }
 

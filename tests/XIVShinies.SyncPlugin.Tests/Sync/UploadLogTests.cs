@@ -1508,4 +1508,54 @@ public class UploadLogTests
         ["achievements"] = "Achievements",
         ["mounts"] = "Mounts",
     };
+
+    // An explicit JSON null lands as a null array despite `required` (see ApiJson), and the one
+    // place it could throw is inside response handling, where an exception silently skips the
+    // terminal-400 bookkeeping for that attempt.
+    [Fact]
+    public void A_null_field_error_array_does_not_break_the_issues_text()
+    {
+        var error = new ErrorResponse
+        {
+            Error = "validation_failed",
+            Issues = new ValidationIssues
+            {
+                FieldErrors = new Dictionary<string, string[]> {["quests"] = null!},
+            },
+        };
+
+        Assert.Equal("quests:", UploadLogText.IssuesText(error));
+    }
+
+    // The complaint is drawn in the log table, where a newline would push the rest of the cell
+    // out of sight — so the text is folded onto one line, not merely bounded.
+    [Fact]
+    public void A_multi_line_server_complaint_is_folded_onto_one_line()
+    {
+        var error = new ErrorResponse
+        {
+            Error = "validation_failed",
+            Issues = new ValidationIssues {FormErrors = new[] {"line one\nline two"}},
+        };
+
+        Assert.Equal("line one line two", UploadLogText.IssuesText(error));
+    }
+
+    // Pins the null-vs-zero distinction CarriesManifestDrivenFacts draws: a measured zero owes
+    // no answer, but an absent count means the facts went out unmeasured, so the note is still
+    // owed.
+    [Fact]
+    public void A_manifest_category_with_no_reading_still_reports_proof_pending()
+    {
+        var entry = SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory("items", null, "aaaa1111", UsesItemManifest: true),
+            },
+            ProvenSteps = null,
+        };
+
+        Assert.Equal("proof pending", UploadLogText.ProofText(entry));
+    }
 }

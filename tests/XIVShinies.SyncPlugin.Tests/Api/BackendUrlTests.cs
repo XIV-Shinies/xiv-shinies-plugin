@@ -299,4 +299,19 @@ public class BackendUrlTests
         Assert.DoesNotContain("acknowledged", sentence);
         Assert.DoesNotContain("cannot be used", sentence);
     }
+
+    // The window's cached copy of this answer uses "empty" to mean "not yet asked", which is only
+    // sound while no input can produce an empty answer — pinned here so the two files cannot
+    // drift apart silently.
+    [Theory]
+    [InlineData(BackendUrl.Default)]
+    [InlineData("https://dev.example.com")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not a url")]
+    [InlineData("http://example.com")]
+    public void The_named_host_is_never_empty(string? raw)
+    {
+        Assert.False(string.IsNullOrEmpty(BackendUrl.DisplayHost(raw)));
+    }
 }

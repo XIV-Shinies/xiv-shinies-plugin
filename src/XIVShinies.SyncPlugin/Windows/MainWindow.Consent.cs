@@ -53,11 +53,10 @@ internal sealed partial class MainWindow
     /// </remarks>
     /// <param name="rows">This frame's category rows, from <see cref="BuildCategoryRows"/>.</param>
     /// <param name="showNewChips">
-    /// Whether a collection, or a manifest group inside one, that the user has not been shown
-    /// before wears a "New" badge. The settings pass true; the wizard passes false, because a badge
-    /// beside every row at once distinguishes nothing. It also decides how strict the record is:
-    /// the wizard records what it drew even before the server has answered, while a badging
-    /// surface waits for the answer, since there the record is what the badge is spent from.
+    /// Whether this surface announces new collections — the first-run wizard shows every
+    /// collection by definition, so it badges nothing. Which drawings are then recorded as
+    /// seen differs per surface too; <see cref="CategorySettingsView.ShowingRetiresTheBadge"/>
+    /// holds that rule.
     /// </param>
     private void DrawCategoryRows(IReadOnlyList<CategorySettingsRow> rows, bool showNewChips)
     {
@@ -220,15 +219,9 @@ internal sealed partial class MainWindow
 
         // Drawing a category IS showing it to the user, and only a row with an announcement left
         // to spend is ever reported — otherwise every row would report on every frame and the
-        // caller would save the config sixty times a second.
-        //
-        // The surfaces differ only in whether an unanswered /config still counts. A surface that
-        // draws no badges is showing the whole list as its purpose — the wizard puts every
-        // collection in front of the user before they can finish — so a failed config poll must
-        // not stop it recording what it plainly showed. A badging surface waits for the answer,
-        // because there the record is what the badge is spent from. Neither counts a row the
-        // server has switched off: greyed and unusable is not an introduction.
-        return row.IsNew && row.ServerEnabled && (row.ServerStateKnown || !showNewChips);
+        // caller would save the config sixty times a second. Which drawings count is
+        // CategorySettingsView.ShowingRetiresTheBadge's rule.
+        return CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips);
     }
 
     /// <summary>

@@ -255,7 +255,28 @@ public class PluginSettings
     public List<string> EnabledItemGroupKeys { get; set; } = new();
 
     /// <summary>Group keys the settings UI has already shown once — everything else gets a "New" badge.</summary>
-    public List<string> SeenItemGroupKeys { get; set; } = new();
+    /// <remarks>
+    /// A list for the config file, mirrored by a set for the reads: the settings window asks
+    /// <see cref="IsItemGroupSeen"/> once per group per frame, and the keys come from a server
+    /// whose manifest can grow — so the per-frame cost must not scale with how many groups this
+    /// install has ever been shown. The mirror is discarded when the list is replaced (which is how
+    /// deserialization hands it in), rebuilt on the next read, and kept in step by
+    /// <see cref="MarkItemGroupsSeen"/>.
+    /// </remarks>
+    public List<string> SeenItemGroupKeys
+    {
+        get => seenItemGroupKeys;
+        set
+        {
+            seenItemGroupKeys = value ?? new List<string>();
+            seenItemGroupLookup = null;
+        }
+    }
+
+    private List<string> seenItemGroupKeys = new();
+
+    // Null until first asked, so a fresh or freshly-loaded settings object costs nothing extra.
+    private HashSet<string>? seenItemGroupLookup;
 
     /// <summary>Category keys the settings UI has already shown once — everything else gets a "New" badge.</summary>
     public List<string> SeenCategoryKeys { get; set; } = new();
@@ -494,7 +515,10 @@ public class PluginSettings
             return false;
 
         lock (gate)
-            return SeenItemGroupKeys.Contains(groupKey);
+        {
+            seenItemGroupLookup ??= new HashSet<string>(seenItemGroupKeys, StringComparer.Ordinal);
+            return seenItemGroupLookup.Contains(groupKey);
+        }
     }
 
     /// <summary>Mark the given item groups as seen in the settings UI.</summary>
@@ -521,12 +545,15 @@ public class PluginSettings
 
         lock (gate)
         {
+            seenItemGroupLookup ??= new HashSet<string>(seenItemGroupKeys, StringComparer.Ordinal);
+
             foreach (var groupKey in groupKeys)
             {
-                // Add to the list only if it is not already there (idempotent, no duplicates).
-                if (!string.IsNullOrEmpty(groupKey) && !SeenItemGroupKeys.Contains(groupKey))
+                // The set answers "already there?" and the list keeps what the config file
+                // stores; both are written together so they cannot disagree.
+                if (!string.IsNullOrEmpty(groupKey) && seenItemGroupLookup.Add(groupKey))
                 {
-                    SeenItemGroupKeys.Add(groupKey);
+                    seenItemGroupKeys.Add(groupKey);
                 }
             }
         }

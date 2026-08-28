@@ -129,8 +129,12 @@ public sealed record ConfigResponse
     /// does not recognize, so sending one costs a few bytes and breaks nothing. Defaulting to
     /// disabled instead would silently withhold facts until both sides shipped in lockstep.
     /// </remarks>
+    // `Categories is null` catches an explicit JSON null, which gets past `required` (see
+    // ApiJson). This is asked once per row per frame, so a throw here would take the settings
+    // window down with it; a null map reads as "the server named nothing", the same answer as a
+    // key the map does not carry.
     public bool IsCategoryEnabled(string categoryKey) =>
-        !Categories.TryGetValue(categoryKey, out var enabled) || enabled;
+        Categories is null || !Categories.TryGetValue(categoryKey, out var enabled) || enabled;
 }
 
 /// <summary>

@@ -567,7 +567,11 @@ public static class UploadLogText
         if (issues.FieldErrors is { } fieldErrors)
         {
             foreach (var (field, messages) in fieldErrors)
-                parts.Add($"{field}: {string.Join("; ", messages)}");
+            {
+                // A null array is an explicit JSON null, which gets past `required` (see ApiJson)
+                // — and Join throws on a null collection even though it tolerates null elements.
+                parts.Add($"{field}: {string.Join("; ", messages ?? Array.Empty<string>())}");
+            }
         }
 
         if (parts.Count == 0)
@@ -575,7 +579,10 @@ public static class UploadLogText
 
         var text = string.Join(" · ", parts);
 
-        return ServerText.Clamp(text, ellipsis: true);
+        // Folded as well as bounded: this is drawn in the log table, where a newline inside a
+        // server complaint would push the rest of the cell out of sight. SingleLine marks a cut
+        // the same way, and its null-for-blank answer matches this method's contract.
+        return ServerText.SingleLine(text);
     }
 
     /// <summary>

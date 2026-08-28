@@ -194,10 +194,13 @@ internal sealed partial class MainWindow
     /// </summary>
     private void DrawClaimedCharacters()
     {
-        if (account is null)
+        // `is not { } characters` also catches an explicit JSON null, which gets past `required`
+        // (see ApiJson) — and this runs on the draw path, where a throw takes the whole window
+        // down with it.
+        if (account?.Characters is not { } characters)
             return;
 
-        if (account.Characters.Count == 0)
+        if (characters.Count == 0)
         {
             DrawWarning(
                 "This account has not claimed any characters yet. Claim your character on " +
@@ -210,8 +213,26 @@ internal sealed partial class MainWindow
         // A caption over the list; the character names beneath it are what the user reads.
         ImGui.TextDisabled("Claimed characters:");
 
-        foreach (var character in account.Characters)
+        // Bounded like every server-sized list this window draws each frame: the count is the
+        // server's to choose, and no honest account carries dozens of characters, so the ceiling
+        // only ever cuts a hostile backend.
+        const int MaxDrawnCharacters = 32;
+        var drawn = 0;
+
+        foreach (var character in characters)
         {
+            // A null element is server data gone wrong; skipped rather than thrown on.
+            if (character is null)
+                continue;
+
+            if (drawn == MaxDrawnCharacters)
+            {
+                ImGui.TextDisabled($"…and {characters.Count - drawn} more.");
+                break;
+            }
+
+            drawn++;
+
             // A person glyph rather than ImGui.Bullet — the round bullet reads like a radio button
             // next to this window's checkboxes.
             DrawIcon(FontAwesomeIcon.User, Brand.Teal);

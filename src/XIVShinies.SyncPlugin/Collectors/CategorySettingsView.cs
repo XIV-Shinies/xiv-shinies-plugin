@@ -312,8 +312,35 @@ public static class CategorySettingsView
         if (!row.ServerEnabled)
             return CategoryBadgeKind.Off;
 
-        return showNewChips && badgedThisSession ? CategoryBadgeKind.New : CategoryBadgeKind.None;
+        // Either fact is enough on its own. The row's flag answers for a caller holding no
+        // session record; the session set is what keeps the chip up once the batched save makes
+        // the next rebuild report IsNew=false. Neither is required, so the rule does not depend
+        // on any caller's bookkeeping.
+        return showNewChips && (row.IsEffectivelyNew || badgedThisSession)
+            ? CategoryBadgeKind.New
+            : CategoryBadgeKind.None;
     }
+
+    /// <summary>
+    /// True when drawing this row on the given surface should record it as seen, retiring its
+    /// "New" announcement.
+    /// </summary>
+    /// <remarks>
+    /// The two consent surfaces differ only in whether an unanswered /config still counts. A
+    /// surface that draws no badges is showing the whole list as its purpose — the first-run
+    /// wizard puts every collection in front of the user before they can finish — so a failed
+    /// config poll must not stop it recording what it plainly showed. A badging surface waits
+    /// for the answer (<see cref="CategorySettingsRow.ShowingItRetiresTheBadge"/>): there the
+    /// record is what the badge is spent from — see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>
+    /// for why spending demands more than drawing. Neither surface counts a row the server has
+    /// switched off — greyed and unusable is not an introduction.
+    /// </remarks>
+    /// <param name="row">The row that was just drawn.</param>
+    /// <param name="showNewChips">Whether the drawing surface announces new collections.</param>
+    public static bool ShowingRetiresTheBadge(CategorySettingsRow row, bool showNewChips) =>
+        showNewChips
+            ? row.ShowingItRetiresTheBadge
+            : row.IsNew && row.ServerEnabled;
 
     /// <summary>
     /// True when anything in the consent list still counts as "New" — a whole collection, or a
@@ -531,8 +558,17 @@ public static class CategorySettingsView
         // enough that one cannot bloat the config it is stored in.
         const int MaxGroupKeyLength = 128;
 
+        // This list is rebuilt every frame the settings window is open, and each row costs
+        // consent bookkeeping per frame after that. No honest manifest carries more than a
+        // handful of groups, so the ceiling only ever cuts a hostile or broken config — which
+        // must not be able to turn the settings window into a frame-time sink.
+        const int MaxGroupRows = 100;
+
         foreach (var group in manifestGroups)
         {
+            if (groupRows.Count >= MaxGroupRows)
+                break;
+
             // A blank key is server data gone wrong, and it can never behave: consent reads treat it
             // as off, seen-marking skips it (so it would wear a "New" badge forever and re-trigger a
             // config save every frame), and the consent write would throw. Dropping it here, at the
@@ -549,14 +585,20 @@ public static class CategorySettingsView
             if (group.Key.Length > MaxGroupKeyLength)
                 continue;
 
+            // The drawn copy, folded and bounded like every adopted server string — label first,
+            // then the key standing in for a missing label. A clipped or folded label still names
+            // the right consent, because consent is written and read under the raw key beside it.
+            // A key that folds to NOTHING has no visible spelling at all, so its checkbox would
+            // carry a blank label — and a consent control the user cannot read is no consent
+            // control, so the group is dropped.
+            var label = ServerText.SingleLine(group.Label) ?? ServerText.SingleLine(group.Key);
+            if (label is null)
+                continue;
+
             groupRows.Add(new ItemGroupRow
             {
                 Key = group.Key,
-
-                // Shortened rather than dropped, because a label carries no identity — consent is
-                // written and read under the key beside it — so a clipped label still names the
-                // right consent. It is drawn as a checkbox label, and the backend is overridable.
-                Label = ServerText.SingleLine(group.Label) ?? group.Key,
+                Label = label,
                 Enabled = settings.IsItemGroupEnabled(group.Key),
                 ParentServerEnabled = parentServerEnabled,
                 IsNew = !settings.IsItemGroupSeen(group.Key),

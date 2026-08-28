@@ -14,6 +14,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// </remarks>
 public static class SyncPayloadBuilder
 {
+    /// <summary>The longest manifestVersion the contract accepts on an upload.</summary>
+    public const int MaxManifestVersionLength = 100;
+
     /// <summary>Builds the request body.</summary>
     /// <param name="identity">The local character, already hashed.</param>
     /// <param name="pluginVersion">This plugin's version.</param>
@@ -30,6 +33,13 @@ public static class SyncPayloadBuilder
         CollectionSnapshot snapshot,
         string? manifestVersion)
     {
+        // An echo the contract would refuse is dropped rather than shortened. The field is
+        // optional and only spares the server a re-derivation, a 400 is terminal — an over-long
+        // echo sent verbatim would stop syncing outright — and a shortened version string would
+        // just be a different wrong value.
+        if (manifestVersion is { Length: > MaxManifestVersionLength })
+            manifestVersion = null;
+
         return new SyncRequest
         {
             CharacterContentIdHash = identity.ContentIdHash,

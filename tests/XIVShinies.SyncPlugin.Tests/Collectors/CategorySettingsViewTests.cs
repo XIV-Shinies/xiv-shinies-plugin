@@ -860,12 +860,127 @@ public class CategorySettingsViewTests
                 UnseenRow(serverEnabled: false), showNewChips: false, badgedThisSession: false));
     }
 
+    // A row the user has already been shown, with nothing in the session set either: the two
+    // sources of newness are both quiet, so there is nothing to announce.
     [Fact]
     public void A_row_with_nothing_to_announce_wears_nothing()
     {
+        var settings = OptedIn(UnknownCategory);
+        settings.MarkCategoriesSeen(new[] {UnknownCategory});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, settings, RemoteConfig()));
+
         Assert.Equal(
             CategoryBadgeKind.None,
+            CategorySettingsView.BadgeFor(row, showNewChips: true, badgedThisSession: false));
+    }
+
+    // The half of the New rule the row itself carries: the badge does not depend on a caller's
+    // session record — a row the install has never shown badges on its own flag alone.
+    [Fact]
+    public void A_new_row_wears_New_before_the_window_records_anything()
+    {
+        Assert.Equal(
+            CategoryBadgeKind.New,
             CategorySettingsView.BadgeFor(
                 UnseenRow(serverEnabled: true), showNewChips: true, badgedThisSession: false));
+    }
+
+    // --- When a drawing retires the announcement ------------------------------------------------
+    // ShowingRetiresTheBadge decides which drawings are recorded as seen. The rule differs per
+    // surface, so it takes the surface as a parameter — and it is pure so both arms are testable.
+
+    private static CategorySettingsRow UnseenRowWithNoConfig() =>
+        Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), remoteConfig: null));
+
+    // A badging surface waits for the server's answer: the record is what the badge is spent
+    // from, and spending it on an assumption could cost the announcement outright.
+    [Fact]
+    public void A_badging_surface_does_not_retire_on_an_unanswered_config()
+    {
+        Assert.False(
+            CategorySettingsView.ShowingRetiresTheBadge(UnseenRowWithNoConfig(), showNewChips: true));
+    }
+
+    // The wizard shows every collection as its purpose, so a failed config poll must not stop it
+    // recording what it plainly showed.
+    [Fact]
+    public void A_non_badging_surface_retires_even_on_an_unanswered_config()
+    {
+        Assert.True(
+            CategorySettingsView.ShowingRetiresTheBadge(UnseenRowWithNoConfig(), showNewChips: false));
+    }
+
+    // Greyed and unusable is not an introduction, on either surface.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_server_disabled_row_never_retires_its_announcement(bool showNewChips)
+    {
+        Assert.False(
+            CategorySettingsView.ShowingRetiresTheBadge(UnseenRow(serverEnabled: false), showNewChips));
+    }
+
+    // A row with no announcement left has nothing to retire, so reporting it would only make the
+    // caller save the config on every frame.
+    [Fact]
+    public void A_row_already_seen_never_retires()
+    {
+        var settings = OptedIn(UnknownCategory);
+        settings.MarkCategoriesSeen(new[] {UnknownCategory});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, settings, RemoteConfig()));
+
+        Assert.False(CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips: true));
+    }
+
+    // --- What the group list refuses to build ---------------------------------------------------
+
+    // The list is rebuilt every frame the settings window is open, so its size cannot be the
+    // server's to choose. No honest manifest is anywhere near the ceiling.
+    [Fact]
+    public void A_group_list_is_capped_however_many_groups_the_server_sends()
+    {
+        var groups = new List<ItemManifestGroup>();
+        for (var i = 0; i < 150; i++)
+            groups.Add(Group($"group-{i}", $"Group {i}"));
+
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, OptedIn("items"), RemoteConfig(itemManifestGroups: groups));
+
+        Assert.Equal(100, Assert.Single(rows).Groups!.Count);
+    }
+
+    // A key standing in for a missing label is folded like the label would have been — the raw
+    // key keeps its identity for consent, but what is DRAWN never carries invisible formatting.
+    [Fact]
+    public void A_groups_key_standing_in_for_its_label_is_folded_before_it_is_drawn()
+    {
+        var config = RemoteConfig(
+            itemManifestGroups: new[] {Group("a‮b", " ")});
+
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, OptedIn("items"), config);
+
+        var row = Assert.Single(Assert.Single(rows).Groups!);
+        Assert.Equal("a‮b", row.Key);
+        Assert.Equal("ab", row.Label);
+    }
+
+    // A key with no visible spelling at all is as malformed as a blank one, and the group is
+    // dropped the same way — a checkbox with an invisible label is not a consent control.
+    [Fact]
+    public void A_group_whose_key_and_label_both_fold_to_nothing_is_dropped()
+    {
+        var config = RemoteConfig(
+            itemManifestGroups: new[] {Group("​‮", " "), Group("real", "Real")});
+
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, OptedIn("items"), config);
+
+        Assert.Equal("real", Assert.Single(Assert.Single(rows).Groups!).Key);
     }
 }

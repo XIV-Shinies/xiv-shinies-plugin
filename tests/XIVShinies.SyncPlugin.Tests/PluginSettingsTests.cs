@@ -870,4 +870,17 @@ public class PluginSettingsTests
         // The two share one flag, so a migration that has already run leaves nothing to settle.
         Assert.False(settings.SettleItemGroupConsent(groupsWereShown: true));
     }
+
+    // Brackets Configuration.CurrentVersion against the newest migration arm: at the constant
+    // nothing fires (asserted elsewhere), and one version below it the newest arm does. Whoever
+    // adds a migration arm updates this test to target that arm's state — the pair is what keeps
+    // a new arm from being born dead behind an unbumped constant.
+    [Fact]
+    public void The_newest_migration_fires_one_version_below_the_constant()
+    {
+        var settings = new PluginSettings {AutoEnableNewFeatures = true};
+
+        Assert.True(settings.ApplyUpgradeMigrations(Configuration.CurrentVersion - 1));
+        Assert.False(settings.AutoEnableNewFeatures);
+    }
 }

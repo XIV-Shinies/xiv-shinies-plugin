@@ -827,4 +827,21 @@ public class DtoSerializationTests
 
         Assert.False(json.ContainsKey("itemSources"));
     }
+
+    // An explicit JSON null gets past `required` (see ApiJson), and this lookup runs once per
+    // row per frame — so a backend sending null must read as "the server named nothing", the
+    // same answer as a key the map does not carry, rather than throwing.
+    [Fact]
+    public void A_null_categories_map_reads_as_every_category_enabled()
+    {
+        const string json = """
+            {"categories":null,"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.True(config.IsCategoryEnabled("quests"));
+    }
 }
