@@ -164,6 +164,26 @@ public static class ManifestConsent
     }
 
     /// <summary>
+    /// Whether any collection on screen is one the server currently permits — so whether the
+    /// select-all has anything at all to act on.
+    /// </summary>
+    /// <remarks>
+    /// The select-all reads and writes only the collections the server allows, so with none of them
+    /// allowed it is a control that visibly does nothing when clicked. The window disables it
+    /// instead, the same way each individual row is disabled.
+    /// </remarks>
+    public static bool AnyServerEnabled(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (row.ServerEnabled)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// True when the server offers consent groups for this collection and the user has none of them
     /// switched on — so there is nothing the pass is allowed to look for.
     /// </summary>

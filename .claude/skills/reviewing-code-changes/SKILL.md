@@ -294,12 +294,17 @@ tenth one:
 
 ```bash
 # Compliance rows, longest first. Anything over 1200 gets rewritten or split.
-awk -F'|' 'NF>2 && $2 ~ /\*\*/ { printf "%5d  %.60s\n", length($0), $2 }' \
+perl -ne 'chomp; print length($_)."  ".substr($_,0,60)."\n" if /^\| \*\*/' \
   docs/dalamud-compliance.md | sort -rn | head
 
 # Over-long lines among the ones this change ADDED (the leading + is stripped before measuring).
-git diff HEAD -U0 -- '*.cs' | grep '^+[^+]' | cut -c2- | awk 'length > 110 { print length": "$0 }'
+git diff HEAD -U0 -- '*.cs' | grep '^+[^+]' | cut -c2- \
+  | perl -ne 'chomp; print length($_).": ".$_."\n" if length($_) > 110'
 ```
+
+`perl` rather than `awk`: skill arguments are substituted into `$1` and `$2` before this file is
+read, so an awk snippet using positional variables arrives corrupted whenever the skill is invoked
+with arguments. Perl's `$_` is untouched.
 
 #### The grep is a hint, never the check
 

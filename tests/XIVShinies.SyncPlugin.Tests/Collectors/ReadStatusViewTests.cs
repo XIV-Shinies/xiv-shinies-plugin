@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
@@ -374,13 +375,16 @@ public class ReadStatusViewTests
         Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
     }
 
+    // Collection notes are ordered by label, not by the order their collectors were registered, so
+    // this panel and the consent checklist above it list the same collections the same way. A reader
+    // comparing "what I turned on" against "what is being read" should not have to search.
     [Fact]
-    public void Collection_notes_follow_the_order_of_the_rows_they_came_from()
+    public void Collection_notes_are_ordered_by_label()
     {
         var status = ReadStatusView.Build(new[] { Row("b"), Row("a") }, NoSources());
 
         Assert.Equal(
-            new[] { "b display", "a display" },
+            new[] { "a display", "b display" },
             status.Collections.Select(note => note.Label));
     }
 
@@ -477,5 +481,44 @@ public class ReadStatusViewTests
             "Collections to include it.",
             note.Text);
         Assert.Equal(SourceTone.Missing, note.Tone);
+    }
+
+    // The order must not turn on casing: these labels are English strings authored in this repo,
+    // and every user is owed the same order whatever their machine's locale. An ordinal sort would
+    // put every capitalised label ahead of every lower-case one.
+    [Fact]
+    public void Collection_notes_are_ordered_regardless_of_case()
+    {
+        var status = ReadStatusView.Build(new[] { Row("ZEBRA"), Row("apple") }, NoSources());
+
+        Assert.Equal(
+            new[] { "apple display", "ZEBRA display" },
+            status.Collections.Select(note => note.Label));
+    }
+
+    // Two collections may choose the same display name. Without a tie-break their order would be
+    // whatever the sort happened to leave — and List.Sort is unstable, so it need not be the same
+    // between two runs over equal input. A chip row that reshuffles itself is worse than one in an
+    // arbitrary but fixed order, so the note's own text settles it.
+    [Fact]
+    public void Collection_notes_sharing_a_label_are_settled_by_their_text()
+    {
+        // Same DisplayName, different skip reasons — so the two notes differ only in their text.
+        var rows = new[]
+        {
+            Row("second", skipReason: CollectSkipReasons.NotInOccultInstance) with
+            {
+                DisplayName = "Same",
+            },
+            Row("first", skipReason: CollectSkipReasons.AchievementListNotLoaded) with
+            {
+                DisplayName = "Same",
+            },
+        };
+
+        var texts = ReadStatusView.Build(rows, NoSources())
+            .Collections.Select(note => note.Text).ToArray();
+
+        Assert.Equal(texts.OrderBy(text => text, StringComparer.Ordinal).ToArray(), texts);
     }
 }

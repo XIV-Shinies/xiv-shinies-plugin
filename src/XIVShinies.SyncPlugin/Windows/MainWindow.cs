@@ -571,8 +571,8 @@ internal sealed partial class MainWindow : Window, IDisposable
         Widgets.DrawSectionLabel(label, activeCardInnerRight);
 
     /// <summary>Binds this window's icon font to <see cref="Widgets.DrawChip"/>.</summary>
-    private void DrawChip(FontAwesomeIcon icon, string text, Vector4 color) =>
-        Widgets.DrawChip(iconFont, icon, text, color);
+    private void DrawChip(FontAwesomeIcon icon, string text, Vector4 color, bool filled = false) =>
+        Widgets.DrawChip(iconFont, icon, text, color, filled);
 
     /// <summary>Binds this window's icon font to <see cref="Widgets.ChipWidth"/>.</summary>
     private float ChipWidth(FontAwesomeIcon icon, string text) =>

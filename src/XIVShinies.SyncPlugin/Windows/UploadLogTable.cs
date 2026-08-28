@@ -180,7 +180,10 @@ internal sealed class UploadLogTable
             var proof = UploadLogText.ProofText(entry);
             var stepsProven = entry.ProvenSteps > 0;
             var sent = new List<(string Text, Vector4? Color)>(entry.Categories.Count * 3);
-            foreach (var category in entry.Categories)
+
+            // Alphabetical by the label drawn for each category, matching the consent checklist and
+            // the sync card's chips — see UploadLogText.InDisplayOrder.
+            foreach (var category in UploadLogText.InDisplayOrder(entry.Categories, DisplayNameFor))
             {
                 if (sent.Count > 0)
                     sent.Add(("·", muted));
@@ -202,8 +205,10 @@ internal sealed class UploadLogTable
             var unreadable = entry.UnreadableCategoryKeys;
             if (unreadable.Count > 0)
             {
+                // By display name, like the Sent column above — see UploadLogText.KeysInDisplayOrder.
+                // The keys arrive sorted, but a key and the name drawn for it need not sort alike.
                 var skipped = new List<string>(unreadable.Count);
-                foreach (var key in unreadable)
+                foreach (var key in UploadLogText.KeysInDisplayOrder(unreadable, DisplayNameFor))
                     skipped.Add(DisplayNameFor(key));
                 Widgets.DrawWrapped(
                     $"Could not read: {string.Join(", ", skipped)}", ImGuiCol.Text, null);

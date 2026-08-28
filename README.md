@@ -29,9 +29,9 @@ sends only raw facts the game knows and never computes site concepts like relic 
 keeps it stable as the site grows new collections and rules.
 
 New unlocks (quests, achievements, mounts, minions) upload within seconds of earning them.
-Anything the plugin gets no unlock signal for — Triple Triad cards, and item possession used
-to prove relic progress — travels with periodic full syncs, or immediately with the **Sync
-now** button.
+Anything the plugin gets no unlock signal for — Triple Triad cards, orchestrion rolls, and
+item possession used to prove relic progress — travels with periodic full syncs, or
+immediately with the **Sync now** button.
 
 ## What gets sent
 

@@ -405,10 +405,10 @@ internal sealed class SyncManager : IDisposable
     /// rather than piling seeded rows on top of each other and on top of real ones.
     /// </para>
     /// <para>
-    /// The sync card's own state is moved to match. Leaving it alone prints "nothing has been
-    /// uploaded yet this session" on a page whose log shows four accepted uploads, the newest a
-    /// minute old. A seeded window has to be self-consistent everywhere the shutter can see, not
-    /// only in the surface being aimed at.
+    /// A seeded window has to be self-consistent everywhere the shutter can see, not only in the
+    /// surface being aimed at — so the sync card's own state and the remembered read statuses are
+    /// moved to match, and only collections that would really be collected are seeded. Each of
+    /// those is explained where it happens below.
     /// </para>
     /// </remarks>
     public void SeedUploadHistoryForScreenshots(
@@ -416,9 +416,44 @@ internal sealed class SyncManager : IDisposable
     {
         uploadLog.Clear();
 
-        var entries = UploadLogSeed.Build(collectors, now);
+        // The remembered per-COLLECTION statuses. They survive across passes and are only reset at
+        // logout, so a collection a real pass could not read keeps saying "not read yet" under a
+        // seeded log whose newest rows say it synced. Cleared rather than invented: every seeded row
+        // read everything it carried, which is what an unmarked list already says.
+        //
+        // The per-CONTAINER notes are deliberately left alone. They are real readings of the
+        // player's own storage, and the log makes no claim about any individual container — "Tracked
+        // items 156" beside "Saddlebag not scanned" is what a real session looks like, not a
+        // contradiction. Clearing them would empty the panel's Containers row entirely, which is a
+        // feature the screenshot exists to show.
+        lastSkipped = new Dictionary<string, string>();
+        lastPartialNotes = new Dictionary<string, string>();
+        lastCollectedDetails = new Dictionary<string, string>();
+
+        // Only what would really be collected, decided by the gate a real pass asks. A collection
+        // the user or the server has switched off draws no chip in the panel above, so a row
+        // claiming it synced would contradict the same window — and which collections are off
+        // depends on the backend the developer is pointed at, which is exactly the sort of thing a
+        // screenshot records without anyone noticing.
+        var config = remoteConfig;
+        var collectable = new List<ICollector>(collectors.Count);
+        foreach (var collector in collectors)
+        {
+            if (CollectorGate.IsEnabled(collector.CategoryKey, settings, config))
+                collectable.Add(collector);
+        }
+
+        var entries = UploadLogSeed.Build(collectable, now);
         foreach (var entry in entries)
             uploadLog.Record(entry);
+
+        // The "Reading from:" panel is drawn only once a pass has run, so without this a seeded
+        // window shows a full upload log above the empty space where the panel belongs — and the
+        // panel is one of the surfaces the screenshots exist to capture. The cleared status maps
+        // above make it report every switched-on collection as read, which is what the seeded rows
+        // already claim.
+        if (entries.Count > 0)
+            hasCollected = true;
 
         // Taken from the newest seeded entry rather than restated, so the card and the log's top
         // row can never disagree about when the last upload happened.

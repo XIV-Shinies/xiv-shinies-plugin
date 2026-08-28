@@ -95,12 +95,15 @@ public static class UploadLogSeed
         foreach (var collector in collectors)
             everything.Add(Category(collector));
 
-        // The collection the login row reports as unreadable, resolved through the registry so
-        // that row's skip map and its omitted category always name the same collection. Both uses
-        // read this one value, so Find's fallback moves them together; naming the key in each
-        // place would let a de-registered key drop one collection from the sent list while the
-        // row blamed a different one.
-        var unreadable = Find(collectors, CategoryKeys.OccultProgression).CategoryKey;
+        // The collection the login row reports as unreadable. One value feeds both the skip map
+        // and the omission, so the row can never blame a collection it also sent.
+        //
+        // Null when that collection is not among the ones being seeded — switched off by the user
+        // or the server, so it never reaches this list. The skip reason names a specific in-game
+        // place, so falling back to whichever collector was registered first would put a sentence
+        // about the Occult Crescent under, say, Achievements. The row goes without its unreadable
+        // line instead: a screenshot missing one state beats one asserting a wrong state.
+        var unreadable = FindOrNull(collectors, CategoryKeys.OccultProgression)?.CategoryKey;
 
         return
         [
@@ -111,11 +114,13 @@ public static class UploadLogSeed
                 At = now.AddMinutes(-47),
                 Trigger = SyncTrigger.Login,
                 Status = ApiStatus.Ok,
-                Categories = Without(everything, unreadable),
-                Skipped = new Dictionary<string, string>
-                {
-                    [unreadable] = CollectSkipReasons.NotInOccultInstance,
-                },
+                Categories = unreadable is null ? everything : Without(everything, unreadable),
+                Skipped = unreadable is null
+                    ? new Dictionary<string, string>()
+                    : new Dictionary<string, string>
+                    {
+                        [unreadable] = CollectSkipReasons.NotInOccultInstance,
+                    },
                 ManifestVersion = manifestVersion,
                 ProvenSteps = 0,
             },
@@ -251,6 +256,22 @@ public static class UploadLogSeed
         }
 
         return kept;
+    }
+
+    /// <summary>The collector for a key, or null when none of them announces it.</summary>
+    /// <remarks>
+    /// For a row that would rather say nothing than say the wrong thing. Where a row can carry on
+    /// with any collection at all, <see cref="Find"/>'s fallback is the one to use.
+    /// </remarks>
+    private static ICollector? FindOrNull(IReadOnlyList<ICollector> collectors, string categoryKey)
+    {
+        foreach (var collector in collectors)
+        {
+            if (collector.CategoryKey == categoryKey)
+                return collector;
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -649,6 +649,61 @@ public class CategorySettingsViewTests
         Assert.Equal("mystery-group", group.Key);
     }
 
+    // --- What a switched-off collection does to its groups --------------------------------
+
+    [Fact]
+    public void A_group_under_a_server_disabled_collection_is_not_effectively_on()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {["items"] = false},
+            itemManifestGroups: new[] {Group("relic-tools", "Relic tools")});
+
+        var settings = OptedIn();
+        settings.SetItemGroupEnabled("relic-tools", true);
+
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, settings, config);
+
+        var group = Assert.Single(rows[0].Groups!);
+
+        // The user's own consent is intact — only the effective answer changed.
+        Assert.True(group.Enabled);
+        Assert.False(group.ParentServerEnabled);
+        Assert.False(group.IsEffectivelyOn);
+    }
+
+    // With the collection permitted, a group's effective state is simply its own consent.
+    [Fact]
+    public void A_group_under_a_permitted_collection_is_effectively_on_when_the_user_enabled_it()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {["items"] = true},
+            itemManifestGroups: new[] {Group("relic-tools", "Relic tools")});
+
+        var settings = OptedIn();
+        settings.SetItemGroupEnabled("relic-tools", true);
+
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, settings, config);
+
+        Assert.True(Assert.Single(rows[0].Groups!).IsEffectivelyOn);
+    }
+
+    // A group the user has not consented to is off whatever the server says — the parent's answer
+    // can only ever take a group away, never grant one.
+    [Fact]
+    public void A_group_the_user_declined_is_not_effectively_on_under_a_permitted_collection()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {["items"] = true},
+            itemManifestGroups: new[] {Group("relic-tools", "Relic tools")});
+
+        var rows = CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, OptedIn(), config);
+
+        Assert.False(Assert.Single(rows[0].Groups!).IsEffectivelyOn);
+    }
+
     // --- What a switched-off category says for itself -------------------------------------------
     // Two unlike reasons a category can be off, and the row draws a different sentence for each.
     // Generic like everything else here: the fake announces a category nobody wrote code for, so a
@@ -744,5 +799,73 @@ public class CategorySettingsViewTests
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), remoteConfig: null);
 
         Assert.Null(Assert.Single(rows).ServerOffText);
+    }
+
+    // --- Which mark a row wears -----------------------------------------------------------------
+    // BadgeFor decides between "Off", "New" and nothing. The precedence is a promise about what the
+    // user sees, so it is pinned here rather than left inside the draw method where no test reaches
+    // it. Rows come from the real Build so the inputs are the ones the window actually passes.
+
+    private static CategorySettingsRow UnseenRow(bool serverEnabled)
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = serverEnabled});
+
+        // OptedIn marks nothing as seen, so the row arrives new — the state a badge is owed for.
+        return Assert.Single(
+            CategorySettingsView.Build(
+                new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
+    }
+
+    // The collision the precedence exists for: a collection can be both freshly added AND switched
+    // off, and the badge must not invite the user toward something they cannot use.
+    [Fact]
+    public void A_switched_off_row_wears_Off_even_when_it_is_also_new()
+    {
+        var row = UnseenRow(serverEnabled: false);
+
+        Assert.True(row.IsNew);
+        Assert.Equal(
+            CategoryBadgeKind.Off,
+            CategorySettingsView.BadgeFor(row, showNewChips: true, badgedThisSession: true));
+    }
+
+    [Fact]
+    public void A_new_row_the_server_allows_wears_New()
+    {
+        Assert.Equal(
+            CategoryBadgeKind.New,
+            CategorySettingsView.BadgeFor(
+                UnseenRow(serverEnabled: true), showNewChips: true, badgedThisSession: true));
+    }
+
+    // The first-run wizard shows every collection by definition, so it announces none of them.
+    [Fact]
+    public void A_surface_that_does_not_badge_wears_no_New_mark()
+    {
+        Assert.Equal(
+            CategoryBadgeKind.None,
+            CategorySettingsView.BadgeFor(
+                UnseenRow(serverEnabled: true), showNewChips: false, badgedThisSession: true));
+    }
+
+    // The switched-off mark is not a badging decision, so the surface that suppresses "New" still
+    // shows it — a wizard user is owed the reason a row cannot be ticked.
+    [Fact]
+    public void A_surface_that_does_not_badge_still_shows_the_Off_mark()
+    {
+        Assert.Equal(
+            CategoryBadgeKind.Off,
+            CategorySettingsView.BadgeFor(
+                UnseenRow(serverEnabled: false), showNewChips: false, badgedThisSession: false));
+    }
+
+    [Fact]
+    public void A_row_with_nothing_to_announce_wears_nothing()
+    {
+        Assert.Equal(
+            CategoryBadgeKind.None,
+            CategorySettingsView.BadgeFor(
+                UnseenRow(serverEnabled: true), showNewChips: true, badgedThisSession: false));
     }
 }

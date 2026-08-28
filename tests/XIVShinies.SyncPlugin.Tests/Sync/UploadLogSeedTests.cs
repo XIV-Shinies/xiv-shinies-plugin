@@ -223,9 +223,30 @@ public class UploadLogSeedTests
         Assert.Contains(CategoryKeys.Items, UploadLogDiff.ChangedCategories(displayed, index));
     }
 
+    // Pins that a collection absent from the seeded list takes its skip reason with it, rather
+    // than the reason landing on another collection. Build explains why that matters.
+    [Fact]
+    public void The_unreadable_row_is_dropped_when_its_collection_is_not_seeded()
+    {
+        // No occult progression collector: exactly what the gate filter produces when the user or
+        // the server has that collection switched off.
+        var collectors = new List<ICollector>
+        {
+            new FakeCollector(CategoryKeys.Mounts),
+            new FakeCollector(CategoryKeys.Minions),
+        };
+
+        var login = UploadLogSeed.Build(collectors, Now).Single(e => e.Trigger == SyncTrigger.Login);
+
+        // Nothing blamed, and nothing withheld from the sent list to match a blame that was
+        // never made.
+        Assert.Empty(login.Skipped);
+        Assert.Equal(collectors.Count, login.Categories.Count);
+    }
+
     // The seed reads the collectors it is given, so an empty list means there is nothing to
     // photograph, and an empty log is the honest answer. The guard is also what makes the
-    // collectors[0] fallbacks inside the builder safe.
+    // collectors[0] fallback inside the builder safe.
     [Fact]
     public void An_empty_registry_produces_an_empty_log()
     {

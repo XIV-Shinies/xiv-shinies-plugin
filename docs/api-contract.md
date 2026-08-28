@@ -158,7 +158,10 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   rather than mapped to `null` or `""`. Treat the text as untrusted like every other server string
   — the backend is user-overridable, so a client must survive a peer that breaks any of the above.
   The plugin folds a note to a single line and clamps it to **500 characters**, marking a shortened
-  one with an ellipsis, so copy written longer than that will be cut.
+  one with an ellipsis, so copy written longer than that will be cut. It also drops invisible
+  formatting that could misrepresent the sentence — bidirectional controls and zero-width spaces —
+  while keeping the zero-width joiner and non-joiner, so emoji sequences and Persian or Arabic
+  spellings survive intact.
 - **Item manifest.** The item IDs the server wants possession counts for. The plugin checks
   possession of **only** these items. When `itemManifestGroups` is present it takes
   precedence; the flat list stays in the config permanently for clients without group

@@ -1,3 +1,5 @@
+// UnicodeCategory, for spotting the invisible characters the fold has to drop.
+using System.Globalization;
 // StringBuilder, for folding a server string onto one line.
 using System.Text;
 
@@ -30,7 +32,8 @@ internal static class ServerText
     /// <summary>The longest server string the plugin will keep, in UTF-16 code units.</summary>
     /// <remarks>
     /// Generous for any legitimate value — a note, a validation complaint, a content hash — and
-    /// small enough that a hostile one cannot fill a window or a log file.
+    /// small enough that a hostile one cannot fill a window or a log file. A marked result is
+    /// this plus the three periods, since the marker says something the text itself does not.
     /// </remarks>
     public const int MaxAdoptedLength = 500;
 
@@ -61,6 +64,27 @@ internal static class ServerText
         // Three periods, not the single "…" glyph — see MainWindow's Verify label for why.
         return ellipsis ? text[..end] + "..." : text[..end];
     }
+
+    /// <summary>
+    /// Whether a character is invisible formatting that a display string is safer without.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Unicode's Cf (format) category, minus the two members that carry real meaning in ordinary
+    /// text. A zero-width joiner is what binds an emoji sequence into one glyph, and a zero-width
+    /// non-joiner is required orthography in Persian and Arabic — dropping either corrupts copy
+    /// that is doing nothing wrong, and neither can reorder or conceal text, so neither is worth
+    /// dropping to be safe from.
+    /// </para>
+    /// <para>
+    /// What is left is the part that can lie about its own content: the bidirectional controls,
+    /// which reorder everything after them, and the zero-width spaces, which split a word with
+    /// nothing a reader can see.
+    /// </para>
+    /// </remarks>
+    private static bool IsInvisibleFormatting(char character) =>
+        CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format
+        && character is not ('\u200C' or '\u200D');
 
     /// <summary>
     /// A server string adopted as one line of display copy: null when it says nothing, and
@@ -95,6 +119,22 @@ internal static class ServerText
 
         foreach (var character in bounded)
         {
+            // Invisible but not inert, and dropped leaving NOTHING behind — not even the space a
+            // separator would leave. These occupy no width on screen, so treating one as a gap
+            // would insert a word break the server never sent: "a<ZWSP>b" is one word and has to
+            // stay one. They are dropped because they can rewrite what a reader sees — a
+            // zero-width space splits a word for no visible reason, and a right-to-left override
+            // reverses the reading order of everything after it, so a note could display as
+            // something other than what was sent while looking innocent in a log. The backend is
+            // user-overridable, which makes that reachable rather than hypothetical.
+            //
+            // pendingSpace is left exactly as it was, so one of these sitting inside a run of real
+            // whitespace neither creates a gap nor swallows one.
+            if (IsInvisibleFormatting(character))
+                continue;
+
+            // Whitespace is the fold's actual job; a control character would draw as a placeholder
+            // box. Both are separators, so both collapse to at most one space.
             if (char.IsWhiteSpace(character) || char.IsControl(character))
             {
                 // Deferred rather than appended: a run becomes one space, and a run at the very
@@ -112,7 +152,8 @@ internal static class ServerText
             folded.Append(character);
         }
 
-        // Whitespace and control characters alone leave nothing to say.
+        // A string with nothing visible in it — whitespace, control characters, invisible
+        // formatting, or any mix of them — leaves nothing to say.
         if (folded.Length == 0)
             return null;
 

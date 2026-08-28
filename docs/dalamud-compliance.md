@@ -74,8 +74,12 @@ response fields) and a field-by-field contract conformance audit.
 - **Every string adopted from the server is bounded before it is kept, drawn, or logged**
   (`Api/ServerText.cs`). The backend URL is user-overridable, which makes the server untrusted
   input: a value can be arbitrarily long, arrive as `null` where the contract promises a string,
-  split a surrogate pair when cut, or carry the newlines and control characters needed to lay out
-  its own copy inside a panel it does not own. Bounding happens at adoption rather than at each
+  split a surrogate pair when cut, carry the newlines and control characters needed to lay out its
+  own copy inside a panel it does not own, or hide invisible formatting that misrepresents the
+  sentence itself — a bidirectional override reverses the reading order of everything after it, a
+  zero-width space splits a word with nothing on screen to show for it, and both look innocent in a
+  log. Those are dropped; the zero-width joiner and non-joiner are kept, since emoji sequences and
+  Persian and Arabic spellings need them and neither can reorder or conceal anything. Bounding happens at adoption rather than at each
   draw, so a second surface showing the same string does not have to rediscover the problem.
 - **Dalamud's ImGui text calls are unformatted, and that is load-bearing.** At API 15
   `Dalamud.Bindings.ImGui`'s `Text`, `TextColored`, `TextDisabled`, `TextWrapped` and

@@ -208,6 +208,25 @@ public sealed record ItemGroupRow
     public required bool Enabled { get; init; }
 
     /// <summary>
+    /// Whether the collection this group belongs to is one the server currently permits.
+    /// </summary>
+    /// <remarks>
+    /// Carried down from the parent row so a group can answer the same question its parent does.
+    /// A group is only ever scanned as part of its collection's pass, so a collection the server
+    /// has switched off takes every group beneath it with it, whatever each group's own consent
+    /// says.
+    /// </remarks>
+    public required bool ParentServerEnabled { get; init; }
+
+    /// <summary>True when this group's items will actually be scanned as things stand.</summary>
+    /// <remarks>
+    /// What the checkbox draws: a ticked box under a parent drawn unticked, one indent below it,
+    /// states the opposite of what is happening, and the parent is the one telling the truth. The
+    /// stored consent is untouched and returns on its own.
+    /// </remarks>
+    public bool IsEffectivelyOn => Enabled && ParentServerEnabled;
+
+    /// <summary>
     /// True when the settings window has never shown this group before, so it should carry a "New"
     /// badge. A group the server just added is new for everyone until each user's settings window has
     /// rendered it once.
@@ -231,6 +250,19 @@ public sealed record CategorySection
     public required IReadOnlyList<CategorySettingsRow> Rows { get; init; }
 }
 
+/// <summary>Which mark, if any, a collection's row wears at the end of its description.</summary>
+public enum CategoryBadgeKind
+{
+    /// <summary>Nothing to say about this row beyond its own copy.</summary>
+    None,
+
+    /// <summary>The server has switched this collection off for everyone.</summary>
+    Off,
+
+    /// <summary>This settings window has never shown the collection before.</summary>
+    New,
+}
+
 /// <summary>
 /// Assembles the settings window's category list from the registered collectors.
 /// </summary>
@@ -247,6 +279,42 @@ public sealed record CategorySection
 /// </remarks>
 public static class CategorySettingsView
 {
+    /// <summary>The mark a row should wear, given what the server says and what the user has seen.</summary>
+    /// <remarks>
+    /// <para>
+    /// A row wears at most one mark, and "off" outranks "new". The two would otherwise be able to
+    /// appear together on a collection that is both freshly added and switched off — and inviting
+    /// the user to look at something they cannot use is worse than saying nothing, so the switched-off
+    /// state is answered first and the announcement waits for a viewing the user can act on.
+    /// </para>
+    /// <para>
+    /// Pure so the precedence is testable: a rule stated only inside a draw method is a rule no test
+    /// can reach, and this one is a promise about what the user sees rather than an implementation
+    /// detail. The window supplies the two facts it alone knows — whether this surface badges at all,
+    /// and whether the key is already badged for this session — and turns the answer into a chip.
+    /// </para>
+    /// </remarks>
+    /// <param name="row">The row being drawn.</param>
+    /// <param name="showNewChips">
+    /// Whether this surface announces new collections. The first-run wizard shows every collection
+    /// by definition, so it badges nothing; the settings window does.
+    /// </param>
+    /// <param name="badgedThisSession">
+    /// Whether this key has already been badged since the window opened. It keeps the chip on screen
+    /// for the rest of the viewing after the row has been recorded as seen.
+    /// </param>
+    public static CategoryBadgeKind BadgeFor(
+        CategorySettingsRow row, bool showNewChips, bool badgedThisSession)
+    {
+        // Re-checked rather than trusted from when the key was recorded: a config poll landing
+        // mid-session can switch a collection off under a badge already on screen, and the chip must
+        // not keep promising something new beside a greyed-out row.
+        if (!row.ServerEnabled)
+            return CategoryBadgeKind.Off;
+
+        return showNewChips && badgedThisSession ? CategoryBadgeKind.New : CategoryBadgeKind.None;
+    }
+
     /// <summary>
     /// True when anything in the consent list still counts as "New" — a whole collection, or a
     /// manifest group inside one.
@@ -323,6 +391,16 @@ public static class CategorySettingsView
         {
             var key = collector.CategoryKey;
 
+            // Read once and shared with the group rows below. The row's effective state and each
+            // group's are two expressions of the same server answer, and the disabled scopes that
+            // keep a click from rewriting stored consent assume the two agree — so they are given
+            // no way to disagree.
+            //
+            // A config we have not fetched forbids nothing, matching how the collectors and the
+            // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
+            // category as disabled by the server, which would be a lie.
+            var serverEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true;
+
             rows.Add(new CategorySettingsRow
             {
                 Key = key,
@@ -340,10 +418,7 @@ public static class CategorySettingsView
                 // decides which collections are manifest-driven; the collector says so itself.
                 UsesItemManifest = collector.UsesItemManifest,
 
-                // A config we have not fetched forbids nothing, matching how the collectors and the
-                // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
-                // category as disabled by the server, which would be a lie.
-                ServerEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true,
+                ServerEnabled = serverEnabled,
 
                 // Carried verbatim from the server, bounded on the way in.
                 ServerNote = remoteConfig?.CategoryNote(key),
@@ -367,7 +442,7 @@ public static class CategorySettingsView
                     ? collectedDetail
                     : null,
 
-                Groups = BuildGroupRows(collector, settings, remoteConfig),
+                Groups = BuildGroupRows(collector, settings, remoteConfig, serverEnabled),
             });
         }
 
@@ -442,7 +517,10 @@ public static class CategorySettingsView
     // tells the window there is nothing here at all, so absence is never papered over with
     // `Array.Empty`.
     private static IReadOnlyList<ItemGroupRow>? BuildGroupRows(
-        ICollector collector, PluginSettings settings, ConfigResponse? remoteConfig)
+        ICollector collector,
+        PluginSettings settings,
+        ConfigResponse? remoteConfig,
+        bool parentServerEnabled)
     {
         if (!collector.UsesItemManifest || remoteConfig?.ItemManifestGroups is not { } manifestGroups)
             return null;
@@ -480,6 +558,7 @@ public static class CategorySettingsView
                 // right consent. It is drawn as a checkbox label, and the backend is overridable.
                 Label = ServerText.SingleLine(group.Label) ?? group.Key,
                 Enabled = settings.IsItemGroupEnabled(group.Key),
+                ParentServerEnabled = parentServerEnabled,
                 IsNew = !settings.IsItemGroupSeen(group.Key),
             });
         }

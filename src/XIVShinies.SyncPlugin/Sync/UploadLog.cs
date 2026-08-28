@@ -620,6 +620,78 @@ public static class UploadLogText
     }
 
     /// <summary>
+    /// The entry's categories ordered by the name the reader sees, for the window's Sent column.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The settings checklist and the sync card's chips both name the collections alphabetically, and
+    /// this column names the same collections a third time. Ordering all three the same way is what
+    /// lets a reader compare them by position instead of hunting for a name in each list.
+    /// </para>
+    /// <para>
+    /// A COPY is returned rather than the list being sorted in place. The entry records the order the
+    /// collectors ran in, which is a fact about the upload, and the clipboard export prints the
+    /// categories in exactly that order for whoever is debugging a payload — sorting the entry itself
+    /// would quietly rewrite that surface too.
+    /// </para>
+    /// </remarks>
+    /// <param name="categories">The entry's categories, in the order the collectors ran.</param>
+    /// <param name="displayNameFor">
+    /// The label the window draws for a category key. Passed in rather than looked up here so this
+    /// stays Dalamud-free and testable: the names come from the registered collectors, which only the
+    /// window can reach. Ordering on this rather than on the key matters because a key is a wire
+    /// identifier that need not resemble its label, so a key order would put the words on screen in an
+    /// order the reader cannot account for. Compared with OrdinalIgnoreCase: these labels are English
+    /// strings authored in this repo, so every user gets the same order whatever their locale.
+    /// </param>
+    public static IReadOnlyList<UploadLogCategory> InDisplayOrder(
+        IReadOnlyList<UploadLogCategory> categories,
+        Func<string, string> displayNameFor)
+    {
+        var ordered = new List<UploadLogCategory>(categories);
+
+        // A category key is unique within an entry, so the key breaks a tie between two collections
+        // that chose the same display name. List.Sort is unstable, so without a tie-break their
+        // order could differ between two runs over equal input.
+        ordered.Sort((left, right) =>
+        {
+            var byName = string.Compare(
+                displayNameFor(left.Key), displayNameFor(right.Key), StringComparison.OrdinalIgnoreCase);
+            return byName != 0 ? byName : string.Compare(left.Key, right.Key, StringComparison.Ordinal);
+        });
+
+        return ordered;
+    }
+
+    /// <summary>
+    /// The category keys ordered by the name the reader sees, for the window's "Could not read" line.
+    /// </summary>
+    /// <remarks>
+    /// The same rule as <see cref="InDisplayOrder"/> and for the same reason — the two lines sit in
+    /// one table cell, so a reader meets both orders at once. Keys rather than categories because
+    /// an unreadable category has nothing recorded about it beyond its key: it is named precisely
+    /// because nothing was collected for it.
+    /// </remarks>
+    /// <param name="categoryKeys">The unreadable category keys.</param>
+    /// <param name="displayNameFor">The label the window draws for a category key.</param>
+    public static IReadOnlyList<string> KeysInDisplayOrder(
+        IReadOnlyList<string> categoryKeys,
+        Func<string, string> displayNameFor)
+    {
+        var ordered = new List<string>(categoryKeys);
+
+        // Tie broken by the key, as in InDisplayOrder.
+        ordered.Sort((left, right) =>
+        {
+            var byName = string.Compare(
+                displayNameFor(left), displayNameFor(right), StringComparison.OrdinalIgnoreCase);
+            return byName != 0 ? byName : string.Compare(left, right, StringComparison.Ordinal);
+        });
+
+        return ordered;
+    }
+
+    /// <summary>
     /// The text spans the window prints for one sent category, each paired with whether it draws
     /// highlighted (gold). A span-based answer because one category can carry two independently
     /// colored parts: the label with its "(changed)" mark, and — for a manifest-driven category —

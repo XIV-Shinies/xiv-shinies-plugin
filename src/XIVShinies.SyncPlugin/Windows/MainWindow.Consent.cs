@@ -6,6 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
@@ -132,7 +133,10 @@ internal sealed partial class MainWindow
     /// </returns>
     private bool DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
     {
-        var enabled = row.UserEnabled;
+        // The box shows the effective state, not the stored preference: a ticked box under a
+        // collection the server has switched off states the opposite of what is happening, and a
+        // tick is the loudest thing on the row.
+        var enabled = row.IsEffectivelyOn;
         bool toggled;
 
         // Captured before the checkbox draws: the column its label starts in is where the
@@ -169,29 +173,39 @@ internal sealed partial class MainWindow
         if (showNewChips && row.IsEffectivelyNew)
             categoriesBadgedThisSession.Add(row.Key);
 
-        // ServerEnabled is re-checked rather than trusted from when the key went into the set: a
-        // config poll landing mid-session can switch a collection off under a badge already on
-        // screen, and the chip must not keep promising something new beside a greyed-out row.
-        (FontAwesomeIcon Icon, string Text, Vector4 Color)? badge =
-            showNewChips && row.ServerEnabled && categoriesBadgedThisSession.Contains(row.Key)
-                ? (FontAwesomeIcon.Star, "New", Brand.Gold)
-                : null;
+        // Which mark to wear, and its precedence, is CategorySettingsView.BadgeFor's rule. Only the
+        // look of each mark is decided here.
+        //
+        // Off is grey and filled: grey so the state never competes for attention with the badge that
+        // invites the user to do something, filled because that same grey would otherwise let it read
+        // as part of the greyed row it sits on rather than as a mark about it. New is gold and
+        // unfilled — the color already carries it.
+        (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? badge =
+            CategorySettingsView.BadgeFor(
+                row, showNewChips, categoriesBadgedThisSession.Contains(row.Key)) switch
+            {
+                CategoryBadgeKind.Off =>
+                    (FontAwesomeIcon.PowerOff, "Off", Brand.DisabledForeground, row.ServerOffText, true),
+                CategoryBadgeKind.New =>
+                    (FontAwesomeIcon.Star, "New", Brand.Gold, (string?)null, false),
+                _ => null,
+            };
 
         // The consent copy flows on the label's own line — "Name — what it sends" — with the
         // collector's hover elaboration trailing the sentence when it offered one, the badge
-        // trailing that, and wrapped lines coming home under the label. It is what the plugin will
-        // send if the box is ticked, so it draws at full contrast.
+        // trailing that, and wrapped lines coming home under the label.
+        //
+        // It describes what the plugin WOULD send if the box were ticked, so a box the user simply
+        // left unticked keeps full contrast — that is an offer still open to them, and the copy is
+        // how they decide. A collection the server has switched off is not an open offer: nothing
+        // on this row can send it whatever the user does, so the copy mutes with the rest of the
+        // row. The reason it is off rides the chip's tooltip rather than a line of its own, so a
+        // switched-off row stays one line.
         ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
-        DrawWrappedWithTrailingHint($"— {row.WhatGetsSent}", row.Details, labelColumn, badge);
+        DrawWrappedWithTrailingHint(
+            $"— {row.WhatGetsSent}", row.Details, labelColumn, badge, muted: !row.ServerEnabled);
 
         ImGui.Indent(checkboxColumn);
-
-        // Muted: a switched-off row is secondary to the choices around it, and the greyed checkbox
-        // already carries the state while this line carries the reason. Wrapped rather than a bare
-        // TextDisabled because the server may author this sentence, and a server sentence has no
-        // length the panel can assume.
-        if (row.ServerOffText is { } serverOff)
-            DrawWrapped(serverOff, ImGuiCol.TextDisabled);
 
         // Disabled along with the category above them. A group belongs to its category and is
         // only ever scanned as part of that category's pass, so leaving the groups live under a
@@ -253,17 +267,17 @@ internal sealed partial class MainWindow
     /// revocable on both consent surfaces.
     /// </para>
     /// <para>
-    /// Drawn greyed out when the server's <c>occultTracker</c> switch is off, with the user's
-    /// own preference intact underneath — the same treatment a server-disabled category gets.
-    /// A config with no <c>occultTracker</c> block (or none fetched yet) draws normally: the
-    /// toggle records the user's choice either way, and the manager independently refuses to
-    /// upload to a server that never advertised the feature.
+    /// Given the same treatment a server-disabled collection gets — unticked, greyed, and chipped
+    /// "Off" — whenever the tracker is unavailable, with the user's own preference intact
+    /// underneath. What counts as unavailable is decided at the check itself.
     /// </para>
     /// </remarks>
     private void DrawOccultConsentRow()
     {
-        var occultConfig = syncManager.RemoteConfig?.OccultTracker;
-        var serverOff = occultConfig is { Enabled: false };
+        // Asked of the gate that decides whether the tracker actually runs, so the control and
+        // the behavior cannot describe different things. OccultGate.ServerHasSwitchedOff holds
+        // the rule and the reasoning.
+        var serverOff = OccultGate.ServerHasSwitchedOff(syncManager.RemoteConfig);
 
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemInnerSpacing,
@@ -274,13 +288,32 @@ internal sealed partial class MainWindow
             // style push, so the two cards' text edges line up when stacked.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
 
-            var enabled = configuration.Settings.ShareOccultInstanceState;
+            // Effective state, the same rule the collection rows draw by: the tick means "this is
+            // happening". The user's own preference is untouched underneath and returns when the
+            // server advertises the tracker again.
+            var enabled = !serverOff && configuration.Settings.ShareOccultInstanceState;
             bool toggled;
             using (ImRaii.Disabled(serverOff))
                 toggled = ImGui.Checkbox("Share live Occult instance state##occultTracker", ref enabled);
 
             // The what-is-NOT-shared reassurance, one hover away like every category's.
             DrawDetailsHint(OccultTrackerDetails);
+
+            // The same chip a switched-off collection wears, carrying the same sentence in the same
+            // place. The tracker's switch has no note of its own — it lives in its own config block,
+            // which the server sends without one — so the fallback wording is all there ever is.
+            if (serverOff)
+            {
+                ImGui.SameLine();
+                DrawChip(
+                    FontAwesomeIcon.PowerOff,
+                    "Off",
+                    Brand.DisabledForeground,
+                    filled: true);
+
+                if (ImGui.IsItemHovered())
+                    Widgets.DrawTooltip(CategorySettingsRow.ServerOffFallback);
+            }
 
             if (toggled)
             {
@@ -290,14 +323,10 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
 
-            // Full contrast, like every category's WhatGetsSent line: this is consent copy.
-            DrawWrapped(OccultWhatGetsSent, ImGuiCol.Text);
-
-            // Muted: it only restates why the toggle above is greyed out. The same sentence the
-            // collections list uses, drawn the same way — the tracker's switch lives in its own
-            // config block and carries no note, so this is always the fallback wording.
-            if (serverOff)
-                DrawWrapped(CategorySettingsRow.ServerOffFallback, ImGuiCol.TextDisabled);
+            // Consent copy, on the same rule as a collection row: full contrast while the server
+            // permits the tracker, so the user's own toggle reads as a choice still open to them,
+            // and muted along with the row once the server has taken the choice away.
+            DrawWrapped(OccultWhatGetsSent, serverOff ? ImGuiCol.TextDisabled : ImGuiCol.Text);
 
             ImGui.Unindent(checkboxColumn);
 
@@ -394,11 +423,16 @@ internal sealed partial class MainWindow
     /// this method closes the line, so a <c>SameLine</c> of theirs anchors at the start of the row
     /// below.
     /// </param>
+    /// <param name="muted">
+    /// True to draw the words at the disabled text color. For copy about something the plugin is
+    /// not currently doing — full contrast would read as a description of live behavior.
+    /// </param>
     private void DrawWrappedWithTrailingHint(
         string text,
         string? details,
         float? homeXOverride = null,
-        (FontAwesomeIcon Icon, string Text, Vector4 Color)? trailingChip = null)
+        (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? trailingChip = null,
+        bool muted = false)
     {
         var spaceWidth = ImGui.CalcTextSize(" ").X;
         var innerRight = activeCardInnerRight
@@ -444,7 +478,12 @@ internal sealed partial class MainWindow
                     ImGui.SetCursorPosX(homeX);
                 }
 
-                ImGui.TextUnformatted(word);
+                // The paragraph is submitted a word at a time, so the muted choice is made at each call.
+                if (muted)
+                    ImGui.TextDisabled(word);
+                else
+                    ImGui.TextUnformatted(word);
+
                 first = false;
             }
 
@@ -499,7 +538,7 @@ internal sealed partial class MainWindow
     /// caller left it — possibly mid-line, beside a checkbox label.
     /// </param>
     private void DrawTrailingChip(
-        (FontAwesomeIcon Icon, string Text, Vector4 Color)? chip,
+        (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? chip,
         float innerRight,
         float homeX,
         float? homeXOverride,
@@ -529,7 +568,12 @@ internal sealed partial class MainWindow
             ImGui.SetCursorPosX(homeX);
         }
 
-        DrawChip(badge.Icon, badge.Text, badge.Color);
+        DrawChip(badge.Icon, badge.Text, badge.Color, badge.Filled);
+
+        // DrawChip ends by reserving its footprint as a real item, so the ordinary hover test
+        // applies to the chip itself — the same route the description's question mark uses.
+        if (badge.Tooltip is { } tooltip && ImGui.IsItemHovered())
+            Widgets.DrawTooltip(tooltip);
     }
 
     /// <summary>
@@ -635,7 +679,10 @@ internal sealed partial class MainWindow
 
         foreach (var group in groups)
         {
-            var groupEnabled = group.Enabled;
+            // Effective state, per ItemGroupRow.IsEffectivelyOn. The stored consent is untouched:
+            // this box is inside the parent's disabled scope, so a click cannot reach the write
+            // below while the two disagree.
+            var groupEnabled = group.IsEffectivelyOn;
 
             // Same `##key` identity trick as the category checkboxes above: the visible label is the
             // group's, but the widget's ImGui id comes from the unique group key, so two groups that
@@ -725,7 +772,13 @@ internal sealed partial class MainWindow
         // ManifestConsent with the rest of them and is unit-tested there.
         var allEnabled = ManifestConsent.AllConsentGiven(rows);
 
-        if (ImGui.Checkbox("All collections##selectAll", ref allEnabled))
+        // Disabled rather than hidden, so the list reads the same shape whatever the server has
+        // switched off. ManifestConsent.AnyServerEnabled holds the rule.
+        bool clicked;
+        using (ImRaii.Disabled(!ManifestConsent.AnyServerEnabled(rows)))
+            clicked = ImGui.Checkbox("All collections##selectAll", ref allEnabled);
+
+        if (clicked)
         {
             // Answered rather than merely drawn, so each row written here is recorded as shown for
             // the same reason a row's own checkbox does it (see DrawCategoryRow).

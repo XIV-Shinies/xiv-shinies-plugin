@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
@@ -1342,4 +1343,169 @@ public class UploadLogTests
 
         Assert.Equal(new[] { ("Phantom jobs (none seen)", false) }, spans);
     }
+
+    // --- The Sent column's order ---------------------------------------------------------------
+
+    // InDisplayOrder is the pure rule behind the Sent column's ordering. The window names the same
+    // collections in three places - this column, the consent checklist, and the sync card's chips -
+    // and a reader compares them by position, so the three have to agree.
+
+    // Alphabetical by the label the reader sees, not the order the collectors happened to run in.
+    [Fact]
+    public void Categories_are_listed_by_display_name()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("quests", Count: 2847),
+            new UploadLogCategory("achievements", Count: 1183),
+            new UploadLogCategory("mounts", Count: 214),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(categories, key => Names[key]);
+
+        Assert.Equal(
+            new[] { "achievements", "mounts", "quests" },
+            ordered.Select(c => c.Key).ToArray());
+    }
+
+    // The whole reason the order is taken from the display name: a key need not resemble the label
+    // drawn for it, so sorting on keys would put the words on screen in an order the reader cannot
+    // account for. Here the two orders are exact opposites, which no key-based sort can produce.
+    [Fact]
+    public void Categories_are_ordered_by_label_rather_than_by_category_key()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("aaa", Count: 1),
+            new UploadLogCategory("zzz", Count: 2),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(
+            categories, key => key == "aaa" ? "Zebra" : "Apple");
+
+        Assert.Equal(new[] { "zzz", "aaa" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // Two collections may choose the same display name, and an arbitrary order between them would
+    // let the column reshuffle itself between frames. The key settles it.
+    [Fact]
+    public void Categories_sharing_a_display_name_are_settled_by_their_key()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("second", Count: 2),
+            new UploadLogCategory("first", Count: 1),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(categories, _ => "Same");
+
+        Assert.Equal(new[] { "first", "second" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // The entry records the order the collectors ran in, and the clipboard export prints the
+    // categories in exactly that order for whoever is debugging a payload. Sorting in place would
+    // rewrite that surface as a side effect of drawing this one.
+    [Fact]
+    public void Ordering_for_display_leaves_the_entrys_own_order_alone()
+    {
+        var categories = new List<UploadLogCategory>
+        {
+            new("quests", Count: 2847),
+            new("achievements", Count: 1183),
+        };
+
+        UploadLogText.InDisplayOrder(categories, key => Names[key]);
+
+        Assert.Equal(new[] { "quests", "achievements" }, categories.Select(c => c.Key).ToArray());
+    }
+
+    // A category whose collector is not registered falls back to its raw key as a label, which is
+    // still a string and still has to sort - the column must not drop it or throw.
+    [Fact]
+    public void A_category_with_no_registered_display_name_still_sorts_by_its_key()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("mounts", Count: 214),
+            new UploadLogCategory("facewear", Count: 12),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(
+            categories, key => Names.TryGetValue(key, out var name) ? name : key);
+
+        // "facewear" has no display name, so it sorts under its own key, ahead of "Mounts".
+        Assert.Equal(new[] { "facewear", "mounts" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // Display names are English strings authored in this repo, so the order must not turn on
+    // casing - every user's log reads the same whatever their machine's locale.
+    [Fact]
+    public void Ordering_ignores_case()
+    {
+        var categories = new[]
+        {
+            new UploadLogCategory("upper", Count: 1),
+            new UploadLogCategory("lower", Count: 2),
+        };
+
+        var ordered = UploadLogText.InDisplayOrder(
+            categories, key => key == "upper" ? "ZEBRA" : "apple");
+
+        Assert.Equal(new[] { "lower", "upper" }, ordered.Select(c => c.Key).ToArray());
+    }
+
+    // An entry carrying nothing is an ordinary state (a sweep with every collection switched off),
+    // and the column simply draws nothing.
+    [Fact]
+    public void Ordering_an_empty_category_list_returns_nothing()
+    {
+        Assert.Empty(UploadLogText.InDisplayOrder([], key => key));
+    }
+
+    // The "Could not read" line sits in the same table cell as the Sent column, so a reader meets
+    // both orders at once and they have to agree.
+
+    [Fact]
+    public void Unreadable_keys_are_listed_by_display_name()
+    {
+        var ordered = UploadLogText.KeysInDisplayOrder(
+            new[] { "quests", "achievements", "mounts" }, key => Names[key]);
+
+        Assert.Equal(new[] { "achievements", "mounts", "quests" }, ordered.ToArray());
+    }
+
+    // The same reason the Sent column orders on the label: a key need not resemble the name drawn
+    // for it, so a key-ordered line would read in an order the user cannot account for.
+    [Fact]
+    public void Unreadable_keys_are_ordered_by_label_rather_than_by_key()
+    {
+        var ordered = UploadLogText.KeysInDisplayOrder(
+            new[] { "aaa", "zzz" }, key => key == "aaa" ? "Zebra" : "Apple");
+
+        Assert.Equal(new[] { "zzz", "aaa" }, ordered.ToArray());
+    }
+
+    // List.Sort is unstable, so two keys sharing a display name need a tie-break or their order can
+    // differ between two runs over equal input.
+    [Fact]
+    public void Unreadable_keys_sharing_a_display_name_are_settled_by_their_key()
+    {
+        var ordered = UploadLogText.KeysInDisplayOrder(new[] { "second", "first" }, _ => "Same");
+
+        Assert.Equal(new[] { "first", "second" }, ordered.ToArray());
+    }
+
+    [Fact]
+    public void Ordering_an_empty_key_list_returns_nothing()
+    {
+        Assert.Empty(UploadLogText.KeysInDisplayOrder([], key => key));
+    }
+
+    // The display names the window would supply for the keys these tests use.
+    private static readonly Dictionary<string, string> Names = new()
+    {
+        ["quests"] = "Quests",
+        ["achievements"] = "Achievements",
+        ["mounts"] = "Mounts",
+    };
 }

@@ -133,10 +133,15 @@ The version is typed rather than derived because screenshots are taken **before*
 flow sets `<Version>`, and that flow is the only thing that may write it. It changes the masthead
 only — uploads and the pasted diagnostic still carry the real one.
 
-Capture promptly: a real sync records a genuine row that diffs against the seeded ones and lights
-up "(changed)" everywhere, and logging out or switching character clears the log. On the shipped
-**Release** build the argument is not compiled in, so `/shinies seedlog` just toggles the window
-like any other unrecognized argument.
+**Seed after the login sync, not before it.** Reloading the plugin queues a login sync that fires
+about ten seconds after the character loads, and it overwrites the seeded state — it records a real
+upload row and re-reads every collection, so a collection it cannot read (phantom jobs outside the
+Crescent) gets its "not read yet" note back. Reload, wait for the sync, then seed.
+
+Capture promptly for the same reason: any later sync records a genuine row that diffs against the
+seeded ones and lights up "(changed)" everywhere, and logging out or switching character clears the
+log. On the shipped **Release** build the argument is not compiled in, so `/shinies seedlog`
+just toggles the window like any other unrecognized argument.
 
 ## Testing philosophy — pure logic vs. game surfaces
 
