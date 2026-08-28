@@ -77,14 +77,9 @@ jobs:
           DISCORD_RELEASES_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASES_WEBHOOK_URL }}
           TAG: ${{ inputs.tag }}
         run: |
-          $release = gh release view $env:TAG --json name,body,url,publishedAt | ConvertFrom-Json
+          $release = gh release view $env:TAG --json name,body,url | ConvertFrom-Json
           $env:RELEASE_NAME = $release.name
           $env:RELEASE_BODY = $release.body
           $env:RELEASE_URL = $release.url
           $env:RELEASE_TAG = $env:TAG
-          # ConvertFrom-Json parses the ISO date string into a DateTime, which stringifies
-          # in the runner's culture format on the way into the environment. Discord's embed
-          # timestamp must be ISO 8601, so the value is explicitly re-serialized ("o" is the
-          # ISO round-trip format).
-          $env:RELEASE_PUBLISHED_AT = ([datetime]$release.publishedAt).ToUniversalTime().ToString("o")
           node .github/scripts/post-discord-release.mjs
