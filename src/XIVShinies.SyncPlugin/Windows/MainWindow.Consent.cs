@@ -186,10 +186,12 @@ internal sealed partial class MainWindow
 
         ImGui.Indent(checkboxColumn);
 
-        // Muted: it only restates why the checkbox above it is grayed out, which the
-        // disabled control already conveys on its own.
-        if (!row.ServerEnabled)
-            ImGui.TextDisabled("Temporarily switched off by XIV Shinies.");
+        // Muted: a switched-off row is secondary to the choices around it, and the greyed checkbox
+        // already carries the state while this line carries the reason. Wrapped rather than a bare
+        // TextDisabled because the server may author this sentence, and a server sentence has no
+        // length the panel can assume.
+        if (row.ServerOffText is { } serverOff)
+            DrawWrapped(serverOff, ImGuiCol.TextDisabled);
 
         // Disabled along with the category above them. A group belongs to its category and is
         // only ever scanned as part of that category's pass, so leaving the groups live under a
@@ -291,9 +293,11 @@ internal sealed partial class MainWindow
             // Full contrast, like every category's WhatGetsSent line: this is consent copy.
             DrawWrapped(OccultWhatGetsSent, ImGuiCol.Text);
 
-            // Muted: it only restates why the toggle above is greyed out.
+            // Muted: it only restates why the toggle above is greyed out. The same sentence the
+            // collections list uses, drawn the same way — the tracker's switch lives in its own
+            // config block and carries no note, so this is always the fallback wording.
             if (serverOff)
-                ImGui.TextDisabled("Temporarily switched off by XIV Shinies.");
+                DrawWrapped(CategorySettingsRow.ServerOffFallback, ImGuiCol.TextDisabled);
 
             ImGui.Unindent(checkboxColumn);
 

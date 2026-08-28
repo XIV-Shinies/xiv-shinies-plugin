@@ -1169,8 +1169,14 @@ internal sealed class SyncManager : IDisposable
             // Categories the server refused (a per-category kill switch). Surfaced so the user is not
             // left wondering why a collection never appears on the website.
             var skipped = response.Value?.SkippedCategories;
+
+            // Clamped like every other adopted server string: the log is a durable sink the user
+            // pastes into bug reports, and these names come from an overridable backend.
             if (skipped is {Count: > 0})
-                log.Information($"Server skipped: {string.Join(", ", skipped)}");
+            {
+                var names = ServerText.Clamp(string.Join(", ", skipped), ellipsis: true);
+                log.Information($"Server skipped: {names}");
+            }
 
             return true;
         }

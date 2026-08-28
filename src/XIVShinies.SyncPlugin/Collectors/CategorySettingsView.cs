@@ -76,6 +76,42 @@ public sealed record CategorySettingsRow
     public required bool ServerEnabled { get; init; }
 
     /// <summary>
+    /// The server's own explanation for this category being switched off, or null when it offered
+    /// none. Only meaningful while <see cref="ServerEnabled"/> is false.
+    /// </summary>
+    /// <remarks>
+    /// The same no-name-branch route as <see cref="SkipReason"/> and <see cref="PartialNote"/>,
+    /// one level further out: there the collector authors the phrase, here the server does, and
+    /// the panel prints whichever it is handed. <see cref="ServerOffText"/> is what decides
+    /// between this and the generic line.
+    /// </remarks>
+    public string? ServerNote { get; init; }
+
+    /// <summary>
+    /// What to print under a category the server has switched off, or null when it is on and
+    /// nothing needs saying.
+    /// </summary>
+    /// <remarks>
+    /// The server's note when it sent one, otherwise the generic line — see
+    /// <see cref="ConfigResponse.CategoryNotes"/> for why only one of the two off-states carries a
+    /// note. Null while the category is enabled, including when a note came with it: a note has
+    /// nowhere to go under a live checkbox, so it is dropped here rather than special-cased at the
+    /// place it arrives.
+    /// </remarks>
+    public string? ServerOffText => ServerEnabled ? null : ServerNote ?? ServerOffFallback;
+
+    /// <summary>
+    /// What a switched-off row says when the server offered no explanation of its own.
+    /// </summary>
+    /// <remarks>
+    /// One string, used verbatim by every surface that reports something the server has switched
+    /// off — the collections list and the live tracker's own row, which sit on the same screen.
+    /// Two copies would let a reword leave them saying different things about the same state, in
+    /// view of each other.
+    /// </remarks>
+    public const string ServerOffFallback = "Temporarily switched off by XIV Shinies.";
+
+    /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.
     /// </summary>
     /// <remarks>
@@ -309,6 +345,9 @@ public static class CategorySettingsView
                 // category as disabled by the server, which would be a lie.
                 ServerEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true,
 
+                // Carried verbatim from the server, bounded on the way in.
+                ServerNote = remoteConfig?.CategoryNote(key),
+
                 // Whether the line above is the server's answer or our assumption.
                 ServerStateKnown = remoteConfig is not null,
 
@@ -409,6 +448,11 @@ public static class CategorySettingsView
             return null;
 
         var groupRows = new List<ItemGroupRow>();
+
+        // A consent identifier, not prose: long enough for any key a person would write, short
+        // enough that one cannot bloat the config it is stored in.
+        const int MaxGroupKeyLength = 128;
+
         foreach (var group in manifestGroups)
         {
             // A blank key is server data gone wrong, and it can never behave: consent reads treat it
@@ -418,10 +462,23 @@ public static class CategorySettingsView
             if (string.IsNullOrEmpty(group.Key))
                 continue;
 
+            // An over-long key is dropped rather than shortened, and the difference matters: a
+            // group key is a consent IDENTITY, not copy. Shortening it would consent on behalf of
+            // a group the user was never shown, and two long keys sharing a prefix would collapse
+            // into one consent. Dropping is also what keeps it out of the config, where seen-keys
+            // are appended and never pruned — so an unbounded key would persist forever, outliving
+            // the group that introduced it.
+            if (group.Key.Length > MaxGroupKeyLength)
+                continue;
+
             groupRows.Add(new ItemGroupRow
             {
                 Key = group.Key,
-                Label = group.Label,
+
+                // Shortened rather than dropped, because a label carries no identity — consent is
+                // written and read under the key beside it — so a clipped label still names the
+                // right consent. It is drawn as a checkbox label, and the backend is overridable.
+                Label = ServerText.SingleLine(group.Label) ?? group.Key,
                 Enabled = settings.IsItemGroupEnabled(group.Key),
                 IsNew = !settings.IsItemGroupSeen(group.Key),
             });

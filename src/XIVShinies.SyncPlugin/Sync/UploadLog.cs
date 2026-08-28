@@ -76,7 +76,7 @@ public sealed record UploadLogEntry
     /// version). The backend is user-overridable and therefore untrusted; entries persist for up
     /// to twenty uploads and render in ImGui, so adopted text is clamped at the door.
     /// </summary>
-    public const int MaxServerStringLength = 500;
+    public const int MaxServerStringLength = ServerText.MaxAdoptedLength;
 
     /// <summary>
     /// How the attempt ended. A draft carries <see cref="ApiStatus.Unknown"/> until the response
@@ -207,10 +207,10 @@ public sealed record UploadLogEntry
             Skipped = snapshot.Skipped,
 
             // A content hash (12 chars from our server), but the backend is user-overridable, so
-            // clamp it like every other adopted server string before it persists in the log.
-            ManifestVersion = manifestVersion is { Length: > MaxServerStringLength }
-                ? manifestVersion[..MaxServerStringLength]
-                : manifestVersion,
+            // clamp it like every other adopted server string before it persists in the log. No
+            // ellipsis: this is a hash a reader checks back against the server's, so a trailing
+            // marker would make it unrecognizable.
+            ManifestVersion = manifestVersion is null ? null : ServerText.Clamp(manifestVersion),
         };
     }
 
@@ -575,10 +575,7 @@ public static class UploadLogText
 
         var text = string.Join(" · ", parts);
 
-        // Three periods, not the single "…" glyph — see MainWindow's Verify label for why.
-        return text.Length <= UploadLogEntry.MaxServerStringLength
-            ? text
-            : text[..UploadLogEntry.MaxServerStringLength] + "...";
+        return ServerText.Clamp(text, ellipsis: true);
     }
 
     /// <summary>

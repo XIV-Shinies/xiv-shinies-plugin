@@ -402,9 +402,14 @@ internal sealed class OccultManager : IDisposable
                 // The tracker id is the server's identity for the instance — logging it is what
                 // lets a QA session (or a bug report) prove that a rejoin landed on the same
                 // tracker. It is a server-generated UUID, not player data.
+                // Both server strings are clamped: the log is durable and the backend overridable.
+                var outcome = ServerText.Clamp(response.Value?.Outcome ?? "ok");
+                var tracker = response.Value?.TrackerId is { } id
+                    ? $" tracker={ServerText.Clamp(id)}"
+                    : string.Empty;
+
                 log.Debug(
-                    $"Occult {trigger} upload: {response.Value?.Outcome ?? "ok"}" +
-                    $"{(response.Value?.TrackerId is { } id ? $" tracker={id}" : string.Empty)}" +
+                    $"Occult {trigger} upload: {outcome}{tracker}" +
                     $"{(response.Value?.Created == true ? " (created)" : string.Empty)}.");
                 return;
             }

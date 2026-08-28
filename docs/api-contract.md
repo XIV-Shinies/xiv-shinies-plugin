@@ -110,6 +110,10 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "tripleTriadCards": true,
     "tripleTriadNpcs": true
   },
+  // optional — why a false category is off, when it is worth saying
+  "categoryNotes": {
+    "orchestrionRolls": "In testing — it will switch on once it is ready."
+  },
   "enabled": true,             // global kill switch
   "intervals": {
     "fullSyncMinutes": 30,     // full-sweep upload cadence
@@ -134,7 +138,27 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
 - **Kill switches.** `enabled` is the global switch; `categories` is per-category. **The
   client must honor both**: stop uploading entirely when `enabled` is false, and skip
   collecting/sending disabled categories. The server enforces them too, but a compliant
-  client saves the round trips.
+  client saves the round trips. A gated category ships as an explicit `false`, never omitted —
+  an absent key means "the server has never heard of it", which the client reads as enabled.
+- **Category notes.** `categoryNotes` is optional, keyed like `categories`, and explains why a
+  category is off. It is absent entirely when nothing needs explaining, never an empty map.
+  **Presence is the whole signal** — the client prints the sentence verbatim and never parses
+  it, so either side can reword without a release. The two reasons a category is false are not
+  equal, and only one carries a note:
+
+  | Why the category is false | `categories` | `categoryNotes` | What the client shows |
+  | --- | --- | --- | --- |
+  | Ops kill switch (off for everyone) | `false` | *absent* | its own generic line |
+  | Feature flag this account cannot see | `false` | present | the note |
+  | Both at once | `false` | *absent* | its own generic line |
+
+  The kill switch is deliberately the louder signal: during an outage a specific explanation
+  would be a guess. A note against an **enabled** category is legal and ignored. A note value is
+  a **non-empty string** — never `null`, and a category with nothing to say is left out of the map
+  rather than mapped to `null` or `""`. Treat the text as untrusted like every other server string
+  — the backend is user-overridable, so a client must survive a peer that breaks any of the above.
+  The plugin folds a note to a single line and clamps it to **500 characters**, marking a shortened
+  one with an ellipsis, so copy written longer than that will be cut.
 - **Item manifest.** The item IDs the server wants possession counts for. The plugin checks
   possession of **only** these items. When `itemManifestGroups` is present it takes
   precedence; the flat list stays in the config permanently for clients without group
@@ -533,7 +557,11 @@ Lodestone id, so it never auto-creates characters).
   `Retry-After` on 429 and 503 and back off — do not tight-loop retries.
 - **Kill switches are server-enforced too.** A disabled category is stripped from the payload
   before any write; the stripped keys ride back in `skippedCategories` so the plugin can tell
-  the user why a category didn't sync.
+  the user why a category didn't sync. Stripping covers both reasons a category can be off: the
+  ops kill switch, and a feature flag the uploading account cannot see. `/config` only
+  advertises a gate, so a client polling a stale config — or one that never reads `/config` at
+  all — would otherwise still write rows it should not. A client that honors `categories` never
+  reaches this: it simply changes the failure mode from a silent write to a visible strip.
 
 ## Forward compatibility
 

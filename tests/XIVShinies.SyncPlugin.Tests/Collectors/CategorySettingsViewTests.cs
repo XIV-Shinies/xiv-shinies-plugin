@@ -66,7 +66,8 @@ public class CategorySettingsViewTests
 
     private static ConfigResponse RemoteConfig(
         Dictionary<string, bool>? categories = null,
-        IReadOnlyList<ItemManifestGroup>? itemManifestGroups = null) => new()
+        IReadOnlyList<ItemManifestGroup>? itemManifestGroups = null,
+        Dictionary<string, string>? categoryNotes = null) => new()
     {
         Categories = categories ?? new Dictionary<string, bool>(),
         Enabled = true,
@@ -74,6 +75,7 @@ public class CategorySettingsViewTests
         ItemManifest = Array.Empty<uint>(),
         ManifestVersion = "abc",
         ItemManifestGroups = itemManifestGroups,
+        CategoryNotes = categoryNotes,
     };
 
     private static ItemManifestGroup Group(string key, string label) => new()
@@ -584,6 +586,52 @@ public class CategorySettingsViewTests
         Assert.Equal("relic-tools", group.Key);
     }
 
+    // Pins that an unreasonably long key takes the whole group out rather than being shortened,
+    // and that its healthy siblings still flow. BuildGroupRows explains why dropping is the only
+    // safe answer for a consent identity.
+    [Fact]
+    public void A_group_with_an_unreasonably_long_key_is_dropped_and_its_siblings_survive()
+    {
+        var config = RemoteConfig(itemManifestGroups: new[]
+        {
+            Group(new string('k', 5_000), "Overlong key"),
+            Group("relic-tools", "Relic tools"),
+        });
+
+        var rows = CategorySettingsView.Build(new[] {FakeManifestDriven("items")}, OptedIn(), config);
+
+        var group = Assert.Single(rows[0].Groups!);
+        Assert.Equal("relic-tools", group.Key);
+    }
+
+    // The opposite disposal from the key above: the group survives and only its label is cut.
+    [Fact]
+    public void A_group_with_an_unreasonably_long_label_keeps_the_group_and_shortens_the_label()
+    {
+        var config = RemoteConfig(itemManifestGroups: new[]
+        {
+            Group("relic-tools", new string('l', ServerText.MaxAdoptedLength + 400)),
+        });
+
+        var rows = CategorySettingsView.Build(new[] {FakeManifestDriven("items")}, OptedIn(), config);
+
+        var group = Assert.Single(rows[0].Groups!);
+        Assert.Equal("relic-tools", group.Key);
+        Assert.Equal(new string('l', ServerText.MaxAdoptedLength) + "...", group.Label);
+    }
+
+    // A label the server left blank would draw a checkbox with nothing beside it, which the user
+    // cannot act on. The key stands in — not pretty, but it names the consent being offered.
+    [Fact]
+    public void A_group_with_a_blank_label_falls_back_to_its_key()
+    {
+        var config = RemoteConfig(itemManifestGroups: new[] {Group("relic-tools", "   ")});
+
+        var rows = CategorySettingsView.Build(new[] {FakeManifestDriven("items")}, OptedIn(), config);
+
+        Assert.Equal("relic-tools", Assert.Single(rows[0].Groups!).Label);
+    }
+
     // THE GATE, extended: a manifest-driven collector for a category this plugin has never heard of
     // still gets group rows built from the config, proving group attachment is gated on the
     // self-reported flag rather than on any category name.
@@ -599,5 +647,102 @@ public class CategorySettingsViewTests
         Assert.NotNull(groups);
         var group = Assert.Single(groups!);
         Assert.Equal("mystery-group", group.Key);
+    }
+
+    // --- What a switched-off category says for itself -------------------------------------------
+    // Two unlike reasons a category can be off, and the row draws a different sentence for each.
+    // Generic like everything else here: the fake announces a category nobody wrote code for, so a
+    // future gated collection gets this behaviour without an edit.
+
+    // A category still being tested: the server explains it, and the plugin prints that verbatim.
+    // "It is off" alone would invite the reader to conclude something is broken.
+    [Fact]
+    public void A_server_note_is_what_a_switched_off_category_says()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            categoryNotes: new Dictionary<string, string>
+            {
+                [UnknownCategory] = "In testing — it will switch on for everyone once it is ready.",
+            });
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
+
+        Assert.Equal(
+            "In testing — it will switch on for everyone once it is ready.",
+            Assert.Single(rows).ServerOffText);
+    }
+
+    // The kill switch is the louder signal and carries no note: the collection is off for
+    // everyone, usually because something is wrong. The generic line keeps its job there, where a
+    // specific explanation would be a guess made on the server's behalf.
+    [Fact]
+    public void A_switched_off_category_without_a_note_falls_back_to_the_generic_line()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false});
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
+
+        // Pinned by identity with the constant, so a reword moves both surfaces that draw it.
+        Assert.Equal(
+            CategorySettingsRow.ServerOffFallback, Assert.Single(rows).ServerOffText);
+    }
+
+    // The note is carried on the row in its own right, not only folded into the sentence.
+    [Fact]
+    public void The_server_note_is_carried_on_the_row()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            categoryNotes: new Dictionary<string, string> {[UnknownCategory] = "In testing."});
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
+
+        Assert.Equal("In testing.", Assert.Single(rows).ServerNote);
+    }
+
+    // A note against a live category is legal and has nowhere to go — there is no greyed row to
+    // explain. Dropped by the same rule rather than special-cased, so the server may send one
+    // without the panel growing a branch for it.
+    [Fact]
+    public void An_enabled_category_says_nothing_even_when_a_note_came_with_it()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = true},
+            categoryNotes: new Dictionary<string, string>
+            {
+                [UnknownCategory] = "A note the panel has no place to draw.",
+            });
+
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
+
+        Assert.Null(Assert.Single(rows).ServerOffText);
+    }
+
+    // Nothing to say about a category that is simply on.
+    [Fact]
+    public void An_enabled_category_says_nothing()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Null(Assert.Single(rows).ServerOffText);
+    }
+
+    // A config that has not been fetched forbids nothing, so there is no off-state to explain.
+    // Without this the panel would tell a user their collections were switched off by XIV Shinies
+    // whenever the plugin could not reach /config, which would be a lie.
+    [Fact]
+    public void A_category_says_nothing_before_the_config_arrives()
+    {
+        var rows = CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), remoteConfig: null);
+
+        Assert.Null(Assert.Single(rows).ServerOffText);
     }
 }

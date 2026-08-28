@@ -16,6 +16,50 @@ public sealed record ConfigResponse
     /// </summary>
     public required Dictionary<string, bool> Categories { get; init; }
 
+    /// <summary>
+    /// Server-authored copy explaining why a switched-off category is off, keyed the same way as
+    /// <see cref="Categories"/>. Null when the server sends none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A category can be off for two unlike reasons, and the difference matters to the person
+    /// reading the row. A kill switch turns it off for everyone, usually while something is
+    /// wrong — and carries <b>no</b> note, because during an outage any specific explanation is a
+    /// guess the plugin would be making on the server's behalf. A category still being tested
+    /// carries one, because "it is off" alone invites the reader to conclude something is broken.
+    /// A category off for both reasons carries no note: the louder signal wins.
+    /// </para>
+    /// <para>
+    /// The plugin never interprets the text — no keywords, no parsing, no deciding when it
+    /// applies. The server chooses whether to send a note at all, and the presence of one is the
+    /// entire signal. That keeps the two sides free to disagree about wording without a release.
+    /// </para>
+    /// </remarks>
+    // NOT `required`, for the same older-server reason as ItemManifestGroups below.
+    public Dictionary<string, string>? CategoryNotes { get; init; }
+
+    /// <summary>
+    /// The note for a category as it should be drawn, or null when there is nothing to draw.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Null for a category the server did not explain, and equally for one it "explained" with
+    /// nothing — a missing value, an empty string, or only whitespace. <see cref="ServerText"/>
+    /// does the bounding and folding, which is also what makes this safe to call from the draw
+    /// path: it is reached once per row per frame.
+    /// </para>
+    /// <para>
+    /// A <b>null</b> value inside the map is reachable despite the non-nullable declaration —
+    /// the deserializer does not enforce nullable reference annotations, so a map entry written
+    /// as JSON <c>null</c> arrives as one. The contract says the server never sends that; the
+    /// backend being user-overridable is what makes the contract insufficient on its own.
+    /// </para>
+    /// </remarks>
+    public string? CategoryNote(string categoryKey) =>
+        CategoryNotes is not null && CategoryNotes.TryGetValue(categoryKey, out var note)
+            ? ServerText.SingleLine(note)
+            : null;
+
     /// <summary>The global kill switch. False means stop uploading entirely.</summary>
     public required bool Enabled { get; init; }
 

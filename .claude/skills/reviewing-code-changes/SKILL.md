@@ -277,6 +277,30 @@ replacement stating the durable fact. End with a count.
 again** — your fixes are new comments, and they are exactly as suspect as the ones they
 replace. Iterate until a sweep comes back clean.
 
+#### Length is part of the sweep
+
+A comment or doc row that keeps growing stops being read. Every sweep must also **measure** what
+the change touched and rewrite or split anything over its budget — a long entry is a finding, not
+a style preference:
+
+| Surface | Budget | What to do when it's over |
+|---|---|---|
+| `docs/dalamud-compliance.md` table row | **1200 characters** | Keep the rule, its enforcement, and the file refs in the row. Move case-by-case reasoning to a bullet in "Project conventions that go beyond the letter of the rules" below the table, and point at it from the row. |
+| A source line this change ADDED | **110 characters** | Rewrap. (The repo has no `max_line_length`; its own distribution is p95=100, p99=105, so 110 is the tail, not a new rule. Judge added lines only — the file's existing lines are not this change's business.) |
+| A single XML `<remarks>` block | ~15 lines | Split into `<para>`s, or move the argument to the one canonical home and cross-reference. |
+
+Measure, don't eyeball — a table row grows a clause at a time, and no reviewer notices the
+tenth one:
+
+```bash
+# Compliance rows, longest first. Anything over 1200 gets rewritten or split.
+awk -F'|' 'NF>2 && $2 ~ /\*\*/ { printf "%5d  %.60s\n", length($0), $2 }' \
+  docs/dalamud-compliance.md | sort -rn | head
+
+# Over-long lines among the ones this change ADDED (the leading + is stripped before measuring).
+git diff HEAD -U0 -- '*.cs' | grep '^+[^+]' | cut -c2- | awk 'length > 110 { print length": "$0 }'
+```
+
 #### The grep is a hint, never the check
 
 ```bash

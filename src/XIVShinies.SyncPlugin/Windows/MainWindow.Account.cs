@@ -212,7 +212,10 @@ internal sealed partial class MainWindow
             // next to this window's checkboxes.
             DrawIcon(FontAwesomeIcon.User, Brand.Teal);
             ImGui.SameLine();
-            ImGui.TextUnformatted($"{character.Name} ({character.World})");
+            // Folded and bounded like every other adopted server string: these are Lodestone
+            // values on an honest backend, and the backend is user-overridable.
+            ImGui.TextUnformatted(
+                $"{ServerText.SingleLine(character.Name)} ({ServerText.SingleLine(character.World)})");
         }
 
         // The list is a snapshot from the last probe, and nothing about it says so — a user who
