@@ -7,6 +7,11 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.7.1 — 2026-09-02
+
+- Sync the orchestrion rolls you have unlocked to XIV Shinies
+- List orchestrion rolls in the plugin's installer description
+
 ## v0.7.0 — 2026-08-28
 
 - Mark a switched-off collection with an Off chip and the site's reason
