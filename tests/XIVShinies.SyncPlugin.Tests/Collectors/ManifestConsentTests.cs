@@ -147,7 +147,8 @@ public class ManifestConsentTests
         string key,
         IReadOnlyList<ItemGroupRow>? groups = null,
         bool userEnabled = false,
-        bool serverEnabled = true) => new()
+        bool serverEnabled = true,
+        bool serverGloballyOff = false) => new()
     {
         Key = key,
         DisplayName = $"{key} display",
@@ -155,6 +156,7 @@ public class ManifestConsentTests
         WhatGetsSent = $"what {key} sends",
         UserEnabled = userEnabled,
         ServerEnabled = serverEnabled,
+        ServerGloballyOff = serverGloballyOff,
         UsesItemManifest = groups is not null,
         Groups = groups,
     };
@@ -411,5 +413,114 @@ public class ManifestConsentTests
     public void An_empty_list_means_the_select_all_has_nothing_to_act_on()
     {
         Assert.False(ManifestConsent.AnyServerEnabled(Array.Empty<CategorySettingsRow>()));
+    }
+
+    // --- Whether the server has paused everything ---------------------------------------------
+
+    [Fact]
+    public void A_globally_off_row_reports_the_server_as_paused()
+    {
+        var rows = new[]
+        {
+            Row("quests", serverEnabled: false, serverGloballyOff: true),
+            Row("mounts", serverEnabled: false, serverGloballyOff: true),
+        };
+
+        Assert.True(ManifestConsent.ServerHasPausedEverything(rows));
+    }
+
+    // The distinction the sync card's status line hangs on: every collection switched off one by
+    // one is not a pause, and must not be reported as one.
+    [Fact]
+    public void Collections_switched_off_individually_are_not_a_pause()
+    {
+        var rows = new[] {Row("quests", serverEnabled: false), Row("mounts", serverEnabled: false)};
+
+        Assert.False(ManifestConsent.ServerHasPausedEverything(rows));
+    }
+
+    [Fact]
+    public void An_empty_list_is_not_a_pause()
+    {
+        Assert.False(ManifestConsent.ServerHasPausedEverything(Array.Empty<CategorySettingsRow>()));
+    }
+
+    // --- Whether anything at all will be uploaded ----------------------------------------------
+
+    // Both halves have to agree before the cadence promise is true, and the user's half is the one
+    // the server knows nothing about.
+    [Fact]
+    public void A_collection_the_user_switched_off_does_not_count_as_running()
+    {
+        var rows = new[] {Row("quests", userEnabled: false, serverEnabled: true)};
+
+        Assert.False(ManifestConsent.AnyEffectivelyOn(rows));
+    }
+
+    [Fact]
+    public void A_collection_the_server_switched_off_does_not_count_as_running()
+    {
+        var rows = new[] {Row("quests", userEnabled: true, serverEnabled: false)};
+
+        Assert.False(ManifestConsent.AnyEffectivelyOn(rows));
+    }
+
+    [Fact]
+    public void One_collection_both_sides_permit_is_enough_to_be_running()
+    {
+        var rows = new[]
+        {
+            Row("quests", userEnabled: false, serverEnabled: true),
+            Row("mounts", userEnabled: true, serverEnabled: true),
+        };
+
+        Assert.True(ManifestConsent.AnyEffectivelyOn(rows));
+    }
+
+    // --- Whether the sync card may promise a cadence -------------------------------------------
+
+    [Fact]
+    public void A_running_pipeline_needs_the_master_switch_the_absence_of_a_block_and_a_collection()
+    {
+        var rows = new[] {Row("quests", userEnabled: true, serverEnabled: true)};
+
+        Assert.True(ManifestConsent.PipelineRunning(
+            masterEnabled: true, blockedPendingUserAction: false, rows));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void The_pipeline_is_not_running_while_the_user_or_a_block_stops_it(
+        bool masterEnabled, bool blockedPendingUserAction)
+    {
+        var rows = new[] {Row("quests", userEnabled: true, serverEnabled: true)};
+
+        Assert.False(ManifestConsent.PipelineRunning(masterEnabled, blockedPendingUserAction, rows));
+    }
+
+    // A sweep with nothing to collect uploads nothing, so the card must not promise one — whether
+    // the collections are off because the user said so or because the server did.
+    [Fact]
+    public void The_pipeline_is_not_running_with_no_collection_switched_on()
+    {
+        var userOff = new[] {Row("quests", userEnabled: false, serverEnabled: true)};
+        var serverOff = new[] {Row("quests", userEnabled: true, serverEnabled: false)};
+
+        Assert.False(ManifestConsent.PipelineRunning(true, false, userOff));
+        Assert.False(ManifestConsent.PipelineRunning(true, false, serverOff));
+    }
+
+    // A pause turns every row's server half off, so it reaches this through the collections rather
+    // than through a term of its own.
+    [Fact]
+    public void The_pipeline_is_not_running_while_the_server_is_paused()
+    {
+        var rows = new[]
+        {
+            Row("quests", userEnabled: true, serverEnabled: false, serverGloballyOff: true),
+        };
+
+        Assert.False(ManifestConsent.PipelineRunning(true, false, rows));
     }
 }

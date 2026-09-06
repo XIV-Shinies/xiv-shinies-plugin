@@ -685,6 +685,54 @@ public class PluginSettings
     }
 
     /// <summary>
+    /// Records the outcome of the first-run wizard for the live occult tracker, which is the one
+    /// sharing control that starts switched ON.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A default-on control is only honest if the user was shown it ticked and left it that way.
+    /// The server can take that moment away: while it has switched the tracker off — for the
+    /// feature alone or by pausing everything — the wizard draws the box unticked and disabled, so
+    /// the user cannot decline something that is nevertheless still stored as accepted. Left alone,
+    /// <see cref="ShareOccultInstanceState"/> keeps its default and the tracker starts uploading
+    /// the moment the server allows it, against what the control showed.
+    /// </para>
+    /// <para>
+    /// So a wizard that could not offer the choice records the answer the user never got to give,
+    /// and records the cautious one. This is the same rule
+    /// <see cref="ApplyUpgradeMigrations"/> already applies to an install that onboarded before the
+    /// toggle existed, for the same reason: a user the wizard never showed the toggle to has not
+    /// agreed to it.
+    /// </para>
+    /// </remarks>
+    /// <param name="toggleWasOfferable">
+    /// Whether the wizard drew the tracker's checkbox in a state the user could actually act on —
+    /// answered from what it drew, never from what the server sent.
+    /// </param>
+    /// <returns>When true, the caller should persist the updated config.</returns>
+    public bool SettleOccultConsent(bool toggleWasOfferable)
+    {
+        if (toggleWasOfferable)
+        {
+            return false;
+        }
+
+        lock (gate)
+        {
+            // Already off — the user unticked the box while it was still live, and the server
+            // withdrew the tracker before they pressed Finish — so there is nothing to write and
+            // no config save to spend.
+            if (!ShareOccultInstanceState)
+            {
+                return false;
+            }
+
+            ShareOccultInstanceState = false;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// True when a token is present and has the shape the server issues. A local sanity check
     /// only — only the server can say whether a well-formed token is actually valid.
     /// </summary>

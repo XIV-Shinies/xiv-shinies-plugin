@@ -856,6 +856,40 @@ public class PluginSettingsTests
         Assert.True(settings.ItemGroupConsentMigrated);
     }
 
+    // The tracker is the one sharing control that starts ON, so a wizard that could not offer the
+    // choice must not leave the default standing: the user never got to decline it.
+    [Fact]
+    public void A_wizard_that_could_not_offer_the_tracker_records_it_off()
+    {
+        var settings = new PluginSettings();
+        Assert.True(settings.ShareOccultInstanceState);
+
+        Assert.True(settings.SettleOccultConsent(toggleWasOfferable: false));
+        Assert.False(settings.ShareOccultInstanceState);
+    }
+
+    // The ordinary path: the box was there, ticked, and left alone. That IS the user's answer, so
+    // settling must not overwrite it.
+    [Fact]
+    public void A_wizard_that_offered_the_tracker_leaves_the_users_answer_alone()
+    {
+        var settings = new PluginSettings();
+
+        Assert.False(settings.SettleOccultConsent(toggleWasOfferable: true));
+        Assert.True(settings.ShareOccultInstanceState);
+    }
+
+    // An install that already has it off — the user unticked the live box before the server
+    // withdrew it — has nothing to write, so the caller is told not to spend a save.
+    [Fact]
+    public void Settling_tracker_consent_that_is_already_off_reports_no_change()
+    {
+        var settings = new PluginSettings {ShareOccultInstanceState = false};
+
+        Assert.False(settings.SettleOccultConsent(toggleWasOfferable: false));
+        Assert.False(settings.ShareOccultInstanceState);
+    }
+
     [Fact]
     public void A_migrated_install_is_already_settled()
     {

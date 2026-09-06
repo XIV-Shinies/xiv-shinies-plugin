@@ -80,6 +80,17 @@ internal sealed partial class MainWindow
             // would read as "resting" when the truth is "doing nothing at all".
             DrawWarning("Syncing is switched off.");
         }
+        else if (ManifestConsent.ServerHasPausedEverything(rows))
+        {
+            // Above the blocked-pending-user-action case because a paused server explains the
+            // silence completely, and the actions that case asks for (claim the character, replace
+            // the token) would not restart anything while the pause is on.
+            //
+            // The master toggle above still reads ON, which is correct: it reports the user's own
+            // setting, and that setting has not changed. This line is what makes the difference
+            // between "you switched it off" and "we switched it off" legible.
+            DrawWarning(CategorySettingsRow.ServerPausedFallback);
+        }
         else if (syncManager.BlockedPendingUserAction)
         {
             // The 403 case names the character when one is loaded, because "claim Some Name" is
@@ -151,15 +162,10 @@ internal sealed partial class MainWindow
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
         // Both blocks below describe a pipeline that is actually running, so both are hidden when it
-        // is not: while the master switch is off (everything in this card is inert), and while the
-        // sync is halted for something only the user can fix (a bad token, an unclaimed character).
-        // In the halted state the status line above is already telling them what to do, and a
-        // cheerful cadence promise beneath it would simply be false. The source notes hide for a
-        // second reason too: they carry a red "not scanned yet" tone, and a halted card is already
-        // red — leaving them on would flatten "your sync is broken" and "one container is empty"
-        // into the same alarm.
-        var pipelineRunning =
-            configuration.Settings.MasterEnabled && !syncManager.BlockedPendingUserAction;
+        // is not. The rule itself is pure and lives in ManifestConsent.PipelineRunning, where a test
+        // can reach it — a promise about what the user sees does not belong only inside a draw call.
+        var pipelineRunning = ManifestConsent.PipelineRunning(
+            configuration.Settings.MasterEnabled, syncManager.BlockedPendingUserAction, rows);
 
         // Sets the expectation for every collection at once, so no category's own description has
         // to explain the sync mechanism. Phrased by mechanism, not by category name: an acquisition

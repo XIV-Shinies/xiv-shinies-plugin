@@ -67,10 +67,11 @@ public class CategorySettingsViewTests
     private static ConfigResponse RemoteConfig(
         Dictionary<string, bool>? categories = null,
         IReadOnlyList<ItemManifestGroup>? itemManifestGroups = null,
-        Dictionary<string, string>? categoryNotes = null) => new()
+        Dictionary<string, string>? categoryNotes = null,
+        bool enabled = true) => new()
     {
         Categories = categories ?? new Dictionary<string, bool>(),
-        Enabled = true,
+        Enabled = enabled,
         Intervals = new ConfigIntervals {FullSyncMinutes = 30, UnlockDebounceSeconds = 5},
         ItemManifest = Array.Empty<uint>(),
         ManifestVersion = "abc",
@@ -982,5 +983,131 @@ public class CategorySettingsViewTests
             new[] {FakeManifestDriven("items")}, OptedIn("items"), config);
 
         Assert.Equal("real", Assert.Single(Assert.Single(rows).Groups!).Key);
+    }
+
+    // The server's two switches are independent: a global pause arrives with the per-category map
+    // still saying yes, so a row built from the map alone would promise a collection that cannot
+    // run.
+    [Fact]
+    public void A_paused_server_switches_every_collection_off()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = true},
+            enabled: false);
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.False(row.ServerEnabled);
+        Assert.False(row.IsEffectivelyOn);
+        Assert.True(row.ServerGloballyOff);
+    }
+
+    // The pause outranks a per-category note; CategorySettingsRow.ServerOffText holds why.
+    [Fact]
+    public void A_paused_server_explains_itself_rather_than_blaming_the_collection()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            categoryNotes: new Dictionary<string, string> {[UnknownCategory] = "In testing."},
+            enabled: false);
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.Equal(CategorySettingsRow.ServerPausedFallback, row.ServerOffText);
+    }
+
+    // A collection must not spend its one-time introduction during an outage: the user would see
+    // the badge, find the row unusable, and never be told about it again.
+    [Fact]
+    public void A_paused_server_withholds_the_new_badge()
+    {
+        var settings = OptedIn(UnknownCategory);
+        var config = RemoteConfig(enabled: false);
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, settings, config));
+
+        Assert.True(row.IsNew);
+        Assert.False(row.IsEffectivelyNew);
+        Assert.False(row.WasDrawnAsUsable);
+        Assert.False(row.ShowingItRetiresTheBadge);
+    }
+
+    // Every checkbox clearing at once looks exactly like the plugin having discarded the user's
+    // choices. It has not: the row reports what they chose, and nothing is written back.
+    [Fact]
+    public void A_paused_server_leaves_the_stored_preference_intact()
+    {
+        var settings = OptedIn(UnknownCategory);
+        var config = RemoteConfig(enabled: false);
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, settings, config));
+
+        Assert.True(row.UserEnabled);
+        Assert.True(settings.IsCategoryEnabled(UnknownCategory));
+    }
+
+    // The guard against the pause swallowing the per-category case: with the server running, a
+    // collection switched off on its own still says the thing that is true of it.
+    [Fact]
+    public void A_collection_switched_off_on_its_own_still_says_so()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            categoryNotes: new Dictionary<string, string> {[UnknownCategory] = "In testing."});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.False(row.ServerGloballyOff);
+        Assert.Equal("In testing.", row.ServerOffText);
+    }
+
+    // The group checkboxes are the other half of the collections surface, and they follow their
+    // parent rather than re-deriving anything — so a pause has to reach them too.
+    [Fact]
+    public void A_paused_server_switches_the_group_checkboxes_off_too()
+    {
+        var config = RemoteConfig(
+            itemManifestGroups: new[] {Group("relic-proofs", "Relic proofs")},
+            enabled: false);
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeManifestDriven("items")}, OptedIn("items"), config));
+
+        var group = Assert.Single(row.Groups!);
+        Assert.False(group.ParentServerEnabled);
+        Assert.False(group.IsEffectivelyOn);
+    }
+
+    // Both switches off at once, with no note to fall back on: the pause still speaks, because it
+    // is the fact that explains every other collection on screen at the same moment.
+    [Fact]
+    public void A_paused_server_outranks_a_switched_off_collection_with_no_note()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            enabled: false);
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.Equal(CategorySettingsRow.ServerPausedFallback, row.ServerOffText);
+    }
+
+    // An unfetched config forbids nothing, and that must survive the global switch being read:
+    // a plugin that cannot reach /config would otherwise draw every collection as paused.
+    [Fact]
+    public void An_unfetched_config_does_not_read_as_a_pause()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), remoteConfig: null));
+
+        Assert.True(row.ServerEnabled);
+        Assert.False(row.ServerGloballyOff);
+        Assert.Null(row.ServerOffText);
     }
 }

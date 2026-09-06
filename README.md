@@ -57,7 +57,9 @@ into:
   are on, powering the site's live occult tracker on the right data center. This is world
   state — nothing about you beyond your presence in the instance, and never anything about
   other players. It starts enabled (the setup wizard shows the ticked box before anything
-  sends) and can be switched off any time in the settings
+  sends) and can be switched off any time in the settings. If XIV Shinies has the tracker
+  switched off while you are setting up, the wizard cannot offer you that box — so it starts
+  **off** instead, and you can turn it on from the settings whenever you like
 
 For a collection the plugin can read end to end, the upload also records that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin

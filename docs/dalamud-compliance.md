@@ -56,8 +56,12 @@ response fields) and a field-by-field contract conformance audit.
   request impossible.
 - **The two consents that stand for later.** The live occult tracker's toggle is the one setting
   that defaults ON, defensible only because the ticked box is **visible on the wizard's consent
-  step** before anything can send. `AutoEnableNewFeatures` defaults OFF and is the only route by
-  which a collection is ever switched on without its own tick;
+  step** before anything can send. When the server has the tracker switched off — for the feature
+  alone, or by pausing everything — that box is drawn unticked and disabled, so the wizard cannot
+  offer the choice at all; finishing setup in that state records the answer the user never got to
+  give, and records it as OFF (`PluginSettings.SettleOccultConsent`). The default never survives a
+  consent moment the user was not actually shown. `AutoEnableNewFeatures` defaults OFF and is the
+  only route by which a collection is ever switched on without its own tick;
   `PluginSettings.AutoEnableUnseenCategories` acts on it at load and only there — for an onboarded
   install that ticked the box, only on collections this install has never shown, never on one
   whose scope depends on separately-answered consent groups, and never over a collection the user

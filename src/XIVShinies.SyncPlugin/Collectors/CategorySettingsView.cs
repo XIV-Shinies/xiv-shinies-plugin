@@ -69,11 +69,32 @@ public sealed record CategorySettingsRow
     public required bool UsesItemManifest { get; init; }
 
     /// <summary>
-    /// False when the server has switched this category off for everyone. The checkbox stays
-    /// visible but disabled: the user's own preference is remembered and reapplied if the server
-    /// turns it back on.
+    /// False when the server will not accept this category — either it is switched off for
+    /// everyone, or the server has paused syncing entirely. The checkbox stays visible but
+    /// disabled: the user's own preference is remembered and reapplied when the server allows it
+    /// again.
     /// </summary>
     public required bool ServerEnabled { get; init; }
+
+    /// <summary>
+    /// True when the reason this row cannot be used is the server's <b>global</b> pause rather
+    /// than a decision about this collection.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every row reports this together, so it is what lets the sync card say once what the rows
+    /// would otherwise each imply separately, and it is what <see cref="ServerOffText"/> switches
+    /// its copy on — see there for why the two sentences are not interchangeable.
+    /// </para>
+    /// <para>
+    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbour
+    /// <see cref="ServerEnabled"/>: a test or a future surface assembling rows by hand is asking
+    /// about one collection, and a pause is not a fact about any collection. The default is the
+    /// quiet answer rather than the safe one — it produces the per-category wording — which costs
+    /// nothing while <see cref="Build"/> is the only producer that draws.
+    /// </para>
+    /// </remarks>
+    public bool ServerGloballyOff { get; init; }
 
     /// <summary>
     /// The server's own explanation for this category being switched off, or null when it offered
@@ -92,13 +113,24 @@ public sealed record CategorySettingsRow
     /// nothing needs saying.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The server's note when it sent one, otherwise the generic line — see
     /// <see cref="ConfigResponse.CategoryNotes"/> for why only one of the two off-states carries a
     /// note. Null while the category is enabled, including when a note came with it: a note has
     /// nowhere to go under a live checkbox, so it is dropped here rather than special-cased at the
     /// place it arrives.
+    /// </para>
+    /// <para>
+    /// A global pause outranks whatever the server said about this one collection: while
+    /// everything is stopped, "this collection is switched off" would send the user looking for a
+    /// decision about it that nobody made.
+    /// </para>
     /// </remarks>
-    public string? ServerOffText => ServerEnabled ? null : ServerNote ?? ServerOffFallback;
+    public string? ServerOffText => ServerEnabled
+        ? null
+        : ServerGloballyOff
+            ? ServerPausedFallback
+            : ServerNote ?? ServerOffFallback;
 
     /// <summary>
     /// What a switched-off row says when the server offered no explanation of its own.
@@ -110,6 +142,17 @@ public sealed record CategorySettingsRow
     /// view of each other.
     /// </remarks>
     public const string ServerOffFallback = "Temporarily switched off by XIV Shinies.";
+
+    /// <summary>
+    /// What every row says while the server has paused syncing altogether.
+    /// </summary>
+    /// <remarks>
+    /// Says plainly that the user's own settings survive, because the visible effect of a pause is
+    /// every checkbox clearing at once — which looks exactly like the plugin having discarded their
+    /// choices. Nothing is written to <c>EnabledCategories</c> while this is showing.
+    /// </remarks>
+    public const string ServerPausedFallback =
+        "XIV Shinies has paused syncing for everyone. Your own choices are unchanged.";
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.
@@ -426,7 +469,13 @@ public static class CategorySettingsView
             // A config we have not fetched forbids nothing, matching how the collectors and the
             // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
             // category as disabled by the server, which would be a lie.
-            var serverEnabled = remoteConfig?.IsCategoryEnabled(key) ?? true;
+            //
+            // Both of the server's switches are read, in the same order CollectorGate reads them:
+            // the global pause stops everything regardless of what the per-category map says, so a
+            // row drawn from the category switch alone would promise a collection that cannot run.
+            var serverPaused = remoteConfig is { Enabled: false };
+            var serverEnabled = remoteConfig is null
+                || (remoteConfig.Enabled && remoteConfig.IsCategoryEnabled(key));
 
             rows.Add(new CategorySettingsRow
             {
@@ -446,6 +495,8 @@ public static class CategorySettingsView
                 UsesItemManifest = collector.UsesItemManifest,
 
                 ServerEnabled = serverEnabled,
+
+                ServerGloballyOff = serverPaused,
 
                 // Carried verbatim from the server, bounded on the way in.
                 ServerNote = remoteConfig?.CategoryNote(key),

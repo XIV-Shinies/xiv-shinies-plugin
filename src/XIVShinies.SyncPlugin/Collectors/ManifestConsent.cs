@@ -3,7 +3,8 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// Answers questions about item-manifest consent without anyone having to name a category.
+/// Answers consent and server-permission questions about the category rows, without anyone having
+/// to name a category.
 /// </summary>
 /// <remarks>
 /// A separate class because the code that needs these answers lives outside the collectors — the sync
@@ -182,6 +183,88 @@ public static class ManifestConsent
 
         return false;
     }
+
+    /// <summary>
+    /// Whether the server has paused syncing entirely, rather than switching off any particular
+    /// collection.
+    /// </summary>
+    /// <remarks>
+    /// Read from the rows rather than from the config so the window keeps its single source for
+    /// what the server currently permits, and so the state is reachable from a test. Any row
+    /// answers for all of them — the pause is one flag applied to every collection — so the first
+    /// one that reports it settles the question. An empty list answers "not paused", which is the
+    /// permissive direction and unreachable while the registry always yields collectors.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    public static bool ServerHasPausedEverything(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            // Both halves, so a row that somehow claimed a pause while still reading as usable
+            // cannot make the window announce an outage over live checkboxes.
+            if (row.ServerGloballyOff && !row.ServerEnabled)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether any collection at all will actually be uploaded as things stand — both halves, the
+    /// user's choice and the server's.
+    /// </summary>
+    /// <remarks>
+    /// What the sync card's cadence promise depends on. "Everything else syncs automatically every
+    /// &lt;interval&gt;" is a claim about collections, so with none of them running it is false however
+    /// healthy the pipeline is — and the sweep genuinely does nothing. Neither way of reaching that
+    /// state needs its own copy here, because each is already explained where the user is looking:
+    /// a user who unticked everything sees their own empty checkboxes, and a server that switched
+    /// collections off says so on every row it switched off. A global pause is the one case the
+    /// rows cannot deliver well — each repeats the same pause sentence behind its own "Off" chip, a
+    /// hover away, so one fact about everything would have to be found row by row — which is why
+    /// the sync card's status line says it once, in the open, above all of them.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    public static bool AnyEffectivelyOn(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (row.IsEffectivelyOn)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the sync card may describe a pipeline that is actually going to do something — what
+    /// gates its cadence promise and its "Reading from:" panel.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Three ways to be inert, and the card must claim nothing in any of them: the user's master
+    /// switch is off, the sync is halted for something only they can fix (a bad token, an unclaimed
+    /// character), or no collection is switched on to sync. The last covers a paused server too —
+    /// a pause turns every row's server half off, so nothing is effectively on — which is why there
+    /// is no separate term for it. The status line above still names the pause; this only decides
+    /// whether a cadence promise may sit beneath it.
+    /// </para>
+    /// <para>
+    /// The panel hides for a second reason as well: with nothing switched on it would draw a bare
+    /// "Reading from:" heading and no lines, and on a stopped card its red "not scanned yet" tone
+    /// would flatten "your sync is broken" and "one container is empty" into the same alarm.
+    /// </para>
+    /// </remarks>
+    /// <param name="masterEnabled">The user's own on/off switch for syncing.</param>
+    /// <param name="blockedPendingUserAction">
+    /// Whether syncing has stopped for something only the user can resolve.
+    /// </param>
+    /// <param name="rows">This frame's category rows.</param>
+    public static bool PipelineRunning(
+        bool masterEnabled,
+        bool blockedPendingUserAction,
+        IReadOnlyList<CategorySettingsRow> rows) =>
+        masterEnabled && !blockedPendingUserAction && AnyEffectivelyOn(rows);
 
     /// <summary>
     /// True when the server offers consent groups for this collection and the user has none of them

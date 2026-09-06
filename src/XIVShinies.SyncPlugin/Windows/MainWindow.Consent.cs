@@ -267,10 +267,20 @@ internal sealed partial class MainWindow
     /// </remarks>
     private void DrawOccultConsentRow()
     {
+        // Read the volatile config ONCE and decide everything from the snapshot: a poll landing
+        // mid-method could otherwise let the chip's presence and its sentence be settled by two
+        // different answers, and draw a greyed row with nothing saying why.
+        //
         // Asked of the gate that decides whether the tracker actually runs, so the control and
         // the behavior cannot describe different things. OccultGate.ServerHasSwitchedOff holds
         // the rule and the reasoning.
-        var serverOff = OccultGate.ServerHasSwitchedOff(syncManager.RemoteConfig);
+        var remoteConfig = syncManager.RemoteConfig;
+        var serverOff = OccultGate.ServerHasSwitchedOff(remoteConfig);
+
+        // What the wizard's consent settle reads. A disabled checkbox never reports a click, so a
+        // user shown one has made no choice about a control that is stored as ON by default.
+        if (!serverOff)
+            wizardCouldOfferOccultToggle = true;
 
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemInnerSpacing,
@@ -294,8 +304,9 @@ internal sealed partial class MainWindow
 
             // The same chip a switched-off collection wears, carrying the same sentence in the same
             // place. The tracker's switch has no note of its own — it lives in its own config block,
-            // which the server sends without one — so the fallback wording is all there ever is.
-            if (serverOff)
+            // which the server sends without one — so which of the two standard sentences applies
+            // is the gate's to decide, exactly as it decides whether the chip appears at all.
+            if (OccultGate.ServerOffText(remoteConfig) is { } offText)
             {
                 ImGui.SameLine();
                 DrawChip(
@@ -305,7 +316,7 @@ internal sealed partial class MainWindow
                     filled: true);
 
                 if (ImGui.IsItemHovered())
-                    Widgets.DrawTooltip(CategorySettingsRow.ServerOffFallback);
+                    Widgets.DrawTooltip(offText);
             }
 
             if (toggled)
