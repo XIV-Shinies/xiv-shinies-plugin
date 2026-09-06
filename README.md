@@ -28,10 +28,13 @@ outranks a Lodestone scrape. The plugin itself is deliberately a **dumb fact-rea
 sends only raw facts the game knows and never computes site concepts like relic steps — which
 keeps it stable as the site grows new collections and rules.
 
-New unlocks (quests, achievements, mounts, minions) upload within seconds of earning them.
-Anything the plugin gets no unlock signal for — Triple Triad cards, orchestrion rolls, and
-item possession used to prove relic progress — travels with periodic full syncs, or
-immediately with the **Sync now** button.
+**Quests**, **Achievements**, **Mounts**, **Minions** and **Orchestrion rolls** upload within
+seconds of the unlock, because the game announces those the moment they happen.
+
+Everything else travels with the periodic full sync, or immediately when you press
+**Sync now**: **Tracked items** (the item counts that prove relic progress), **Quest
+progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records** and
+**Phantom jobs**.
 
 ## What gets sent
 

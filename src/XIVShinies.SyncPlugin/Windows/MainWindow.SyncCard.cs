@@ -168,10 +168,10 @@ internal sealed partial class MainWindow
         // value — the server tunes it — never a hardcoded number.
         //
         // "Most" is load-bearing. Which acquisitions announce themselves is the game's choice, not
-        // ours, and it is not guessable from the outside: cards look like every other unlock, yet
-        // no unlock the plugin can route to them ever arrives, so they land on the sweep.
-        // Promising every unlock in seconds would be a promise this plugin cannot keep for a
-        // collection it already ships.
+        // ours, and it is not guessable from the outside: Triple Triad cards are registered for the
+        // unlock signal exactly as mounts and orchestrion rolls are, and the game simply never
+        // raises it for them — a card reaches the site on the sweep or on Sync now. Promising every
+        // unlock in seconds would be a promise this plugin cannot keep for a collection it ships.
         if (pipelineRunning)
         {
             DrawWrapped(
