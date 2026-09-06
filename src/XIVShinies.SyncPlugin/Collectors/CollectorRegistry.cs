@@ -40,6 +40,11 @@ public static class CollectorRegistry
         DisplayName = "Quests",
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of quests you have completed.",
+
+        // The game answers for every row in the Quest sheet, and the catalog is a pruned subset of
+        // that same sheet — the safe direction, since a sweep of the whole sheet cannot miss a
+        // catalogued quest.
+        EnumeratesCompleteDomain = true,
     };
 
     private static readonly CategoryInfo QuestSequences = new()
@@ -73,6 +78,10 @@ public static class CollectorRegistry
         DisplayName = "Mounts",
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of mounts you have unlocked.",
+
+        // The plain case: the game answers for every Mount sheet row the catalog can hold, so an
+        // exhaustive walk is an exhaustive answer.
+        EnumeratesCompleteDomain = true,
     };
 
     private static readonly CategoryInfo Minions = new()
@@ -81,6 +90,10 @@ public static class CollectorRegistry
         DisplayName = "Minions",
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of minions you have unlocked.",
+
+        // The plain case, exactly as for mounts: the game answers for every Companion sheet row the
+        // catalog can hold.
+        EnumeratesCompleteDomain = true,
     };
 
     private static readonly CategoryInfo Achievements = new()
@@ -89,6 +102,12 @@ public static class CollectorRegistry
         DisplayName = "Achievements",
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of achievements you have earned.",
+
+        // Once the game will answer at all, it answers for every row in the Achievement sheet, so
+        // the sweep covers everything the catalog can hold. Whether it will answer is a separate
+        // question, handled by this collector's precondition (see its construction below), which
+        // skips the pass rather than reporting a list the game had not filled in.
+        EnumeratesCompleteDomain = true,
     };
 
     private static readonly CategoryInfo OrchestrionRolls = new()
@@ -106,6 +125,10 @@ public static class CollectorRegistry
             "A roll counts once you have used it and it is playable from your orchestrion list. " +
             "An unused roll still sitting in your inventory is not yet unlocked, so it is not " +
             "reported until you use it.",
+
+        // The game answers for every Orchestrion row, and the catalog holds a subset of those same
+        // rows, so the sweep covers it.
+        EnumeratesCompleteDomain = true,
     };
 
     private static readonly CategoryInfo TripleTriadCards = new()
@@ -114,6 +137,10 @@ public static class CollectorRegistry
         DisplayName = "Triple Triad cards",
         Section = TripleTriadSection,
         WhatGetsSent = "The ID numbers of Triple Triad cards you have collected.",
+
+        // The game answers for every row in the card sheet, so the sweep covers every card the
+        // catalog can hold.
+        EnumeratesCompleteDomain = true,
     };
 
     private static readonly CategoryInfo TripleTriadNpcs = new()
@@ -141,6 +168,10 @@ public static class CollectorRegistry
             "These are the game's computer opponents, never other players. The game keeps no " +
             "record of defeating a few of them, so those can never be reported — they stay yours " +
             "to mark by hand.",
+
+        // The game keeps no beaten flag for some opponents the server's catalog lists, so an absent
+        // id here can mean "beaten but unreadable". See TripleTriadNpcCollector's class remarks.
+        EnumeratesCompleteDomain = false,
     };
 
     private static readonly CategoryInfo Items = new()
@@ -213,6 +244,11 @@ public static class CollectorRegistry
         DisplayName = "Occult records",
         Section = OccultSection,
         WhatGetsSent = "The ID numbers of the occult records you have discovered.",
+
+        // Not a sheet sweep: the seen-set is a client-persisted list the game appends every
+        // discovery to, and reading it is reading the whole domain. See OccultRecordsCollector's
+        // class remarks.
+        EnumeratesCompleteDomain = true,
     };
 
     /// <summary>Creates every collector, in the order they will be run.</summary>

@@ -130,10 +130,8 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
         }
 
         // An empty list is a legitimate result ("we read the sheet; nothing was unlocked"), and is
-        // deliberately different from a skip. The completeness claim is asked for because the loop
-        // above questioned every row in the sheet — for a sheet-backed collection that IS the whole
-        // domain. Asking is not the same as getting it: CollectResult.Ids applies its own floor to
-        // the request (see CollectResult.CompleteEnumeration).
-        return CollectResult.Ids(ids, completeEnumeration: true);
+        // deliberately different from a skip. The completeness declaration is the category's (see
+        // CategoryInfo.EnumeratesCompleteDomain); CollectResult.Ids applies its own floor to it.
+        return CollectResult.Ids(ids, info.EnumeratesCompleteDomain);
     }
 }

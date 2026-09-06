@@ -92,7 +92,7 @@ public sealed record SyncRequest
     /// collection — so an upload that does not declare it carries no evidence of absence.
     /// </para>
     /// <para>
-    /// Category-keyed like <see cref="Collections"/>, and for the same reason: a collector
+    /// Category-keyed like <see cref="Collections"/>, and for the same reason: each collection
     /// declares its own completeness and the builder passes it through, so no caller ever branches
     /// on a category name.
     /// </para>

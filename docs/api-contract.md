@@ -522,16 +522,23 @@ Lodestone id, so it never auto-creates characters).
   snapshot marker on the character, which lets the site flag a manual mark made *before*
   that moment that the complete list contradicts ("Marked by you — the plugin didn't find
   it"). Nothing is ever auto-unmarked, and other categories' declarations are recorded
-  and ignored. In this plugin the claim originates on the collector's `CollectResult`
-  (`completeEnumeration`), so a new collector opts in without any downstream change.
+  and ignored. In this plugin the claim is declared per collection on
+  `CategoryInfo.EnumeratesCompleteDomain` and carried through to the `CollectResult`.
   A category may only declare `"full"` when its collector can enumerate everything the
   **server's catalog** may contain, not merely everything the game will answer for —
-  `tripleTriadNpcs` withholds the claim for exactly that reason (see the id-space note
-  above). For cards and orchestrion rolls the two agree, and the server has confirmed its
-  catalog is never *ahead* of a live client: it is imported from released-patch sheet data, and the game
+  `tripleTriadNpcs` withholds the claim for exactly that reason (see the **Triple Triad id
+  spaces** note above, which records the opponents the game keeps no beaten flag for). More categories declare `"full"` than the server acts on; a declaration the server
+  records and ignores still has to be honest, because the server may begin acting on it
+  without a plugin change.
+
+  For the Triple Triad card and orchestrion catalogs, the server is known never to be *ahead*
+  of a live client: each is imported from released-patch sheet data, and the game
   forces a client patch before login, so "client behind catalog" is unreachable while
   playing. The reverse skew — catalog behind a just-patched client — is harmless, because
-  an id the catalog does not know is dropped and never becomes markable.
+  an id the catalog does not know is dropped and never becomes markable. That skew analysis is
+  per-catalog, and has been done for these two. The other declaring categories rest on their own
+  argument — for the sheet-backed ones, that the game answers for every sheet row the catalog
+  draws from — recorded beside each `CategoryInfo` in the plugin's collector registry.
 - **`acquiredAt` timestamps.** An `unlock`-triggered upload stamps the upload moment as the
   acquisition time for every category in it. Snapshot uploads (`interval`/`login`/`manual`)
   stamp the upload time for achievements, minions, mounts, and Triple Triad cards, for

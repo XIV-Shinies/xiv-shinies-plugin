@@ -82,4 +82,34 @@ public sealed record CategoryInfo
     /// fixed-scope collection.
     /// </remarks>
     public bool UsesItemManifest { get; init; }
+
+    /// <summary>
+    /// True when a successful read of this collection produces an answer for <b>every</b> candidate
+    /// the server's catalog may hold, so it can declare itself complete on the wire.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The highest-stakes claim the plugin makes: it is what turns an id's <i>absence</i> into
+    /// evidence (see <see cref="Api.SyncRequest.CollectionScopes"/> for what that licenses). The
+    /// assertion is about the user's own data, so it must be true.
+    /// </para>
+    /// <para>
+    /// Walking a whole game sheet is one way to get there, and is necessary but <b>not
+    /// sufficient</b>. The test is whether the read answers for every candidate the <b>server's
+    /// catalog</b> may hold — by questioning each one, or by reading a source that already IS the
+    /// character's complete set. A collection that can only reach part of that set must leave this
+    /// false even though its own sweep was exhaustive; <c>TripleTriadNpcCollector</c>'s class
+    /// remarks are the worked example of declining for that reason.
+    /// </para>
+    /// <para>
+    /// Self-description in the same sense as <see cref="UsesItemManifest"/>: the collectors read
+    /// this flag rather than deciding for themselves, so the decision sits beside the category it
+    /// describes and one test can pin the whole set. Declaring it is a request, not a guarantee:
+    /// <see cref="CollectResult.CompleteEnumeration"/> describes the floor applied at the factory,
+    /// and further gates on <c>PayloadCaps</c> and <c>SyncPayloadBuilder</c> can withhold it later
+    /// still. Defaults to <c>false</c>, which is always safe: it withholds a claim rather than
+    /// making a wrong one.
+    /// </para>
+    /// </remarks>
+    public bool EnumeratesCompleteDomain { get; init; }
 }

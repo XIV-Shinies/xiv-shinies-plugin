@@ -118,15 +118,15 @@ public sealed record CollectionSnapshot
     public IReadOnlySet<string> ManifestDrivenKeys { get; init; } = new HashSet<string>();
 
     /// <summary>
-    /// The categories whose facts this pass read as a <b>complete</b> enumeration — the
-    /// collector's own claim, recorded from <see cref="CollectResult.CompleteEnumeration"/>.
+    /// The categories whose facts this pass read as a <b>complete</b> enumeration — each
+    /// category's own declaration, recorded from <see cref="CollectResult.CompleteEnumeration"/>.
     /// </summary>
     /// <remarks>
     /// The runner records a key only for a category it collected facts for, so a skipped category
     /// never appears here. The payload builder still intersects against the carried categories
     /// before turning these into <c>collectionScopes</c> declarations, since nothing on this
-    /// record enforces that. A set of keys, not a flag per known category, so a future collector's
-    /// claim flows through without anyone here learning its name.
+    /// record enforces that. A set of keys, not a flag per known category, so a future collection's
+    /// declaration flows through without anyone here learning its name.
     /// </remarks>
     // Not `required`, like the fields above: an empty set is the honest default for a test
     // snapshot that makes no completeness claims.
@@ -239,8 +239,8 @@ public static class CollectorRunner
                 // nothing"), unlike a skip.
                 collections[key] = result.Facts!;
 
-                // The collector's own completeness claim, recorded under its own key — the payload
-                // builder turns it into this category's `collectionScopes` declaration.
+                // The category's completeness declaration, recorded under its own key — the payload
+                // builder turns it into this category's `collectionScopes` entry.
                 if (result.CompleteEnumeration)
                     completeKeys.Add(key);
 

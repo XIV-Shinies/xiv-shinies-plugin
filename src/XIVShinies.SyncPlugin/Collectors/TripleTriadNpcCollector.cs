@@ -125,9 +125,9 @@ public sealed unsafe class TripleTriadNpcCollector : ICollector
         }
 
         // An empty list is a legitimate result ("we read the tracked opponents; none is beaten"),
-        // and is deliberately different from a skip. No completeness claim: the untracked rows the
-        // loop skipped include opponents a player can genuinely have beaten (see the class
-        // remarks), so this list speaks only for what it found.
-        return CollectResult.Ids(ids);
+        // and is deliberately different from a skip. The category withholds the completeness claim:
+        // the untracked rows the loop skipped include opponents a player can genuinely have beaten
+        // (see the class remarks), so this list speaks only for what it found.
+        return CollectResult.Ids(ids, info.EnumeratesCompleteDomain);
     }
 }

@@ -17,8 +17,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// occult visit and no preconditions.
 /// </para>
 /// <para>
-/// The list IS the character's complete seen-set — the game appends every discovery to it —
-/// so this collector declares the enumeration complete (see
+/// The list IS the character's complete seen-set — the game appends every discovery to it — which
+/// is why this category declares a complete enumeration (see
+/// <see cref="CategoryInfo.EnumeratesCompleteDomain"/> for the condition, and
 /// <see cref="CollectResult.CompleteEnumeration"/> for what the declaration licenses). Both
 /// occult zones share the one id space, and the server stores the same <c>MKDLore</c> row ids
 /// directly. The elements are single bytes, so no row id above 255 can ever be recorded;
@@ -94,6 +95,7 @@ public sealed unsafe class OccultRecordsCollector : ICollector
         for (long i = 0; i < count; i++)
             ids.Add(lore->SeenLore[i]);
 
-        return CollectResult.Ids(ids, completeEnumeration: true);
+        // The declaration is the category's; this collector only reports what the saved list held.
+        return CollectResult.Ids(ids, info.EnumeratesCompleteDomain);
     }
 }

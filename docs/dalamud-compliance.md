@@ -36,7 +36,8 @@ response fields) and a field-by-field contract conformance audit.
   payload, never sent as an empty list, so no partial upload can erase anything. A category
   the plugin declares it read *completely* is the one case where an absent id carries meaning,
   and even then the meaning is "worth your review", never a deletion: the server unmarks
-  nothing, and the plugin declares completeness only for a collection it enumerated end to end.
+  nothing, and the plugin declares completeness only for a collection whose read answers for
+  every candidate the site's catalog can hold.
 - **Where "local player only" is load-bearing.** Three surfaces touch an API that could have
   exposed another player. The **item scan** reads the player's own storage: their retainers'
   inventories through `ItemFinderModule.RetainerInventories` **values** (the retainer-ID keys are

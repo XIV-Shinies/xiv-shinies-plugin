@@ -61,9 +61,10 @@ internal sealed class SyncManager : IDisposable
     /// world and report far less than the character owns.
     /// </para>
     /// <para>
-    /// The wait is load-bearing. A sheet-backed collector reports its read as a
-    /// <b>complete</b> enumeration (<see cref="Collectors.CollectResult.CompleteEnumeration"/>),
-    /// which the upload declares to the server — and a declared-complete list makes every id it
+    /// The wait is load-bearing. Most sheet-backed collections declare their read a
+    /// <b>complete</b> enumeration (<see cref="Collectors.CollectResult.CompleteEnumeration"/>,
+    /// declared per collection on <see cref="Collectors.CategoryInfo.EnumeratesCompleteDomain"/>),
+    /// which the upload passes to the server — and a declared-complete list makes every id it
     /// lacks count as evidence of absence. Reading before the game has finished populating those
     /// bitmaps would therefore not just under-report; it would assert that the missing entries are
     /// genuinely unowned, and the site would question the user's own manual marks on the strength
