@@ -515,6 +515,8 @@ public static class UploadLogText
         ApiStatus.CharacterNotClaimed => "refused — character not claimed",
         ApiStatus.InvalidToken => "refused — token rejected",
         ApiStatus.RateLimited => "deferred — rate limited",
+        // The same state ServerOffCopy.Paused names, in the shape this column needs: an outcome
+        // phrase, not the two-sentence reassurance the settings card gives.
         ApiStatus.SyncDisabled => "deferred — syncing paused by the server",
         ApiStatus.NetworkError => "failed — could not reach the server",
         _ => "failed",

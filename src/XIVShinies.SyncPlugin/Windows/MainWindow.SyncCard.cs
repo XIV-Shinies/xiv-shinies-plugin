@@ -71,27 +71,29 @@ internal sealed partial class MainWindow
     /// </param>
     private void DrawStatus(IReadOnlyList<CategorySettingsRow> rows)
     {
-        // Ordered by which fact overrides which. The master switch beats everything: while it is
-        // off, reporting the last upload's outcome (with its "will try again") would be a lie — the
-        // plugin will not try again until the switch comes back.
-        if (!configuration.Settings.MasterEnabled)
+        // Which state to state is SyncStatusView.Select's rule — including the order they override
+        // each other in. Only how each one looks is decided here.
+        var status = SyncStatusView.Select(
+            configuration.Settings.MasterEnabled,
+            rows,
+            syncManager.BlockedPendingUserAction,
+            syncManager.HasCharacter,
+            syncManager.LastStatus is not null);
+
+        if (status == SyncStatusKind.SwitchedOffByUser)
         {
             // Red: everything below this line is inert while the switch is off, and a quiet gray
             // would read as "resting" when the truth is "doing nothing at all".
             DrawWarning("Syncing is switched off.");
         }
-        else if (ManifestConsent.ServerHasPausedEverything(rows))
+        else if (status == SyncStatusKind.PausedByServer)
         {
-            // Above the blocked-pending-user-action case because a paused server explains the
-            // silence completely, and the actions that case asks for (claim the character, replace
-            // the token) would not restart anything while the pause is on.
-            //
             // The master toggle above still reads ON, which is correct: it reports the user's own
             // setting, and that setting has not changed. This line is what makes the difference
             // between "you switched it off" and "we switched it off" legible.
-            DrawWarning(CategorySettingsRow.ServerPausedFallback);
+            DrawWarning(ServerOffCopy.Paused);
         }
-        else if (syncManager.BlockedPendingUserAction)
+        else if (status == SyncStatusKind.BlockedPendingUserAction)
         {
             // The 403 case names the character when one is loaded, because "claim Some Name" is
             // actionable and "your token may have been revoked, or…" is a shrug. The server echoes
@@ -104,7 +106,22 @@ internal sealed partial class MainWindow
 
             DrawWarning($"Syncing has stopped. {claimTarget}");
         }
-        else if (!syncManager.HasCharacter)
+        else if (status == SyncStatusKind.NothingSwitchedOnByUser)
+        {
+            // Normal text, not a warning: nothing here is broken, and the pipeline is doing exactly
+            // what it was told. Said out loud rather than left to the empty checkboxes below,
+            // because the Collections card is a header the user can collapse — and collapsed, an
+            // idle sync card would look like a fault with no explanation anywhere.
+            ImGui.TextUnformatted("No collections are switched on, so nothing is being uploaded.");
+        }
+        else if (status == SyncStatusKind.NothingPermittedByServer)
+        {
+            // Warned rather than stated, unlike the line above: this one is not the user's doing and
+            // there is nothing for them to change, so it belongs with the other states the server
+            // imposed. The rows each wear their own "Off" chip, but they are a fold away.
+            DrawWarning(ServerOffCopy.Feature);
+        }
+        else if (status == SyncStatusKind.WaitingForCharacter)
         {
             // Normal text color, like the colored states around it: this line IS the sync card's
             // status — the sentence the user came to read — even though it is neither good news nor
@@ -118,9 +135,9 @@ internal sealed partial class MainWindow
             // see them.
             ImGui.TextUnformatted("Waiting for a character — syncing starts a few seconds after you log in.");
         }
-        else if (syncManager.LastStatus is { } status)
+        else if (status == SyncStatusKind.LastUploadOutcome && syncManager.LastStatus is { } lastStatus)
         {
-            DrawLastStatus(status);
+            DrawLastStatus(lastStatus);
         }
         else
         {
@@ -144,7 +161,13 @@ internal sealed partial class MainWindow
         var showSyncing = DateTime.UtcNow < syncFeedbackUntil || syncManager.UploadInFlight;
         var syncButtonPos = ImGui.GetCursorPos();
 
-        if (PrimaryButton(showSyncing ? "###syncNow" : "Sync now###syncNow", new Vector2(syncWidth, 0f))
+        // Read off the same status the card is stating, so the control and the sentence above it
+        // cannot drift apart. PrimaryButton owns its own disabled look, so the face goes flat
+        // rather than merely dimming — see Widgets.PrimaryButton for why that matters.
+        if (PrimaryButton(
+                showSyncing ? "###syncNow" : "Sync now###syncNow",
+                new Vector2(syncWidth, 0f),
+                enabled: !SyncStatusView.ManualSyncWouldDoNothing(status))
             && !showSyncing)
         {
             syncManager.RequestManualSync();
@@ -162,10 +185,9 @@ internal sealed partial class MainWindow
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
         // Both blocks below describe a pipeline that is actually running, so both are hidden when it
-        // is not. The rule itself is pure and lives in ManifestConsent.PipelineRunning, where a test
-        // can reach it — a promise about what the user sees does not belong only inside a draw call.
-        var pipelineRunning = ManifestConsent.PipelineRunning(
-            configuration.Settings.MasterEnabled, syncManager.BlockedPendingUserAction, rows);
+        // is not. Derived from the status the card is already stating, so the sentence above and the
+        // promise below cannot disagree.
+        var pipelineRunning = SyncStatusView.CadenceHolds(status);
 
         // Sets the expectation for every collection at once, so no category's own description has
         // to explain the sync mechanism. Phrased by mechanism, not by category name: an acquisition

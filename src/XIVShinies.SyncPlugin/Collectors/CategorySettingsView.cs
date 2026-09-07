@@ -129,30 +129,8 @@ public sealed record CategorySettingsRow
     public string? ServerOffText => ServerEnabled
         ? null
         : ServerGloballyOff
-            ? ServerPausedFallback
-            : ServerNote ?? ServerOffFallback;
-
-    /// <summary>
-    /// What a switched-off row says when the server offered no explanation of its own.
-    /// </summary>
-    /// <remarks>
-    /// One string, used verbatim by every surface that reports something the server has switched
-    /// off — the collections list and the live tracker's own row, which sit on the same screen.
-    /// Two copies would let a reword leave them saying different things about the same state, in
-    /// view of each other.
-    /// </remarks>
-    public const string ServerOffFallback = "Temporarily switched off by XIV Shinies.";
-
-    /// <summary>
-    /// What every row says while the server has paused syncing altogether.
-    /// </summary>
-    /// <remarks>
-    /// Says plainly that the user's own settings survive, because the visible effect of a pause is
-    /// every checkbox clearing at once — which looks exactly like the plugin having discarded their
-    /// choices. Nothing is written to <c>EnabledCategories</c> while this is showing.
-    /// </remarks>
-    public const string ServerPausedFallback =
-        "XIV Shinies has paused syncing for everyone. Your own choices are unchanged.";
+            ? ServerOffCopy.Paused
+            : ServerNote ?? ServerOffCopy.Feature;
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.

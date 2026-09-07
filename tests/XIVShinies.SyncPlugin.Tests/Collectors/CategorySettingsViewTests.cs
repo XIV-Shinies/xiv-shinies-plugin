@@ -744,7 +744,7 @@ public class CategorySettingsViewTests
 
         // Pinned by identity with the constant, so a reword moves both surfaces that draw it.
         Assert.Equal(
-            CategorySettingsRow.ServerOffFallback, Assert.Single(rows).ServerOffText);
+            ServerOffCopy.Feature, Assert.Single(rows).ServerOffText);
     }
 
     // The note is carried on the row in its own right, not only folded into the sentence.
@@ -1015,7 +1015,7 @@ public class CategorySettingsViewTests
         var row = Assert.Single(CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
-        Assert.Equal(CategorySettingsRow.ServerPausedFallback, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
     }
 
     // A collection must not spend its one-time introduction during an outage: the user would see
@@ -1095,7 +1095,7 @@ public class CategorySettingsViewTests
         var row = Assert.Single(CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
-        Assert.Equal(CategorySettingsRow.ServerPausedFallback, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
     }
 
     // An unfetched config forbids nothing, and that must survive the global switch being read:

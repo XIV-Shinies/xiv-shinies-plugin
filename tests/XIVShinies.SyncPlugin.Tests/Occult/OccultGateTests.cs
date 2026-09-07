@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using Xunit;
 using XIVShinies.SyncPlugin;
 using XIVShinies.SyncPlugin.Api;
-using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Tests.Occult;
@@ -170,9 +169,9 @@ public class OccultGateTests
     // choice would still satisfy either switch tested alone.
     [Theory]
     [InlineData(true, true, null)]
-    [InlineData(true, false, CategorySettingsRow.ServerOffFallback)]
-    [InlineData(false, true, CategorySettingsRow.ServerPausedFallback)]
-    [InlineData(false, false, CategorySettingsRow.ServerPausedFallback)]
+    [InlineData(true, false, ServerOffCopy.Feature)]
+    [InlineData(false, true, ServerOffCopy.Paused)]
+    [InlineData(false, false, ServerOffCopy.Paused)]
     public void The_chip_names_the_pause_before_the_feature(
         bool globallyEnabled, bool trackerEnabled, string? expected)
     {
@@ -192,7 +191,7 @@ public class OccultGateTests
     {
         var config = ConfigWithTracker() with { OccultTracker = null };
 
-        Assert.Equal(CategorySettingsRow.ServerOffFallback, OccultGate.ServerOffText(config));
+        Assert.Equal(ServerOffCopy.Feature, OccultGate.ServerOffText(config));
     }
 
     [Fact]

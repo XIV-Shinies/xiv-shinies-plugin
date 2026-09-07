@@ -1,5 +1,4 @@
 using XIVShinies.SyncPlugin.Api;
-using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Occult;
@@ -91,6 +90,6 @@ public static class OccultGate
     public static string? ServerOffText(ConfigResponse? remoteConfig) =>
         !ServerHasSwitchedOff(remoteConfig) ? null
             : remoteConfig is { Enabled: false }
-                ? CategorySettingsRow.ServerPausedFallback
-                : CategorySettingsRow.ServerOffFallback;
+                ? ServerOffCopy.Paused
+                : ServerOffCopy.Feature;
 }

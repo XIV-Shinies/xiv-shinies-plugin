@@ -185,7 +185,7 @@ internal sealed partial class MainWindow
         // settings screen is where the user turns it on.
         if (ManifestConsent.ServerHasPausedEverything(wizardRows))
         {
-            DrawWarning(CategorySettingsRow.ServerPausedFallback);
+            DrawWarning(ServerOffCopy.Paused);
             Widgets.SectionGap();
         }
 

@@ -67,8 +67,17 @@ public static class RetryPolicy
     /// character on the website, or fix the settings.
     /// </summary>
     /// <remarks>
-    /// These never heal on their own, so retrying them on every interval would be a pointless loop
-    /// against the server. The caller surfaces the reason in the UI and stays quiet.
+    /// <para>
+    /// These never heal on their own, so hurrying back to them would be a pointless loop against
+    /// the server. An upload caller surfaces the reason in the UI and stays quiet until the user
+    /// acts.
+    /// </para>
+    /// <para>
+    /// The config poll keeps going through one of them — an unclaimed character — because
+    /// <c>/config</c> answers that caller normally, and the poll is how the plugin learns a
+    /// server-side state has changed that the user cannot see from inside the game. It stops for
+    /// the token-shaped ones, which <c>/config</c> refuses exactly as the upload did.
+    /// </para>
     /// </remarks>
     public static bool RequiresUserAction(ApiStatus status) =>
         status is ApiStatus.InvalidToken

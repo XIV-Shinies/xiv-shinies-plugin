@@ -181,10 +181,27 @@ internal sealed class SyncManager : IDisposable
     private readonly ManifestTruncationWarnings truncationWarnings = new();
 
     /// <summary>
-    /// Set when the server reported a failure only the user can fix. Suppresses all further work
-    /// until the user intervenes, rather than looping against a server that will keep refusing.
+    /// Set when the server reported a failure only the user can fix. Suppresses collecting and
+    /// uploading until the user intervenes, rather than looping against a server that will keep
+    /// refusing. The config poll is the one exception, and only for the halt it can actually see
+    /// past — see <see cref="blockedByUnclaimedCharacter"/>.
     /// </summary>
     private volatile bool blockedPendingUserAction;
+
+    /// <summary>
+    /// Which kind of halt <see cref="blockedPendingUserAction"/> is currently holding: an unclaimed
+    /// character, or something token-shaped. Only meaningful while that flag is set.
+    /// </summary>
+    /// <remarks>
+    /// The two halts differ in one way that matters to the config poll. <c>/config</c> answers 200
+    /// or 401 and never 403, so a halt raised by an unclaimed character does not stop it — the poll
+    /// keeps working, and it is the only way the plugin learns a server pause has lifted while the
+    /// user sorts the claim out. A token-shaped halt is the opposite: every future poll is
+    /// guaranteed the same 401, so continuing to ask spends a request forever and can never learn
+    /// anything. Which of the two it is cannot be read off <c>LastStatus</c>, because that field is
+    /// written by the upload path and a halt raised by the poll would leave it stale.
+    /// </remarks>
+    private volatile bool blockedByUnclaimedCharacter;
 
     /// <summary>
     /// The last outcome as an <see cref="ApiStatus"/> cast to int, or -1 when nothing has completed.
@@ -678,8 +695,8 @@ internal sealed class SyncManager : IDisposable
         // character is leaving. Without this, logging into a properly-claimed character behind an
         // unclaimed one inherits a halt that does not apply to it, and the login sync silently
         // never fires. The token-shaped causes self-heal: a genuinely revoked token earns one 401
-        // from the next character's login sync (and one more if a /config poll happens to be due)
-        // and halts again — a request or two per relog, never a loop.
+        // from the next character's login sync and halts again — a request or two per relog, never
+        // a loop, because a token-shaped halt stops the config poll too.
         blockedPendingUserAction = false;
 
         // Responses still in flight belong to the character who just left; bumping the generation
@@ -771,23 +788,28 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     private void OnFrameworkUpdate(IFramework _)
     {
-        // Consent and a credential, before anything else happens. This is the check that keeps the
-        // plugin silent — no network, no game reads — on a fresh install.
-        if (!UploadGate.CanContactServer(settings))
-            return;
+        // How much of this frame may run is SyncTickPlan.Decide's rule; only the work happens here.
+        // Why one halt lets the poll through and the other does not is on blockedByUnclaimedCharacter.
+        var plan = SyncTickPlan.Decide(
+            UploadGate.CanContactServer(settings),
+            pollIsWorthwhile: blockedByUnclaimedCharacter,
+            blockedPendingUserAction);
 
-        if (blockedPendingUserAction)
+        if (plan == TickAction.Nothing)
             return;
 
         var now = timeProvider.GetUtcNow();
+
+        // Polled even while the kill switch is off — it is how we learn the switch flipped back.
+        PollConfigIfDue(now);
+
+        if (plan == TickAction.PollOnly)
+            return;
 
         // Read the volatile field ONCE and use the snapshot for the whole frame. A background poll
         // completing mid-frame would otherwise let us collect items against one manifest and stamp
         // the payload with a different manifest's version.
         var config = remoteConfig;
-
-        // Polled even while the kill switch is off — it is how we learn the switch flipped back.
-        PollConfigIfDue(now);
 
         CaptureIdentityIfSettled(now);
 
@@ -1231,6 +1253,7 @@ internal sealed class SyncManager : IDisposable
         // Nothing a retry can fix — a bad token, an unclaimed character, a misconfigured backend.
         if (RetryPolicy.RequiresUserAction(response.Status))
         {
+            blockedByUnclaimedCharacter = response.Status == ApiStatus.CharacterNotClaimed;
             blockedPendingUserAction = true;
             log.Warning($"Sync halted: {response.Status}. The user must resolve this.");
             return true;
@@ -1295,7 +1318,13 @@ internal sealed class SyncManager : IDisposable
         try
         {
             var response = await apiClient.GetConfigAsync(lifetimeToken).ConfigureAwait(false);
-            answered = response.IsSuccess;
+
+            // A definitive answer, even an unwelcome one, is still an answer. The short retry exists
+            // for a poll that could not reach the server; hurrying back to a credential the server
+            // has already refused only asks the same question faster. A refusal that only the user
+            // can resolve therefore waits the full interval, which is the cadence the contract
+            // documents and slow enough to be polite about a token that may never come back.
+            answered = response.IsSuccess || RetryPolicy.RequiresUserAction(response.Status);
 
             if (response.IsSuccess)
             {
@@ -1376,6 +1405,9 @@ internal sealed class SyncManager : IDisposable
                 && startedFor == sessionGeneration
                 && RetryPolicy.RequiresUserAction(response.Status))
             {
+                // Always false here: /config answers 200 or 401 and never 403, so a halt raised by
+                // this path is token-shaped by construction and no later poll could get past it.
+                blockedByUnclaimedCharacter = false;
                 blockedPendingUserAction = true;
                 log.Warning($"Config poll halted: {response.Status}. The user must resolve this.");
             }
