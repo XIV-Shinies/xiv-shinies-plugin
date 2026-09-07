@@ -62,8 +62,8 @@ public class PayloadCapsTests
         var (_, dropped) = PayloadCaps.Bound(collections);
 
         Assert.Equal(
-            $"quests: dropped 1 entries over the contract cap of {PayloadCaps.MaxIdsPerCategory}",
-            Assert.Single(dropped));
+            $"quests: dropped 1 entry over the contract cap of {PayloadCaps.MaxIdsPerCategory}",
+            Assert.Single(dropped).Line);
     }
 
     [Fact]
@@ -91,8 +91,8 @@ public class PayloadCapsTests
         var (_, dropped) = PayloadCaps.Bound(collections);
 
         Assert.Equal(
-            $"items: dropped 1 entries over the contract cap of {PayloadCaps.MaxEntriesPerCategory}",
-            Assert.Single(dropped));
+            $"items: dropped 1 entry over the contract cap of {PayloadCaps.MaxEntriesPerCategory}",
+            Assert.Single(dropped).Line);
     }
 
     [Fact]
@@ -235,10 +235,12 @@ public class PayloadCapsTests
         Assert.Equal(PayloadCaps.MaxEntriesPerCategory, ((JsonArray)bounded["items"]).Count);
         Assert.Equal(2, dropped.Count);
         Assert.Contains(
-            $"quests: dropped 2 entries over the contract cap of {PayloadCaps.MaxIdsPerCategory}",
-            dropped);
+            dropped,
+            drop => drop.Line ==
+                $"quests: dropped 2 entries over the contract cap of {PayloadCaps.MaxIdsPerCategory}");
         Assert.Contains(
-            $"items: dropped 3 entries over the contract cap of {PayloadCaps.MaxEntriesPerCategory}",
-            dropped);
+            dropped,
+            drop => drop.Line ==
+                $"items: dropped 3 entries over the contract cap of {PayloadCaps.MaxEntriesPerCategory}");
     }
 }

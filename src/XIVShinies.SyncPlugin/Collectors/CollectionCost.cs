@@ -60,6 +60,12 @@ public sealed record CollectionCost
     /// <summary>The per-collector breakdown, slowest first: <c>"quests 1.2ms, mounts 0.3ms"</c>.</summary>
     public required string Breakdown { get; init; }
 
+    /// <summary>The category that took longest, or empty when no collector ran.</summary>
+    /// <remarks>
+    /// Ties are broken arbitrarily — the sort underneath is not a stable one.
+    /// </remarks>
+    public required string SlowestCategory { get; init; }
+
     /// <summary>True when no collector ran, so there is nothing worth reporting.</summary>
     public required bool IsEmpty { get; init; }
 
@@ -86,6 +92,7 @@ public sealed record CollectionCost
                 OverBudget = false,
                 IsAlarming = false,
                 Breakdown = string.Empty,
+                SlowestCategory = string.Empty,
                 IsEmpty = true,
             };
         }
@@ -113,6 +120,7 @@ public sealed record CollectionCost
             OverBudget = overBudget,
             IsAlarming = overBudget && !isFirstPassOfSession,
             Breakdown = string.Join(", ", parts),
+            SlowestCategory = measured[0].Key,
             IsEmpty = false,
         };
     }

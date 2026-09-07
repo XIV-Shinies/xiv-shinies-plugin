@@ -35,6 +35,7 @@ public class CollectionCostTests
         Assert.False(cost.OverBudget);
         Assert.False(cost.IsAlarming);
         Assert.Equal(string.Empty, cost.Breakdown);
+        Assert.Equal(string.Empty, cost.SlowestCategory);
     }
 
     [Fact]
@@ -56,6 +57,17 @@ public class CollectionCostTests
             Snapshot(("mounts", 0.5), ("quests", 4.0), ("minions", 2.0)), isFirstPassOfSession: false);
 
         Assert.Equal("quests 4.0ms, minions 2.0ms, mounts 0.5ms", cost.Breakdown);
+    }
+
+    // The culprit FrameBudgetWarnings keys its memory on. Taking the wrong end of the sort would
+    // name the cheapest collector instead, and every later pass would blame it again.
+    [Fact]
+    public void The_slowest_category_is_the_collector_that_took_longest()
+    {
+        var cost = CollectionCost.From(
+            Snapshot(("mounts", 0.5), ("quests", 4.0), ("minions", 2.0)), isFirstPassOfSession: false);
+
+        Assert.Equal("quests", cost.SlowestCategory);
     }
 
     // The ordinary steady-state pass: cheap, and after the first, so neither flag fires.

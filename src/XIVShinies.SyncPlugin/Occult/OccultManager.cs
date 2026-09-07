@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Diagnostics;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Occult;
@@ -80,6 +81,23 @@ internal sealed class OccultManager : IDisposable
     private readonly OccultEncounterTracker tracker = new();
     private readonly OccultUploadScheduler scheduler = new();
 
+    /// <summary>Which tick failures have already been reported in full.</summary>
+    /// <remarks>
+    /// The tick runs once a second, so a deterministic bug in it would otherwise fill the log.
+    /// Game main thread only, like the tick it guards.
+    /// </remarks>
+    private readonly RepeatedFailures tickFailures = new();
+
+    /// <summary>Which upload failures have already been reported in full.</summary>
+    /// <remarks>
+    /// Separate from <see cref="tickFailures"/> because it is touched from a different thread: the
+    /// upload runs on the thread pool and never marshals back. One upload runs at a time — <see
+    /// cref="uploadInFlight"/> gates entry and, being <c>volatile</c>, publishes what the previous
+    /// one wrote — so a single memory with no lock is still correct here, but it cannot be the same
+    /// memory the game's main thread is writing to.
+    /// </remarks>
+    private readonly RepeatedFailures uploadFailures = new();
+
     /// <summary>
     /// Cancelled on unload, so an upload in flight when the plugin is torn down stops rather
     /// than completing against disposed state.
@@ -90,10 +108,10 @@ internal sealed class OccultManager : IDisposable
     /// <see cref="SyncManager"/>'s field of the same name for the full reasoning).</summary>
     private readonly CancellationToken lifetimeToken;
 
-    // The fields below are framework-thread only (written and read inside the Update handler
-    // and the logout event, which Dalamud raises on that thread) — the same single-writer
-    // discipline SyncManager documents. `uploadInFlight` is the exception: cleared by the
-    // background task, hence volatile.
+    // The fields below live on the game's main thread only (written and read inside the Update
+    // handler and the logout event, which reaches the plugin on that same thread through a hook on
+    // the game's own logout callback) — the same single-writer discipline SyncManager documents.
+    // `uploadInFlight` is the exception: cleared by the background task, hence volatile.
 
     /// <summary>When the next game-state read is due.</summary>
     private DateTimeOffset nextReadAt = DateTimeOffset.MinValue;
@@ -194,9 +212,12 @@ internal sealed class OccultManager : IDisposable
         }
         catch (Exception ex)
         {
-            // Never let a tracker bug escape into the game's frame dispatch. Once per second at
-            // worst, and the log line names the culprit.
-            log.Error(ex, "Occult tracker tick failed.");
+            // Never let a tracker bug escape into the game's frame dispatch. Only the first
+            // sighting earns the full report — see tickFailures for why a recurrence does not.
+            if (tickFailures.IsFirstSighting(ex))
+                log.Error(ex, "Occult tracker tick failed.");
+            else
+                log.Debug(ex, "Occult tracker tick failed again.");
         }
     }
 
@@ -453,8 +474,13 @@ internal sealed class OccultManager : IDisposable
         catch (Exception ex)
         {
             // Last-resort net, as in SyncManager: an exception in a discarded task would
-            // otherwise surface as an unobserved-task exception with no context.
-            log.Error(ex, "Unexpected failure during occult upload.");
+            // otherwise surface as an unobserved-task exception with no context. Reported in full
+            // once; the heartbeat would otherwise repeat a deterministic one for as long as the
+            // character stays inside, at whatever cadence the server set.
+            if (uploadFailures.IsFirstSighting(ex))
+                log.Error(ex, "Unexpected failure during occult upload.");
+            else
+                log.Debug(ex, "Occult upload failed again.");
         }
         finally
         {
