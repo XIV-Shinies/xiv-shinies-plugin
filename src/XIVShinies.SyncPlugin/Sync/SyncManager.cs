@@ -181,6 +181,21 @@ internal sealed class SyncManager : IDisposable
     private readonly ManifestTruncationWarnings truncationWarnings = new();
 
     /// <summary>
+    /// True once a pass in which at least one collector actually ran has completed, since the
+    /// plugin loaded.
+    /// </summary>
+    /// <remarks>
+    /// Read only by the cost report, which exempts the session's first pass from the alarm — see
+    /// <see cref="CollectionCost.IsAlarming"/> for why. Tied to the plugin's lifetime rather than
+    /// the character's: the warm-up it stands for survives a logout.
+    /// <para>
+    /// Framework thread only, like the pass it counts, so it needs no <c>volatile</c> — unlike the
+    /// flags the settings window reads from its draw call.
+    /// </para>
+    /// </remarks>
+    private bool anyPassHasRun;
+
+    /// <summary>
     /// Set when the server reported a failure only the user can fix. Suppresses collecting and
     /// uploading until the user intervenes, rather than looping against a server that will keep
     /// refusing. The config poll is the one exception, and only for the halt it can actually see
@@ -1092,21 +1107,28 @@ internal sealed class SyncManager : IDisposable
     /// Reports what this collection pass cost the frame it ran in.
     /// </summary>
     /// <remarks>
-    /// Escalates to Warning past the budget threshold because at that point it is no longer a
-    /// curiosity: a pass that overruns the frame is a visible stutter for the player, and the fix is
-    /// to spread the work across frames rather than to collect less. The arithmetic and the ordering
-    /// live in <see cref="CollectionCost"/>, where they are unit-tested; only the logging is here.
+    /// Escalates to Warning for a pass that is repeatedly expensive, because at that point it is no
+    /// longer a curiosity: a pass that overruns the frame is a visible stutter for the player, and
+    /// the fix is to spread the work across frames rather than to collect less. Which passes qualify
+    /// is <see cref="CollectionCost.IsAlarming"/>'s rule, unit-tested alongside the arithmetic and
+    /// the ordering; only the logging is here.
     /// </remarks>
     private void LogCollectionCost(CollectionSnapshot snapshot, SyncTrigger trigger)
     {
-        var cost = CollectionCost.From(snapshot);
+        var isFirstPass = !anyPassHasRun;
+        var cost = CollectionCost.From(snapshot, isFirstPassOfSession: isFirstPass);
+
         if (cost.IsEmpty)
             return;
+
+        // A pass where no collector ran warmed nothing, so it must not claim the session's one
+        // exemption — the genuinely cold pass that follows would then be reported as a problem.
+        anyPassHasRun = true;
 
         // C# interpolation is eager: these strings are assembled whether or not the log level would
         // print them. Affordable only because this runs once per upload (a login or a 30-minute
         // sweep), never once per frame. Do not copy this pattern into a per-frame path.
-        if (cost.OverBudget)
+        if (cost.IsAlarming)
         {
             log.Warning(
                 $"A {trigger} collection pass took {cost.Total.TotalMilliseconds:F1}ms on the " +
@@ -1116,7 +1138,15 @@ internal sealed class SyncManager : IDisposable
             return;
         }
 
-        log.Debug($"{trigger} collection took {cost.Total.TotalMilliseconds:F1}ms: {cost.Breakdown}");
+        // Still reported when it overran, just not as a problem: the number is what tells a
+        // contributor what warm-up costs on a real client, and hiding it would leave the next
+        // person measuring it from scratch.
+        var note = cost.OverBudget && isFirstPass
+            ? " (first pass of this session; mostly one-time warm-up)"
+            : string.Empty;
+
+        log.Debug(
+            $"{trigger} collection took {cost.Total.TotalMilliseconds:F1}ms{note}: {cost.Breakdown}");
     }
 
     /// <summary>Uploads off the framework thread, retrying once if the failure was transient.</summary>
