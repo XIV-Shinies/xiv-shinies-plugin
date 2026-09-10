@@ -51,11 +51,12 @@ response fields) and a field-by-field contract conformance audit.
   from the instance director's state block (which holds no party fields), occult records from the
   character's own client-persisted save data (`MKDLoreModule.SeenLore`), and the knowledge level
   from exactly one backing value of the review window the player opens themselves. The **bestiary
-  watcher** reads the Master's Bestiary window when the player opens it, taking the beast numbers
-  and held flags the window was handed to draw itself — the character's own collection, from a
-  window about nobody else, and only while they have it on screen. It listens for that one window
-  by name and reads nothing else; the chat and log-message channels, which carry more than the
-  local character, are not subscribed to anywhere in the plugin.
+  watcher** reads the Master's Bestiary window when the player opens it, taking the beast numbers,
+  held flags, tile captions and the window's own held-out-of-total tally that it was handed to draw
+  itself — the character's own collection, from a window about nobody else, and only while they
+  have it on screen. It listens for that one window by name and reads nothing else; the chat and
+  log-message channels, which carry more than the local character, are not subscribed to anywhere
+  in the plugin.
 - **The addon dump is development-only, and prints whatever the window holds.** A development
   build carries `/shinies dumpaddon <name>`, which walks an open game window's node tree and prints
   where each piece of its artwork comes from — the answer to "which icon is that?" for art the site

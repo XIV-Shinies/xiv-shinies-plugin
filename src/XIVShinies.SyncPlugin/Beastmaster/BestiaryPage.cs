@@ -31,9 +31,10 @@ public sealed record BestiaryPageReading(
 /// </para>
 /// <para>
 /// The page is only what is on screen, so one read is a fragment. The tally is what lets fragments
-/// add up — but it is the window's own figure, and a window showing a filtered slice can report a
-/// smaller bestiary than the game has, so the ledger checks it against the game's own bestiary size
-/// before any claim is made. See <see cref="TamedBeastLedger.IsComplete"/>.
+/// add up — but it is the window's own figure, and a filtered view keeps the bestiary's true size
+/// while shrinking the held count beside it, so the tally alone never says whether the window is
+/// showing everything. The ledger weighs it against the game's own bestiary size and against the
+/// numbers actually listed before any claim is made. See <see cref="TamedBeastLedger.IsComplete"/>.
 /// </para>
 /// <para>
 /// Nothing here knows the game. The layout is expressed as offsets and checked against the shape

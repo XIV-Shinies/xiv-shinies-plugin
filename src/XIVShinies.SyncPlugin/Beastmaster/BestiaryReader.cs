@@ -9,10 +9,12 @@ namespace XIVShinies.SyncPlugin.Beastmaster;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One number, and it is the one number that cannot come from the bestiary window. The window
-/// reports its own total, but a filtered view reports the size of the filtered slice — so a
-/// completeness claim resting on the window alone would let a subset agree with itself. This is the
-/// outside opinion that check needs; see <see cref="TamedBeastLedger.IsComplete"/>.
+/// One number, and it is the one number that cannot come from the bestiary window. Every other
+/// figure the completeness test weighs is the window's own, so a total that came back short — from
+/// a list still loading, or from a view this code does not recognise — would have nothing to
+/// contradict it, and a window naming twelve as the whole bestiary would agree with itself
+/// perfectly. This is the outside opinion that check needs; see
+/// <see cref="TamedBeastLedger.IsComplete"/>.
 /// </para>
 /// <para>
 /// Read through <see cref="RawRow"/>, which asks for rows without asking for columns. The generated

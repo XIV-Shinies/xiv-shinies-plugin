@@ -151,8 +151,9 @@ public sealed unsafe class TamedBeastObserver : IDisposable
             if (addon == null || addon->AtkValues == null || addon->AtkValuesCount == 0)
                 return;
 
-            // The bestiary's real size, from the game's data rather than from the window. Without
-            // it a filtered window could supply both halves of its own completeness check.
+            // The bestiary's real size, from the game's data rather than from the window — the one
+            // figure the completeness test does not take from the window itself. See
+            // TamedBeastLedger.IsComplete for what it agrees with.
             var size = BeastCount();
             if (size is > 0)
                 ledger.NoteDomainSize(size.Value);
@@ -171,9 +172,19 @@ public sealed unsafe class TamedBeastObserver : IDisposable
 
             isNews = ledger.RecordPage(page);
 
+            // The ledger's four figures plus the sheet's size, which the ledger never hands back.
+            // Together they are everything the completeness test weighs, so a withheld claim says
+            // which agreement failed rather than only that one did. The page's own tally sits
+            // beside the ledger's remembered one because the two part company as soon as the player
+            // filters the list.
+            var ledgerReport = ledger.Report();
             log.Debug(
-                $"Bestiary page read: {page.Seen.Count} listed, {page.Captured.Count} held; " +
-                $"{ledger.SeenCount} of {ledger.BeastTotal?.ToString() ?? "?"} seen so far.");
+                $"Bestiary page read: {page.Seen.Count} listed, {page.Captured.Count} held, " +
+                $"page tally {page.CapturedTotal?.ToString() ?? "?"}/{page.BeastTotal?.ToString() ?? "?"}; " +
+                $"ledger {ledgerReport.Held} held, {ledgerReport.Seen} seen, tally " +
+                $"{ledgerReport.CapturedTotal?.ToString() ?? "?"}/" +
+                $"{ledgerReport.BeastTotal?.ToString() ?? "?"}; " +
+                $"sheet {size?.ToString() ?? "?"}; complete {ledgerReport.IsComplete}.");
         }
         catch (Exception ex)
         {
@@ -244,8 +255,9 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         {
             beastCountReadFailed = true;
             log.Warning(
-                "The bestiary sheet could not be read, so this collection cannot tell a complete " +
-                "bestiary from a filtered one and will not claim to have read it all.");
+                "The bestiary sheet could not be read, so nothing can check the bestiary window's " +
+                "own total against the game's data and this collection will not claim to have " +
+                "read it all.");
         }
 
         return beastCount;

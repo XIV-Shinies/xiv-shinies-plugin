@@ -52,6 +52,18 @@ public class TamedBeastProgressTests
         Assert.Contains("page through", note);
     }
 
+    // The bestiary remembers the last filter the player set, so a part-way read is as likely to be
+    // a filter left on as a page not yet turned. Paging through a filtered window records only what
+    // the filter shows and never finishes the read, so the advice has to name the filter or it
+    // sends the player in a circle.
+    [Fact]
+    public void Part_way_through_it_says_to_clear_the_filter()
+    {
+        var note = TamedBeastCollector.DescribeProgress(seen: 17, total: 50);
+
+        Assert.Contains("filter", note);
+    }
+
     // Every number seen, yet still unsettled. There is no "rest" left to page through, so asking
     // for it would send the player after work that does not exist.
     [Fact]

@@ -387,8 +387,15 @@ Field constraints:
   Bestiary window, which shows part of itself at a time and carries its own "held out of total"
   tally; the category declares `"full"` only once three things agree — the game's own bestiary
   size matches the window's total, every one of those numbers has been seen, and the beasts the
-  pages reported as held match the count the window reports. The first of those is what stops a
-  filtered view from supplying both halves of its own check. Until all three agree it is
+  pages reported as held match the largest held count the window has reported this login session.
+  Both of the window's figures are kept at their session maximum rather than taken from the latest
+  page: pacts are never broken, so a smaller held count can only be a narrower view of the same
+  beasts, and a size that ever came back short — a list still loading — must not revoke a claim
+  already earned. The second agreement is what stops a filtered view from claiming the whole:
+  filtering narrows the tally's held count but leaves the bestiary's real size beside it, so a
+  filtered window can shrink one half of its own check — and it still cannot list the numbers it is
+  hiding, which is what the second agreement counts. The first keeps that honest by refusing a
+  window whose total disagrees with the game's own data at all. Until all three agree it is
   `"partial"` and an absent number means only "not seen". The server writes `plugin_acquired`
   monotonically, insert-only, stamping the upload time on first sight.
 

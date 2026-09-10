@@ -114,10 +114,22 @@ public sealed class TamedBeastCollector : ICollector
         // reported have not lined up. Telling the player to page through for "the rest" would name
         // work that does not exist, so this asks for the one thing that can still change: another
         // look, which re-reads the tally.
+        //
+        // Clearing the filter is the advice because a filtered view is the cause the player can do
+        // anything about: its tally counts only the held beasts the filter shows, so it never
+        // reaches the true held count and only an unfiltered look settles it. Reopening a
+        // still-filtered window would leave them repeating the one step that cannot work.
         if (seen >= total)
-            return $"{seen} of {total} read — open your Master's Bestiary once more to confirm.";
+        {
+            return $"{seen} of {total} read — open your Master's Bestiary once more with no " +
+                   "filter applied to confirm.";
+        }
 
-        return $"{seen} of {total} read — open your Master's Bestiary and page through it to " +
-               "record the rest.";
+        // The filter is named because the bestiary remembers the last one the player set, so a
+        // window opened days later can still be showing a handful of beasts. Paging through that
+        // records only what the filter shows and never finishes the read, which looks like a broken
+        // sync rather than like a filter left on.
+        return $"{seen} of {total} read — open your Master's Bestiary, clear any filter, and page " +
+               "through it to record the rest.";
     }
 }

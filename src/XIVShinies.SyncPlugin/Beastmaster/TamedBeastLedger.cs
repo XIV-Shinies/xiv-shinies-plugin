@@ -2,6 +2,24 @@ using System.Collections.Generic;
 
 namespace XIVShinies.SyncPlugin.Beastmaster;
 
+/// <summary>What a ledger holds at one moment, and whether that adds up to the whole bestiary.</summary>
+/// <param name="Held">How many beasts the ledger has recorded the character as holding.</param>
+/// <param name="Seen">How many bestiary numbers have been listed to it, held or not.</param>
+/// <param name="CapturedTotal">The window's own count of held beasts, or null when unread.</param>
+/// <param name="BeastTotal">The window's own count of beasts that exist, or null when unread.</param>
+/// <param name="IsComplete">Whether the whole bestiary has been accounted for.</param>
+// A `readonly record struct` is a small immutable value: the compiler writes the constructor,
+// value-based equality and a readable ToString, and `struct` means the value is copied when it is
+// passed around rather than referenced, so a local like the one Report hands back needs no heap
+// allocation. The nearest JavaScript analogue is a frozen plain object, except that copying is free
+// and each copy is independent.
+public readonly record struct LedgerReport(
+    int Held,
+    int Seen,
+    int? CapturedTotal,
+    int? BeastTotal,
+    bool IsComplete);
+
 /// <summary>
 /// The bestiary numbers the character is known to hold this login session, and how much of their
 /// bestiary has been read.
@@ -81,9 +99,11 @@ public sealed class TamedBeastLedger
         {
             var heldBefore = numbers.Count;
 
+            // Bounded by the game's own bestiary size when it is known, so a number past the end of
+            // the sheet is refused rather than left to make the count add up by accident.
             foreach (var number in page.Seen)
             {
-                if (number > 0)
+                if (number > 0 && (domainSize is null || number <= domainSize))
                     seen.Add(number);
             }
 
@@ -98,20 +118,29 @@ public sealed class TamedBeastLedger
                     numbers.Add(number);
             }
 
-            // The largest total ever seen wins, rather than the latest. A window showing a filtered
-            // view reports a smaller bestiary than the game has, and letting that shrink the
-            // remembered size would both invite a claim over the subset and revoke an honest claim
-            // made before the filter went on.
+            // The largest size ever seen wins, rather than the latest. A size that comes back short
+            // — from a list still loading, or from a view this code does not recognise — is measured
+            // against the sheet by the completeness test, so letting it shrink the remembered one
+            // would revoke a claim the player has already earned and can only win back by opening
+            // the window again.
             if (page.BeastTotal is > 0 && page.BeastTotal > (beastTotal ?? 0))
-            {
                 beastTotal = page.BeastTotal;
+
+            // The held count is kept the same way, and it is the half a filter actually moves: a
+            // filtered view of a fifty-beast bestiary still calls it fifty while counting only the
+            // held beasts the filter shows. Pacts are never broken, so within a session the largest
+            // count the window has shown is the true one.
+            //
+            // Only from a page whose size agrees with the remembered one, so a count is never taken
+            // from a view the size check has already found suspect. Filtered views pass that
+            // freely, since they name the real size.
+            //
+            // The floor is -1 rather than 0 so that a genuine "none held" can be recorded: a player
+            // holding no beasts reads 0 out of 50, and 0 must count as an answer rather than as no
+            // answer. A null count fails the comparison outright, which is how a page whose tally
+            // would not parse leaves an earlier good reading alone.
+            if (page.BeastTotal == beastTotal && page.CapturedTotal > (capturedTotal ?? -1))
                 capturedTotal = page.CapturedTotal;
-            }
-            else if (page.BeastTotal == beastTotal && page.CapturedTotal is not null)
-            {
-                // The same view of the bestiary, so its count of held beasts is the fresher one.
-                capturedTotal = page.CapturedTotal;
-            }
 
             return numbers.Count > heldBefore;
         }
@@ -122,9 +151,9 @@ public sealed class TamedBeastLedger
     /// </summary>
     /// <param name="size">The bestiary's real size, from the game's data sheet.</param>
     /// <remarks>
-    /// The one figure in this class that does not come from the window. It is what stops a window
-    /// showing part of the bestiary from being mistaken for the whole of it: a filtered view can
-    /// report its own smaller total, and only something outside the window knows better.
+    /// The one figure in this class that does not come from the window. A window naming its own
+    /// slice as the whole bestiary cannot be answered from inside itself; see
+    /// <see cref="IsComplete"/> for what this agrees with and what the others catch.
     /// </remarks>
     public void NoteDomainSize(int size)
     {
@@ -144,15 +173,17 @@ public sealed class TamedBeastLedger
     /// Three agreements are required, and they check each other.
     /// </para>
     /// <para>
-    /// First, the window's idea of how many beasts exist must match the game's own — otherwise a
-    /// window showing a filtered slice of the bestiary would supply both the numerator and the
-    /// denominator, and a subset would agree with itself perfectly. This is the check that cannot
-    /// come from the window, and without it a remembered filter turns a fragment into a claim.
+    /// First, the window's idea of how many beasts exist must match the game's own — otherwise
+    /// every figure here would come from the window, and a window describing part of the bestiary
+    /// as the whole of it would agree with itself perfectly. This is the check that cannot come
+    /// from the window.
     /// </para>
     /// <para>
-    /// Second, every one of those numbers must actually have been seen. Third, the beasts recorded
-    /// as held must match the count the window reports, which catches a page whose held flags were
-    /// misread even when the right number of records was found.
+    /// Second, every one of those numbers must actually have been seen, which is what a filtered
+    /// view cannot fake: it can shrink the held count beside the tally, but it cannot list numbers
+    /// it is not showing. Third, the beasts recorded as held must match the count the window
+    /// reports, which catches a page whose held flags were misread even when the right number of
+    /// records was found.
     /// </para>
     /// <para>
     /// False until the player has looked at the whole bestiary, which is the honest answer: until
@@ -164,14 +195,47 @@ public sealed class TamedBeastLedger
         get
         {
             lock (gate)
-            {
-                return beastTotal is > 0
-                    && capturedTotal is not null
-                    && domainSize == beastTotal
-                    && seen.Count == beastTotal
-                    && numbers.Count == capturedTotal;
-            }
+                return CompleteWhileLocked();
         }
+    }
+
+    /// <summary>The completeness test itself, for callers that already hold the lock.</summary>
+    /// <remarks>
+    /// The test as one expression, so that both <see cref="IsComplete"/> and <see cref="Report"/>
+    /// can run it while already holding the gate — <see cref="Report"/> needs its verdict and the
+    /// figures behind it to describe one moment.
+    /// </remarks>
+    private bool CompleteWhileLocked() =>
+        beastTotal is > 0
+        && capturedTotal is not null
+        && domainSize == beastTotal
+        && seen.Count == beastTotal
+        && numbers.Count == capturedTotal;
+
+    /// <summary>
+    /// Every figure the completeness test rests on except the bestiary's real size, read together;
+    /// that one is the caller's own, handed in through <see cref="NoteDomainSize"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One locked read rather than several, so the numbers cannot describe different moments. The
+    /// window's own count of held beasts is here and nowhere else on this class, so without this a
+    /// withheld claim gives no way to tell which agreement failed.
+    /// </para>
+    /// <para>
+    /// A struct, so asking costs no allocation on a path the bestiary window can walk dozens of
+    /// times as it opens.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// The held count, how many numbers have been seen, the window's tally of held and of total,
+    /// and whether the whole bestiary has been accounted for.
+    /// </returns>
+    public LedgerReport Report()
+    {
+        lock (gate)
+            return new LedgerReport(
+                numbers.Count, seen.Count, capturedTotal, beastTotal, CompleteWhileLocked());
     }
 
     /// <summary>How many bestiary numbers have been seen, held or not.</summary>
@@ -207,8 +271,11 @@ public sealed class TamedBeastLedger
             capturedTotal = null;
             beastTotal = null;
 
-            // The bestiary's size is game data rather than character data, so it survives — the
-            // next character's bestiary is the same size as this one's.
+            // domainSize survives while beastTotal does not. They are the same quantity, so what
+            // separates them is where each came from: the sheet is read from the game's data and is
+            // true of every character, while the window's figure is a claim that has to be earned
+            // again by looking at the next character's bestiary. Keeping the earned one would let
+            // it vouch for a bestiary nobody has read.
         }
     }
 

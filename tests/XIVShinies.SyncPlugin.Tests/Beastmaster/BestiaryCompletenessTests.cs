@@ -31,11 +31,13 @@ public class BestiaryCompletenessTests
         return ledger;
     }
 
-    // The filter trap, and the reason the game's own data has a vote. The bestiary's filter panel
-    // narrows which beasts are listed; if the window's tally narrows with it, the window supplies
-    // both the numerator and the denominator and a subset agrees with itself perfectly.
+    // A window whose total comes back short, which is the shape the game's own bestiary size is
+    // here to refuse. Nothing else can: every other figure in the check is the window's own, so a
+    // window naming twelve as the whole bestiary has twelve seen out of twelve and nine held out of
+    // nine, agreeing with itself perfectly. Not the shape a filter produces — a filtered view names
+    // the real size — but a still-loading list is, and the claim it guards cannot be taken back.
     [Fact]
-    public void A_filtered_view_that_agrees_with_itself_is_not_complete()
+    public void A_window_total_that_disagrees_with_the_games_own_size_is_not_complete()
     {
         var ledger = new TamedBeastLedger();
         ledger.NoteDomainSize(RealBestiarySize);
@@ -47,16 +49,105 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // ...and a filter applied after a full read must not revoke a claim that is still true, which
-    // is why the largest total ever seen wins rather than the latest.
+    // ...and a page whose total comes back short must not revoke a claim already earned, which is
+    // why the largest size ever seen wins rather than the latest. A list still loading is the
+    // ordinary way a short total arrives.
     [Fact]
-    public void A_filter_applied_after_a_full_read_does_not_revoke_the_claim()
+    public void A_window_total_that_comes_back_short_does_not_revoke_the_claim()
     {
         var ledger = LedgerOverBothPages();
 
         ledger.RecordPage(PageOf(new[] { 1, 2, 3 }, new[] { 1, 2, 3 }, capturedTotal: 3, beastTotal: 3));
 
         Assert.True(ledger.IsComplete);
+    }
+
+    // The shape the game actually produces: filtering narrows the tally's held count and leaves its
+    // size alone, so "the size did not change" is no evidence the view is unfiltered. A held count
+    // taken on that evidence would replace the true one with the filtered one and revoke a claim
+    // that is still true, so the largest count ever seen wins here too — pacts are never broken, so
+    // within a session a smaller count can only be a narrower view of the same beasts.
+    [Fact]
+    public void A_filter_that_narrows_only_the_held_count_does_not_revoke_the_claim()
+    {
+        var ledger = LedgerOverBothPages();
+
+        var listed = new[] { 4, 9, 17, 22, 31 };
+        ledger.RecordPage(PageOf(listed, listed, capturedTotal: 5, beastTotal: RealBestiarySize));
+
+        Assert.True(ledger.IsComplete);
+    }
+
+    // A page whose tally would not parse must leave the remembered one alone. Reachable in play:
+    // the tally slot can fail to read while the records beside it read fine, so a refresh mid-load
+    // arrives with beasts listed and no counts. The claim has to survive that — an unreadable
+    // figure is not evidence of anything, least of all evidence against a read already finished.
+    [Fact]
+    public void A_page_with_no_readable_tally_does_not_revoke_the_claim()
+    {
+        var ledger = LedgerOverBothPages();
+
+        var listed = Enumerable.Range(1, 25).ToArray();
+        ledger.RecordPage(PageOf(listed, listed, capturedTotal: null, beastTotal: null));
+
+        Assert.True(ledger.IsComplete);
+    }
+
+    // A character switch must not leave the previous character's held count behind. The count only
+    // ever rises within a session, so a leftover from a character holding more beasts would sit
+    // above anything the next character can reach and withhold their claim for as long as they
+    // stay logged in.
+    [Fact]
+    public void Clearing_forgets_the_held_count_so_the_next_character_can_be_complete()
+    {
+        var ledger = LedgerOverBothPages();
+        Assert.True(ledger.IsComplete);
+
+        ledger.Clear();
+
+        // A second character who holds three beasts, reading the same fifty-beast bestiary.
+        var everyNumber = Enumerable.Range(1, RealBestiarySize).ToArray();
+        var held = new[] { 7, 12, 30 };
+        ledger.RecordPage(PageOf(everyNumber, held, capturedTotal: 3, beastTotal: RealBestiarySize));
+
+        Assert.True(ledger.IsComplete);
+        Assert.Equal(3, ledger.Count);
+    }
+
+    // Holding none of them is an answer, not the absence of one. The floor the held count is
+    // compared against sits below zero precisely so that a real "0 out of 50" is recorded — at zero
+    // it would read as a tally never seen, and a player who has tamed nothing could never reach a
+    // settled state. What stops that emptiness reaching the server is the floor in
+    // CollectResult.TamedBeasts, not this class.
+    [Fact]
+    public void A_bestiary_read_with_nothing_held_is_still_complete()
+    {
+        var ledger = new TamedBeastLedger();
+        ledger.NoteDomainSize(RealBestiarySize);
+
+        var everyNumber = Enumerable.Range(1, RealBestiarySize).ToArray();
+        ledger.RecordPage(PageOf(everyNumber, [], capturedTotal: 0, beastTotal: RealBestiarySize));
+
+        Assert.True(ledger.IsComplete);
+        Assert.Equal(0, ledger.Count);
+    }
+
+    // A number past the end of the game's own bestiary is refused rather than remembered. The
+    // completeness test reads "as many seen as the bestiary has" as "the whole bestiary was
+    // covered", which only follows while every remembered number is a real one — one bogus number
+    // standing in for a missing real one would make the count add up over the wrong set.
+    [Fact]
+    public void A_number_past_the_end_of_the_bestiary_is_not_counted_as_seen()
+    {
+        var ledger = new TamedBeastLedger();
+        ledger.NoteDomainSize(RealBestiarySize);
+
+        // Forty-nine real numbers, plus one that cannot exist standing in for the fiftieth.
+        var listed = Enumerable.Range(1, 49).Append(RealBestiarySize + 7).ToArray();
+        ledger.RecordPage(PageOf(listed, listed, capturedTotal: 50, beastTotal: RealBestiarySize));
+
+        Assert.Equal(49, ledger.SeenCount);
+        Assert.False(ledger.IsComplete);
     }
 
     // The completeness check leans on every held beast being one of the seen ones — that is what

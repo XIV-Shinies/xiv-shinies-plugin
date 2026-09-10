@@ -260,16 +260,21 @@ public static class CollectorRegistry
         Key = CategoryKeys.TamedBeasts,
         DisplayName = "Tamed beasts",
         Section = LimitedJobsSection,
-        WhatGetsSent = "The ID numbers of the beasts you have tamed.",
+
+        // The job is named here because no other surface names it: the section header groups every
+        // limited job together, the display name is the collection, and the hover text calls the
+        // window by its in-game title. A player who wants to know whether their Beastmaster
+        // progress syncs is looking for that word, and this is the line they read without hovering.
+        WhatGetsSent = "The ID numbers of the beasts you have tamed as Beastmaster.",
 
         // The one action the player has to take. The bestiary is only readable while it is on
         // screen, so a player who never opens it sees nothing arrive and would read that as a
         // broken sync rather than as the single step it is. It is elaboration rather than a kind of
         // data, so it belongs in the hover instead of the visible line.
         Details =
-            "This reads your Master's Bestiary whenever you open it, so page through it once and " +
-            "every beast you have tamed is recorded. Nothing is read while the window is closed, " +
-            "and other players are never involved.",
+            "This reads your Master's Bestiary whenever you open it, so page through it once with " +
+            "no filter applied and every beast you have tamed is recorded. Nothing is read while " +
+            "the window is closed, and other players are never involved.",
 
         // The entitlement to claim completeness at all. A collection whose domain is always
         // readable passes this straight through to the CollectResult; this one's becomes readable
