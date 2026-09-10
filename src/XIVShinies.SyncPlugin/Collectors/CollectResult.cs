@@ -154,8 +154,9 @@ public sealed record CollectResult
     /// declaration, which is what lets the server treat an id's absence as evidence — see
     /// <see cref="Api.SyncRequest.CollectionScopes"/> for what it licenses. It is declared per
     /// collection on <see cref="CategoryInfo.EnumeratesCompleteDomain"/> and carried through by the
-    /// collector; only <see cref="Ids"/> takes the argument, so the other factories' categories
-    /// cannot declare it at all. False is always safe: it merely carries no evidence of absence.
+    /// collector. Only the factories whose categories can enumerate a domain take the argument —
+    /// <see cref="Ids"/> and <see cref="TamedBeasts"/> — so the others cannot declare it at all.
+    /// False is always safe: it merely carries no evidence of absence.
     /// Sheet padding does not count against it — row 0 is not a candidate, so an enumeration is
     /// still complete without it.
     /// </para>
@@ -239,7 +240,9 @@ public sealed record CollectResult
     /// <param name="completeEnumeration">
     /// True when the read answered for every candidate in the category's domain — see
     /// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>, which is where each collection declares
-    /// this. A request, not a verdict: <see cref="CompleteEnumeration"/> additionally withholds the
+    /// this — most collectors pass it straight through, while a collection whose domain only
+    /// becomes readable on the player's action requires the pass to have earned it as well.
+    /// A request, not a verdict: <see cref="CompleteEnumeration"/> additionally withholds the
     /// claim for an empty list. Defaults to false — the safe claim — so a caller must opt in
     /// explicitly.
     /// </param>
@@ -353,4 +356,53 @@ public sealed record CollectResult
         IReadOnlyList<ItemPossession> items,
         IReadOnlyDictionary<string, ItemSourceStatus>? sourceNotes) =>
         new() { Facts = SyncFacts.Items(items), SourceNotes = sourceNotes };
+
+    /// <summary>
+    /// Facts for the <c>tamedBeasts</c> category: the beasts the character has forged a pact with.
+    /// </summary>
+    /// <param name="numbers">The bestiary numbers to report.</param>
+    /// <param name="completeEnumeration">
+    /// True when the character's whole bestiary has been accounted for, so an absent number is
+    /// evidence the beast is not held. Decided per pass as well as per collection, because the
+    /// bestiary becomes readable only once the player has looked at it — the same collection is
+    /// incomplete before that and complete after. Defaults to false.
+    /// </param>
+    /// <param name="collectedDetail">See <see cref="CollectedDetail"/>; null when none.</param>
+    /// <param name="partialNote">See <see cref="PartialNote"/>; null when nothing partial to say.</param>
+    /// <remarks>
+    /// <para>
+    /// Non-positive numbers are dropped for the same reason <see cref="Ids"/> drops zeroes: the
+    /// server requires positive integers, and one invalid entry rejects the whole upload rather
+    /// than this one category.
+    /// </para>
+    /// <para>
+    /// An empty list is reported as nothing read this pass rather than as a count of zero. Zero is
+    /// a claim, and for a collection that cannot shrink it reads as a loss; "nothing seen yet" is
+    /// what actually happened. Decided here rather than by the caller so the two can never
+    /// disagree — and the emptiness floor on the completeness claim applies here exactly as it
+    /// does to <see cref="Ids"/>.
+    /// </para>
+    /// </remarks>
+    public static CollectResult TamedBeasts(
+        IReadOnlyList<int> numbers,
+        bool completeEnumeration = false,
+        string? collectedDetail = null,
+        string? partialNote = null)
+    {
+        var beasts = new List<TamedBeast>(numbers.Count);
+        foreach (var number in numbers)
+        {
+            if (number > 0)
+                beasts.Add(new TamedBeast { Number = (uint)number });
+        }
+
+        return new()
+        {
+            Facts = SyncFacts.TamedBeasts(beasts),
+            CompleteEnumeration = completeEnumeration && beasts.Count > 0,
+            CollectedDetail = collectedDetail,
+            PartialNote = partialNote,
+            NothingReadThisPass = beasts.Count == 0,
+        };
+    }
 }

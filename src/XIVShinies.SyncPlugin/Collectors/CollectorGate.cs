@@ -41,4 +41,29 @@ public static class CollectorGate
 
         return remoteConfig.IsCategoryEnabled(categoryKey);
     }
+
+    /// <summary>
+    /// Whether a collection may capture a fact into memory, before any upload is in sight.
+    /// </summary>
+    /// <param name="categoryKey">The collection asking.</param>
+    /// <param name="settings">The user's own switches.</param>
+    /// <remarks>
+    /// <para>
+    /// Most collections read the game when a pass runs, so <see cref="IsEnabled"/> is the only gate
+    /// they need. A collection whose source is a window the player opens is different: the read
+    /// happens on the game's schedule rather than the pass's, so something has to decide whether to
+    /// take it long before a pass would ask. This is that decision, and it holds the user's
+    /// switches to the same meaning — switched off collects nothing, not even into memory.
+    /// </para>
+    /// <para>
+    /// The server's switches are deliberately absent. A category the server has turned off never
+    /// reaches a payload anyway — <see cref="IsEnabled"/> refuses to collect it, and the server
+    /// strips it on arrival regardless. Consent is the user's answer, and only the user's answer
+    /// belongs in a decision made this early.
+    /// </para>
+    /// </remarks>
+    public static bool IsCapturePermitted(string categoryKey, PluginSettings settings) =>
+        settings.MasterEnabled
+        && settings.OnboardingComplete
+        && settings.IsCategoryEnabled(categoryKey);
 }

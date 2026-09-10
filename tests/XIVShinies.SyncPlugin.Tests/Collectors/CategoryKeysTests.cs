@@ -33,6 +33,7 @@ public class CategoryKeysTests
         [nameof(CategoryKeys.OrchestrionRolls)] = "orchestrionRolls",
         [nameof(CategoryKeys.QuestSequences)] = "questSequences",
         [nameof(CategoryKeys.Quests)] = "quests",
+        [nameof(CategoryKeys.TamedBeasts)] = "tamedBeasts",
         [nameof(CategoryKeys.TripleTriadCards)] = "tripleTriadCards",
         [nameof(CategoryKeys.TripleTriadNpcs)] = "tripleTriadNpcs",
     };

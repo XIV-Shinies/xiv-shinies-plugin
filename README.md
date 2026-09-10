@@ -52,6 +52,10 @@ into:
 - **Phantom job levels and experience**, read while you are inside the Occult Crescent, and
   your **knowledge level** when you open the review window yourself
 - Discovered **occult record** IDs
+- Bestiary numbers of the **beasts you have tamed** as a beastmaster, read from your Master's
+  Bestiary when you open it. The bestiary shows part of itself at a time, so page through it once
+  and the whole set is recorded. Nothing is read while the window is closed, and other players are
+  never involved
 - **Live Occult Crescent instance state**, while you are inside one: which critical
   encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
   are on, powering the site's live occult tracker on the right data center. This is world

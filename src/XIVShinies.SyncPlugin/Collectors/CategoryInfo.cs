@@ -102,9 +102,11 @@ public sealed record CategoryInfo
     /// remarks are the worked example of declining for that reason.
     /// </para>
     /// <para>
-    /// Self-description in the same sense as <see cref="UsesItemManifest"/>: the collectors read
-    /// this flag rather than deciding for themselves, so the decision sits beside the category it
-    /// describes and one test can pin the whole set. Declaring it is a request, not a guarantee:
+    /// Self-description in the same sense as <see cref="UsesItemManifest"/>: a collector reads this
+    /// flag rather than deciding entitlement for itself, so the decision sits beside the category
+    /// it describes and one test can pin the whole set. A collection whose domain only becomes
+    /// readable on the player's action requires its own pass to have earned the claim as well —
+    /// <c>TamedBeastCollector</c> is the worked example. Declaring it is a request, not a guarantee:
     /// <see cref="CollectResult.CompleteEnumeration"/> describes the floor applied at the factory,
     /// and further gates on <c>PayloadCaps</c> and <c>SyncPayloadBuilder</c> can withhold it later
     /// still. Defaults to <c>false</c>, which is always safe: it withholds a claim rather than

@@ -62,6 +62,10 @@ public static class UploadLogSeed
         [CategoryKeys.TripleTriadNpcs] = 78,
         [CategoryKeys.OccultProgression] = 24,
         [CategoryKeys.OccultRecords] = 31,
+
+        // Single digits, because the whole bestiary is fifty rows. A three-figure count like its
+        // larger neighbours would photograph as a collection this one can never be.
+        [CategoryKeys.TamedBeasts] = 3,
     };
 
     /// <summary>The count to show for a collection this file has never heard of.</summary>

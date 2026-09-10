@@ -859,6 +859,38 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
+    /// Schedules an incremental upload for one category, for a collection whose facts arrive as a
+    /// game event rather than as an unlock.
+    /// </summary>
+    /// <param name="categoryKey">The category to upload, named by whatever captured the change.</param>
+    /// <remarks>
+    /// <para>
+    /// <see cref="OnUnlock"/> can only route what Dalamud reports as an unlock, which is a change
+    /// to the game's unlock bitmaps. A collection whose source is a different kind of event — a
+    /// window the player opens, say — has no row reference to route, so it calls this instead and
+    /// names its own category, exactly as a collector does.
+    /// </para>
+    /// <para>
+    /// Naming no category here is what keeps that true: the key is an argument, so a new collection
+    /// of this kind needs no change to this class. Everything else about the upload is identical to
+    /// an unlock's, debounce and acquisition stamping included — which is the point, since both are
+    /// "this one collection just gained something".
+    /// </para>
+    /// <para>
+    /// The <c>identity is null</c> guard is the same compliance gate <see cref="OnUnlock"/> carries,
+    /// and for the same reason: the identity is only ever captured on the far side of the upload
+    /// gate, so this stays completely inert until the user has opted in.
+    /// </para>
+    /// </remarks>
+    public void NotifyCategoryChanged(string categoryKey)
+    {
+        if (identity is null)
+            return;
+
+        scheduler.NotifyUnlock(categoryKey, timeProvider.GetUtcNow());
+    }
+
+    /// <summary>
     /// Runs every frame on the framework thread. Must stay cheap: this is the game's render loop.
     /// </summary>
     private void OnFrameworkUpdate(IFramework _)
