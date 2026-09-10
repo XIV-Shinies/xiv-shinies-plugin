@@ -201,13 +201,15 @@ public static class CollectorRegistry
             "read and how many retainers you have.",
 
         // Where the plugin looked, and that "none of this item" is itself a reported fact rather
-        // than silence. Both make the count trustworthy; neither adds a kind of data to it. The
-        // per-group choice sits here too, because the group checkboxes are drawn directly beneath
-        // this row — the UI already shows what the sentence would be describing.
+        // than silence. Both make the count trustworthy; neither adds a kind of data to it.
+        //
+        // The group clause is hedged because the groups are optional: the server decides whether to
+        // send the item manifest in groups at all, and when it sends a flat list no group
+        // checkboxes are drawn and there is no per-group choice.
         Details =
             "Counts are checked across your inventory, Armoire, Glamour Dresser, Saddlebag, and " +
-            "retainers. Having none of an item is reported too. You choose which groups to share, " +
-            "and nothing outside them is looked at.",
+            "retainers. Having none of an item is reported too. When these items are offered in " +
+            "groups below, you choose which groups to share and nothing outside them is looked at.",
 
         // The only collection whose scope comes from the server's item manifest rather than being
         // fixed at compile time, so it is the one that gets per-group consent rows in settings.

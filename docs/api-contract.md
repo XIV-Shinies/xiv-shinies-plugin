@@ -317,6 +317,28 @@ Field constraints:
   upload**, unlike an unknown id. Unlock state is readable anywhere, in or out of content,
   so a full sheet sweep is always possible; see `collectionScopes` below for what declaring
   that sweep complete buys.
+- **Mount and minion id spaces.** `mounts` carries `Mount` sheet row ids and `minions` carries
+  `Companion` row ids, both as the sheet reports them. Unlock state resolves through a bitmask
+  slot, so a row with no slot always answers "not unlocked" — the same shape as the Triple Triad
+  gap below, and worth stating because there it hides real opponents. The two collections reach
+  that bitmask differently, so only one of them has the gap at all.
+  **Minions** have none: the client sizes its minion bitmask to `Companion`'s row count and
+  indexes it by row id, so every row has a bit by construction and nothing is unreportable.
+  (`Companion.Order` is a display ordering and says nothing about unlock state.)
+  **Mounts** do have slots — the mount bitmask is sized by the largest `Mount.Order`, so a row
+  with a negative `Order` has no bit — but nothing a player can own falls in the gap. Measured
+  against the 7.56 sheets, `Mount` has 451 rows of which 78 are slotless and only 13 of those
+  carry a name — every one a cutscene camera
+  (`CAM-I`, `CAM-II`, `CPD-I`), an internal designation (`CHL P-0005` and its siblings) or a
+  duty vehicle (`commandeered magitek armor`, `marid`, `true griffin`,
+  `xenoscaping vacuum suit`, `Red Baron`), none of them present in the game's own Mount Guide —
+  which is what settles it, since a row nobody can obtain answers "not unlocked" whichever field
+  indexes the bitmask.
+  Both categories may therefore declare themselves complete (see `collectionScopes` below).
+  Re-check the mount side after a patch that adds mounts, with `/shinies dumpslots` on a Debug
+  build: a real collectable landing in a slotless row would silently falsify that claim. The
+  minion side needs no re-check for slots, only that the client keeps sizing the bitmask to the
+  sheet's row count.
 - **Triple Triad id spaces.** `tripleTriadCards` carries `TripleTriadCard` sheet row ids
   (1–475, dense; row 0 is a dummy). `tripleTriadNpcs` carries `TripleTriadResident` row ids
   **exactly as the sheet reports them** — they live in the game's event-handler id range

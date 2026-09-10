@@ -5,6 +5,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Occult;
 
@@ -265,16 +266,15 @@ internal sealed partial class MainWindow
     /// underneath. What counts as unavailable is decided at the check itself.
     /// </para>
     /// </remarks>
-    private void DrawOccultConsentRow()
+    /// <param name="remoteConfig">
+    /// The snapshot to decide from. A caller that draws its own prose about this row passes the
+    /// same one it decided that prose from, so the two cannot be settled by different answers.
+    /// </param>
+    private void DrawOccultConsentRow(ConfigResponse? remoteConfig)
     {
-        // Read the volatile config ONCE and decide everything from the snapshot: a poll landing
-        // mid-method could otherwise let the chip's presence and its sentence be settled by two
-        // different answers, and draw a greyed row with nothing saying why.
-        //
         // Asked of the gate that decides whether the tracker actually runs, so the control and
         // the behavior cannot describe different things. OccultGate.ServerHasSwitchedOff holds
         // the rule and the reasoning.
-        var remoteConfig = syncManager.RemoteConfig;
         var serverOff = OccultGate.ServerHasSwitchedOff(remoteConfig);
 
         // What the wizard's consent settle reads. A disabled checkbox never reports a click, so a
@@ -336,13 +336,13 @@ internal sealed partial class MainWindow
 
             ImGui.Spacing();
 
-            // The standing choice for collections and sharing features that do not exist yet, and
-            // it governs both — see PluginSettings.AutoEnableUnseenCategories for what acts on it
-            // at load. Ticking it here is the explicit consent that answer rests on, which is why
-            // the copy promises anything enabled this way shows up on this screen.
+            // The standing choice for collections that do not exist yet — see
+            // PluginSettings.AutoEnableUnseenCategories for what acts on it at load, and
+            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
+            // separately is left out. Ticking it here is the explicit consent that answer rests on.
             var autoEnable = configuration.Settings.AutoEnableNewFeatures;
             if (ImGui.Checkbox(
-                    "Turn on new collections and sharing features automatically##autoEnableNew",
+                    "Turn on new collections automatically##autoEnableNew",
                     ref autoEnable))
             {
                 configuration.Settings.AutoEnableNewFeatures = autoEnable;
@@ -350,11 +350,13 @@ internal sealed partial class MainWindow
             }
 
             ImGui.Indent(checkboxColumn);
+
+            // Scoped to exactly what the tick reaches: collections with a fixed scope, and no
+            // sharing feature.
             DrawWrapped(
-                "Tick this and anything a later update adds — a new collection to sync, or a new " +
-                "kind of sharing like the live tracker above — starts switched on instead of " +
-                "waiting for you. It is marked New on this screen either way, so you will see it " +
-                "whichever you choose.",
+                "Tick this and a new collection a later update adds starts switched on, instead of " +
+                "waiting for you to find it. Collections whose groups you choose separately, and " +
+                "new kinds of sharing like the live tracker above, always wait for you.",
                 ImGuiCol.Text);
             ImGui.Unindent(checkboxColumn);
         }

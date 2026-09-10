@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Occult;
 using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -159,10 +160,23 @@ internal sealed partial class MainWindow
         // anything can send.
         // Scoped to the collections on this screen, because the last box below offers to start
         // collections added by later updates switched on.
+        //
+        // The tracker sentence is dropped when the server has the tracker switched off, because
+        // then it is not true: the row below cannot be offered.
+        //
+        // The snapshot both this sentence and the row below decide from; see
+        // DrawOccultConsentRow's remoteConfig parameter for why it is passed rather than re-read.
+        var remoteConfig = syncManager.RemoteConfig;
+        var trackerCanBeOffered = !OccultGate.ServerHasSwitchedOff(remoteConfig);
+
         ImGui.TextWrapped(
             "Choose what to upload. The collections below all start switched off — nothing about " +
-            "your progress is sent unless you turn it on here. Sharing live Occult instance state " +
-            "starts on; untick it below if you would rather not. You can change any of this later.");
+            "your progress is sent unless you turn it on here. " +
+            (trackerCanBeOffered
+                ? "Sharing live Occult instance state starts on; untick it below if you would " +
+                  "rather not. "
+                : string.Empty) +
+            "You can change any of this later.");
 
         Widgets.SectionGap();
 
@@ -193,7 +207,7 @@ internal sealed partial class MainWindow
 
         // The live tracker's own consent card, right below the collections it is not part of.
         ImGui.Spacing();
-        DrawOccultConsentRow();
+        DrawOccultConsentRow(remoteConfig);
 
         ImGui.Spacing();
         DrawWizardNav("Finish");

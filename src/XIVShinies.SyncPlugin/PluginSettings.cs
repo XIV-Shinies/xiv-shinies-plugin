@@ -51,8 +51,8 @@ public class PluginSettings
     public bool ShareOccultInstanceState { get; set; } = true;
 
     /// <summary>
-    /// True when the user chose to have sharing features added by later updates start switched
-    /// on, rather than being asked each time.
+    /// True when the user chose to have collections added by later updates start switched on,
+    /// rather than being asked each time.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -69,8 +69,8 @@ public class PluginSettings
     /// everyone who did not think to untick it, which is the weakest form consent takes.
     /// </para>
     /// <para>
-    /// A collection nobody switched on still announces itself with a "New" badge, so this setting
-    /// is convenience rather than the way anything gets discovered.
+    /// Convenience rather than the way anything gets discovered: an unswitched collection
+    /// announces itself anyway (see <c>CategorySettingsView.IsEffectivelyNew</c>).
     /// </para>
     /// </remarks>
     public bool AutoEnableNewFeatures { get; set; }

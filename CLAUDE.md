@@ -143,6 +143,26 @@ seeded ones and lights up "(changed)" everywhere, and logging out or switching c
 log. On the shipped **Release** build the argument is not compiled in, so `/shinies seedlog`
 just toggles the window like any other unrecognized argument.
 
+### Auditing the mount unlock slots
+
+`mounts` declares itself a complete list, which is only honest while every `Mount` row the game's
+unlock bitmask cannot answer for is unobtainable padding. A patch that adds mounts could put a real
+collectable in that gap and silently falsify the claim, so `docs/api-contract.md`'s mount and minion
+id-space bullet says to re-check. This is the command that does it:
+
+```
+/shinies dumpslots        # counts, plus every slotless row that carries a name
+```
+
+Debug build only, same setup as the seeding command above, and **log in first** — the unlock check
+answers "not unlocked" for everything at the title screen, so a run there prints a clean-looking
+result that measured nothing. The answer goes to `/xllog`, not the screen. Check each name it
+prints against the game's own Mount Guide: a name that appears there is a real mount the plugin
+cannot report, and `mounts` would have to stop declaring completeness.
+
+Minions need no equivalent audit — their bitmask is sized to the `Companion` sheet's row count and
+indexed by row id, so every row has a bit.
+
 ## Testing philosophy — pure logic vs. game surfaces
 
 Be honest about this split; do not fake it.

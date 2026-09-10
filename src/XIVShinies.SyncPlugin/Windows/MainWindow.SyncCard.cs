@@ -98,11 +98,22 @@ internal sealed partial class MainWindow
             // The 403 case names the character when one is loaded, because "claim Some Name" is
             // actionable and "your token may have been revoked, or…" is a shrug. The server echoes
             // name and world for exactly this purpose; the local identity is the same information.
-            var claimTarget = syncManager.LastStatus == ApiStatus.CharacterNotClaimed
-                && syncManager.CharacterName is { } name
-                    ? $"Claim {name} on {BackendHost()}, then press Sync now."
-                    : "Your token may have been revoked, or this character is not claimed on the " +
-                      "website. Fix it there, then press Sync now.";
+            //
+            // NotConfigured lands here too — RetryPolicy.RequiresUserAction counts it — and the
+            // action it needs is on this machine, not on the website, so the generic sentence
+            // would send the user to fix a token they have no problem with. The wording comes from
+            // BackendUrl, as it does for the status line below.
+            var claimTarget = syncManager.LastStatus switch
+            {
+                ApiStatus.NotConfigured => BackendUrl.DescribeUnusableSetting(
+                    configuration.Settings.BaseUrl, configuration.Settings.CustomBackendAcknowledged),
+
+                ApiStatus.CharacterNotClaimed when syncManager.CharacterName is { } name =>
+                    $"Claim {name} on {BackendHost()}, then press Sync now.",
+
+                _ => "Your token may have been revoked, or this character is not claimed on the " +
+                     "website. Fix it there, then press Sync now.",
+            };
 
             DrawWarning($"Syncing has stopped. {claimTarget}");
         }
@@ -112,7 +123,13 @@ internal sealed partial class MainWindow
             // what it was told. Said out loud rather than left to the empty checkboxes below,
             // because the Collections card is a header the user can collapse — and collapsed, an
             // idle sync card would look like a fault with no explanation anywhere.
-            ImGui.TextUnformatted("No collections are switched on, so nothing is being uploaded.");
+            //
+            // Scoped to collections. The live tracker is gated separately and has no collection
+            // term in OccultGate.CanTrack, so it can be uploading world state while every
+            // collection here is off — and this card is the surface a user trusts to say what is
+            // being sent.
+            ImGui.TextUnformatted(
+                "No collections are switched on, so none of your progress is being uploaded.");
         }
         else if (status == SyncStatusKind.NothingPermittedByServer)
         {

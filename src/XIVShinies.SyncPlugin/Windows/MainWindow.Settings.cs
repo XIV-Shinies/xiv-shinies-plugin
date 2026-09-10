@@ -72,7 +72,7 @@ internal sealed partial class MainWindow
 
             // The live tracker's consent card, below the collections card it is not part of.
             ImGui.Spacing();
-            DrawOccultConsentRow();
+            DrawOccultConsentRow(syncManager.RemoteConfig);
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
