@@ -20,8 +20,8 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// category gets the right cap by looking like one shape or the other.
 /// </para>
 /// <para>
-/// Never silent: every truncation is reported so the caller can log it. A silently capped
-/// payload would read as "covered everything" when it did not.
+/// Never silent: every truncation is reported to the caller, which decides what to log. A
+/// silently capped payload would read as "covered everything" when it did not.
 /// </para>
 /// <para>
 /// These entry caps are also the client's only defense against the contract's 1 MiB body
@@ -47,8 +47,8 @@ public static class PayloadCaps
     /// <returns>
     /// <c>Bounded</c> is the capped dictionary — the very same instance as <paramref
     /// name="collections"/> when nothing needed truncating, so a compliant payload is never
-    /// copied. <c>Dropped</c> is one human-readable line per category that was cut, empty when
-    /// nothing was.
+    /// copied. <c>Dropped</c> is one <see cref="PayloadCapDrop"/> per category that was cut, empty
+    /// when nothing was.
     /// </returns>
     /// <remarks>
     /// <b>Not for the upload path.</b> Capping a bare dictionary cannot retract the completeness
@@ -60,7 +60,7 @@ public static class PayloadCaps
     // takes apart with `var (bounded, dropped) = ...`. The closest JS/TS analog is returning
     // an object and destructuring it — `const { bounded, dropped } = ...` — but a C# tuple is
     // a lightweight value type, not an allocated object.
-    internal static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<string> Dropped)
+    internal static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<PayloadCapDrop> Dropped)
         Bound(Dictionary<string, JsonNode> collections)
     {
         var (bounded, dropped, _) = BoundCore(collections);
@@ -73,7 +73,7 @@ public static class PayloadCaps
     /// </summary>
     /// <returns>
     /// <c>Bounded</c> is the capped snapshot — the very same instance when nothing needed
-    /// truncating. <c>Dropped</c> is one human-readable line per category that was cut.
+    /// truncating. <c>Dropped</c> is one <see cref="PayloadCapDrop"/> per category that was cut.
     /// </returns>
     /// <remarks>
     /// Capping and retracting live in one function because they must never drift apart: a
@@ -81,7 +81,7 @@ public static class PayloadCaps
     /// described on <see cref="Collectors.CollectResult.CompleteEnumeration"/>. Dropping ids is
     /// safe under monotonic writes; declaring a shortened list complete is not.
     /// </remarks>
-    public static (CollectionSnapshot Bounded, IReadOnlyList<string> Dropped)
+    public static (CollectionSnapshot Bounded, IReadOnlyList<PayloadCapDrop> Dropped)
         Bound(CollectionSnapshot snapshot)
     {
         var (bounded, dropped, truncatedKeys) = BoundCore(snapshot.Collections);
@@ -99,11 +99,14 @@ public static class PayloadCaps
         return (snapshot with { Collections = bounded, CompleteKeys = completeKeys }, dropped);
     }
 
-    /// <summary>Does the capping, and reports the keys it cut as well as the human-readable lines.</summary>
-    private static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<string> Dropped,
+    /// <summary>
+    /// Does the capping, and reports the keys it cut as well as one <see cref="PayloadCapDrop"/>
+    /// per cut.
+    /// </summary>
+    private static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<PayloadCapDrop> Dropped,
         IReadOnlyCollection<string> TruncatedKeys) BoundCore(Dictionary<string, JsonNode> collections)
     {
-        var dropped = new List<string>();
+        var dropped = new List<PayloadCapDrop>();
         var truncatedKeys = new List<string>();
 
         // Rebuilt lazily: only allocated the first time a category actually needs truncating,
@@ -149,7 +152,12 @@ public static class PayloadCaps
             bounded ??= new Dictionary<string, JsonNode>(collections);
             bounded[key] = truncated;
 
-            dropped.Add($"{key}: dropped {overBy} entries over the contract cap of {cap}");
+            dropped.Add(new PayloadCapDrop
+            {
+                CategoryKey = key,
+                DroppedEntries = overBy,
+                Cap = cap,
+            });
             truncatedKeys.Add(key);
         }
 

@@ -38,8 +38,33 @@ public sealed record CollectionCost
     /// <summary>True when the pass is slow enough to risk a visible stutter.</summary>
     public required bool OverBudget { get; init; }
 
+    /// <summary>
+    /// True when this pass overran the budget in a way worth raising an alarm about.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The session's first pass is exempt: most of what it spends is one-time warm-up rather than
+    /// the cost of collecting — the first read of a game data sheet loads it, and the first touch
+    /// of the game's item lookups initializes them. On a real client that pass measures around
+    /// 21ms against 1–2ms for every later one, so a rule that counts it fires every single session
+    /// and says nothing about whether the plugin got slower. The alarm is for a pass that is
+    /// <b>repeatedly</b> expensive — the shape an added collector or a grown manifest takes.
+    /// </para>
+    /// <para>
+    /// Always implies <see cref="OverBudget"/>: the subset of over-budget passes worth acting on,
+    /// never a condition of its own.
+    /// </para>
+    /// </remarks>
+    public required bool IsAlarming { get; init; }
+
     /// <summary>The per-collector breakdown, slowest first: <c>"quests 1.2ms, mounts 0.3ms"</c>.</summary>
     public required string Breakdown { get; init; }
+
+    /// <summary>The category that took longest, or empty when no collector ran.</summary>
+    /// <remarks>
+    /// Ties are broken arbitrarily — the sort underneath is not a stable one.
+    /// </remarks>
+    public required string SlowestCategory { get; init; }
 
     /// <summary>True when no collector ran, so there is nothing worth reporting.</summary>
     public required bool IsEmpty { get; init; }
@@ -50,7 +75,12 @@ public sealed record CollectionCost
     /// by name, and never orders by one — the ordering is by duration, so the name that appears first
     /// is the one worth acting on.
     /// </remarks>
-    public static CollectionCost From(CollectionSnapshot snapshot)
+    /// <param name="snapshot">The pass to summarize.</param>
+    /// <param name="isFirstPassOfSession">
+    /// Whether this is the first pass since the plugin loaded. See <see cref="IsAlarming"/> for why
+    /// it matters.
+    /// </param>
+    public static CollectionCost From(CollectionSnapshot snapshot, bool isFirstPassOfSession)
     {
         var durations = snapshot.Durations;
 
@@ -60,7 +90,9 @@ public sealed record CollectionCost
             {
                 Total = TimeSpan.Zero,
                 OverBudget = false,
+                IsAlarming = false,
                 Breakdown = string.Empty,
+                SlowestCategory = string.Empty,
                 IsEmpty = true,
             };
         }
@@ -80,11 +112,15 @@ public sealed record CollectionCost
         foreach (var (category, duration) in measured)
             parts.Add($"{category} {duration.TotalMilliseconds:F1}ms");
 
+        var overBudget = total >= FrameBudgetWarningThreshold;
+
         return new CollectionCost
         {
             Total = total,
-            OverBudget = total >= FrameBudgetWarningThreshold,
+            OverBudget = overBudget,
+            IsAlarming = overBudget && !isFirstPassOfSession,
             Breakdown = string.Join(", ", parts),
+            SlowestCategory = measured[0].Key,
             IsEmpty = false,
         };
     }

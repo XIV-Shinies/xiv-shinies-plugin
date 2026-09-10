@@ -2,6 +2,9 @@
 // DateTimeOffset, StringComparison and StringSplitOptions, for the development-build upload-log
 // seeding command. Guarded with the command itself: a Release compile of this file needs none.
 using System;
+// The sheet row types and Lumina's row constraint, for the development-build slot dump.
+using Lumina.Excel;
+using Lumina.Excel.Sheets;
 #endif
 using System.Collections.Generic;
 // Path.Combine, for locating the mascot image next to the plugin DLL.
@@ -184,10 +187,10 @@ public sealed class Plugin : IDalamudPlugin
             if (Configuration.Settings.InitializeSeenCategories(collectors.Select(c => c.CategoryKey)))
                 Configuration.Save();
 
-            // Honors the user's standing "turn on new collections and sharing features
-            // automatically" answer. It runs after the baseline above, because that is what
-            // decides which collections count as never-shown — and before the window exists, so a
-            // collection is switched on before anything can draw it and mark it shown.
+            // Honors the user's standing "turn on new collections automatically" answer. It runs
+            // after the baseline above, because that is what decides which collections count as
+            // never-shown — and before the window exists, so a collection is switched on before
+            // anything can draw it and mark it shown.
             //
             // Only the collections a tick settles on its own — see
             // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
@@ -333,13 +336,14 @@ public sealed class Plugin : IDalamudPlugin
     private void OnCommand(string command, string args)
     {
 #if DEBUG
-        // A development build recognizes one argument, for filling the upload log with plausible
-        // rows so its screenshots can be taken without waiting on real syncs. Compiled out of
-        // Release entirely, so the shipped plugin recognizes no arguments at all.
+        // A development build recognizes a small set of arguments, none of which exists in a
+        // Release compile — the shipped plugin recognizes no arguments at all.
         //
         //   /shinies seedlog              — seed the log
         //   /shinies seedlog <version>    — seed it and draw that version in the masthead
         //                                   (see MainWindow.OverrideVersionForScreenshots)
+        //   /shinies dumpslots            — audit the unlock bitmask's coverage of the Mount
+        //                                   sheet; the answer goes to /xllog, not the screen
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
         {
@@ -359,10 +363,125 @@ public sealed class Plugin : IDalamudPlugin
             mainWindow.IsOpen = true;
             return;
         }
+
+        if (words.Length > 0 && words[0].Equals("dumpslots", StringComparison.OrdinalIgnoreCase))
+        {
+            // Marshalled rather than called straight. Dalamud does not schedule command handlers —
+            // it invokes them where the command arrived, which is the game's main thread for chat
+            // and the console's draw for the console — so the read is on the right thread by
+            // circumstance, not by contract, and a bad read of game memory raises a
+            // corrupted-state exception no catch can rescue. RunOnFrameworkThread is a no-op when
+            // already there.
+            _ = Framework.RunOnFrameworkThread(DumpUnlockSlots);
+            return;
+        }
 #endif
 
         mainWindow.Toggle();
     }
+
+#if DEBUG
+    /// <summary>
+    /// Reports how much of the <c>Mount</c> sheet the unlock bitmask can answer for, and names
+    /// every row it cannot.
+    /// </summary>
+    /// <remarks>
+    /// Evidence for whether mounts may honestly declare completeness — see the mount and minion
+    /// id-space bullet in <c>docs/api-contract.md</c> for what the answer means on the wire.
+    /// </remarks>
+    private static void DumpUnlockSlots()
+    {
+        // Without a character the unlock check answers false for every row rather than throwing,
+        // and the sheets read fine — so a title-screen run completes and prints the sentence that
+        // reads as confirmation. Refusing is the only way a reader can tell a run that measured
+        // everything from one that measured nothing.
+        if (!ClientState.IsLoggedIn)
+        {
+            Log.Information(
+                "dumpslots: not logged in. Unlock state answers false for everything, so nothing " +
+                "here would mean anything. Log in and run it again.");
+            return;
+        }
+
+        // Mounts only — the minion bitmask has no slotless case. `Mount.Order` is the bit index a
+        // negative value marks the absence of; see the mount and minion id-space bullet in
+        // docs/api-contract.md for both mechanisms.
+        Report<Mount>(
+            "Mount", row => row.Order < 0, row => row.Singular.ExtractText(),
+            UnlockState.IsMountUnlocked);
+
+        // A local function — a method declared inside another method, visible only there. `static`
+        // on it means it captures nothing from the enclosing scope, so the compiler can rule out an
+        // accidental capture rather than leaving it to a reader to check.
+        static void Report<T>(
+            string label, Func<T, bool> isSlotless, Func<T, string> name, Func<T, bool> isUnlocked)
+            where T : struct, IExcelRow<T>
+        {
+            // GetExcelSheet throws rather than answering null when a sheet is missing or its
+            // columns have moved, which for a diagnostic is the right shape: Dalamud's command
+            // dispatch catches and logs it, and a half-answer would be worse than none.
+            var sheet = DataManager.GetExcelSheet<T>();
+
+            var total = 0;
+            var named = 0;
+            var slotless = 0;
+            var slotlessUnlocked = 0;
+            var slotlessNamed = new List<string>();
+
+            foreach (var row in sheet)
+            {
+                total++;
+
+                var rowName = name(row);
+                var hasName = !string.IsNullOrWhiteSpace(rowName);
+                if (hasName)
+                    named++;
+
+                if (!isSlotless(row))
+                    continue;
+
+                slotless++;
+                if (hasName)
+                    slotlessNamed.Add(rowName);
+
+                // A slotless row that answers "unlocked" would disprove the reading of this dump
+                // outright. The converse proves less than it looks: rows nobody owns answer false
+                // whatever field indexes the bitmask, so a zero here is consistent with the slot
+                // field being the index AND with it not being. Only the game's own collection
+                // window settles whether a named row is obtainable.
+                if (isUnlocked(row))
+                    slotlessUnlocked++;
+            }
+
+            Log.Information(
+                $"{label}: {total} rows, {named} named, {slotless} slotless, " +
+                $"{slotlessNamed.Count} slotless AND named.");
+
+            // The "nothing matched" case gets its own sentence rather than falling into the
+            // reassuring one below. A predicate that cannot match its column produces the same
+            // zero as a sheet with genuinely no slotless rows, and the reassuring wording would
+            // let the first read as the second — which is how an unexamined sheet gets recorded
+            // as evidence.
+            if (slotless == 0)
+            {
+                Log.Information(
+                    $"{label}: no row matched the slotless test, so nothing was examined. Either " +
+                    "the sheet has no such rows or the predicate cannot match this column.");
+                return;
+            }
+
+            Log.Information(
+                slotlessUnlocked == 0
+                    ? $"{label}: no slotless row answers unlocked. Consistent with them being " +
+                      "unreportable; check each name below against the game's collection window."
+                    : $"{label}: {slotlessUnlocked} slotless rows answer UNLOCKED, so the slot field " +
+                      "is not what the unlock check indexes by and this dump proves nothing.");
+
+            if (slotlessNamed.Count > 0)
+                Log.Information($"{label} slotless but named: {string.Join(" | ", slotlessNamed)}");
+        }
+    }
+#endif
 
     // Small helper wired to the installer's open/config buttons above. `Toggle()` comes from the
     // Window base class (show if hidden, hide if shown).

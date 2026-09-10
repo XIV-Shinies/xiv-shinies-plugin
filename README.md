@@ -28,10 +28,13 @@ outranks a Lodestone scrape. The plugin itself is deliberately a **dumb fact-rea
 sends only raw facts the game knows and never computes site concepts like relic steps — which
 keeps it stable as the site grows new collections and rules.
 
-New unlocks (quests, achievements, mounts, minions) upload within seconds of earning them.
-Anything the plugin gets no unlock signal for — Triple Triad cards, orchestrion rolls, and
-item possession used to prove relic progress — travels with periodic full syncs, or
-immediately with the **Sync now** button.
+**Quests**, **Achievements**, **Mounts**, **Minions** and **Orchestrion rolls** upload within
+seconds of the unlock, because the game announces those the moment they happen.
+
+Everything else travels with the periodic full sync, or immediately when you press
+**Sync now**: **Tracked items** (the item counts that prove relic progress), **Quest
+progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records** and
+**Phantom jobs**.
 
 ## What gets sent
 
@@ -54,7 +57,9 @@ into:
   are on, powering the site's live occult tracker on the right data center. This is world
   state — nothing about you beyond your presence in the instance, and never anything about
   other players. It starts enabled (the setup wizard shows the ticked box before anything
-  sends) and can be switched off any time in the settings
+  sends) and can be switched off any time in the settings. If XIV Shinies has the tracker
+  switched off while you are setting up, the wizard cannot offer you that box — so it starts
+  **off** instead, and you can turn it on from the settings whenever you like
 
 For a collection the plugin can read end to end, the upload also records that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin

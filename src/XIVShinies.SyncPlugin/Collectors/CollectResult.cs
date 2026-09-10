@@ -145,17 +145,19 @@ public sealed record CollectResult
 
     /// <summary>
     /// True when these facts are asserted to be the character's <b>complete</b> set for the
-    /// category: the collector enumerated its entire domain, and the list came back non-empty.
+    /// category: the read answered for every candidate the domain holds, and the list came back
+    /// non-empty.
     /// </summary>
     /// <remarks>
     /// <para>
     /// This claim ends up on the wire as the category's <c>collectionScopes</c> <c>"full"</c>
     /// declaration, which is what lets the server treat an id's absence as evidence — see
-    /// <see cref="Api.SyncRequest.CollectionScopes"/> for what it licenses. Only a collector can
-    /// make it honestly, because only the collector knows whether it walked its whole domain or
-    /// took a shortcut, so it travels on the result instead of being inferred downstream. False is
-    /// always safe: it merely carries no evidence of absence. Sheet padding does not count against
-    /// it — row 0 is not a candidate, so an enumeration is still complete without it.
+    /// <see cref="Api.SyncRequest.CollectionScopes"/> for what it licenses. It is declared per
+    /// collection on <see cref="CategoryInfo.EnumeratesCompleteDomain"/> and carried through by the
+    /// collector; only <see cref="Ids"/> takes the argument, so the other factories' categories
+    /// cannot declare it at all. False is always safe: it merely carries no evidence of absence.
+    /// Sheet padding does not count against it — row 0 is not a candidate, so an enumeration is
+    /// still complete without it.
     /// </para>
     /// <para>
     /// One floor is enforced centrally rather than left to collectors: <b>an empty list never
@@ -235,9 +237,11 @@ public sealed record CollectResult
     /// <summary>Facts for a category that is a plain list of unlocked or completed IDs.</summary>
     /// <param name="ids">The collected ids.</param>
     /// <param name="completeEnumeration">
-    /// True when the collector checked every candidate in its domain. This is a request, not a
-    /// verdict: <see cref="CompleteEnumeration"/> additionally withholds the claim for an empty
-    /// list. Defaults to false — the safe claim — so a caller must opt in explicitly.
+    /// True when the read answered for every candidate in the category's domain — see
+    /// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>, which is where each collection declares
+    /// this. A request, not a verdict: <see cref="CompleteEnumeration"/> additionally withholds the
+    /// claim for an empty list. Defaults to false — the safe claim — so a caller must opt in
+    /// explicitly.
     /// </param>
     /// <remarks>
     /// Zero is dropped. The server requires <b>positive</b> integers, and the game's data sheets

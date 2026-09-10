@@ -85,9 +85,9 @@ The pipeline, in one pass:
 3. **`SyncPayloadBuilder`** turns a snapshot into the wire payload. A category that could not
    be read is simply **absent** — the server treats absence as "no information", never as
    "cleared", so partial uploads are always safe (writes are monotonic; collections only grow).
-   The exception a collector can opt into is a completeness declaration: see the
-   monotonic-write section of `CLAUDE.md` before claiming one, because it is what lets the
-   server treat an id's absence as evidence about the user's own data.
+   The exception is a completeness declaration, which a collection makes on its
+   `CategoryInfo`: see the monotonic-write section of `CLAUDE.md` before adding one, because
+   it is what lets the server treat an id's absence as evidence about the user's own data.
 4. **`SyncManager`** orchestrates: it listens for login/unlock events and a periodic interval,
    collects on the framework thread, then uploads on a background task. Every path out of an
    event checks **`UploadGate`** (consent + credential) first, and per-category consent is

@@ -3,7 +3,8 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// Answers questions about item-manifest consent without anyone having to name a category.
+/// Answers consent and server-permission questions about the category rows, without anyone having
+/// to name a category.
 /// </summary>
 /// <remarks>
 /// A separate class because the code that needs these answers lives outside the collectors — the sync
@@ -177,6 +178,54 @@ public static class ManifestConsent
         foreach (var row in rows)
         {
             if (row.ServerEnabled)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the server has paused syncing entirely, rather than switching off any particular
+    /// collection.
+    /// </summary>
+    /// <remarks>
+    /// Read from the rows rather than from the config so the window keeps its single source for
+    /// what the server currently permits, and so the state is reachable from a test. Any row
+    /// answers for all of them — the pause is one flag applied to every collection — so the first
+    /// one that reports it settles the question. An empty list answers "not paused", which is the
+    /// permissive direction and unreachable while the registry always yields collectors.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    public static bool ServerHasPausedEverything(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            // Both halves, so a row that somehow claimed a pause while still reading as usable
+            // cannot make the window announce an outage over live checkboxes.
+            if (row.ServerGloballyOff && !row.ServerEnabled)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether any collection at all will actually be uploaded as things stand — both halves, the
+    /// user's choice and the server's.
+    /// </summary>
+    /// <remarks>
+    /// What the sync card's cadence promise depends on. "Everything else syncs automatically every
+    /// &lt;interval&gt;" is a claim about collections, so with none of them running it is false however
+    /// healthy the pipeline is — and the sweep genuinely does nothing. Which of the two ways of
+    /// reaching that state the user is in, and what the card says about each, is
+    /// <c>SyncStatusView.Select</c>'s decision; this only answers whether either has been reached.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    public static bool AnyEffectivelyOn(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (row.IsEffectivelyOn)
                 return true;
         }
 

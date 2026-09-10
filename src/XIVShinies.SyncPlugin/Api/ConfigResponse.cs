@@ -143,8 +143,10 @@ public sealed record ConfigResponse
 public sealed record OccultTrackerConfig
 {
     /// <summary>
-    /// The tracker's kill switch. The server folds the global, per-user, and category switches
-    /// into this one value, so the client honors it alone.
+    /// The tracker's kill switch. The server folds the global, per-user, and category switches into
+    /// this one value, so honoring it is enough against a compliant backend. The client checks the
+    /// global switch alongside it anyway (see <c>OccultGate</c>), because the backend URL is
+    /// user-overridable and the gate does not rely on a server keeping its side of the bargain.
     /// </summary>
     public required bool Enabled { get; init; }
 

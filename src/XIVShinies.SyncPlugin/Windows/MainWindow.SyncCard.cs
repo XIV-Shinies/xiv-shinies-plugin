@@ -71,29 +71,74 @@ internal sealed partial class MainWindow
     /// </param>
     private void DrawStatus(IReadOnlyList<CategorySettingsRow> rows)
     {
-        // Ordered by which fact overrides which. The master switch beats everything: while it is
-        // off, reporting the last upload's outcome (with its "will try again") would be a lie — the
-        // plugin will not try again until the switch comes back.
-        if (!configuration.Settings.MasterEnabled)
+        // Which state to state is SyncStatusView.Select's rule — including the order they override
+        // each other in. Only how each one looks is decided here.
+        var status = SyncStatusView.Select(
+            configuration.Settings.MasterEnabled,
+            rows,
+            syncManager.BlockedPendingUserAction,
+            syncManager.HasCharacter,
+            syncManager.LastStatus is not null);
+
+        if (status == SyncStatusKind.SwitchedOffByUser)
         {
             // Red: everything below this line is inert while the switch is off, and a quiet gray
             // would read as "resting" when the truth is "doing nothing at all".
             DrawWarning("Syncing is switched off.");
         }
-        else if (syncManager.BlockedPendingUserAction)
+        else if (status == SyncStatusKind.PausedByServer)
+        {
+            // The master toggle above still reads ON, which is correct: it reports the user's own
+            // setting, and that setting has not changed. This line is what makes the difference
+            // between "you switched it off" and "we switched it off" legible.
+            DrawWarning(ServerOffCopy.Paused);
+        }
+        else if (status == SyncStatusKind.BlockedPendingUserAction)
         {
             // The 403 case names the character when one is loaded, because "claim Some Name" is
             // actionable and "your token may have been revoked, or…" is a shrug. The server echoes
             // name and world for exactly this purpose; the local identity is the same information.
-            var claimTarget = syncManager.LastStatus == ApiStatus.CharacterNotClaimed
-                && syncManager.CharacterName is { } name
-                    ? $"Claim {name} on {BackendHost()}, then press Sync now."
-                    : "Your token may have been revoked, or this character is not claimed on the " +
-                      "website. Fix it there, then press Sync now.";
+            //
+            // NotConfigured lands here too — RetryPolicy.RequiresUserAction counts it — and the
+            // action it needs is on this machine, not on the website, so the generic sentence
+            // would send the user to fix a token they have no problem with. The wording comes from
+            // BackendUrl, as it does for the status line below.
+            var claimTarget = syncManager.LastStatus switch
+            {
+                ApiStatus.NotConfigured => BackendUrl.DescribeUnusableSetting(
+                    configuration.Settings.BaseUrl, configuration.Settings.CustomBackendAcknowledged),
+
+                ApiStatus.CharacterNotClaimed when syncManager.CharacterName is { } name =>
+                    $"Claim {name} on {BackendHost()}, then press Sync now.",
+
+                _ => "Your token may have been revoked, or this character is not claimed on the " +
+                     "website. Fix it there, then press Sync now.",
+            };
 
             DrawWarning($"Syncing has stopped. {claimTarget}");
         }
-        else if (!syncManager.HasCharacter)
+        else if (status == SyncStatusKind.NothingSwitchedOnByUser)
+        {
+            // Normal text, not a warning: nothing here is broken, and the pipeline is doing exactly
+            // what it was told. Said out loud rather than left to the empty checkboxes below,
+            // because the Collections card is a header the user can collapse — and collapsed, an
+            // idle sync card would look like a fault with no explanation anywhere.
+            //
+            // Scoped to collections. The live tracker is gated separately and has no collection
+            // term in OccultGate.CanTrack, so it can be uploading world state while every
+            // collection here is off — and this card is the surface a user trusts to say what is
+            // being sent.
+            ImGui.TextUnformatted(
+                "No collections are switched on, so none of your progress is being uploaded.");
+        }
+        else if (status == SyncStatusKind.NothingPermittedByServer)
+        {
+            // Warned rather than stated, unlike the line above: this one is not the user's doing and
+            // there is nothing for them to change, so it belongs with the other states the server
+            // imposed. The rows each wear their own "Off" chip, but they are a fold away.
+            DrawWarning(ServerOffCopy.Feature);
+        }
+        else if (status == SyncStatusKind.WaitingForCharacter)
         {
             // Normal text color, like the colored states around it: this line IS the sync card's
             // status — the sentence the user came to read — even though it is neither good news nor
@@ -107,9 +152,9 @@ internal sealed partial class MainWindow
             // see them.
             ImGui.TextUnformatted("Waiting for a character — syncing starts a few seconds after you log in.");
         }
-        else if (syncManager.LastStatus is { } status)
+        else if (status == SyncStatusKind.LastUploadOutcome && syncManager.LastStatus is { } lastStatus)
         {
-            DrawLastStatus(status);
+            DrawLastStatus(lastStatus);
         }
         else
         {
@@ -133,7 +178,13 @@ internal sealed partial class MainWindow
         var showSyncing = DateTime.UtcNow < syncFeedbackUntil || syncManager.UploadInFlight;
         var syncButtonPos = ImGui.GetCursorPos();
 
-        if (PrimaryButton(showSyncing ? "###syncNow" : "Sync now###syncNow", new Vector2(syncWidth, 0f))
+        // Read off the same status the card is stating, so the control and the sentence above it
+        // cannot drift apart. PrimaryButton owns its own disabled look, so the face goes flat
+        // rather than merely dimming — see Widgets.PrimaryButton for why that matters.
+        if (PrimaryButton(
+                showSyncing ? "###syncNow" : "Sync now###syncNow",
+                new Vector2(syncWidth, 0f),
+                enabled: !SyncStatusView.ManualSyncWouldDoNothing(status))
             && !showSyncing)
         {
             syncManager.RequestManualSync();
@@ -151,15 +202,9 @@ internal sealed partial class MainWindow
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
         // Both blocks below describe a pipeline that is actually running, so both are hidden when it
-        // is not: while the master switch is off (everything in this card is inert), and while the
-        // sync is halted for something only the user can fix (a bad token, an unclaimed character).
-        // In the halted state the status line above is already telling them what to do, and a
-        // cheerful cadence promise beneath it would simply be false. The source notes hide for a
-        // second reason too: they carry a red "not scanned yet" tone, and a halted card is already
-        // red — leaving them on would flatten "your sync is broken" and "one container is empty"
-        // into the same alarm.
-        var pipelineRunning =
-            configuration.Settings.MasterEnabled && !syncManager.BlockedPendingUserAction;
+        // is not. Derived from the status the card is already stating, so the sentence above and the
+        // promise below cannot disagree.
+        var pipelineRunning = SyncStatusView.CadenceHolds(status);
 
         // Sets the expectation for every collection at once, so no category's own description has
         // to explain the sync mechanism. Phrased by mechanism, not by category name: an acquisition
@@ -168,10 +213,10 @@ internal sealed partial class MainWindow
         // value — the server tunes it — never a hardcoded number.
         //
         // "Most" is load-bearing. Which acquisitions announce themselves is the game's choice, not
-        // ours, and it is not guessable from the outside: cards look like every other unlock, yet
-        // no unlock the plugin can route to them ever arrives, so they land on the sweep.
-        // Promising every unlock in seconds would be a promise this plugin cannot keep for a
-        // collection it already ships.
+        // ours, and it is not guessable from the outside: Triple Triad cards are registered for the
+        // unlock signal exactly as mounts and orchestrion rolls are, and the game simply never
+        // raises it for them — a card reaches the site on the sweep or on Sync now. Promising every
+        // unlock in seconds would be a promise this plugin cannot keep for a collection it ships.
         if (pipelineRunning)
         {
             DrawWrapped(

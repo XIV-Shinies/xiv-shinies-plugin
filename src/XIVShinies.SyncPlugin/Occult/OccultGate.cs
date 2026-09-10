@@ -50,11 +50,20 @@ public static class OccultGate
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The complement of <see cref="CanTrack"/>'s last line, and it lives beside it so the two
-    /// cannot drift: the control must call a state unavailable on exactly the terms the gate
-    /// refuses to run on. A config carrying no <c>occultTracker</c> block counts as off here for
-    /// the same reason it does there — a server that never advertised the endpoint cannot serve
-    /// it, so a toggle reading "on" would describe something that is not happening.
+    /// The complement of every server-side term in <see cref="CanTrack"/>, and it lives beside it
+    /// so the two cannot drift: the control must call a state unavailable on exactly the terms the
+    /// gate refuses to run on. Both of the server's switches count, because both stop the tracker
+    /// — the global pause reaches it through <see cref="UploadGate.CanUpload"/>, and a drawn
+    /// toggle that reads only the feature's own switch would sit ticked and full-contrast claiming
+    /// to share instance state while a paused server accepts nothing. A config carrying no
+    /// <c>occultTracker</c> block counts as off here for the same reason it does there — a server
+    /// that never advertised the endpoint cannot serve it, so a toggle reading "on" would describe
+    /// something that is not happening.
+    /// </para>
+    /// <para>
+    /// The contract has the server fold its global switch into <c>occultTracker.enabled</c>, so a
+    /// compliant backend masks the pause before it is ever read here. This checks anyway: the
+    /// backend URL is user-overridable, and the gate already declines to trust that folding.
     /// </para>
     /// <para>
     /// A config that has NOT arrived is not off. It forbids nothing, exactly as it forbids no
@@ -65,5 +74,22 @@ public static class OccultGate
     /// </remarks>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     public static bool ServerHasSwitchedOff(ConfigResponse? remoteConfig) =>
-        remoteConfig is not null && remoteConfig.OccultTracker is not { Enabled: true };
+        remoteConfig is not null
+        && (!remoteConfig.Enabled || remoteConfig.OccultTracker is not { Enabled: true });
+
+    /// <summary>
+    /// What the tracker's "Off" chip says, or null while the server still permits the tracker.
+    /// </summary>
+    /// <remarks>
+    /// Two different facts wear the same chip, and only one of them is about the tracker: a paused
+    /// server is not sending anything at all, while a switched-off tracker is one feature the
+    /// server declined. Saying the second during the first sends the user looking for a decision
+    /// about the tracker that nobody made. Kept beside the gate, and pure, so the wording cannot
+    /// drift from the state it describes.
+    /// </remarks>
+    public static string? ServerOffText(ConfigResponse? remoteConfig) =>
+        !ServerHasSwitchedOff(remoteConfig) ? null
+            : remoteConfig is { Enabled: false }
+                ? ServerOffCopy.Paused
+                : ServerOffCopy.Feature;
 }

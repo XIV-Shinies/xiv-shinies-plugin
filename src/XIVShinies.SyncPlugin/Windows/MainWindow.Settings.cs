@@ -72,7 +72,7 @@ internal sealed partial class MainWindow
 
             // The live tracker's consent card, below the collections card it is not part of.
             ImGui.Spacing();
-            DrawOccultConsentRow();
+            DrawOccultConsentRow(syncManager.RemoteConfig);
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
@@ -207,8 +207,11 @@ internal sealed partial class MainWindow
             if (history.Count == 0)
             {
                 // Muted: empty-state filler standing in for a table, with nothing in it to read.
+                // Speaks about the log rather than about the sync, because Clear log empties this
+                // while uploads have genuinely happened — and the sync card above is the surface
+                // that answers "has anything been uploaded".
                 ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
-                ImGui.TextDisabled("Nothing has been uploaded yet this session.");
+                ImGui.TextDisabled("No uploads are recorded here yet.");
                 return;
             }
 

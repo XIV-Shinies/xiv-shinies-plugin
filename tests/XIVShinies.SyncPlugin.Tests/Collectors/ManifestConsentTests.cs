@@ -147,7 +147,8 @@ public class ManifestConsentTests
         string key,
         IReadOnlyList<ItemGroupRow>? groups = null,
         bool userEnabled = false,
-        bool serverEnabled = true) => new()
+        bool serverEnabled = true,
+        bool serverGloballyOff = false) => new()
     {
         Key = key,
         DisplayName = $"{key} display",
@@ -155,6 +156,7 @@ public class ManifestConsentTests
         WhatGetsSent = $"what {key} sends",
         UserEnabled = userEnabled,
         ServerEnabled = serverEnabled,
+        ServerGloballyOff = serverGloballyOff,
         UsesItemManifest = groups is not null,
         Groups = groups,
     };
@@ -412,4 +414,67 @@ public class ManifestConsentTests
     {
         Assert.False(ManifestConsent.AnyServerEnabled(Array.Empty<CategorySettingsRow>()));
     }
+
+    // --- Whether the server has paused everything ---------------------------------------------
+
+    [Fact]
+    public void A_globally_off_row_reports_the_server_as_paused()
+    {
+        var rows = new[]
+        {
+            Row("quests", serverEnabled: false, serverGloballyOff: true),
+            Row("mounts", serverEnabled: false, serverGloballyOff: true),
+        };
+
+        Assert.True(ManifestConsent.ServerHasPausedEverything(rows));
+    }
+
+    // The distinction the sync card's status line hangs on: every collection switched off one by
+    // one is not a pause, and must not be reported as one.
+    [Fact]
+    public void Collections_switched_off_individually_are_not_a_pause()
+    {
+        var rows = new[] {Row("quests", serverEnabled: false), Row("mounts", serverEnabled: false)};
+
+        Assert.False(ManifestConsent.ServerHasPausedEverything(rows));
+    }
+
+    [Fact]
+    public void An_empty_list_is_not_a_pause()
+    {
+        Assert.False(ManifestConsent.ServerHasPausedEverything(Array.Empty<CategorySettingsRow>()));
+    }
+
+    // --- Whether anything at all will be uploaded ----------------------------------------------
+
+    // Both halves have to agree before the cadence promise is true, and the user's half is the one
+    // the server knows nothing about.
+    [Fact]
+    public void A_collection_the_user_switched_off_does_not_count_as_running()
+    {
+        var rows = new[] {Row("quests", userEnabled: false, serverEnabled: true)};
+
+        Assert.False(ManifestConsent.AnyEffectivelyOn(rows));
+    }
+
+    [Fact]
+    public void A_collection_the_server_switched_off_does_not_count_as_running()
+    {
+        var rows = new[] {Row("quests", userEnabled: true, serverEnabled: false)};
+
+        Assert.False(ManifestConsent.AnyEffectivelyOn(rows));
+    }
+
+    [Fact]
+    public void One_collection_both_sides_permit_is_enough_to_be_running()
+    {
+        var rows = new[]
+        {
+            Row("quests", userEnabled: false, serverEnabled: true),
+            Row("mounts", userEnabled: true, serverEnabled: true),
+        };
+
+        Assert.True(ManifestConsent.AnyEffectivelyOn(rows));
+    }
+
 }

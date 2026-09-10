@@ -138,20 +138,66 @@ public class OccultGateTests
         Assert.False(OccultGate.ServerHasSwitchedOff(ConfigWithTracker()));
     }
 
-    // The control and the gate must refuse on the same terms. Asserted as a pair rather than
-    // separately, because the failure they guard against is the two drifting apart.
-    [Fact]
-    public void Whenever_the_server_is_reported_off_the_gate_also_refuses()
+    // The control and the gate must refuse on the same terms. Asserted as an equivalence rather
+    // than an implication: the failure they guard against is the two drifting apart, and drift in
+    // the direction that matters — the gate refusing while the control still reads live — is
+    // invisible to a one-way check, which passes by asserting nothing at all on exactly the
+    // configs where the control is wrong.
+    //
+    // A config that has not arrived is deliberately left out: it is the one asymmetric case (the
+    // server has forbidden nothing, but the tracker cannot run yet either), documented on
+    // ServerHasSwitchedOff and pinned by its own test above.
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public void The_control_and_the_gate_refuse_on_exactly_the_same_terms(
+        bool globallyEnabled, bool trackerEnabled)
     {
-        foreach (var config in new[]
-                 {
-                     ConfigWithTracker(trackerEnabled: false),
-                     ConfigWithTracker(globallyEnabled: false),
-                     ConfigWithTracker(),
-                 })
-        {
-            if (OccultGate.ServerHasSwitchedOff(config))
-                Assert.False(OccultGate.CanTrack(OptedIn(), config));
-        }
+        var config = ConfigWithTracker(
+            globallyEnabled: globallyEnabled, trackerEnabled: trackerEnabled);
+
+        Assert.Equal(
+            OccultGate.ServerHasSwitchedOff(config),
+            !OccultGate.CanTrack(OptedIn(), config));
+    }
+
+    // A paused server is not a statement about the tracker, so the chip must not make one — the
+    // same precedence the collection rows follow. Every combination is pinned, because the case
+    // that settles the precedence is the one where BOTH are off: swapping the two arms of the
+    // choice would still satisfy either switch tested alone.
+    [Theory]
+    [InlineData(true, true, null)]
+    [InlineData(true, false, ServerOffCopy.Feature)]
+    [InlineData(false, true, ServerOffCopy.Paused)]
+    [InlineData(false, false, ServerOffCopy.Paused)]
+    public void The_chip_names_the_pause_before_the_feature(
+        bool globallyEnabled, bool trackerEnabled, string? expected)
+    {
+        var config = ConfigWithTracker(
+            globallyEnabled: globallyEnabled, trackerEnabled: trackerEnabled);
+
+        Assert.Equal(expected, OccultGate.ServerOffText(config));
+
+        // The chip's presence and its sentence are one decision: text exactly when switched off.
+        Assert.Equal(OccultGate.ServerHasSwitchedOff(config), OccultGate.ServerOffText(config) is not null);
+    }
+
+    // A server that never advertised the tracker cannot serve it, so the feature's own sentence
+    // applies even though there is no switch to read.
+    [Fact]
+    public void A_config_with_no_tracker_block_says_the_tracker_is_off()
+    {
+        var config = ConfigWithTracker() with { OccultTracker = null };
+
+        Assert.Equal(ServerOffCopy.Feature, OccultGate.ServerOffText(config));
+    }
+
+    [Fact]
+    public void A_permitted_tracker_has_nothing_to_say()
+    {
+        Assert.Null(OccultGate.ServerOffText(ConfigWithTracker()));
+        Assert.Null(OccultGate.ServerOffText(null));
     }
 }

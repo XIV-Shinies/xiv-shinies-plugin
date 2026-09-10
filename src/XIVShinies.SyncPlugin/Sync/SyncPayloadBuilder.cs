@@ -56,7 +56,7 @@ public static class SyncPayloadBuilder
             // Handed straight through. Whichever categories the collectors read, and only those.
             Collections = snapshot.Collections,
 
-            // Which of those lists are complete sets, per the collectors' own claims. Null (an
+            // Which of those lists are complete sets, per each category's declaration. Null (an
             // omitted key, meaning "all partial") when there is nothing to declare.
             CollectionScopes = BuildCollectionScopes(snapshot, trigger),
 

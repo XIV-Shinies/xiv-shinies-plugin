@@ -36,7 +36,8 @@ response fields) and a field-by-field contract conformance audit.
   payload, never sent as an empty list, so no partial upload can erase anything. A category
   the plugin declares it read *completely* is the one case where an absent id carries meaning,
   and even then the meaning is "worth your review", never a deletion: the server unmarks
-  nothing, and the plugin declares completeness only for a collection it enumerated end to end.
+  nothing, and the plugin declares completeness only for a collection whose read answers for
+  every candidate the site's catalog can hold.
 - **Where "local player only" is load-bearing.** Three surfaces touch an API that could have
   exposed another player. The **item scan** reads the player's own storage: their retainers'
   inventories through `ItemFinderModule.RetainerInventories` **values** (the retainer-ID keys are
@@ -53,10 +54,22 @@ response fields) and a field-by-field contract conformance audit.
 - **Consent is code, not UI.** The gates (`UploadGate`, `CollectorGate`) are pure, unit-tested
   classes on the request path. Unchecking a box does not merely hide a button; it makes the
   request impossible.
+- **When the plugin stops talking to the server.** A fresh install talks to nobody at all. Once
+  syncing halts for something only the user can fix, it uploads nothing and reads nothing from the
+  game; whether it still polls `/config` depends on which halt it is. An unclaimed character leaves
+  the poll running on its normal interval — `/config` answers that caller normally, and the poll
+  is the only way a server-side change (a pause lifting, a category returning) reaches a plugin
+  whose Sync now button a pause has disabled. A token-shaped halt stops the poll too, because `/config`
+  is token-scoped and every request would draw the same refusal forever. The poll carries the token
+  and nothing about the character. `Sync/SyncTickPlan.cs` holds the rule and is unit-tested.
 - **The two consents that stand for later.** The live occult tracker's toggle is the one setting
   that defaults ON, defensible only because the ticked box is **visible on the wizard's consent
-  step** before anything can send. `AutoEnableNewFeatures` defaults OFF and is the only route by
-  which a collection is ever switched on without its own tick;
+  step** before anything can send. When the server has the tracker switched off — for the feature
+  alone, or by pausing everything — that box is drawn unticked and disabled, so the wizard cannot
+  offer the choice at all; finishing setup in that state records the answer the user never got to
+  give, and records it as OFF (`PluginSettings.SettleOccultConsent`). The default never survives a
+  consent moment the user was not actually shown. `AutoEnableNewFeatures` defaults OFF and is the
+  only route by which a collection is ever switched on without its own tick;
   `PluginSettings.AutoEnableUnseenCategories` acts on it at load and only there — for an onboarded
   install that ticked the box, only on collections this install has never shown, never on one
   whose scope depends on separately-answered consent groups, and never over a collection the user

@@ -149,6 +149,12 @@ internal sealed partial class MainWindow : Window, IDisposable
     // from. See DrawWizardNav for what rides on the answer.
     private bool wizardShowedGroups;
 
+    // The same question for the live occult tracker's checkbox: was it drawn in a state the user
+    // could act on? It matters more here than for a collection, because this is the one sharing
+    // control that starts ticked — a user who could not reach it has not agreed to it, and
+    // PluginSettings.SettleOccultConsent is what answers on their behalf.
+    private bool wizardCouldOfferOccultToggle;
+
     // The text currently in the token box. ImGui hands us a `ref string` and rewrites it in place,
     // so this must be a field rather than something rebuilt each frame. Seeded from the saved token
     // in the constructor.

@@ -317,6 +317,28 @@ Field constraints:
   upload**, unlike an unknown id. Unlock state is readable anywhere, in or out of content,
   so a full sheet sweep is always possible; see `collectionScopes` below for what declaring
   that sweep complete buys.
+- **Mount and minion id spaces.** `mounts` carries `Mount` sheet row ids and `minions` carries
+  `Companion` row ids, both as the sheet reports them. Unlock state resolves through a bitmask
+  slot, so a row with no slot always answers "not unlocked" — the same shape as the Triple Triad
+  gap below, and worth stating because there it hides real opponents. The two collections reach
+  that bitmask differently, so only one of them has the gap at all.
+  **Minions** have none: the client sizes its minion bitmask to `Companion`'s row count and
+  indexes it by row id, so every row has a bit by construction and nothing is unreportable.
+  (`Companion.Order` is a display ordering and says nothing about unlock state.)
+  **Mounts** do have slots — the mount bitmask is sized by the largest `Mount.Order`, so a row
+  with a negative `Order` has no bit — but nothing a player can own falls in the gap. Measured
+  against the 7.56 sheets, `Mount` has 451 rows of which 78 are slotless and only 13 of those
+  carry a name — every one a cutscene camera
+  (`CAM-I`, `CAM-II`, `CPD-I`), an internal designation (`CHL P-0005` and its siblings) or a
+  duty vehicle (`commandeered magitek armor`, `marid`, `true griffin`,
+  `xenoscaping vacuum suit`, `Red Baron`), none of them present in the game's own Mount Guide —
+  which is what settles it, since a row nobody can obtain answers "not unlocked" whichever field
+  indexes the bitmask.
+  Both categories may therefore declare themselves complete (see `collectionScopes` below).
+  Re-check the mount side after a patch that adds mounts, with `/shinies dumpslots` on a Debug
+  build: a real collectable landing in a slotless row would silently falsify that claim. The
+  minion side needs no re-check for slots, only that the client keeps sizing the bitmask to the
+  sheet's row count.
 - **Triple Triad id spaces.** `tripleTriadCards` carries `TripleTriadCard` sheet row ids
   (1–475, dense; row 0 is a dummy). `tripleTriadNpcs` carries `TripleTriadResident` row ids
   **exactly as the sheet reports them** — they live in the game's event-handler id range
@@ -522,16 +544,23 @@ Lodestone id, so it never auto-creates characters).
   snapshot marker on the character, which lets the site flag a manual mark made *before*
   that moment that the complete list contradicts ("Marked by you — the plugin didn't find
   it"). Nothing is ever auto-unmarked, and other categories' declarations are recorded
-  and ignored. In this plugin the claim originates on the collector's `CollectResult`
-  (`completeEnumeration`), so a new collector opts in without any downstream change.
+  and ignored. In this plugin the claim is declared per collection on
+  `CategoryInfo.EnumeratesCompleteDomain` and carried through to the `CollectResult`.
   A category may only declare `"full"` when its collector can enumerate everything the
   **server's catalog** may contain, not merely everything the game will answer for —
-  `tripleTriadNpcs` withholds the claim for exactly that reason (see the id-space note
-  above). For cards and orchestrion rolls the two agree, and the server has confirmed its
-  catalog is never *ahead* of a live client: it is imported from released-patch sheet data, and the game
+  `tripleTriadNpcs` withholds the claim for exactly that reason (see the **Triple Triad id
+  spaces** note above, which records the opponents the game keeps no beaten flag for). More categories declare `"full"` than the server acts on; a declaration the server
+  records and ignores still has to be honest, because the server may begin acting on it
+  without a plugin change.
+
+  For the Triple Triad card and orchestrion catalogs, the server is known never to be *ahead*
+  of a live client: each is imported from released-patch sheet data, and the game
   forces a client patch before login, so "client behind catalog" is unreachable while
   playing. The reverse skew — catalog behind a just-patched client — is harmless, because
-  an id the catalog does not know is dropped and never becomes markable.
+  an id the catalog does not know is dropped and never becomes markable. That skew analysis is
+  per-catalog, and has been done for these two. The other declaring categories rest on their own
+  argument — for the sheet-backed ones, that the game answers for every sheet row the catalog
+  draws from — recorded beside each `CategoryInfo` in the plugin's collector registry.
 - **`acquiredAt` timestamps.** An `unlock`-triggered upload stamps the upload moment as the
   acquisition time for every category in it. Snapshot uploads (`interval`/`login`/`manual`)
   stamp the upload time for achievements, minions, mounts, and Triple Triad cards, for

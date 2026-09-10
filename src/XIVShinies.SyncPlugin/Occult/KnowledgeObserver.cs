@@ -6,6 +6,7 @@ using Dalamud.Plugin.Services;
 // AtkUnitBase, the game's base window type, whose AtkValues back what the window displays.
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Diagnostics;
 
 namespace XIVShinies.SyncPlugin.Occult;
 
@@ -43,6 +44,13 @@ public sealed unsafe class KnowledgeObserver : IDisposable
 {
     /// <summary>The review window's internal addon name.</summary>
     private const string AddonName = "MKDContentsInfo";
+
+    /// <summary>Which read failures have already been reported in full.</summary>
+    /// <remarks>
+    /// Framework thread only, like the addon callback that drives it. The window refreshes while
+    /// it is open, so a layout this reader cannot parse would otherwise report on every refresh.
+    /// </remarks>
+    private readonly RepeatedFailures readFailures = new();
 
     private readonly IAddonLifecycle addonLifecycle;
     private readonly IClientState clientState;
@@ -151,8 +159,12 @@ public sealed unsafe class KnowledgeObserver : IDisposable
         }
         catch (Exception ex)
         {
-            // An addon callback that throws would escape into Dalamud's UI dispatch.
-            log.Error(ex, "Could not read the knowledge review window.");
+            // An addon callback that throws would escape into Dalamud's UI dispatch. Only the first
+            // sighting earns the full report — see readFailures for why a recurrence does not.
+            if (readFailures.IsFirstSighting(ex))
+                log.Error(ex, "Could not read the knowledge review window.");
+            else
+                log.Debug(ex, "Could not read the knowledge review window again.");
         }
     }
 }

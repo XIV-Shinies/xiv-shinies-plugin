@@ -4,6 +4,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Occult;
 using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -17,6 +18,7 @@ internal sealed partial class MainWindow
     {
         // Frame-scoped: the answer must describe THIS frame's rows, not a frame whose rows are gone.
         wizardShowedGroups = false;
+        wizardCouldOfferOccultToggle = false;
 
         // The branded header carries "Step 1 of 3" — without it the wizard's length is unknowable.
         // The numbers come from the enum's positions, so a new step renumbers this automatically.
@@ -158,10 +160,23 @@ internal sealed partial class MainWindow
         // anything can send.
         // Scoped to the collections on this screen, because the last box below offers to start
         // collections added by later updates switched on.
+        //
+        // The tracker sentence is dropped when the server has the tracker switched off, because
+        // then it is not true: the row below cannot be offered.
+        //
+        // The snapshot both this sentence and the row below decide from; see
+        // DrawOccultConsentRow's remoteConfig parameter for why it is passed rather than re-read.
+        var remoteConfig = syncManager.RemoteConfig;
+        var trackerCanBeOffered = !OccultGate.ServerHasSwitchedOff(remoteConfig);
+
         ImGui.TextWrapped(
             "Choose what to upload. The collections below all start switched off — nothing about " +
-            "your progress is sent unless you turn it on here. Sharing live Occult instance state " +
-            "starts on; untick it below if you would rather not. You can change any of this later.");
+            "your progress is sent unless you turn it on here. " +
+            (trackerCanBeOffered
+                ? "Sharing live Occult instance state starts on; untick it below if you would " +
+                  "rather not. "
+                : string.Empty) +
+            "You can change any of this later.");
 
         Widgets.SectionGap();
 
@@ -171,11 +186,28 @@ internal sealed partial class MainWindow
         // a category able to tick the groups it means, and it is why no consent here can ever be granted
         // for a checkbox the user was not looking at.
         // See DrawCategoryRows's showNewChips for why the wizard badges nothing.
-        DrawCategoryRows(BuildCategoryRows(), showNewChips: false);
+        var wizardRows = BuildCategoryRows();
+
+        // The wizard draws no sync card, so the sentence that card carries would reach nobody
+        // setting up during a pause — and this is the one consent surface a user cannot skip. Said
+        // here instead, above the rows it explains: without it the copy above promises a choice
+        // ("turn it on here") that every greyed checkbox below refuses, with the reason buried in a
+        // chip's hover. No collection loses anything by finishing now: every box here is greyed
+        // while the pause holds, none of them spends its announcement, and they badge themselves
+        // New in the settings once the pause lifts. The tracker is the exception — greyed here
+        // means it is recorded as declined (see PluginSettings.SettleOccultConsent), and the
+        // settings screen is where the user turns it on.
+        if (ManifestConsent.ServerHasPausedEverything(wizardRows))
+        {
+            DrawWarning(ServerOffCopy.Paused);
+            Widgets.SectionGap();
+        }
+
+        DrawCategoryRows(wizardRows, showNewChips: false);
 
         // The live tracker's own consent card, right below the collections it is not part of.
         ImGui.Spacing();
-        DrawOccultConsentRow();
+        DrawOccultConsentRow(remoteConfig);
 
         ImGui.Spacing();
         DrawWizardNav("Finish");
@@ -234,6 +266,11 @@ internal sealed partial class MainWindow
                 // user shown no checkbox chose nothing, and the migration must stay free to speak for
                 // them. See PluginSettings.SettleItemGroupConsent.
                 configuration.Settings.SettleItemGroupConsent(wizardShowedGroups);
+
+                // The same rule for the tracker, and the direction matters more: a collection the
+                // wizard could not offer stays OFF on its own, while the tracker would stay ON.
+                // See PluginSettings.SettleOccultConsent.
+                configuration.Settings.SettleOccultConsent(wizardCouldOfferOccultToggle);
 
                 // Unconditional: Finish has just written OnboardingComplete, and that has to reach disk
                 // whether or not there was any group consent to settle alongside it.

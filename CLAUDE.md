@@ -143,6 +143,26 @@ seeded ones and lights up "(changed)" everywhere, and logging out or switching c
 log. On the shipped **Release** build the argument is not compiled in, so `/shinies seedlog`
 just toggles the window like any other unrecognized argument.
 
+### Auditing the mount unlock slots
+
+`mounts` declares itself a complete list, which is only honest while every `Mount` row the game's
+unlock bitmask cannot answer for is unobtainable padding. A patch that adds mounts could put a real
+collectable in that gap and silently falsify the claim, so `docs/api-contract.md`'s mount and minion
+id-space bullet says to re-check. This is the command that does it:
+
+```
+/shinies dumpslots        # counts, plus every slotless row that carries a name
+```
+
+Debug build only, same setup as the seeding command above, and **log in first** — the unlock check
+answers "not unlocked" for everything at the title screen, so a run there prints a clean-looking
+result that measured nothing. The answer goes to `/xllog`, not the screen. Check each name it
+prints against the game's own Mount Guide: a name that appears there is a real mount the plugin
+cannot report, and `mounts` would have to stop declaring completeness.
+
+Minions need no equivalent audit — their bitmask is sized to the `Companion` sheet's row count and
+indexed by row id, so every row has a bit.
+
 ## Testing philosophy — pure logic vs. game surfaces
 
 Be honest about this split; do not fake it.
@@ -220,16 +240,21 @@ flag, partial uploads are always safe. The plugin must reflect this — send wha
 readable, omit what wasn't (e.g. omit `achievements` when the list isn't loaded rather than
 sending an empty array), and never treat an absent category as "cleared".
 
-The **one** way an absent id gains meaning is a completeness declaration: a collector that
-enumerated its whole domain returns `CollectResult.Ids(ids, completeEnumeration: true)`, and the
-server may then surface a manual mark the complete list contradicts. That argument is a
-*request*, not a guarantee — three gates sit between it and the wire, and any of them withholds
-the claim: an empty list never carries it, `PayloadCaps` retracts it from a category it had to
-truncate, and `SyncPayloadBuilder` withholds every declaration on an `unlock` upload. Nothing is
-ever unmarked — but the claim is made about the user's own data, so it must be true. Claim it
-only when the collector can enumerate everything
+The **one** way an absent id gains meaning is a completeness declaration: a collection whose
+`CategoryInfo` sets `EnumeratesCompleteDomain = true` has its collector pass that through to
+`CollectResult.Ids`, and the server may then surface a manual mark the complete list contradicts.
+That declaration is a *request*, not a guarantee — four gates sit between it and the wire, and any
+of them withholds the claim: an empty list never carries it, `PayloadCaps` retracts it from a
+category it had to truncate, `SyncPayloadBuilder` withholds every declaration on an `unlock`
+upload, and that same builder drops a declaration for a category the payload does not actually
+carry. Nothing is ever unmarked — but the claim is made about the user's own data, so it must be
+true. Claim it only when the collector can enumerate everything
 the **server's catalog** may hold, not merely everything the game will answer for; `false` (the
 default) is always safe. `TripleTriadNpcCollector` is the worked example of declining it.
+
+The declaration lives on `CategoryInfo`, which is Dalamud-free, so `CompletenessDeclarationTests`
+can pin the exact set of declaring categories: it fails both when a category stops declaring and
+when a new one starts. A collection that declares completeness has to be added to that set.
 
 ## Extensibility contract
 
