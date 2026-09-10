@@ -7,6 +7,12 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.8.0 — 2026-09-09
+
+- Report a collection as complete whenever the plugin can read all of it
+- Say when the server has switched something off, instead of going quiet
+- Quiet repeated warnings in the plugin log
+
 ## v0.7.1 — 2026-09-02
 
 - Sync the orchestrion rolls you have unlocked to XIV Shinies
