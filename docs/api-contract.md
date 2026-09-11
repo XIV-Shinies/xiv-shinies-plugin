@@ -232,6 +232,7 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
     },
     "occultRecords": [1, 2, 55], // MKDLore row ids — the complete SeenLore list
     "orchestrionRolls": [1, 113, 580], // Orchestrion sheet row ids — the tunes, not the roll items
+    "tamedBeasts": [{"number": 30}], // bestiary numbers == XBMPet row ids; rank/battlehorn optional
     "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
     "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
   },
@@ -265,6 +266,7 @@ Field constraints:
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
+| `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet for what the deployed server enforces |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
@@ -371,6 +373,31 @@ Field constraints:
   game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
   category declares itself `"full"` (see the `collectionScopes` bullet below). Storage is
   sticky insert-only, and uncataloged ids drop under the catalog-trailing rule.
+- **`tamedBeasts` id space & semantics.** ⚠️ *The deployed server does not implement this category:
+  its key is stripped on arrival under the unknown-key rule, so none of the validation described
+  here is enforced, and this describes what the plugin sends rather than what the server does. The
+  deployed server wins over this doc, as always.* Entries are objects, not bare ids: `{"number": n}`,
+  where `n` is the bestiary number — the `XBMPet` sheet row id (1–50), which is what the
+  server's catalog is keyed on. `rank` (1–25) and `battlehorn` (1–3) are accepted alongside
+  `number` and are omitted while the plugin has no way to read them; the object shape is what
+  lets them appear later without the category changing shape. Numbers outside the catalog are
+  dropped with a warning rather than a 400, but `0` fails validation like every id-list
+  category. **Completeness is decided per upload here as well as per category**, because the
+  bestiary only becomes readable when the player opens it. The plugin learns it from the Master's
+  Bestiary window, which shows part of itself at a time and carries its own "held out of total"
+  tally; the category declares `"full"` only once three things agree — the game's own bestiary
+  size matches the window's total, every one of those numbers has been seen, and the beasts the
+  pages reported as held match the largest held count the window has reported this login session.
+  Both of the window's figures are kept at their session maximum rather than taken from the latest
+  page: pacts are never broken, so a smaller held count can only be a narrower view of the same
+  beasts, and a size that ever came back short — a list still loading — must not revoke a claim
+  already earned. The second agreement is what stops a filtered view from claiming the whole:
+  filtering narrows the tally's held count but leaves the bestiary's real size beside it, so a
+  filtered window can shrink one half of its own check — and it still cannot list the numbers it is
+  hiding, which is what the second agreement counts. The first keeps that honest by refusing a
+  window whose total disagrees with the game's own data at all. Until all three agree it is
+  `"partial"` and an absent number means only "not seen". The server writes `plugin_acquired`
+  monotonically, insert-only, stamping the upload time on first sight.
 
 #### Response (200)
 
@@ -545,7 +572,8 @@ Lodestone id, so it never auto-creates characters).
   that moment that the complete list contradicts ("Marked by you — the plugin didn't find
   it"). Nothing is ever auto-unmarked, and other categories' declarations are recorded
   and ignored. In this plugin the claim is declared per collection on
-  `CategoryInfo.EnumeratesCompleteDomain` and carried through to the `CollectResult`.
+  `CategoryInfo.EnumeratesCompleteDomain` and carried through to the `CollectResult` — except
+  `tamedBeasts`, which additionally requires the pass to have earned it (see its id-space bullet).
   A category may only declare `"full"` when its collector can enumerate everything the
   **server's catalog** may contain, not merely everything the game will answer for —
   `tripleTriadNpcs` withholds the claim for exactly that reason (see the **Triple Triad id

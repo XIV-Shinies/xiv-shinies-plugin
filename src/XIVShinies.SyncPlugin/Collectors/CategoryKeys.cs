@@ -43,4 +43,7 @@ public static class CategoryKeys
 
     /// <summary>Discovered occult record IDs.</summary>
     public const string OccultRecords = "occultRecords";
+
+    /// <summary>Bestiary numbers of the beasts a pact has been forged with.</summary>
+    public const string TamedBeasts = "tamedBeasts";
 }

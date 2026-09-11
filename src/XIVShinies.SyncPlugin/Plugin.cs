@@ -1,10 +1,7 @@
 #if DEBUG
-// DateTimeOffset, StringComparison and StringSplitOptions, for the development-build upload-log
-// seeding command. Guarded with the command itself: a Release compile of this file needs none.
+// DateTimeOffset, StringComparison and StringSplitOptions, for the development-build commands.
+// Guarded with them: a Release compile of this file needs none.
 using System;
-// The sheet row types and Lumina's row constraint, for the development-build slot dump.
-using Lumina.Excel;
-using Lumina.Excel.Sheets;
 #endif
 using System.Collections.Generic;
 // Path.Combine, for locating the mascot image next to the plugin DLL.
@@ -24,8 +21,12 @@ using Dalamud.Plugin.Services;
 // Our HTTPS client and its DTOs. A child namespace is not visible automatically — only enclosing
 // namespaces are searched — so it needs an explicit using.
 using XIVShinies.SyncPlugin.Api;
+// The bestiary capture behind the tamed beasts collection.
+using XIVShinies.SyncPlugin.Beastmaster;
 // The registered fact sources.
 using XIVShinies.SyncPlugin.Collectors;
+// The development-build diagnostics reached from /shinies.
+using XIVShinies.SyncPlugin.Diagnostics;
 // The live occult instance tracker (reader, scheduler, uploader).
 using XIVShinies.SyncPlugin.Occult;
 // The upload orchestrator and its supporting policy classes.
@@ -96,10 +97,20 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
 
     /// <summary>
-    /// Game-window lifecycle events. Used to passively read the knowledge level from the
-    /// occult review window when the user opens it themselves.
+    /// Game-window lifecycle events. Used to passively read the knowledge level from the occult
+    /// review window, and the character's own bestiary from the Master's Bestiary window — each
+    /// only when the user opens it themselves.
     /// </summary>
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
+
+#if DEBUG
+    /// <summary>
+    /// Locates open game windows by name. The development build's addon dump is its only reader,
+    /// so the property is gated with that dump rather than injected into a build that cannot use
+    /// it.
+    /// </summary>
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+#endif
 
     // --- Plugin state --------------------------------------------------------------------
 
@@ -125,6 +136,11 @@ public sealed class Plugin : IDalamudPlugin
     // Passively captures the knowledge level from the occult review window. Subscribes to
     // addon-lifecycle events and to login/logout, so it must be disposed.
     private readonly KnowledgeObserver knowledgeObserver;
+
+    // Passively learns which beasts the character holds, by reading the bestiary window when the
+    // player opens it. Subscribes to that window's addon events and to login/logout, so it must be
+    // disposed.
+    private readonly TamedBeastObserver tamedBeastObserver;
 
     // Listens for login/unlock/interval and drives the uploads. Subscribes to game events, so it
     // must be disposed — and disposed BEFORE the ApiClient it borrows.
@@ -177,8 +193,19 @@ public sealed class Plugin : IDalamudPlugin
             // themselves — see KnowledgeObserver's remarks for the passive-capture design.
             knowledgeObserver = new KnowledgeObserver(AddonLifecycle, ClientState, Log);
 
+            // The bestiary capture, built before the collectors for the same reason: the tamed
+            // beasts collector reads from it. The consent question is handed over as a callback
+            // rather than the settings object, so the observer never has to know how consent is
+            // decided — only whether it stands. It asks about its own collection, so no category is
+            // named here.
+            tamedBeastObserver = new TamedBeastObserver(
+                ClientState, DataManager, AddonLifecycle,
+                key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
+                Log);
+
             // Build the fact sources. Nothing reads the game until something explicitly runs them.
-            collectors = CollectorRegistry.Create(DataManager, UnlockState, Framework, knowledgeObserver);
+            collectors = CollectorRegistry.Create(
+                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver);
 
             // Establishes which collections count as already-seen, so the settings screen can badge
             // a genuinely new one. It runs here rather than with the migrations above because it
@@ -219,6 +246,12 @@ public sealed class Plugin : IDalamudPlugin
             syncManager = new SyncManager(
                 Framework, ClientState, PlayerState, UnlockState, Log,
                 apiClient, Configuration.Settings, Configuration.Save, collectors, version);
+
+            // A beast learned from the bestiary should upload promptly rather than waiting for the
+            // next interval, the way an unlock does. The observer cannot be told about the manager
+            // before the manager exists, so the two are joined here; the event carries the
+            // observer's own category key, so neither side names the collection.
+            tamedBeastObserver.BeastsLearned += syncManager.NotifyCategoryChanged;
 
             // The live occult tracker. Built after the SyncManager because it reads the identity
             // and server config that manager owns; gated by the same consent switches plus its own
@@ -285,9 +318,17 @@ public sealed class Plugin : IDalamudPlugin
 
             windowSystem.RemoveAllWindows();
             mainWindow?.Dispose();
+
+            // The one pairing `?.` cannot express: a null-conditional may not stand on the left of
+            // `-=`, and the handler on the right would still be evaluated against a null manager.
+            // Both halves are therefore checked by hand, in the position Dispose() unsubscribes at.
+            if (tamedBeastObserver is not null && syncManager is not null)
+                tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
+
             occultManager?.Dispose();
             syncManager?.Dispose();
             knowledgeObserver?.Dispose();
+            tamedBeastObserver?.Dispose();
             apiClient?.Dispose();
             throw;
         }
@@ -314,6 +355,10 @@ public sealed class Plugin : IDalamudPlugin
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
 
+        // Before the SyncManager it notifies: once this is detached, nothing can schedule a
+        // further upload through a manager that is about to go away.
+        tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
+
         // Before the SyncManager and ApiClient it borrows, deliberately: this unsubscribes its
         // game events and cancels any occult upload in flight first.
         occultManager.Dispose();
@@ -322,9 +367,10 @@ public sealed class Plugin : IDalamudPlugin
         // upload in flight, so nothing is still reaching for the client when it goes away.
         syncManager.Dispose();
 
-        // After the SyncManager whose collection passes read it: no pass can start once the
+        // After the SyncManager whose collection passes read them: no pass can start once the
         // manager's handlers are detached.
         knowledgeObserver.Dispose();
+        tamedBeastObserver.Dispose();
 
         // Releases the underlying HttpClient and its connection pool.
         apiClient.Dispose();
@@ -344,6 +390,8 @@ public sealed class Plugin : IDalamudPlugin
         //                                   (see MainWindow.OverrideVersionForScreenshots)
         //   /shinies dumpslots            — audit the unlock bitmask's coverage of the Mount
         //                                   sheet; the answer goes to /xllog, not the screen
+        //   /shinies dumpaddon <name>     — print an open game window's image nodes and the
+        //                                   texture each one draws from
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
         {
@@ -372,116 +420,33 @@ public sealed class Plugin : IDalamudPlugin
             // circumstance, not by contract, and a bad read of game memory raises a
             // corrupted-state exception no catch can rescue. RunOnFrameworkThread is a no-op when
             // already there.
-            _ = Framework.RunOnFrameworkThread(DumpUnlockSlots);
+            _ = Framework.RunOnFrameworkThread(
+                () => UnlockSlotAudit.Run(ClientState, DataManager, UnlockState, Log));
+            return;
+        }
+
+        if (words.Length > 0 && words[0].Equals("dumpaddon", StringComparison.OrdinalIgnoreCase))
+        {
+            // The only subcommand that takes an argument, so it is also the only one that can be
+            // typed incompletely. Matching on the verb alone and answering here is what stops a
+            // missing name from falling through to the window toggle, which would look like the
+            // command silently doing nothing.
+            if (words.Length < 2)
+            {
+                Log.Information("Usage: /shinies dumpaddon <AddonName> — the window must be open.");
+                return;
+            }
+
+            // The window name is captured into the closure rather than passed, because
+            // RunOnFrameworkThread takes a parameterless delegate.
+            var addonName = words[1];
+            _ = Framework.RunOnFrameworkThread(() => AddonDump.Run(addonName, GameGui, Log));
             return;
         }
 #endif
 
         mainWindow.Toggle();
     }
-
-#if DEBUG
-    /// <summary>
-    /// Reports how much of the <c>Mount</c> sheet the unlock bitmask can answer for, and names
-    /// every row it cannot.
-    /// </summary>
-    /// <remarks>
-    /// Evidence for whether mounts may honestly declare completeness — see the mount and minion
-    /// id-space bullet in <c>docs/api-contract.md</c> for what the answer means on the wire.
-    /// </remarks>
-    private static void DumpUnlockSlots()
-    {
-        // Without a character the unlock check answers false for every row rather than throwing,
-        // and the sheets read fine — so a title-screen run completes and prints the sentence that
-        // reads as confirmation. Refusing is the only way a reader can tell a run that measured
-        // everything from one that measured nothing.
-        if (!ClientState.IsLoggedIn)
-        {
-            Log.Information(
-                "dumpslots: not logged in. Unlock state answers false for everything, so nothing " +
-                "here would mean anything. Log in and run it again.");
-            return;
-        }
-
-        // Mounts only — the minion bitmask has no slotless case. `Mount.Order` is the bit index a
-        // negative value marks the absence of; see the mount and minion id-space bullet in
-        // docs/api-contract.md for both mechanisms.
-        Report<Mount>(
-            "Mount", row => row.Order < 0, row => row.Singular.ExtractText(),
-            UnlockState.IsMountUnlocked);
-
-        // A local function — a method declared inside another method, visible only there. `static`
-        // on it means it captures nothing from the enclosing scope, so the compiler can rule out an
-        // accidental capture rather than leaving it to a reader to check.
-        static void Report<T>(
-            string label, Func<T, bool> isSlotless, Func<T, string> name, Func<T, bool> isUnlocked)
-            where T : struct, IExcelRow<T>
-        {
-            // GetExcelSheet throws rather than answering null when a sheet is missing or its
-            // columns have moved, which for a diagnostic is the right shape: Dalamud's command
-            // dispatch catches and logs it, and a half-answer would be worse than none.
-            var sheet = DataManager.GetExcelSheet<T>();
-
-            var total = 0;
-            var named = 0;
-            var slotless = 0;
-            var slotlessUnlocked = 0;
-            var slotlessNamed = new List<string>();
-
-            foreach (var row in sheet)
-            {
-                total++;
-
-                var rowName = name(row);
-                var hasName = !string.IsNullOrWhiteSpace(rowName);
-                if (hasName)
-                    named++;
-
-                if (!isSlotless(row))
-                    continue;
-
-                slotless++;
-                if (hasName)
-                    slotlessNamed.Add(rowName);
-
-                // A slotless row that answers "unlocked" would disprove the reading of this dump
-                // outright. The converse proves less than it looks: rows nobody owns answer false
-                // whatever field indexes the bitmask, so a zero here is consistent with the slot
-                // field being the index AND with it not being. Only the game's own collection
-                // window settles whether a named row is obtainable.
-                if (isUnlocked(row))
-                    slotlessUnlocked++;
-            }
-
-            Log.Information(
-                $"{label}: {total} rows, {named} named, {slotless} slotless, " +
-                $"{slotlessNamed.Count} slotless AND named.");
-
-            // The "nothing matched" case gets its own sentence rather than falling into the
-            // reassuring one below. A predicate that cannot match its column produces the same
-            // zero as a sheet with genuinely no slotless rows, and the reassuring wording would
-            // let the first read as the second — which is how an unexamined sheet gets recorded
-            // as evidence.
-            if (slotless == 0)
-            {
-                Log.Information(
-                    $"{label}: no row matched the slotless test, so nothing was examined. Either " +
-                    "the sheet has no such rows or the predicate cannot match this column.");
-                return;
-            }
-
-            Log.Information(
-                slotlessUnlocked == 0
-                    ? $"{label}: no slotless row answers unlocked. Consistent with them being " +
-                      "unreportable; check each name below against the game's collection window."
-                    : $"{label}: {slotlessUnlocked} slotless rows answer UNLOCKED, so the slot field " +
-                      "is not what the unlock check indexes by and this dump proves nothing.");
-
-            if (slotlessNamed.Count > 0)
-                Log.Information($"{label} slotless but named: {string.Join(" | ", slotlessNamed)}");
-        }
-    }
-#endif
 
     // Small helper wired to the installer's open/config buttons above. `Toggle()` comes from the
     // Window base class (show if hidden, hide if shown).

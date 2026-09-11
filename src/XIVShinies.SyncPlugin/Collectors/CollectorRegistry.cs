@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using XIVShinies.SyncPlugin.Beastmaster;
 using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Collectors;
@@ -25,6 +26,7 @@ public static class CollectorRegistry
     private const string CollectionLogSection = "Collection log";
     private const string TripleTriadSection = "Triple Triad";
     private const string ItemsSection = "Items & relics";
+    private const string LimitedJobsSection = "Limited jobs";
 
     /// <summary>
     /// The Occult Crescent section's heading. Public, unlike its siblings, because the wizard's
@@ -253,16 +255,46 @@ public static class CollectorRegistry
         EnumeratesCompleteDomain = true,
     };
 
+    private static readonly CategoryInfo TamedBeasts = new()
+    {
+        Key = CategoryKeys.TamedBeasts,
+        DisplayName = "Tamed beasts",
+        Section = LimitedJobsSection,
+
+        // The job is named here because no other surface names it: the section header groups every
+        // limited job together, the display name is the collection, and the hover text calls the
+        // window by its in-game title. A player who wants to know whether their Beastmaster
+        // progress syncs is looking for that word, and this is the line they read without hovering.
+        WhatGetsSent = "The ID numbers of the beasts you have tamed as Beastmaster.",
+
+        // The one action the player has to take. The bestiary is only readable while it is on
+        // screen, so a player who never opens it sees nothing arrive and would read that as a
+        // broken sync rather than as the single step it is. It is elaboration rather than a kind of
+        // data, so it belongs in the hover instead of the visible line.
+        Details =
+            "This reads your Master's Bestiary whenever you open it, so page through it once with " +
+            "no filter applied and every beast you have tamed is recorded. Nothing is read while " +
+            "the window is closed, and other players are never involved.",
+
+        // The entitlement to claim completeness at all. A collection whose domain is always
+        // readable passes this straight through to the CollectResult; this one's becomes readable
+        // only when the player opens the window, so its collector additionally requires the pass to
+        // have earned it — see TamedBeastLedger.IsComplete for what has to agree.
+        EnumeratesCompleteDomain = true,
+    };
+
     /// <summary>Creates every collector, in the order they will be run.</summary>
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="unlockState">Dalamud's local-player unlock state.</param>
     /// <param name="framework">Used by each collector to verify it is on the framework thread.</param>
     /// <param name="knowledgeObserver">The passive knowledge-level capture the phantom jobs collector reads.</param>
+    /// <param name="tamedBeastObserver">The passive bestiary capture the tamed beasts collector reads.</param>
     public static IReadOnlyList<ICollector> Create(
         IDataManager dataManager,
         IUnlockState unlockState,
         IFramework framework,
-        KnowledgeObserver knowledgeObserver) =>
+        KnowledgeObserver knowledgeObserver,
+        TamedBeastObserver tamedBeastObserver) =>
         new ICollector[]
         {
             // `unlockState.IsQuestCompleted` is a "method group": the method is passed as a value
@@ -329,6 +361,10 @@ public static class CollectorRegistry
             // Discovered occult records — a client-persisted list readable anywhere, so it needs
             // no instance visit and no sheet walk: the saved list IS the seen-set.
             new OccultRecordsCollector(OccultRecords, framework),
+
+            // Reads no game state during a pass: its facts are captured as the player opens their
+            // bestiary, and the pass hands over whatever has accumulated. See TamedBeastCollector.
+            new TamedBeastCollector(TamedBeasts, framework, tamedBeastObserver),
 
             // The odd one out: it reports possession counts rather than IDs, and it only looks at
             // the items the server named in its manifest. The runner treats it like any other.

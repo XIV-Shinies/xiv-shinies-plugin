@@ -224,6 +224,29 @@ public static class SyncFacts
 
         return facts;
     }
+
+    /// <summary>
+    /// Facts for the <c>tamedBeasts</c> category, which carries objects rather than bare IDs.
+    /// </summary>
+    public static JsonNode TamedBeasts(IReadOnlyList<TamedBeast> beasts) =>
+        JsonSerializer.SerializeToNode(beasts, ApiJson.Options)!;
+}
+
+/// <summary>A beast the character has forged a pact with, and what is known about that pact.</summary>
+/// <remarks>
+/// An object rather than a bare id because the contract describes a pact as more than its
+/// existence: a beast also carries a rank and a battlehorn slot. Those are absent while the
+/// plugin has no way to read them, and absent is exactly how the contract expects an unreadable
+/// fact to arrive — so the object shape is what lets them appear later without the category
+/// changing shape underneath the server.
+/// </remarks>
+public sealed record TamedBeast
+{
+    /// <summary>
+    /// The bestiary number, which is the game's <c>XBMPet</c> sheet row id and the id the server's
+    /// catalog is keyed on.
+    /// </summary>
+    public required uint Number { get; init; }
 }
 
 /// <summary>How many of a manifest item the character possesses.</summary>

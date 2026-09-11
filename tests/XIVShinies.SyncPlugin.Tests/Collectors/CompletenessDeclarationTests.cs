@@ -37,6 +37,7 @@ public class CompletenessDeclarationTests
         CategoryKeys.OccultRecords,
         CategoryKeys.OrchestrionRolls,
         CategoryKeys.Quests,
+        CategoryKeys.TamedBeasts,
         CategoryKeys.TripleTriadCards,
     };
 
@@ -96,7 +97,7 @@ public class CompletenessDeclarationTests
     /// <remarks>
     /// <c>tripleTriadNpcs</c> withholds for the reason recorded beside its
     /// <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>. The other three never reach
-    /// the id-list factory at all, which is why they cannot declare — see
+    /// a factory that takes the claim at all, which is why they cannot declare — see
     /// <see cref="CollectResult.CompleteEnumeration"/>.
     /// </remarks>
     [Theory]
