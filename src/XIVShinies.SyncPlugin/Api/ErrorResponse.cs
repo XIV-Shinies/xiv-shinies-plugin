@@ -9,15 +9,28 @@ namespace XIVShinies.SyncPlugin.Api;
 public sealed record ErrorResponse
 {
     /// <summary>
-    /// A stable machine-readable code: <c>invalid_token</c>, <c>character_not_claimed</c>,
-    /// <c>invalid_payload</c>, <c>payload_too_large</c>, <c>rate_limited</c>, <c>sync_disabled</c>.
+    /// A stable machine-readable code: <c>invalid_token</c>, <c>invalid_payload</c>,
+    /// <c>payload_too_large</c>, <c>rate_limited</c>, <c>sync_disabled</c>,
+    /// <c>tracker_unavailable</c>, or one of the four character refusals a 403 carries
+    /// (<c>character_not_claimed</c>, <c>character_not_verified</c>, <c>character_ambiguous</c>,
+    /// <c>character_bound_elsewhere</c>).
     /// </summary>
+    /// <remarks>
+    /// Server-supplied, so it is never displayed or logged. On a 403 it is compared exactly against
+    /// the four character-refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>); on any
+    /// other status it is unused.
+    /// </remarks>
     public required string Error { get; init; }
 
-    /// <summary>On a 403, the character name echoed back so the UI can name it.</summary>
+    /// <summary>On a 403, the upload's character name echoed back.</summary>
+    /// <remarks>
+    /// Parsed but not drawn; <c>Windows.CharacterRefusalCopy</c> explains why the window names the
+    /// character from the local identity instead.
+    /// </remarks>
     public string? Name { get; init; }
 
-    /// <summary>On a 403, the home world echoed back so the UI can name it.</summary>
+    /// <summary>On a 403, the upload's home world echoed back; parsed but not drawn, like
+    /// <see cref="Name"/>.</summary>
     public string? World { get; init; }
 
     /// <summary>On a 400, the flattened validation failures.</summary>

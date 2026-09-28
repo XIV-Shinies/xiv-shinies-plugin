@@ -95,27 +95,30 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.BlockedPendingUserAction)
         {
-            // The 403 case names the character when one is loaded, because "claim Some Name" is
-            // actionable and "your token may have been revoked, or…" is a shrug. The server echoes
-            // name and world for exactly this purpose; the local identity is the same information.
+            // Switches on the status that raised this halt (SyncManager.HaltStatus), which can
+            // differ from the last upload's outcome.
             //
-            // NotConfigured lands here too — RetryPolicy.RequiresUserAction counts it — and the
-            // action it needs is on this machine, not on the website, so the generic sentence
-            // would send the user to fix a token they have no problem with. The wording comes from
-            // BackendUrl, as it does for the status line below.
-            var claimTarget = syncManager.LastStatus switch
+            // Three kinds of halt, three kinds of fix:
+            // - A character refusal (one of the four 403s) names the character when one is loaded,
+            //   because "verify Some Name" is actionable. CharacterRefusalCopy holds the sentences.
+            // - NotConfigured is fixed on this machine, not on the website, so its wording comes
+            //   from BackendUrl, as it does for the status line below.
+            // - Everything else is the token: the only other status that raises a halt.
+            var fix = syncManager.HaltStatus switch
             {
                 ApiStatus.NotConfigured => BackendUrl.DescribeUnusableSetting(
                     configuration.Settings.BaseUrl, configuration.Settings.CustomBackendAcknowledged),
 
-                ApiStatus.CharacterNotClaimed when syncManager.CharacterName is { } name =>
-                    $"Claim {name} on {BackendHost()}, then press Sync now.",
+                // `{ } refused` matches any non-null status and names it `refused`. The `when`
+                // guard then keeps this arm only if the copy class has a sentence for that status,
+                // and `is { } sentence` names the sentence so the arm can return it.
+                { } refused when CharacterRefusalSentence(refused) is { } sentence => sentence,
 
-                _ => "Your token may have been revoked, or this character is not claimed on the " +
-                     "website. Fix it there, then press Sync now.",
+                _ => $"Your token was rejected. Generate a new one on {BackendHost()}, paste it " +
+                     "under Account, then press Sync now.",
             };
 
-            DrawWarning($"Syncing has stopped. {claimTarget}");
+            DrawWarning($"Syncing has stopped. {fix}");
         }
         else if (status == SyncStatusKind.NothingSwitchedOnByUser)
         {
@@ -430,6 +433,19 @@ internal sealed partial class MainWindow
             _ => FontAwesomeIcon.QuestionCircle,
         };
 
+    /// <summary>
+    /// The sentence for a character refusal, naming the loaded character and the configured host,
+    /// or null when <paramref name="status"/> is not one of the four 403 refusals.
+    /// </summary>
+    private string? CharacterRefusalSentence(ApiStatus status)
+    {
+        // One read of the identity, so the name and the home world always come from the same
+        // character even if a logout lands mid-frame.
+        var character = syncManager.Identity;
+
+        return CharacterRefusalCopy.For(status, character?.Name, character?.HomeWorld, BackendHost());
+    }
+
     /// <summary>Renders the last upload's outcome. Switches on a status, never on a category.</summary>
     private void DrawLastStatus(ApiStatus status)
     {
@@ -439,11 +455,11 @@ internal sealed partial class MainWindow
                 ImGui.TextColored(Widgets.SuccessColor, "Your collections are up to date.");
                 break;
 
-            case ApiStatus.CharacterNotClaimed:
-                DrawWarning(
-                    syncManager.CharacterName is { } name
-                        ? $"Claim {name} on {BackendHost()} before it can sync."
-                        : $"Claim this character on {BackendHost()} before it can sync.");
+            // The four character refusals. `case var refused when …` matches any status, and the
+            // `when` guard keeps the case only when CharacterRefusalCopy has a sentence for it;
+            // CharacterRefusalCopyTests pins that set to exactly ApiStatusMap.IsCharacterRefusal.
+            case var refused when CharacterRefusalSentence(refused) is { } sentence:
+                DrawWarning(sentence);
                 break;
 
             case ApiStatus.InvalidToken:

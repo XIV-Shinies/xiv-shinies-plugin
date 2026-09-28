@@ -17,7 +17,8 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// <b>The byte representation below is permanent.</b> The server binds a character to this digest
 /// on first upload and resolves it by digest thereafter — that is what lets a character survive a
 /// rename or a world transfer. Change the byte order, the hash algorithm, or the casing, and every
-/// already-bound character stops resolving and begins failing with <c>403 character_not_claimed</c>.
+/// already-bound character stops resolving: the new digest is unknown and the claim is still bound
+/// to the old one, so every upload is refused with a 403.
 /// Golden vectors in the tests pin all three; a failure there means the change is wrong.
 /// </para>
 /// </remarks>

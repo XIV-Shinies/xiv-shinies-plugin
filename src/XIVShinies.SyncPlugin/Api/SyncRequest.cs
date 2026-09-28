@@ -35,7 +35,7 @@ public sealed record SyncRequest
     /// <summary>SHA-256 of the character's ContentId, lowercase hex. The raw id never travels.</summary>
     public required string CharacterContentIdHash { get; init; }
 
-    /// <summary>Used only for first-upload binding and to render a friendly 403.</summary>
+    /// <summary>Sent for the server's first-upload binding; a 403 echoes it back.</summary>
     public required string CharacterName { get; init; }
 
     /// <summary>The character's home world name.</summary>

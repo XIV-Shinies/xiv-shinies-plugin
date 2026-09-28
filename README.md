@@ -23,8 +23,9 @@ what you already earned.
 
 The plugin reads completion facts directly from your own game client and uploads them over
 HTTPS to XIV Shinies, which does all the derivation server-side. A plugin upload is
-first-party evidence from inside the game client, so it verifies character ownership and
-outranks a Lodestone scrape. The plugin itself is deliberately a **dumb fact-reader**: it
+first-party evidence from inside the game client, so it outranks a Lodestone scrape. It does
+not prove ownership: uploads are accepted only for a character you have verified on the site
+with the Lodestone bio code. The plugin itself is deliberately a **dumb fact-reader**: it
 sends only raw facts the game knows and never computes site concepts like relic steps — which
 keeps it stable as the site grows new collections and rules.
 
@@ -71,8 +72,8 @@ did not find, so you can review it — nothing is ever unmarked for you.
 
 Your character is identified by a **one-way fingerprint computed on your machine** — the raw
 ContentId never leaves the game process, and never lands in logs or config. Your character's
-name and home world are sent so the site can match the character you already claimed. Nothing
-about other players is ever read or sent.
+name and home world are sent so the site can match the character you already claimed and
+verified there (with the Lodestone bio code). Nothing about other players is ever read or sent.
 
 The exact wire format is documented in [`docs/api-contract.md`](docs/api-contract.md); the
 deployed XIV Shinies server is its authority. How each Dalamud rule is satisfied is documented

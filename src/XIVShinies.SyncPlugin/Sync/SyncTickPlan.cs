@@ -1,3 +1,5 @@
+using XIVShinies.SyncPlugin.Api;
+
 namespace XIVShinies.SyncPlugin.Sync;
 
 /// <summary>How much of a frame's sync work may run.</summary>
@@ -26,12 +28,27 @@ public enum TickAction
 /// </para>
 /// <para>
 /// Nothing here lifts a halt — only the user does, by fixing what caused it. The poll that survives
-/// one is how a change on the server's side reaches the plugin meanwhile. Whether it survives is
-/// decided by the caller, since it depends on which refusal raised the halt.
+/// one is how a change on the server's side reaches the plugin meanwhile. Whether it survives
+/// depends on which refusal raised the halt; <see cref="PollSurvivesHalt"/> is that rule.
 /// </para>
 /// </remarks>
 public static class SyncTickPlan
 {
+    /// <summary>
+    /// Whether a config poll is still worth making under the halt raised by
+    /// <paramref name="haltStatus"/>.
+    /// </summary>
+    /// <param name="haltStatus">The status that raised the halt, or null when there is none.</param>
+    /// <remarks>
+    /// <c>/config</c> answers 200 or 401 and never 403. So a character refusal (any of the four
+    /// 403s) leaves the poll working, and it is how the plugin learns a server pause has lifted
+    /// while the player sorts out the claim. A token-shaped halt would draw the same 401 on every
+    /// poll, and a backend the client refused to use sends nothing at all, so neither is worth
+    /// polling through.
+    /// </remarks>
+    public static bool PollSurvivesHalt(ApiStatus? haltStatus) =>
+        haltStatus is { } status && ApiStatusMap.IsCharacterRefusal(status);
+
     /// <summary>Decides how much of this frame's work may run.</summary>
     /// <param name="canContactServer">
     /// Whether consent, onboarding and a usable token all permit any request at all. False on a

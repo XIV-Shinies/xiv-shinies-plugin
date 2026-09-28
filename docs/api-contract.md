@@ -23,9 +23,10 @@ ship without a plugin update.
 
 Two principles govern every upload:
 
-- **First-party evidence.** A plugin upload comes from inside the game client, so it both
-  verifies character ownership and outranks a Lodestone scrape; it cannot be erased by a
-  manual unmark on the website.
+- **First-party evidence.** A plugin upload comes from inside the game client, so it outranks
+  a Lodestone scrape and cannot be erased by a manual unmark on the website. It does not prove
+  ownership: only a character already verified on the website accepts uploads (see
+  [Character binding](#character-binding)).
 - **Monotonic writes.** Collections only grow. An ID absent from a snapshot means "not read
   this time" (list not loaded, category disabled) — never "lost" — so a partial upload is
   always safe. Acquisition flags are set, never auto-unset, and rows are never deleted by a
@@ -79,7 +80,7 @@ every character that user has **claimed** (favorites are invisible — see
       "id": "12345678",        // Lodestone id — a BigInt, so it travels as a string
       "name": "Some Name",
       "pluginLinked": true,    // a ContentId hash is already bound to this character
-      "verified": true,        // the claim is verified (bio code or plugin upload)
+      "verified": true,        // the claim is verified by the Lodestone bio code
       "world": "Excalibur"
     }
   ],
@@ -440,7 +441,7 @@ them.
 | **200** | see above                                                       | Applied.                                                                                                             |
 | **400** | `{"error": "invalid_payload", "issues": {…}}`                   | Validation failed; `issues` is `{fieldErrors, formErrors}`. A non-JSON body gets the same shape with a `formErrors` message. Don't retry unchanged. |
 | **401** | `{"error": "invalid_token"}` + `WWW-Authenticate: Bearer`       | Token missing/malformed/unknown. Stop; user must generate a new token.                                               |
-| **403** | `{"error": "character_not_claimed", "name": "…", "world": "…"}` | Character resolution failed. Render "claim `<name>` @ `<world>` on the website first". Don't retry until claimed.     |
+| **403** | `{"error": "<code>", "name": "…", "world": "…"}`               | Character resolution failed; `<code>` says why (see [403 recovery](#character-binding)). Render the fix for that code. Don't retry until the user acts. |
 | **405** | —                                                               | Wrong method (the route accepts only POST).                                                                          |
 | **413** | `{"error": "payload_too_large"}`                                | `Content-Length` missing, non-numeric, or over the cap. Don't retry unchanged; split the upload.                    |
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
@@ -532,29 +533,39 @@ ContentId (a ulong) never leaves the game client. The server treats the hash as 
 stable identifier; the only requirement is that the plugin computes the **same lowercase-hex
 digest every session** (fix one byte representation of the ulong and never change it).
 
+Ownership is proven only by the **Lodestone bio code** on the website. An upload writes to and
+binds only a character the token's user has **verified**, and an upload never verifies a claim.
+
 Resolution:
 
 1. **Hash first.** A hash already bound to a character resolves directly — it is the durable
    identity, so it **survives renames and world transfers** even when the payload's
-   name/world have drifted. The token's user must hold a claim on that character, else 403.
+   name/world have drifted. The token's user must hold a verified claim on that character,
+   else 403.
 2. **First-upload binding.** An unknown hash falls back to matching `characterName` +
-   `homeWorld` (both case-insensitive) against the token owner's **claimed** characters.
+   `homeWorld` (both case-insensitive) against the token owner's **verified, unbound** claims.
    Exactly one candidate → the hash is bound to that character (`bound: true` in the
-   response). Zero candidates and ambiguous matches both return the opaque 403 — the server
-   never guesses, because binding the wrong character would write another character's data
-   under this hash.
-3. **Verification side-effect.** The first bound upload promotes the claim to verified: an
-   in-game upload carrying the account's token is strong ownership evidence, so plugin users
-   skip website bio verification.
+   response). Anything else returns a 403 naming why — the server never guesses, because
+   binding the wrong character would write another character's data under this hash.
 
 **Claims vs. favorites.** Only a *claimed* character is visible to the plugin surface; a
 favorite (someone's non-claimed follow) is invisible — `/me` never lists it and the binder
-never matches it.
+never matches it. `/me` lists pending claims too, with `verified: false`.
 
-**403 recovery.** `character_not_claimed` deliberately does not distinguish "no such
-character" from "not yours". The fix is always the same: **claim the character on the website
-first** — the claim flow creates the character record, which the plugin cannot (it has no
-Lodestone id, so it never auto-creates characters).
+**403 recovery.** Every 403 on `POST /sync` and `POST /occult/instance-state` has the same
+shape, `{"error": "<code>", "name": "<payload characterName>", "world": "<payload homeWorld>"}`,
+and `<code>` is one of four. None heals on retry; each needs the user to act.
+
+| `error` | Meaning | What the plugin tells the player |
+| --- | --- | --- |
+| `character_not_claimed` | No claim matches, or the hash is bound to a character that is not theirs. Deliberately does not distinguish "no such character" from "not yours". | Claim the character on the website, then sync. The claim flow creates the character record, which the plugin cannot (it has no Lodestone id, so it never auto-creates characters). |
+| `character_not_verified` | Their claim on this character is still pending. | Finish verification on the website (the Lodestone bio code), then sync. |
+| `character_ambiguous` | Two or more of their unbound claims share this name and world. | Remove all but one of those claims on the website, then sync. |
+| `character_bound_elsewhere` | Every claim of theirs with this name and world is bound to a different game character. | The character is linked to a different game character; ask for help in Discord to relink it, then sync. |
+
+A 403 code the plugin does not recognize, or a 403 without a readable body, gets the
+`character_not_claimed` wording: claiming the character is the fix that applies to the most
+players.
 
 ## Behavior the plugin author should know
 

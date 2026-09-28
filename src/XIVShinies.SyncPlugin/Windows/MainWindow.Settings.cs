@@ -100,8 +100,8 @@ internal sealed partial class MainWindow
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
                 $"Your character's name and home world are sent so {BackendHost()} can match the " +
-                "character you already claimed. Nothing is uploaded unless syncing is switched " +
-                "on, and you choose which collections to include.");
+                "character you already claimed and verified. Nothing is uploaded unless syncing " +
+                "is switched on, and you choose which collections to include.");
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

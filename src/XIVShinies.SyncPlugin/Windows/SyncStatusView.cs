@@ -52,8 +52,8 @@ public enum SyncStatusKind
 /// <para>
 /// Each state overrides the ones below it because stating a lower one while a higher one holds
 /// would be false or useless: reporting the last upload's "will try again" is a lie while the
-/// master switch is off, and telling a user to claim their character does not restart anything
-/// while the server is paused.
+/// master switch is off, and telling a user to fix their character's claim does not restart
+/// anything while the server is paused.
 /// </para>
 /// </remarks>
 public static class SyncStatusView

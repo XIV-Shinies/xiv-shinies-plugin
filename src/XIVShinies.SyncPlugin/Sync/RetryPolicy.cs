@@ -63,8 +63,8 @@ public static class RetryPolicy
     }
 
     /// <summary>
-    /// True when syncing must stop until the user does something — paste a fresh token, claim the
-    /// character on the website, or fix the settings.
+    /// True when syncing must stop until the user does something — paste a fresh token, sort out
+    /// the character's claim on the website, or fix the settings.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -73,14 +73,13 @@ public static class RetryPolicy
     /// acts.
     /// </para>
     /// <para>
-    /// The config poll keeps going through one of them — an unclaimed character — because
-    /// <c>/config</c> answers that caller normally, and the poll is how the plugin learns a
-    /// server-side state has changed that the user cannot see from inside the game. It stops for
-    /// the token-shaped ones, which <c>/config</c> refuses exactly as the upload did.
+    /// Whether the config poll keeps going through one of these halts depends on which status
+    /// raised it; <see cref="SyncTickPlan.PollSurvivesHalt"/> is that rule.
     /// </para>
     /// </remarks>
+    // `||` joins two whole conditions; the `or` after `is` joins the values of one pattern (see
+    // ApiStatusMap.IsTerminal for the longer note).
     public static bool RequiresUserAction(ApiStatus status) =>
-        status is ApiStatus.InvalidToken
-            or ApiStatus.CharacterNotClaimed
-            or ApiStatus.NotConfigured;
+        ApiStatusMap.IsCharacterRefusal(status)
+            || status is ApiStatus.InvalidToken or ApiStatus.NotConfigured;
 }

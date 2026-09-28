@@ -221,6 +221,9 @@ public sealed class ApiClient : IDisposable
                 .ConfigureAwait(false);
 
             var rawCode = (int)response.StatusCode;
+
+            // What the number alone says. It decides only whether this is a success; a failure's
+            // final status is worked out below, once its error body has been read.
             var status = ApiStatusMap.FromHttpStatusCode(rawCode);
 
             // The backend URL is user-overridable, so a hostile or broken backend is in scope: a
@@ -246,10 +249,15 @@ public sealed class ApiClient : IDisposable
                     : new ApiResponse<T> { Status = ApiStatus.Ok, Value = value, HttpStatusCode = rawCode };
             }
 
+            // The error body is read before the status is settled, because a 403's `error` code is
+            // what says which of the four character refusals it is. `?.` yields null when no body
+            // parsed; on a 403 the mapping reads a null code as the not-claimed case.
+            var error = Deserialize<ErrorResponse>(body);
+
             return new ApiResponse<T>
             {
-                Status = status,
-                Error = Deserialize<ErrorResponse>(body),
+                Status = ApiStatusMap.FromHttpStatusCode(rawCode, error?.Error),
+                Error = error,
                 RetryAfter = ReadRetryAfter(response),
                 HttpStatusCode = rawCode,
             };

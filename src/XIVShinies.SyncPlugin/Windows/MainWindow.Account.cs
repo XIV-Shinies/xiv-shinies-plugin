@@ -189,8 +189,8 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Lists the characters this account has claimed, so the user can see the plugin will have
-    /// somewhere to put the data before they finish setup.
+    /// Lists the characters this account has claimed and marks the ones not yet verified, so the
+    /// user can see whether the plugin will have somewhere to put the data before they finish setup.
     /// </summary>
     private void DrawClaimedCharacters()
     {
@@ -203,8 +203,8 @@ internal sealed partial class MainWindow
         if (characters.Count == 0)
         {
             DrawWarning(
-                "This account has not claimed any characters yet. Claim your character on " +
-                $"{BackendHost()} first, or uploads will be refused.");
+                "This account has not claimed any characters yet. Claim and verify your character " +
+                $"on {BackendHost()} first, or uploads will be refused.");
             return;
         }
 
@@ -218,6 +218,10 @@ internal sealed partial class MainWindow
         // only ever cuts a hostile backend.
         const int MaxDrawnCharacters = 32;
         var drawn = 0;
+
+        // Whether any drawn character is verified. Counted over the drawn rows only, so the loop's
+        // ceiling bounds this too.
+        var anyVerified = false;
 
         foreach (var character in characters)
         {
@@ -241,6 +245,30 @@ internal sealed partial class MainWindow
             // values on an honest backend, and the backend is user-overridable.
             ImGui.TextUnformatted(
                 $"{ServerText.SingleLine(character.Name)} ({ServerText.SingleLine(character.World)})");
+
+            // A claim still waiting for its Lodestone bio code is listed, since it is the
+            // account's, but uploads for it are refused until it is verified. Muted rather than
+            // red: another listed character may be the one this player syncs, and the sync card
+            // says what to do if an upload is refused.
+            if (character.Verified)
+            {
+                anyVerified = true;
+            }
+            else
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled("not verified yet");
+            }
+        }
+
+        // With no verified claim at all, the first upload is certain to be refused, so this one
+        // case is said in red, like the empty list above.
+        if (drawn > 0 && !anyVerified)
+        {
+            ImGui.Spacing();
+            DrawWarning(
+                "None of these characters is verified yet. Add the verification code to your " +
+                $"Lodestone bio on {BackendHost()}, or uploads will be refused.");
         }
 
         // The list is a snapshot from the last probe, and nothing about it says so — a user who
@@ -252,7 +280,7 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
         DrawWrapped(
-            $"Claimed a new character on {BackendHost()}? Press Verify to refresh this list.",
+            $"Claimed or verified a character on {BackendHost()}? Press Verify to refresh this list.",
             ImGuiCol.Text);
     }
 

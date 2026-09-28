@@ -513,6 +513,9 @@ public static class UploadLogText
     {
         ApiStatus.Ok => "accepted",
         ApiStatus.CharacterNotClaimed => "refused — character not claimed",
+        ApiStatus.CharacterNotVerified => "refused — character not verified",
+        ApiStatus.CharacterAmbiguous => "refused — character claimed more than once",
+        ApiStatus.CharacterBoundElsewhere => "refused — character linked elsewhere",
         ApiStatus.InvalidToken => "refused — token rejected",
         ApiStatus.RateLimited => "deferred — rate limited",
         // The same state ServerOffCopy.Paused names, in the shape this column needs: an outcome

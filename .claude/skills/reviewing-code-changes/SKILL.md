@@ -137,7 +137,7 @@ Output: the full census table (every site, no sampling) + Issues by severity.
 **Focus:**
 - Correctness: logic bugs, edge cases, off-by-one, **null handling** (nullable reference types), collection/enumeration mistakes.
 - Async: no sync-over-async (`.Result`/`.Wait()`), correct `await`, cancellation, HTTP error/timeout handling.
-- **Contract conformance:** every request/response DTO matches `docs/api-contract.md` **exactly** — field names, JSON casing, types, constraints (e.g. `characterContentIdHash` is 64 lowercase hex; id lists are positive ints; `items` shape). Status-code handling matches the contract (401 stop, 403 claim-hint, 413/429/503 backoff, 5xx retry).
+- **Contract conformance:** every request/response DTO matches `docs/api-contract.md` **exactly** — field names, JSON casing, types, constraints (e.g. `characterContentIdHash` is 64 lowercase hex; id lists are positive ints; `items` shape). Status-code handling matches the contract (401 stop; 403 halt with the fix for its character-refusal code, an unknown code falling back to not-claimed; 413/429/503 backoff; 5xx retry).
 - **Monotonic writes:** omit an unreadable category (don't send an empty array); never treat absence as "cleared".
 - Exceptions: no swallowed errors that hide failures; no crashes that would take down the game.
 

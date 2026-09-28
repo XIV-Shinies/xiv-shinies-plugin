@@ -331,6 +331,9 @@ public class UploadLogTests
     [Theory]
     [InlineData(ApiStatus.Ok, "accepted")]
     [InlineData(ApiStatus.CharacterNotClaimed, "refused — character not claimed")]
+    [InlineData(ApiStatus.CharacterNotVerified, "refused — character not verified")]
+    [InlineData(ApiStatus.CharacterAmbiguous, "refused — character claimed more than once")]
+    [InlineData(ApiStatus.CharacterBoundElsewhere, "refused — character linked elsewhere")]
     [InlineData(ApiStatus.InvalidToken, "refused — token rejected")]
     [InlineData(ApiStatus.RateLimited, "deferred — rate limited")]
     [InlineData(ApiStatus.SyncDisabled, "deferred — syncing paused by the server")]
@@ -339,6 +342,20 @@ public class UploadLogTests
     public void Statuses_read_as_outcomes(ApiStatus status, string expected)
     {
         Assert.Equal(expected, UploadLogText.StatusText(status));
+    }
+
+    // Every status, not a hand-picked few: exactly the character refusals read as a refusal about
+    // the character, so a refusal added to the status map without its own phrase fails here.
+    [Fact]
+    public void Exactly_the_character_refusals_read_as_refused_for_the_character()
+    {
+        // Enum.GetValues<T>() lists every member of the enum, like Object.values on a TS enum.
+        foreach (var status in Enum.GetValues<ApiStatus>())
+        {
+            Assert.Equal(
+                ApiStatusMap.IsCharacterRefusal(status),
+                UploadLogText.StatusText(status).StartsWith("refused — character", StringComparison.Ordinal));
+        }
     }
 
     // Accepted is the only green outcome; everything else needs the user's eye.
@@ -360,6 +377,9 @@ public class UploadLogTests
     [InlineData(ApiStatus.Ok, false)]
     [InlineData(ApiStatus.InvalidToken, false)]
     [InlineData(ApiStatus.CharacterNotClaimed, false)]
+    [InlineData(ApiStatus.CharacterNotVerified, false)]
+    [InlineData(ApiStatus.CharacterAmbiguous, false)]
+    [InlineData(ApiStatus.CharacterBoundElsewhere, false)]
     public void Deferrals_are_the_outcomes_that_heal_on_their_own(ApiStatus status, bool expected)
     {
         Assert.Equal(expected, UploadLogText.IsDeferral(status));

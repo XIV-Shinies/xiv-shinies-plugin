@@ -13,6 +13,9 @@ public class RetryPolicyTests
     [Theory]
     [InlineData(ApiStatus.InvalidToken)]
     [InlineData(ApiStatus.CharacterNotClaimed)]
+    [InlineData(ApiStatus.CharacterNotVerified)]
+    [InlineData(ApiStatus.CharacterAmbiguous)]
+    [InlineData(ApiStatus.CharacterBoundElsewhere)]
     [InlineData(ApiStatus.InvalidPayload)]
     [InlineData(ApiStatus.PayloadTooLarge)]
     [InlineData(ApiStatus.MethodNotAllowed)]
@@ -100,6 +103,11 @@ public class RetryPolicyTests
         Assert.True(RetryPolicy.RequiresUserAction(ApiStatus.InvalidToken));
         Assert.True(RetryPolicy.RequiresUserAction(ApiStatus.CharacterNotClaimed));
         Assert.True(RetryPolicy.RequiresUserAction(ApiStatus.NotConfigured));
+
+        // Every character refusal needs the player to act; waiting never fixes one.
+        Assert.True(RetryPolicy.RequiresUserAction(ApiStatus.CharacterNotVerified));
+        Assert.True(RetryPolicy.RequiresUserAction(ApiStatus.CharacterAmbiguous));
+        Assert.True(RetryPolicy.RequiresUserAction(ApiStatus.CharacterBoundElsewhere));
 
         Assert.False(RetryPolicy.RequiresUserAction(ApiStatus.ServerError));
         Assert.False(RetryPolicy.RequiresUserAction(ApiStatus.RateLimited));

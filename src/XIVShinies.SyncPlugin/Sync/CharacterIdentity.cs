@@ -8,8 +8,8 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// <remarks>
 /// Note this holds the <b>hash</b>, never the raw ContentId. Hashing happens at the edge, the moment
 /// the id is read from the game, so the raw value never reaches the payload, the log, or the disk.
-/// The name and world are carried only for the server's first-upload binding and to render a
-/// friendly "claim this character" message; the hash is the durable identity, which is what lets a
+/// The name and world are carried only for the server's first-upload binding and to name the
+/// character when an upload is refused; the hash is the durable identity, which is what lets a
 /// character survive a rename or a world transfer.
 /// </remarks>
 // `required` forces the caller to set the property in the object initializer; the compiler refuses to

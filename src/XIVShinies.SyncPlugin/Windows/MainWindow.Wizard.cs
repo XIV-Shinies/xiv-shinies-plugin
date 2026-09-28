@@ -117,8 +117,8 @@ internal sealed partial class MainWindow
         DrawPrivacyCard(
             "Your character is identified by a one-way fingerprint computed on this machine. " +
             $"Your character's name and home world are sent so {BackendHost()} can match the " +
-            "character you already claimed. Nothing is uploaded until you finish this setup, " +
-            "and you choose which of the above to include.");
+            "character you already claimed and verified. Nothing is uploaded until you finish " +
+            "this setup, and you choose which of the above to include.");
 
         DrawWizardNav("Get started");
     }

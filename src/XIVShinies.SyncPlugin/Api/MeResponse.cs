@@ -34,7 +34,10 @@ public sealed record MeCharacter
     /// <summary>True when a ContentId hash is already bound to this character.</summary>
     public required bool PluginLinked { get; init; }
 
-    /// <summary>True when the claim is verified (by bio code or by a plugin upload).</summary>
+    /// <summary>
+    /// True when the claim is verified by the Lodestone bio code. The server accepts uploads only
+    /// for a verified claim, and an upload never verifies one.
+    /// </summary>
     public required bool Verified { get; init; }
 
     /// <summary>The character's home world name.</summary>
