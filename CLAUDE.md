@@ -163,35 +163,6 @@ cannot report, and `mounts` would have to stop declaring completeness.
 Minions need no equivalent audit — their bitmask is sized to the `Companion` sheet's row count and
 indexed by row id, so every row has a bit.
 
-### Finding where a game window gets its artwork
-
-The app sometimes wants to reuse an icon the game draws in its own UI, and the source is often not
-findable from outside the client: some icons are numbered files under `ui/icon`, but others are
-rectangles cropped from a shared window texture, and nothing outside the running game knows which
-rectangle. This is the command that answers it:
-
-```
-/shinies dumpaddon XBMMonsterNotebookFilterSetting
-```
-
-Debug build only, and **the window must already be open**. The name is the internal addon name, as
-Dalamud's Addon Inspector (`/xldata ai`) shows it — it often differs from the window's title. The
-answer goes to `/xllog`, not the screen.
-
-For every image, nine-grid and clipping-mask node it prints the position, size, which part it is
-drawing, and that part's source: the texture path plus the `u,v w×h` rectangle to crop, with an
-icon id in front of them when the artwork came from the numbered icon tree. It also prints the
-window's backing values — the data the game handed the window to draw itself from, which is where
-per-entry state lives.
-
-Point it at catalogue and collection windows, never at party or social ones; the addon-dump bullet
-in [`docs/dalamud-compliance.md`](docs/dalamud-compliance.md) says why.
-
-Read the coverage verdict before trusting an absence. The command walks each component's declared
-node list, then re-walks the live tree to check nothing was missed, and says which happened just
-before the closing line — because "that icon is not in the dump" is only useful once it means "the
-window does not draw it" rather than "the walk did not reach it".
-
 ## Testing philosophy — pure logic vs. game surfaces
 
 Be honest about this split; do not fake it.

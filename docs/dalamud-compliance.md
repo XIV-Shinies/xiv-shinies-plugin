@@ -57,17 +57,6 @@ response fields) and a field-by-field contract conformance audit.
   have it on screen. It listens for that one window by name and reads nothing else; the chat and
   log-message channels, which carry more than the local character, are not subscribed to anywhere
   in the plugin.
-- **The addon dump is development-only, and prints whatever the window holds.** A development
-  build carries `/shinies dumpaddon <name>`, which walks an open game window's node tree and prints
-  where each piece of its artwork comes from — the answer to "which icon is that?" for art the site
-  wants to reuse. It exists only under `#if DEBUG`: the service it needs (`IGameGui`) is compiled
-  out alongside it, so a Release build neither requests nor holds it. It reports node geometry,
-  texture paths and icon ids, and **prints the window's backing values verbatim, text included** —
-  which means a party or social window would write other characters' names to the developer's local
-  log. That, and the fact that an icon id is itself a fact about what a window is currently
-  showing, is why it is meant for catalogue and collection windows rather than party or social
-  ones. Nothing it prints is uploaded or persisted, and no build users receive contains it — the
-  convention is the protection here, not a guarantee about what the command can read.
 - **Consent is code, not UI.** The gates (`UploadGate`, `CollectorGate`) are pure, unit-tested
   classes on the request path. Unchecking a box does not merely hide a button; it makes the
   request impossible.
