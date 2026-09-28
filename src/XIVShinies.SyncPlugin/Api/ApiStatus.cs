@@ -17,8 +17,31 @@ public enum ApiStatus
     /// <summary>401 — token missing, malformed, or unknown. Never heals on retry.</summary>
     InvalidToken,
 
-    /// <summary>403 — the character is not claimed by this account on the website.</summary>
+    /// <summary>
+    /// 403 <c>character_not_claimed</c> — the character is not claimed by this account on the
+    /// website. Also the reading of an unrecognized or missing 403 code (see
+    /// <see cref="ApiStatusMap.FromHttpStatusCode"/>).
+    /// </summary>
     CharacterNotClaimed,
+
+    /// <summary>
+    /// 403 <c>character_not_verified</c> — this account has claimed the character, but the claim
+    /// is still waiting for its Lodestone bio code. An upload never verifies a claim.
+    /// </summary>
+    CharacterNotVerified,
+
+    /// <summary>
+    /// 403 <c>character_ambiguous</c> — two or more of this account's unbound claims share the
+    /// character's name and home world, and the server will not guess which one the upload
+    /// belongs to.
+    /// </summary>
+    CharacterAmbiguous,
+
+    /// <summary>
+    /// 403 <c>character_bound_elsewhere</c> — every claim of this account's with the character's
+    /// name and home world is already linked to a different game character.
+    /// </summary>
+    CharacterBoundElsewhere,
 
     /// <summary>
     /// 405 — wrong HTTP method for the endpoint. Always a bug in this plugin, never something the
@@ -58,32 +81,79 @@ public enum ApiStatus
 /// </summary>
 public static class ApiStatusMap
 {
-    /// <summary>Maps an HTTP status code onto its contract meaning.</summary>
+    // The four codes a 403 can carry in its body's `error` field. `const` makes each a
+    // compile-time constant, which is what lets them appear as patterns in the switch below.
+    private const string NotClaimedCode = "character_not_claimed";
+    private const string NotVerifiedCode = "character_not_verified";
+    private const string AmbiguousCode = "character_ambiguous";
+    private const string BoundElsewhereCode = "character_bound_elsewhere";
+
+    /// <summary>Maps an HTTP status code, and a 403's error code, onto its contract meaning.</summary>
+    /// <param name="httpStatusCode">The response's HTTP status.</param>
+    /// <param name="errorCode">
+    /// The error body's <c>error</c> field, when a body was read. It refines a 403 only: every
+    /// other status means what its number means, whatever the body says.
+    /// </param>
     // A `switch` expression: each `code => value` arm is tested top to bottom, and `_` is the
     // default (like a `default:` case, or the final `else`). It's an expression, so it *returns*
-    // a value rather than executing statements.
-    public static ApiStatus FromHttpStatusCode(int httpStatusCode) => httpStatusCode switch
+    // a value rather than executing statements. `string? errorCode = null` is an optional
+    // parameter, like a TypeScript `errorCode?: string` that defaults to undefined.
+    public static ApiStatus FromHttpStatusCode(int httpStatusCode, string? errorCode = null) =>
+        httpStatusCode switch
+        {
+            200 => ApiStatus.Ok,
+            400 => ApiStatus.InvalidPayload,
+            401 => ApiStatus.InvalidToken,
+            403 => FromCharacterRefusalCode(errorCode),
+            405 => ApiStatus.MethodNotAllowed,
+            413 => ApiStatus.PayloadTooLarge,
+            429 => ApiStatus.RateLimited,
+            500 => ApiStatus.ServerError,
+            503 => ApiStatus.SyncDisabled,
+            _ => ApiStatus.Unknown,
+        };
+
+    /// <summary>
+    /// Which of the four failed character matches a 403 reports. The code is compared exactly,
+    /// never parsed or displayed, so a hostile server can only choose among these four readings.
+    /// </summary>
+    /// <param name="errorCode">The error body's <c>error</c> field, or null when none was read.</param>
+    private static ApiStatus FromCharacterRefusalCode(string? errorCode) => errorCode switch
     {
-        200 => ApiStatus.Ok,
-        400 => ApiStatus.InvalidPayload,
-        401 => ApiStatus.InvalidToken,
-        403 => ApiStatus.CharacterNotClaimed,
-        405 => ApiStatus.MethodNotAllowed,
-        413 => ApiStatus.PayloadTooLarge,
-        429 => ApiStatus.RateLimited,
-        500 => ApiStatus.ServerError,
-        503 => ApiStatus.SyncDisabled,
-        _ => ApiStatus.Unknown,
+        NotVerifiedCode => ApiStatus.CharacterNotVerified,
+        AmbiguousCode => ApiStatus.CharacterAmbiguous,
+        BoundElsewhereCode => ApiStatus.CharacterBoundElsewhere,
+
+        // Listed for the reader: the fallback below gives the same answer.
+        NotClaimedCode => ApiStatus.CharacterNotClaimed,
+
+        // A code this plugin does not know yet, or a 403 without a readable body. Both still mean
+        // the character did not match, and claiming it is the fix that applies to the most players.
+        _ => ApiStatus.CharacterNotClaimed,
     };
+
+    /// <summary>
+    /// True for the four 403 statuses: the server could not match the upload to a character this
+    /// account may write to. Each needs the player to act (or, for a relink, the site's admins);
+    /// retrying never helps.
+    /// </summary>
+    public static bool IsCharacterRefusal(ApiStatus status) =>
+        status is ApiStatus.CharacterNotClaimed
+            or ApiStatus.CharacterNotVerified
+            or ApiStatus.CharacterAmbiguous
+            or ApiStatus.CharacterBoundElsewhere;
 
     /// <summary>
     /// True when repeating the identical request cannot possibly succeed. The caller must stop
     /// and surface the problem to the user rather than retry.
     /// </summary>
-    // `is A or B` is pattern matching — a compact way to write "equals any of these".
+    // `is A or B` is pattern matching — a compact way to write "equals any of these". Two different
+    // "or"s meet here: `||` joins two whole true/false expressions (as in TypeScript), while the
+    // `or` after `is` only joins the values one pattern accepts, so `x || status is A or B` reads
+    // `x || (status is A or B)`.
     public static bool IsTerminal(ApiStatus status) =>
-        status is ApiStatus.InvalidToken
-            or ApiStatus.CharacterNotClaimed
+        IsCharacterRefusal(status)
+            || status is ApiStatus.InvalidToken
             or ApiStatus.InvalidPayload
             or ApiStatus.MethodNotAllowed
             or ApiStatus.PayloadTooLarge

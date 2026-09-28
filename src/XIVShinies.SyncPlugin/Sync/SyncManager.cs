@@ -238,25 +238,30 @@ internal sealed class SyncManager : IDisposable
     /// <summary>
     /// Set when the server reported a failure only the user can fix. Suppresses collecting and
     /// uploading until the user intervenes, rather than looping against a server that will keep
-    /// refusing. The config poll is the one exception, and only for the halt it can actually see
-    /// past — see <see cref="blockedByUnclaimedCharacter"/>.
+    /// refusing. The config poll is the one exception, and only for the halts it can see past —
+    /// see <see cref="SyncTickPlan.PollSurvivesHalt"/>.
     /// </summary>
     private volatile bool blockedPendingUserAction;
 
     /// <summary>
-    /// Which kind of halt <see cref="blockedPendingUserAction"/> is currently holding: an unclaimed
-    /// character, or something token-shaped. Only meaningful while that flag is set.
+    /// The status that raised the halt <see cref="blockedPendingUserAction"/> is holding, cast to
+    /// int, or -1 before any halt. Only meaningful while that flag is set.
     /// </summary>
     /// <remarks>
-    /// The two halts differ in one way that matters to the config poll. <c>/config</c> answers 200
-    /// or 401 and never 403, so a halt raised by an unclaimed character does not stop it — the poll
-    /// keeps working, and it is the only way the plugin learns a server pause has lifted while the
-    /// user sorts the claim out. A token-shaped halt is the opposite: every future poll is
-    /// guaranteed the same 401, so continuing to ask spends a request forever and can never learn
-    /// anything. Which of the two it is cannot be read off <c>LastStatus</c>, because that field is
-    /// written by the upload path and a halt raised by the poll would leave it stale.
+    /// <para>
+    /// Written at both places a halt is raised, the upload and the config poll, always before the
+    /// flag, so a reader that sees the flag set also sees the status that set it. An int for the
+    /// same reason as <see cref="lastStatusCode"/>: <c>volatile</c> cannot hold a nullable enum.
+    /// </para>
+    /// <para>
+    /// Two things read it, through <see cref="HaltStatus"/>: the sync card, to name the fix for
+    /// exactly this halt, and the frame tick, which asks <see cref="SyncTickPlan.PollSurvivesHalt"/>
+    /// whether the config poll survives it. <c>LastStatus</c> cannot stand in for it, because only
+    /// the upload path writes it, so a halt raised by the poll would leave it describing an earlier
+    /// upload, often a success, or nothing at all.
+    /// </para>
     /// </remarks>
-    private volatile bool blockedByUnclaimedCharacter;
+    private volatile int haltStatusCode = -1;
 
     /// <summary>
     /// The last outcome as an <see cref="ApiStatus"/> cast to int, or -1 when nothing has completed.
@@ -431,14 +436,21 @@ internal sealed class SyncManager : IDisposable
     public DateTimeOffset? LastSyncedAt => lastSyncedAtBox as DateTimeOffset?;
 
     /// <summary>
-    /// The current character's name, or null when nobody is loaded. Lets the settings window say
-    /// "claim <c>Name</c> on the website" instead of something generic.
+    /// True when syncing is halted until the user fixes something (a bad token, or a character the
+    /// server would not match).
     /// </summary>
-    /// <remarks>A reference read, so atomic; at worst one frame stale, like <see cref="HasCharacter"/>.</remarks>
-    public string? CharacterName => identity?.Name;
-
-    /// <summary>True when syncing is halted until the user fixes something (bad token, unclaimed character).</summary>
     public bool BlockedPendingUserAction => blockedPendingUserAction;
+
+    /// <summary>
+    /// The status that raised the current halt, or null when syncing is not halted. See
+    /// <see cref="haltStatusCode"/> for its two readers.
+    /// </summary>
+    /// <remarks>
+    /// Two volatile reads, so a halt raised or cleared between them can make this one frame stale,
+    /// the same tolerance as every other property the window reads.
+    /// </remarks>
+    public ApiStatus? HaltStatus =>
+        blockedPendingUserAction && haltStatusCode >= 0 ? (ApiStatus)haltStatusCode : null;
 
     /// <summary>The most recent server config, for the settings window to render category switches from.</summary>
     public ConfigResponse? RemoteConfig => remoteConfig;
@@ -588,9 +600,13 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>
     /// The identified character, or null when nobody usable is loaded. The occult tracker reads
-    /// this so both upload paths attribute work to one identity, captured in one place.
+    /// this so both upload paths attribute work to one identity, captured in one place; the sync
+    /// card reads it to name the character in a refusal sentence.
     /// </summary>
-    /// <remarks>A reference read, so atomic; read on the framework thread by the occult manager.</remarks>
+    /// <remarks>
+    /// A reference read, so atomic. The occult manager reads it on the framework thread; the sync
+    /// card reads it from the draw call, where it is at worst one frame stale.
+    /// </remarks>
     internal CharacterIdentity? Identity => identity;
 
     /// <summary>Queues an immediate full sweep, as when the user presses "Sync now".</summary>
@@ -751,12 +767,12 @@ internal sealed class SyncManager : IDisposable
         identityAttempts = 0;
 
         // The "user must fix this" halt is released on logout, because its most common cause —
-        // this character is not claimed on the website — belongs to the character, and the
-        // character is leaving. Without this, logging into a properly-claimed character behind an
-        // unclaimed one inherits a halt that does not apply to it, and the login sync silently
-        // never fires. The token-shaped causes self-heal: a genuinely revoked token earns one 401
-        // from the next character's login sync and halts again — a request or two per relog, never
-        // a loop, because a token-shaped halt stops the config poll too.
+        // the server would not match this character to a verified claim — belongs to the
+        // character, and the character is leaving. Without this, logging into a verified character
+        // behind a refused one inherits a halt that does not apply to it, and the login sync
+        // silently never fires. The token-shaped causes self-heal: a genuinely revoked token earns
+        // one 401 from the next character's login sync and halts again — a request or two per
+        // relog, never a loop, because a token-shaped halt stops the config poll too.
         blockedPendingUserAction = false;
 
         // Responses still in flight belong to the character who just left; bumping the generation
@@ -896,10 +912,10 @@ internal sealed class SyncManager : IDisposable
     private void OnFrameworkUpdate(IFramework _)
     {
         // How much of this frame may run is SyncTickPlan.Decide's rule; only the work happens here.
-        // Why one halt lets the poll through and the other does not is on blockedByUnclaimedCharacter.
+        // Which halts still let the poll through is SyncTickPlan.PollSurvivesHalt's rule.
         var plan = SyncTickPlan.Decide(
             UploadGate.CanContactServer(settings),
-            pollIsWorthwhile: blockedByUnclaimedCharacter,
+            pollIsWorthwhile: SyncTickPlan.PollSurvivesHalt(HaltStatus),
             blockedPendingUserAction);
 
         if (plan == TickAction.Nothing)
@@ -1399,10 +1415,12 @@ internal sealed class SyncManager : IDisposable
             return true;
         }
 
-        // Nothing a retry can fix — a bad token, an unclaimed character, a misconfigured backend.
+        // Nothing a retry can fix — a bad token, a character the server would not match, a
+        // misconfigured backend.
         if (RetryPolicy.RequiresUserAction(response.Status))
         {
-            blockedByUnclaimedCharacter = response.Status == ApiStatus.CharacterNotClaimed;
+            // The status first, then the flag: see haltStatusCode.
+            haltStatusCode = (int)response.Status;
             blockedPendingUserAction = true;
             log.Warning($"Sync halted: {response.Status}. The user must resolve this.");
             return true;
@@ -1564,9 +1582,8 @@ internal sealed class SyncManager : IDisposable
                 && startedFor == sessionGeneration
                 && RetryPolicy.RequiresUserAction(response.Status))
             {
-                // Always false here: /config answers 200 or 401 and never 403, so a halt raised by
-                // this path is token-shaped by construction and no later poll could get past it.
-                blockedByUnclaimedCharacter = false;
+                // The status first, then the flag: see haltStatusCode.
+                haltStatusCode = (int)response.Status;
                 blockedPendingUserAction = true;
                 log.Warning($"Config poll halted: {response.Status}. The user must resolve this.");
             }

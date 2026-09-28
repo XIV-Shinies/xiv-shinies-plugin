@@ -12,6 +12,7 @@ using Xunit;
 using XIVShinies.SyncPlugin;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Occult;
+using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
@@ -219,7 +220,7 @@ public class ApiClientTests
     }
 
     [Fact]
-    public async Task A_403_carries_the_character_name_and_world_for_the_claim_hint()
+    public async Task A_403_carries_the_echoed_character_name_and_world()
     {
         var (client, _) = Build(_ => Json(HttpStatusCode.Forbidden,
             """{"error": "character_not_claimed", "name": "Some Name", "world": "Excalibur"}"""));
@@ -229,6 +230,79 @@ public class ApiClientTests
         Assert.Equal(ApiStatus.CharacterNotClaimed, response.Status);
         Assert.Equal("Some Name", response.Error!.Name);
         Assert.Equal("Excalibur", response.Error.World);
+    }
+
+    // The client reads the 403's body before deciding what it means, so each refusal reaches the
+    // sync card and the upload log as its own status.
+    [Theory]
+    [InlineData("character_not_verified", ApiStatus.CharacterNotVerified)]
+    [InlineData("character_ambiguous", ApiStatus.CharacterAmbiguous)]
+    [InlineData("character_bound_elsewhere", ApiStatus.CharacterBoundElsewhere)]
+    [InlineData("character_something_new", ApiStatus.CharacterNotClaimed)]
+    public async Task A_403_reports_which_character_refusal_the_server_named(
+        string errorCode, ApiStatus expected)
+    {
+        var (client, _) = Build(_ => Json(HttpStatusCode.Forbidden,
+            $$"""{"error": "{{errorCode}}", "name": "Some Name", "world": "Excalibur"}"""));
+
+        var response = await client.GetMeAsync();
+
+        Assert.Equal(expected, response.Status);
+        Assert.Equal(errorCode, response.Error!.Error);
+    }
+
+    // A 403 whose body is not the contract's JSON still means a failed character match; it falls
+    // back to the not-claimed wording rather than to an unknown failure.
+    [Fact]
+    public async Task A_403_without_a_readable_body_reads_as_not_claimed()
+    {
+        var (client, _) = Build(_ => Json(HttpStatusCode.Forbidden, "Forbidden"));
+
+        var response = await client.GetMeAsync();
+
+        Assert.Equal(ApiStatus.CharacterNotClaimed, response.Status);
+    }
+
+    // The two ways a JSON body can carry no code: an explicit null, and no `error` field at all
+    // (which fails the DTO's `required` member, so no error body is parsed). Both fall back.
+    [Theory]
+    [InlineData("""{"error": null, "name": "Some Name", "world": "Excalibur"}""")]
+    [InlineData("""{"name": "Some Name", "world": "Excalibur"}""")]
+    public async Task A_403_whose_body_names_no_code_reads_as_not_claimed(string body)
+    {
+        var (client, _) = Build(_ => Json(HttpStatusCode.Forbidden, body));
+
+        var response = await client.GetMeAsync();
+
+        Assert.Equal(ApiStatus.CharacterNotClaimed, response.Status);
+    }
+
+    // An endpoint that really answers with these refusals (the tests above stub /me, which never
+    // sends a 403). Every call shares one send path, and this pins it on the upload the player's
+    // sync card reports on.
+    [Fact]
+    public async Task PostSync_reports_the_character_refusal_the_server_named()
+    {
+        var (client, _) = Build(_ => Json(HttpStatusCode.Forbidden,
+            """{"error": "character_not_verified", "name": "Some Name", "world": "Excalibur"}"""));
+
+        var request = new SyncRequest
+        {
+            CharacterContentIdHash = new string('a', 64),
+            CharacterName = "Some Name",
+            HomeWorld = "Excalibur",
+            PluginVersion = "1.2.3",
+            Trigger = SyncTrigger.Manual,
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["quests"] = SyncFacts.Ids(new uint[] { 65575 }),
+            },
+        };
+
+        var response = await client.PostSyncAsync(request);
+
+        Assert.Equal(ApiStatus.CharacterNotVerified, response.Status);
+        Assert.True(RetryPolicy.RequiresUserAction(response.Status));
     }
 
     [Fact]

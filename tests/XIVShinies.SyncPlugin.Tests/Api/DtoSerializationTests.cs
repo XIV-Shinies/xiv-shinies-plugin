@@ -537,7 +537,7 @@ public class DtoSerializationTests
         Assert.Null(error.World);
     }
 
-    // The 403 echoes name/world back so the UI can say "claim <name> @ <world> on the website".
+    // The 403 echoes the upload's name and world back beside its refusal code.
     [Fact]
     public void ErrorResponse_reads_the_403_character_not_claimed_body()
     {

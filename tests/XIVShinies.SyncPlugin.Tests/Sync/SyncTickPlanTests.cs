@@ -1,4 +1,5 @@
 using Xunit;
+using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
@@ -9,6 +10,37 @@ namespace XIVShinies.SyncPlugin.Tests.Sync;
 /// </summary>
 public class SyncTickPlanTests
 {
+    // Which halts leave the poll worth making; SyncTickPlan.PollSurvivesHalt says why. No halt at
+    // all is not a refusal.
+    [Theory]
+    [InlineData(ApiStatus.CharacterNotClaimed, true)]
+    [InlineData(ApiStatus.CharacterNotVerified, true)]
+    [InlineData(ApiStatus.CharacterAmbiguous, true)]
+    [InlineData(ApiStatus.CharacterBoundElsewhere, true)]
+    [InlineData(ApiStatus.InvalidToken, false)]
+    [InlineData(ApiStatus.NotConfigured, false)]
+    [InlineData(null, false)]
+    public void A_poll_survives_only_a_character_refusal(ApiStatus? haltStatus, bool expected)
+    {
+        Assert.Equal(expected, SyncTickPlan.PollSurvivesHalt(haltStatus));
+    }
+
+    // The two rules together, as the frame sees them: a character refusal still polls, a token
+    // halt stops everything.
+    [Theory]
+    [InlineData(ApiStatus.CharacterNotVerified, TickAction.PollOnly)]
+    [InlineData(ApiStatus.InvalidToken, TickAction.Nothing)]
+    public void A_halted_tick_polls_through_a_character_refusal_only(
+        ApiStatus haltStatus, TickAction expected)
+    {
+        Assert.Equal(
+            expected,
+            SyncTickPlan.Decide(
+                canContactServer: true,
+                SyncTickPlan.PollSurvivesHalt(haltStatus),
+                blockedPendingUserAction: true));
+    }
+
     // Consent outranks everything. A fresh install must make no request at all, whatever else is
     // true — this is the check that keeps it silent.
     [Theory]

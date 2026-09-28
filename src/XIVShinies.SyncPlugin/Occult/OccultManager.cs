@@ -42,9 +42,9 @@ internal sealed class OccultManager : IDisposable
 
     /// <summary>
     /// How long to stay quiet after a failure that would recur on every attempt: one only the
-    /// user can fix (bad token, unclaimed character), or a terminal rejection of a payload
-    /// shape this build will keep producing. The /sync path surfaces those to the user; this
-    /// path just stops hammering.
+    /// user can fix (bad token, a character the server would not match), or a terminal rejection
+    /// of a payload shape this build will keep producing. The /sync path surfaces those to the
+    /// user; this path just stops hammering.
     /// </summary>
     private static readonly TimeSpan UserActionBackoff = TimeSpan.FromMinutes(15);
 
@@ -228,8 +228,9 @@ internal sealed class OccultManager : IDisposable
 
         // The tracker's consent gate (see OccultGate for the full ladder), plus /sync's
         // user-action halt: when syncing is stopped on something only the user can fix (bad
-        // token, unclaimed character), this path goes quiet too rather than earning its own
-        // copy of the same 401 every minute — and both resume together on "Sync now".
+        // token, a character the server would not match), this path goes quiet too rather than
+        // earning its own copy of the same refusal every minute — and both resume together on
+        // "Sync now".
         var enabled = OccultGate.CanTrack(settings, config)
             && !syncManager.BlockedPendingUserAction;
 
@@ -452,10 +453,10 @@ internal sealed class OccultManager : IDisposable
                 return;
             }
 
-            // Something only the user can fix (bad token, unclaimed character), or a terminal
-            // rejection (400/405/413 — plugin bugs where the identical shape would fail
-            // again). Either way, retrying at heartbeat cadence would fail all session long,
-            // so go quiet for a while. The /sync path owns telling the user what is wrong.
+            // Something only the user can fix (bad token, a character the server would not
+            // match), or a terminal rejection (400/405/413 — plugin bugs where the identical shape
+            // would fail again). Either way, retrying at heartbeat cadence would fail all session
+            // long, so go quiet for a while. The /sync path owns telling the user what is wrong.
             if (RetryPolicy.RequiresUserAction(response.Status) || ApiStatusMap.IsTerminal(response.Status))
             {
                 scheduler.BackOffUntil(now + UserActionBackoff);
