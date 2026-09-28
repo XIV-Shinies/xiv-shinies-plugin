@@ -10,8 +10,8 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Windows;
 
 /// <summary>
-/// The upload log's table body: one row per upload, newest first — when, what triggered each,
-/// the outcome, and what was sent per category.
+/// The upload log's table body: one row per logged upload, newest first — when, what triggered
+/// each, the outcome, and what was sent (per category for a sync row).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -66,7 +66,7 @@ internal sealed class UploadLogTable
             whenStacked = Math.Max(
                 whenStacked, Math.Max(ImGui.CalcTextSize(date).X, ImGui.CalcTextSize(time).X));
 
-            var trigger = UploadLogText.TriggerText(entry.Trigger);
+            var trigger = UploadLogText.TriggerText(entry);
             triggerOneLine = Math.Max(triggerOneLine, ImGui.CalcTextSize(trigger).X);
             foreach (var word in trigger.Split(' '))
                 triggerStacked = Math.Max(triggerStacked, ImGui.CalcTextSize(word).X);
@@ -141,7 +141,7 @@ internal sealed class UploadLogTable
             }
 
             ImGui.TableNextColumn();
-            var triggerText = UploadLogText.TriggerText(entry.Trigger);
+            var triggerText = UploadLogText.TriggerText(entry);
             if (compact)
             {
                 foreach (var word in triggerText.Split(' '))
@@ -174,6 +174,14 @@ internal sealed class UploadLogTable
             // UploadLogText.SentSpans rule; this loop only maps its highlight flag to
             // Brand.Gold and draws. Only the separator between categories is muted.
             ImGui.TableNextColumn();
+
+            // A live tracker row sent one thing, the instance state, and has no categories to list.
+            if (entry.Source == UploadLogSource.LiveTracker)
+            {
+                Widgets.DrawWrapped(UploadLogText.LiveTrackerSent, ImGuiCol.Text, null);
+                continue;
+            }
+
             // The proof note comes from the entry (the server answers per upload, not per
             // category), so it is computed once out here and the same note draws beside each
             // manifest-driven category the entry carries.

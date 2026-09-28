@@ -249,19 +249,29 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Written at both places a halt is raised, the upload and the config poll, always before the
-    /// flag, so a reader that sees the flag set also sees the status that set it. An int for the
-    /// same reason as <see cref="lastStatusCode"/>: <c>volatile</c> cannot hold a nullable enum.
+    /// Written at every place a halt is raised (the upload, the config poll, and the live tracker
+    /// through <see cref="HaltFromLiveTracker"/>), always before the flag, so a reader that sees the
+    /// flag set also sees the status that set it. An int for the same reason as
+    /// <see cref="lastStatusCode"/>: <c>volatile</c> cannot hold a nullable enum.
     /// </para>
     /// <para>
-    /// Two things read it, through <see cref="HaltStatus"/>: the sync card, to name the fix for
+    /// Two things read it, through <see cref="HaltStatus"/>: the window, to name the fix for
     /// exactly this halt, and the frame tick, which asks <see cref="SyncTickPlan.PollSurvivesHalt"/>
     /// whether the config poll survives it. <c>LastStatus</c> cannot stand in for it, because only
-    /// the upload path writes it, so a halt raised by the poll would leave it describing an earlier
-    /// upload, often a success, or nothing at all.
+    /// the /sync upload writes it, so a halt raised by the poll or the live tracker would leave it
+    /// describing an earlier upload, often a success, or nothing at all.
     /// </para>
     /// </remarks>
     private volatile int haltStatusCode = -1;
+
+    /// <summary>
+    /// How many times "Sync now" has been pressed this plugin session: see <see cref="HaltEpoch"/>.
+    /// </summary>
+    /// <remarks>
+    /// Volatile for reads from the tracker's upload task; its one writer uses
+    /// <c>Interlocked.Increment</c>, which a <c>ref</c> to a volatile field is safe to pass to.
+    /// </remarks>
+    private volatile int haltEpoch;
 
     /// <summary>
     /// The last outcome as an <see cref="ApiStatus"/> cast to int, or -1 when nothing has completed.
@@ -600,14 +610,76 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>
     /// The identified character, or null when nobody usable is loaded. The occult tracker reads
-    /// this so both upload paths attribute work to one identity, captured in one place; the sync
-    /// card reads it to name the character in a refusal sentence.
+    /// this so both upload paths attribute work to one identity, captured in one place; the window
+    /// reads it to name the character in a refusal sentence, on the sync card and the live
+    /// tracker's card.
     /// </summary>
     /// <remarks>
-    /// A reference read, so atomic. The occult manager reads it on the framework thread; the sync
-    /// card reads it from the draw call, where it is at worst one frame stale.
+    /// A reference read, so atomic. The occult manager reads it on the framework thread; the window
+    /// reads it from the draw call, where it is at worst one frame stale.
     /// </remarks>
     internal CharacterIdentity? Identity => identity;
+
+    /// <summary>
+    /// Which login session is current. The live tracker captures it when it sends an upload and
+    /// hands it back with a refusal, so a refusal that lands after a logout is recognized as the
+    /// previous character's (see <see cref="sessionGeneration"/>).
+    /// </summary>
+    internal int SessionGeneration => sessionGeneration;
+
+    /// <summary>
+    /// How many times "Sync now" has been pressed this plugin session, whether or not a halt was
+    /// set. The live tracker captures it when it sends an upload and hands it back with a refusal,
+    /// so a refusal sent before the player's fix and answered after it does not halt them again.
+    /// </summary>
+    internal int HaltEpoch => haltEpoch;
+
+    /// <summary>
+    /// Raises the same halt a refused sync raises, for a live tracker upload the server refused in
+    /// a way only the player can fix, and records it in the upload log.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One halt serves both upload paths. The tracker's refusals are the same refusals (the same
+    /// character or the same token), so the same sentence names the fix, and "Sync now" or a relog
+    /// lifts both at once. Without it, a player with only the tracker switched on never uploads to
+    /// <c>/sync</c>, and nothing would tell them why sharing stopped.
+    /// </para>
+    /// <para>
+    /// Called from the tracker's upload task, with the session and press counts captured when the
+    /// upload was sent. A refusal from a session that has ended, or sent before the last "Sync
+    /// now", is dropped. The checks run on the upload task, so a logout or a "Sync now" press that
+    /// lands between them and the writes below can still let one stale refusal raise the halt; the
+    /// next press or relog clears it, and the log row repeats the session check below.
+    /// </para>
+    /// </remarks>
+    /// <param name="status">The refusal's status; anything that is not a user-action halt is ignored.</param>
+    /// <param name="httpStatusCode">The literal HTTP status, for the upload log's diagnostic.</param>
+    /// <param name="startedFor">The <see cref="SessionGeneration"/> the upload was sent for.</param>
+    /// <param name="haltEpochAtSend">The <see cref="HaltEpoch"/> when the upload was sent.</param>
+    internal void HaltFromLiveTracker(
+        ApiStatus status, int? httpStatusCode, int startedFor, int haltEpochAtSend)
+    {
+        if (!RetryPolicy.RequiresUserAction(status)
+            || startedFor != sessionGeneration
+            || haltEpochAtSend != haltEpoch)
+        {
+            return;
+        }
+
+        // The status first, then the flag: see haltStatusCode.
+        haltStatusCode = (int)status;
+        blockedPendingUserAction = true;
+        log.Warning($"Live tracker halted: {status}. The user must resolve this.");
+
+        // The log row repeats the session check, so a logout that lands between the first check
+        // and here leaves no row in the next character's log.
+        if (startedFor == sessionGeneration)
+        {
+            uploadLog.Record(
+                UploadLogEntry.LiveTrackerHalt(timeProvider.GetUtcNow(), status, httpStatusCode));
+        }
+    }
 
     /// <summary>Queues an immediate full sweep, as when the user presses "Sync now".</summary>
     /// <remarks>
@@ -616,6 +688,11 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     public void RequestManualSync()
     {
+        // A new press count first, so a live tracker refusal already in flight (sent before the
+        // player's fix) is recognized as stale when it lands. Interlocked.Increment is an atomic
+        // `count++`, safe whichever thread the press arrives on.
+        Interlocked.Increment(ref haltEpoch);
+
         // Volatile, so this write is safe from any thread — and it should clear immediately, on
         // the press itself, rather than waiting behind the marshal below.
         blockedPendingUserAction = false;

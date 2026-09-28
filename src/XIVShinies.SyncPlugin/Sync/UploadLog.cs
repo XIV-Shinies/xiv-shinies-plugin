@@ -53,23 +53,45 @@ public sealed record UploadLogCategory(
     bool UsesItemManifest = false,
     int? OwnedCount = null);
 
+/// <summary>Which upload path an upload log row is about.</summary>
+public enum UploadLogSource
+{
+    /// <summary>A collection sync to <c>POST /sync</c>: the log's ordinary row.</summary>
+    Sync,
+
+    /// <summary>
+    /// The live Occult tracker's <c>POST /occult/instance-state</c>, logged only when a refusal
+    /// halts it (see <see cref="UploadLogEntry.LiveTrackerHalt"/>).
+    /// </summary>
+    LiveTracker,
+}
+
 /// <summary>
 /// One upload, as shown in the settings window's upload log: when, why, what was sent, and how
 /// the server answered.
 /// </summary>
 /// <remarks>
-/// A transparency surface: it is built from the same snapshot the payload was built from, at the
-/// moment the payload was assembled — never reconstructed after the fact. It carries category
+/// A transparency surface: a sync row is built from the same snapshot the payload was built from,
+/// at the moment the payload was assembled — never reconstructed after the fact. A live tracker
+/// row records a halting refusal instead (see <see cref="LiveTrackerHalt"/>). Rows carry category
 /// <b>keys</b>, not names: the window maps keys to whatever the registered collectors call
 /// themselves, so this type stays free of category-name knowledge.
 /// </remarks>
 public sealed record UploadLogEntry
 {
-    /// <summary>When the payload was assembled (UTC; the window renders it in local time).</summary>
+    /// <summary>
+    /// When a sync row's payload was assembled, or when a live tracker row's refusal arrived (UTC;
+    /// the window renders it in local time).
+    /// </summary>
     public required DateTimeOffset At { get; init; }
 
-    /// <summary>What prompted the upload.</summary>
-    public required SyncTrigger Trigger { get; init; }
+    /// <summary>Which upload path the row is about: a collection sync, or the live tracker.</summary>
+    public UploadLogSource Source { get; init; } = UploadLogSource.Sync;
+
+    /// <summary>What prompted a sync upload; null on a live tracker row, which has no trigger.</summary>
+    // `required` with a nullable type: the caller must still set it, so a sync row cannot leave it
+    // out by accident, but a live tracker row may set it to null.
+    public required SyncTrigger? Trigger { get; init; }
 
     /// <summary>
     /// The longest server-supplied string an entry will keep (the validation detail, the manifest
@@ -215,6 +237,31 @@ public sealed record UploadLogEntry
     }
 
     /// <summary>
+    /// The row for a live tracker upload the server refused in a way only the player can fix (a
+    /// character refusal or a rejected token), which halts syncing as a /sync refusal does.
+    /// </summary>
+    /// <remarks>
+    /// The tracker's ordinary uploads get no row: they are frequent, carry world state rather than
+    /// the player's collection, and succeed or back off on their own. The halt is the exception,
+    /// because a player with only the tracker switched on has no sync row to explain why sharing
+    /// stopped. It carries no categories, so the change signal never uses it as a baseline.
+    /// </remarks>
+    /// <param name="at">When the refusal arrived.</param>
+    /// <param name="status">The refusal's status.</param>
+    /// <param name="httpStatusCode">The literal HTTP status, for the pasted diagnostic.</param>
+    public static UploadLogEntry LiveTrackerHalt(DateTimeOffset at, ApiStatus status, int? httpStatusCode) =>
+        new()
+        {
+            At = at,
+            Source = UploadLogSource.LiveTracker,
+            Trigger = null,
+            Status = status,
+            Categories = Array.Empty<UploadLogCategory>(),
+            Skipped = new Dictionary<string, string>(),
+            HttpStatusCode = httpStatusCode,
+        };
+
+    /// <summary>
     /// How many facts a category's JSON carries. Array categories (id lists, item-count objects)
     /// count their elements; object categories count their members, except that a member which
     /// is itself a container counts its own entries — so a flat map (quest id → sequence byte)
@@ -352,9 +399,9 @@ public sealed class UploadLog
     private volatile IReadOnlyList<UploadLogEntry> entries = Array.Empty<UploadLogEntry>();
 
     // Guards the WRITERS against each other (readers need no lock — see above). Record runs on
-    // the upload task and Clear on the draw thread; without this, a Clear landing between
-    // Record's read of the old list and its swap would be undone — the freshly built list still
-    // contains the entries the user just cleared.
+    // both upload tasks (the sync upload and the live tracker's), and Clear on the draw thread and
+    // at logout; without this, two writers landing together would each build from the same old
+    // list and one change would be lost (a Clear undone, or an entry dropped).
     private readonly object writeLock = new();
 
     /// <summary>The recorded uploads, newest first. The returned list is never mutated.</summary>
@@ -495,6 +542,23 @@ public static class UploadLogDiff
 /// <summary>Turns an upload log entry's enums into the words the window prints.</summary>
 public static class UploadLogText
 {
+    /// <summary>What a live tracker row's Sent column says: the tracker sends one kind of thing.</summary>
+    public const string LiveTrackerSent = "Occult instance state";
+
+    /// <summary>
+    /// The Trigger column for a row: "live tracker" for the tracker's rows, the sync trigger for a
+    /// sync row, and plain "sync" for a sync row that carries none.
+    /// </summary>
+    /// <remarks>
+    /// Decided by <see cref="UploadLogEntry.Source"/> first, as <see cref="ClipboardText"/> is, so
+    /// the table and the pasted log always agree on which path a row belongs to.
+    /// </remarks>
+    public static string TriggerText(UploadLogEntry entry) => entry.Source switch
+    {
+        UploadLogSource.LiveTracker => "live tracker",
+        _ => entry.Trigger is { } trigger ? TriggerText(trigger) : "sync",
+    };
+
     /// <summary>The trigger, as a person would say it.</summary>
     public static string TriggerText(SyncTrigger trigger) => trigger switch
     {
@@ -792,10 +856,18 @@ public static class UploadLogText
 
             text.Append(entry.At.UtcDateTime.ToString(
                 "yyyy-MM-dd HH:mm:ss'Z'", CultureInfo.InvariantCulture));
-            text.Append(" | ").Append(entry.Trigger);
+            // A live tracker row names its source; a sync row names its trigger, or its source when
+            // it carries none. Source first, as TriggerText decides it.
+            text.Append(" | ").Append(entry.Source == UploadLogSource.LiveTracker
+                ? entry.Source.ToString()
+                : entry.Trigger?.ToString() ?? entry.Source.ToString());
             text.Append(" | ").Append(entry.Status);
 
+            // The tracker row names the endpoint it uploaded to, in the same wire terms.
             text.Append(" | sent:");
+            if (entry.Source == UploadLogSource.LiveTracker)
+                text.Append(" occult/instance-state");
+
             foreach (var category in entry.Categories)
             {
                 text.Append(' ').Append(category.Key).Append('=');

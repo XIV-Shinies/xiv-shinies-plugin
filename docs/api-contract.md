@@ -543,10 +543,14 @@ Resolution:
    name/world have drifted. The token's user must hold a verified claim on that character,
    else 403.
 2. **First-upload binding.** An unknown hash falls back to matching `characterName` +
-   `homeWorld` (both case-insensitive) against the token owner's **verified, unbound** claims.
-   Exactly one candidate → the hash is bound to that character (`bound: true` in the
-   response). Anything else returns a 403 naming why — the server never guesses, because
-   binding the wrong character would write another character's data under this hash.
+   `homeWorld` (both case-insensitive) against the token owner's claims, **pending or
+   verified**. A single unbound match is bound (`bound: true` in the response) only when it is
+   verified. Anything else returns a 403 naming why — the server never guesses, because binding
+   the wrong character would write another character's data under this hash:
+   - no claim matches → `character_not_claimed`;
+   - every match is already bound to another hash → `character_bound_elsewhere`;
+   - more than one unbound match, pending claims included → `character_ambiguous`;
+   - exactly one unbound match, still pending → `character_not_verified`.
 
 **Claims vs. favorites.** Only a *claimed* character is visible to the plugin surface; a
 favorite (someone's non-claimed follow) is invisible — `/me` never lists it and the binder
@@ -554,13 +558,15 @@ never matches it. `/me` lists pending claims too, with `verified: false`.
 
 **403 recovery.** Every 403 on `POST /sync` and `POST /occult/instance-state` has the same
 shape, `{"error": "<code>", "name": "<payload characterName>", "world": "<payload homeWorld>"}`,
-and `<code>` is one of four. None heals on retry; each needs the user to act.
+and `<code>` is one of four. None heals on retry; each needs the user to act. The plugin halts
+both upload paths on any of them and names the fix, whichever path was refused, so a player with
+only the live tracker switched on is told too.
 
 | `error` | Meaning | What the plugin tells the player |
 | --- | --- | --- |
 | `character_not_claimed` | No claim matches, or the hash is bound to a character that is not theirs. Deliberately does not distinguish "no such character" from "not yours". | Claim the character on the website, then sync. The claim flow creates the character record, which the plugin cannot (it has no Lodestone id, so it never auto-creates characters). |
 | `character_not_verified` | Their claim on this character is still pending. | Finish verification on the website (the Lodestone bio code), then sync. |
-| `character_ambiguous` | Two or more of their unbound claims share this name and world. | Remove all but one of those claims on the website, then sync. |
+| `character_ambiguous` | Two or more of their unbound claims, pending or verified, share this name and world. | Remove all but one of those claims on the website, then sync. |
 | `character_bound_elsewhere` | Every claim of theirs with this name and world is bound to a different game character. | The character is linked to a different game character; ask for help in Discord to relink it, then sync. |
 
 A 403 code the plugin does not recognize, or a 403 without a readable body, gets the

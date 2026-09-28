@@ -5,7 +5,7 @@ using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
-// What the sync card tells a player whose upload the server refused because it could not match
+// What the plugin tells a player whose upload the server refused because it could not match
 // their character. Each refusal has a different fix, so each sentence names that fix,
 // and the exact strings are pinned: a sentence that named the wrong fix would still look plausible
 // on screen.
@@ -88,7 +88,8 @@ public class CharacterRefusalCopyTests
     [Fact]
     public void A_sentence_exists_exactly_for_the_character_refusals()
     {
-        // Enum.GetValues<T>() lists every member of the enum, like Object.values on a TS enum.
+        // Enum.GetValues<T>() returns every member of the enum as an array, as Object.values does
+        // for a TS string enum.
         foreach (var status in Enum.GetValues<ApiStatus>())
         {
             var sentence = CharacterRefusalCopy.For(status, "Some Name", "Excalibur", Host);

@@ -61,14 +61,16 @@ response fields) and a field-by-field contract conformance audit.
   classes on the request path. Unchecking a box does not merely hide a button; it makes the
   request impossible.
 - **When the plugin stops talking to the server.** A fresh install talks to nobody at all. Once
-  syncing halts for something only the user can fix, it uploads nothing and reads nothing from the
-  game; whether it still polls `/config` depends on which halt it is. A character the server would
-  not match (unclaimed, unverified, claimed twice, or linked elsewhere) leaves the poll running on
-  its normal interval — `/config` answers that caller normally, and the poll is the only way a
-  server-side change (a pause lifting, a category returning) reaches a plugin whose Sync now button
-  a pause has disabled. A token-shaped halt stops the poll too, because `/config` is token-scoped
-  and every request would draw the same refusal forever. The poll carries the token and nothing
-  about the character. `Sync/SyncTickPlan.cs` holds the rule and is unit-tested.
+  syncing halts for something only the user can fix, whether the refusal came from a collection
+  upload, the live tracker, or the config poll, it uploads nothing on either path (collections or
+  the live tracker) and collects nothing for upload; whether it still polls `/config` depends on
+  which halt it is. A character the server would not match (unclaimed, unverified, claimed twice,
+  or linked elsewhere) leaves the poll running on its normal interval — `/config` answers that
+  caller normally, and the poll is the only way a server-side change (a pause lifting, a category
+  returning) reaches a plugin whose Sync now button a pause has disabled. A token-shaped halt stops
+  the poll too, because `/config` is token-scoped and every request would draw the same refusal
+  forever. The poll carries the token and nothing about the character. `Sync/SyncTickPlan.cs`
+  holds the rule and is unit-tested.
 - **The two consents that stand for later.** The live occult tracker's toggle is the one setting
   that defaults ON, defensible only because the ticked box is **visible on the wizard's consent
   step** before anything can send. When the server has the tracker switched off — for the feature
