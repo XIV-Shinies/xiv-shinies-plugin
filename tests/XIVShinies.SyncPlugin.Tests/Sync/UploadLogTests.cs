@@ -349,7 +349,8 @@ public class UploadLogTests
     [Fact]
     public void Exactly_the_character_refusals_read_as_refused_for_the_character()
     {
-        // Enum.GetValues<T>() lists every member of the enum, like Object.values on a TS enum.
+        // Enum.GetValues<T>() returns every member of the enum as an array, as Object.values does
+        // for a TS string enum.
         foreach (var status in Enum.GetValues<ApiStatus>())
         {
             Assert.Equal(
@@ -997,6 +998,76 @@ public class UploadLogTests
         Assert.Equal(
             "body was not valid JSON · characterName: too long; trailing whitespace",
             UploadLogText.IssuesText(error));
+    }
+
+    // --- Live tracker halts -------------------------------------------------------------------
+    // The live tracker's uploads get no row of their own, except the one that halts it: a
+    // refused character or token. That row is what tells a player with only the tracker switched
+    // on why sharing stopped, so its reading is pinned.
+
+    [Fact]
+    public void A_live_tracker_halt_reads_as_the_live_tracker_with_its_refusal()
+    {
+        var entry = UploadLogEntry.LiveTrackerHalt(
+            new DateTimeOffset(2026, 9, 28, 20, 0, 0, TimeSpan.Zero), ApiStatus.CharacterNotVerified, 403);
+
+        Assert.Equal(UploadLogSource.LiveTracker, entry.Source);
+        Assert.Null(entry.Trigger);
+        Assert.Empty(entry.Categories);
+        Assert.Empty(entry.Skipped);
+        Assert.Equal("live tracker", UploadLogText.TriggerText(entry));
+        Assert.Equal("refused — character not verified", UploadLogText.OutcomeText(entry));
+    }
+
+    [Fact]
+    public void A_sync_row_reads_as_its_trigger()
+    {
+        var entry = SomeEntry() with { Trigger = SyncTrigger.Manual };
+
+        Assert.Equal(UploadLogSource.Sync, entry.Source);
+        Assert.Equal("manual sync", UploadLogText.TriggerText(entry));
+    }
+
+    // A live tracker row carries no categories, so it is never a category's baseline: the sync
+    // rows either side of it still compare with each other.
+    [Fact]
+    public void A_live_tracker_row_leaves_the_change_signal_intact()
+    {
+        var newestFirst = new[]
+        {
+            EntryWith(("minions", 390)),
+            UploadLogEntry.LiveTrackerHalt(DateTimeOffset.UnixEpoch, ApiStatus.InvalidToken, 401),
+            EntryWith(("minions", 389)),
+        };
+
+        Assert.Contains("minions", UploadLogDiff.ChangedCategories(newestFirst, 0));
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 1));
+    }
+
+    [Fact]
+    public void Clipboard_text_names_a_live_tracker_row_by_its_source_and_endpoint()
+    {
+        var entry = UploadLogEntry.LiveTrackerHalt(
+            new DateTimeOffset(2026, 9, 28, 20, 0, 0, TimeSpan.Zero), ApiStatus.CharacterNotVerified, 403);
+
+        var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });
+
+        Assert.Contains(
+            "2026-09-28 20:00:00Z | LiveTracker | CharacterNotVerified | sent: occult/instance-state " +
+            "| http: 403",
+            text);
+    }
+
+    // A sync row that carries no trigger still names itself, by its source, in both places.
+    [Fact]
+    public void A_sync_row_without_a_trigger_reads_as_sync()
+    {
+        var entry = SomeEntry() with { Trigger = null };
+
+        Assert.Equal("sync", UploadLogText.TriggerText(entry));
+        Assert.Contains(
+            " | Sync | ",
+            UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry }));
     }
 
     // --- The clipboard dump ----------------------------------------------------------------

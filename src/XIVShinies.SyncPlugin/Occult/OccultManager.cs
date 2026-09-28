@@ -16,11 +16,10 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Same shape as <see cref="SyncManager"/>, at a fraction of the size: every policy decision
-/// lives in a pure, unit-tested class (<see cref="OccultEncounterTracker"/> interprets the
-/// readings, <see cref="OccultUploadScheduler"/> times the uploads,
-/// <see cref="OccultUploadBuilder"/> shapes the body), so this class only moves data between
-/// the game, those classes, and the API client — and is verified by in-game QA.
+/// Same shape as <see cref="SyncManager"/>, at a fraction of the size: every policy decision lives
+/// in a pure, unit-tested class (the encounter tracker, upload scheduler, upload builder and outcome
+/// policy), so this class only moves data between the game, those classes, and the API client —
+/// and is verified by in-game QA.
 /// </para>
 /// <para>
 /// <b>Threading.</b> Game state is read inside the per-frame <c>Update</c> handler (throttled
@@ -30,8 +29,8 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </para>
 /// <para>
 /// <b>Consent.</b> Every tick starts by asking <see cref="OccultGate.CanTrack"/> (which owns
-/// the full gate ladder) and stands down while /sync is halted on something only the user can
-/// fix, so revoking any switch stops the tracker within a second.
+/// the full gate ladder) and stands down while the user-action halt it shares with /sync is set,
+/// whichever path raised it, so revoking any switch stops the tracker within a second.
 /// </para>
 /// </remarks>
 internal sealed class OccultManager : IDisposable
@@ -39,14 +38,6 @@ internal sealed class OccultManager : IDisposable
     /// <summary>One game-state read per second: state phases live for minutes, so nothing is
     /// missed, and the per-frame cost stays negligible.</summary>
     private static readonly TimeSpan ReadInterval = TimeSpan.FromSeconds(1);
-
-    /// <summary>
-    /// How long to stay quiet after a failure that would recur on every attempt: one only the
-    /// user can fix (bad token, a character the server would not match), or a terminal rejection
-    /// of a payload shape this build will keep producing. The /sync path surfaces those to the
-    /// user; this path just stops hammering.
-    /// </summary>
-    private static readonly TimeSpan UserActionBackoff = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// The longest the enter upload waits for the snapshot to become fingerprintable. The
@@ -68,8 +59,10 @@ internal sealed class OccultManager : IDisposable
     private readonly PluginSettings settings;
 
     /// <summary>
-    /// The /sync orchestrator, read for two things it owns: the character identity (captured
-    /// once, hash-side, for both upload paths) and the latest <c>/config</c>.
+    /// The /sync orchestrator, which owns what both upload paths share: the character identity
+    /// (captured once, hash-side), the latest <c>/config</c>, and the user-action halt with the
+    /// session and press counts that scope it. The tracker reads all of them and raises the halt
+    /// through <see cref="SyncManager.HaltFromLiveTracker"/>.
     /// </summary>
     private readonly SyncManager syncManager;
 
@@ -226,11 +219,11 @@ internal sealed class OccultManager : IDisposable
     {
         var config = syncManager.RemoteConfig;
 
-        // The tracker's consent gate (see OccultGate for the full ladder), plus /sync's
-        // user-action halt: when syncing is stopped on something only the user can fix (bad
-        // token, a character the server would not match), this path goes quiet too rather than
-        // earning its own copy of the same refusal every minute — and both resume together on
-        // "Sync now".
+        // The tracker's consent gate (see OccultGate for the full ladder), plus the user-action
+        // halt shared with /sync: when either upload path or the config poll has been refused for
+        // something only the user can fix (bad token, a character the server would not match),
+        // this path goes quiet too rather than earning its own copy of the same refusal every
+        // minute — and both resume together on "Sync now".
         var enabled = OccultGate.CanTrack(settings, config)
             && !syncManager.BlockedPendingUserAction;
 
@@ -336,6 +329,13 @@ internal sealed class OccultManager : IDisposable
         if (uploadInFlight)
             return;
 
+        // Asked again here, after the in-flight check: the upload that just finished may have
+        // raised the halt since the gate at the top of this tick read it. The halt is written
+        // before that upload clears uploadInFlight, so a tick that sees the upload finished also
+        // sees its halt.
+        if (syncManager.BlockedPendingUserAction)
+            return;
+
         var due = scheduler.Poll(now);
         if (due is null)
             return;
@@ -357,9 +357,15 @@ internal sealed class OccultManager : IDisposable
 
         uploadInFlight = true;
 
+        // The session and the "Sync now" press count this upload belongs to, captured here on the
+        // framework thread, so a refusal that lands after a logout or after the player's fix is
+        // dropped (see SyncManager.HaltFromLiveTracker).
+        var generation = syncManager.SessionGeneration;
+        var haltEpoch = syncManager.HaltEpoch;
+
         // Off the framework thread, including the JSON serialization inside the client. `_ =`
         // discards the task deliberately: nothing awaits it, and UploadAsync lets nothing escape.
-        _ = Task.Run(() => UploadAsync(request, due.Value));
+        _ = Task.Run(() => UploadAsync(request, due.Value, generation, haltEpoch));
     }
 
     /// <summary>
@@ -401,13 +407,21 @@ internal sealed class OccultManager : IDisposable
         return worldId > 0 ? worldId : null;
     }
 
-    /// <summary>Uploads off the framework thread and reports the outcome to the scheduler.</summary>
+    /// <summary>
+    /// Uploads off the framework thread and carries out what the answer calls for: the scheduler
+    /// hears about successes and waits, and a refusal only the player can fix raises the halt.
+    /// </summary>
     /// <remarks>
     /// No retry loop, deliberately: every upload is a full snapshot, so the next change or
     /// heartbeat re-sends everything a failed attempt would have. The scheduler's backoff covers
     /// the cases where the server asked for quiet.
     /// </remarks>
-    private async Task UploadAsync(OccultInstanceStateRequest request, OccultTrigger trigger)
+    /// <param name="request">The snapshot to send.</param>
+    /// <param name="trigger">Why it is being sent.</param>
+    /// <param name="startedFor">The login session the upload was sent for.</param>
+    /// <param name="haltEpochAtSend">The "Sync now" press count when the upload was sent.</param>
+    private async Task UploadAsync(
+        OccultInstanceStateRequest request, OccultTrigger trigger, int startedFor, int haltEpochAtSend)
     {
         try
         {
@@ -417,56 +431,42 @@ internal sealed class OccultManager : IDisposable
 
             var now = timeProvider.GetUtcNow();
 
-            if (response.Status == ApiStatus.Ok)
+            // What to do with the answer is OccultOutcomePolicy's rule; this switch only carries
+            // it out. Each case is a statement block, like a `case:` in a TypeScript switch.
+            var outcome = OccultOutcomePolicy.Classify(response.Status, response.RetryAfter, now);
+            switch (outcome.Kind)
             {
-                scheduler.MarkUploaded(now);
+                case OccultOutcomeKind.Applied:
+                    scheduler.MarkUploaded(now);
+                    LogApplied(response.Value, trigger);
+                    break;
 
-                // The tracker id is the server's identity for the instance — logging it is what
-                // lets a QA session (or a bug report) prove that a rejoin landed on the same
-                // tracker. It is a server-generated UUID, not player data.
-                // Both server strings are clamped: the log is durable and the backend overridable.
-                var outcome = ServerText.Clamp(response.Value?.Outcome ?? "ok");
-                var tracker = response.Value?.TrackerId is { } id
-                    ? $" tracker={ServerText.Clamp(id)}"
-                    : string.Empty;
+                // The server asked for quiet (429, or a 503 kill switch / tracker_unavailable), and
+                // a terminal rejection of the payload (400/405/413) goes quiet the same way.
+                // `when` narrows a case with an extra condition; here it unwraps the time.
+                case OccultOutcomeKind.BackOff or OccultOutcomeKind.Pause when outcome.Until is { } until:
+                    scheduler.BackOffUntil(until);
+                    log.Debug($"Occult tracker quiet until {until:u} after {response.Status}.");
+                    break;
 
-                log.Debug(
-                    $"Occult {trigger} upload: {outcome}{tracker}" +
-                    $"{(response.Value?.Created == true ? " (created)" : string.Empty)}.");
-                return;
+                // Nothing to pace (see OccultOutcomeKind.Skip); just note it.
+                case OccultOutcomeKind.Skip:
+                    log.Debug($"Occult {trigger} upload skipped: not configured.");
+                    break;
+
+                // The same halt a refused sync raises: it names the fix on the sync card and this
+                // tracker's card, and the gate in Tick stops this path until the player acts.
+                case OccultOutcomeKind.Halt:
+                    syncManager.HaltFromLiveTracker(
+                        response.Status, response.HttpStatusCode, startedFor, haltEpochAtSend);
+                    break;
+
+                // Transient (a network blip, a 5xx): the next change or heartbeat carries a fresh
+                // full snapshot, so just note it.
+                default:
+                    log.Debug($"Occult {trigger} upload failed: {response.Status}.");
+                    break;
             }
-
-            // The server told us to wait (429, or a 503 kill switch / tracker_unavailable).
-            if (RetryPolicy.BackoffUntil(response.Status, response.RetryAfter, now) is { } until)
-            {
-                log.Debug($"Occult tracker backing off until {until:u} after {response.Status}.");
-                scheduler.BackOffUntil(until);
-                return;
-            }
-
-            // A client-side refusal (unusable token or backend mid-edit): no request was even
-            // sent, so there is nothing to pace — the per-tick gate owns recovery, and a
-            // backoff here would only delay it for a user who just fixed their settings.
-            if (response.Status == ApiStatus.NotConfigured)
-            {
-                log.Debug($"Occult {trigger} upload skipped: not configured.");
-                return;
-            }
-
-            // Something only the user can fix (bad token, a character the server would not
-            // match), or a terminal rejection (400/405/413 — plugin bugs where the identical shape
-            // would fail again). Either way, retrying at heartbeat cadence would fail all session
-            // long, so go quiet for a while. The /sync path owns telling the user what is wrong.
-            if (RetryPolicy.RequiresUserAction(response.Status) || ApiStatusMap.IsTerminal(response.Status))
-            {
-                scheduler.BackOffUntil(now + UserActionBackoff);
-                log.Debug($"Occult tracker paused after {response.Status}.");
-                return;
-            }
-
-            // Transient (a network blip, a 5xx): the next change/heartbeat carries a fresh
-            // full snapshot, so just note it.
-            log.Debug($"Occult {trigger} upload failed: {response.Status}.");
         }
         catch (OperationCanceledException)
         {
@@ -487,5 +487,24 @@ internal sealed class OccultManager : IDisposable
         {
             uploadInFlight = false;
         }
+    }
+
+    /// <summary>Logs an applied upload with the tracker the server matched it to.</summary>
+    /// <param name="value">The 200 body, when one was parsed.</param>
+    /// <param name="trigger">Why the upload was sent.</param>
+    private void LogApplied(OccultInstanceStateResponse? value, OccultTrigger trigger)
+    {
+        // The tracker id is the server's identity for the instance — logging it is what lets a QA
+        // session (or a bug report) prove that a rejoin landed on the same tracker. It is a
+        // server-generated UUID, not player data. Both server strings are clamped: the log is
+        // durable and the backend overridable.
+        var outcome = ServerText.Clamp(value?.Outcome ?? "ok");
+        var tracker = value?.TrackerId is { } id
+            ? $" tracker={ServerText.Clamp(id)}"
+            : string.Empty;
+
+        log.Debug(
+            $"Occult {trigger} upload: {outcome}{tracker}" +
+            $"{(value?.Created == true ? " (created)" : string.Empty)}.");
     }
 }

@@ -247,10 +247,12 @@ internal sealed partial class MainWindow
         "about other players.";
 
     /// <summary>
-    /// The live Occult tracker's consent card: its toggle and its disclosure copy. Drawn as its
-    /// own card on both consent surfaces (the wizard's consent step and the settings), separate
-    /// from the collections list — the tracker is not a collection and must not read as one,
-    /// which is also why the collections select-all does not touch it.
+    /// The live Occult tracker's consent card: its toggle, its disclosure copy, and the fix for a
+    /// halt while that halt is the only thing stopping the tracker, followed by the standing choice
+    /// to switch on collections a later update adds. Drawn as its own card on both consent surfaces
+    /// (the wizard's consent step and the settings), separate from the collections list — the
+    /// tracker is not a collection and must not read as one, which is also why the collections
+    /// select-all does not touch it.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -331,6 +333,18 @@ internal sealed partial class MainWindow
             // permits the tracker, so the user's own toggle reads as a choice still open to them,
             // and muted along with the row once the server has taken the choice away.
             DrawWrapped(OccultWhatGetsSent, serverOff ? ImGuiCol.TextDisabled : ImGuiCol.Text);
+
+            // A halt stops the tracker as well as syncing, and a player with only the tracker
+            // switched on looks here rather than at the collections, so the halt is named on this
+            // card too, with the same fix sentence the sync card uses. Only while the halt is the
+            // one thing stopping the tracker: OccultGate.CanTrack holds every other gate, and while
+            // one of those is shut, it is the reason.
+            if (OccultGate.CanTrack(configuration.Settings, remoteConfig)
+                && syncManager.BlockedPendingUserAction)
+            {
+                ImGui.Spacing();
+                DrawWarning($"Sharing has stopped. {HaltSentence()}");
+            }
 
             ImGui.Unindent(checkboxColumn);
 
