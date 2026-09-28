@@ -25,8 +25,11 @@ using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Beastmaster;
 // The registered fact sources.
 using XIVShinies.SyncPlugin.Collectors;
-// The development-build diagnostics reached from /shinies.
+#if DEBUG
+// UnlockSlotAudit, the development-build check behind /shinies dumpslots. Guarded with it: a
+// Release compile of this file uses nothing from this namespace.
 using XIVShinies.SyncPlugin.Diagnostics;
+#endif
 // The live occult instance tracker (reader, scheduler, uploader).
 using XIVShinies.SyncPlugin.Occult;
 // The upload orchestrator and its supporting policy classes.
@@ -102,15 +105,6 @@ public sealed class Plugin : IDalamudPlugin
     /// only when the user opens it themselves.
     /// </summary>
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
-
-#if DEBUG
-    /// <summary>
-    /// Locates open game windows by name. The development build's addon dump is its only reader,
-    /// so the property is gated with that dump rather than injected into a build that cannot use
-    /// it.
-    /// </summary>
-    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
-#endif
 
     // --- Plugin state --------------------------------------------------------------------
 
@@ -390,8 +384,6 @@ public sealed class Plugin : IDalamudPlugin
         //                                   (see MainWindow.OverrideVersionForScreenshots)
         //   /shinies dumpslots            — audit the unlock bitmask's coverage of the Mount
         //                                   sheet; the answer goes to /xllog, not the screen
-        //   /shinies dumpaddon <name>     — print an open game window's image nodes and the
-        //                                   texture each one draws from
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
         {
@@ -422,25 +414,6 @@ public sealed class Plugin : IDalamudPlugin
             // already there.
             _ = Framework.RunOnFrameworkThread(
                 () => UnlockSlotAudit.Run(ClientState, DataManager, UnlockState, Log));
-            return;
-        }
-
-        if (words.Length > 0 && words[0].Equals("dumpaddon", StringComparison.OrdinalIgnoreCase))
-        {
-            // The only subcommand that takes an argument, so it is also the only one that can be
-            // typed incompletely. Matching on the verb alone and answering here is what stops a
-            // missing name from falling through to the window toggle, which would look like the
-            // command silently doing nothing.
-            if (words.Length < 2)
-            {
-                Log.Information("Usage: /shinies dumpaddon <AddonName> — the window must be open.");
-                return;
-            }
-
-            // The window name is captured into the closure rather than passed, because
-            // RunOnFrameworkThread takes a parameterless delegate.
-            var addonName = words[1];
-            _ = Framework.RunOnFrameworkThread(() => AddonDump.Run(addonName, GameGui, Log));
             return;
         }
 #endif
