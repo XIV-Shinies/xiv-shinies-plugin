@@ -59,6 +59,11 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     private int? beastCount;
     private bool beastCountReadFailed;
 
+    // The figures of the last read written to the log, so a redraw that reads the same figures is
+    // not written again; null until a read is logged, and again whenever the window opens or the
+    // ledger is cleared.
+    private BestiaryReadSummary? lastLoggedRead;
+
     /// <summary>Wires the listener. Records nothing until the player opens their bestiary.</summary>
     /// <param name="isCategoryEnabled">
     /// Answers whether the user has this collection switched on, given its category key. Passed in
@@ -78,9 +83,9 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         this.isCategoryEnabled = isCategoryEnabled;
         this.log = log;
 
-        // PostSetup fires once when the window opens with its data in place; PostRefresh covers it
-        // being redrawn while it stays open, which is how turning a page reaches this. Both routes
-        // read the same values.
+        // PostSetup fires once when the window opens, before its list has loaded; PostRefresh fires
+        // as the window is redrawn while it stays open, which is how the loaded list and each turned
+        // page reach this. Both route to the same handler.
         addonLifecycle.RegisterListener(AddonEvent.PostSetup, BestiaryAddonName, OnBestiaryAddon);
         addonLifecycle.RegisterListener(AddonEvent.PostRefresh, BestiaryAddonName, OnBestiaryAddon);
 
@@ -122,9 +127,20 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         clientState.Logout -= OnLogout;
     }
 
-    private void OnLogin() => ledger.Clear();
+    private void OnLogin() => ForgetCaptured();
 
-    private void OnLogout(int type, int code) => ledger.Clear();
+    private void OnLogout(int type, int code) => ForgetCaptured();
+
+    /// <summary>Clears what has been captured, and the note of what was last logged with it.</summary>
+    /// <remarks>
+    /// The two go together: after a clear the next read starts the ledger afresh, so it is written to
+    /// the log even when its figures match a read from before.
+    /// </remarks>
+    private void ForgetCaptured()
+    {
+        ledger.Clear();
+        lastLoggedRead = null;
+    }
 
     /// <summary>Reads whatever page of the bestiary the player has on screen.</summary>
     /// <remarks>
@@ -143,9 +159,16 @@ public sealed unsafe class TamedBeastObserver : IDisposable
             // costs the player nothing and keeps the switch meaning what it says.
             if (!isCategoryEnabled(CategoryKeys.TamedBeasts))
             {
-                ledger.Clear();
+                ForgetCaptured();
                 return;
             }
+
+            // The window opening arrives before its list has loaded, so it is noted here rather
+            // than logged: clearing the last logged read means the first read with records after an
+            // opening is always written, even when its figures match the read before the window
+            // closed. That is what shows a player's reopening in the log.
+            if (type == AddonEvent.PostSetup)
+                lastLoggedRead = null;
 
             var addon = (AtkUnitBase*)args.Addon.Address;
             if (addon == null || addon->AtkValues == null || addon->AtkValuesCount == 0)
@@ -177,14 +200,30 @@ public sealed unsafe class TamedBeastObserver : IDisposable
             // which agreement failed rather than only that one did. The page's own tally sits
             // beside the ledger's remembered one because the two part company as soon as the player
             // filters the list.
-            var ledgerReport = ledger.Report();
-            log.Debug(
-                $"Bestiary page read: {page.Seen.Count} listed, {page.Captured.Count} held, " +
-                $"page tally {page.CapturedTotal?.ToString() ?? "?"}/{page.BeastTotal?.ToString() ?? "?"}; " +
-                $"ledger {ledgerReport.Held} held, {ledgerReport.Seen} seen, tally " +
-                $"{ledgerReport.CapturedTotal?.ToString() ?? "?"}/" +
-                $"{ledgerReport.BeastTotal?.ToString() ?? "?"}; " +
-                $"sheet {size?.ToString() ?? "?"}; complete {ledgerReport.IsComplete}.");
+            var summary = new BestiaryReadSummary(
+                page.Seen.Count, page.Captured.Count, page.CapturedTotal, page.BeastTotal,
+                ledger.Report(), size);
+
+            // Written only when a figure has changed since the last read logged: the window redraws
+            // many times a second while it stays open, and a message is built even when the log
+            // level would discard it.
+            //
+            // `lastLoggedRead` is a nullable struct (`BestiaryReadSummary?`), and a real value never
+            // equals null, so the first read after an opening or a clear is written too.
+            if (summary != lastLoggedRead)
+            {
+                lastLoggedRead = summary;
+
+                // Built from the summary alone, so the line changes exactly when the summary does.
+                var tally = summary.Ledger;
+                log.Debug(
+                    $"Bestiary page read: {summary.Listed} listed, {summary.Held} held, " +
+                    $"page tally {summary.PageCapturedTotal?.ToString() ?? "?"}/" +
+                    $"{summary.PageBeastTotal?.ToString() ?? "?"}; " +
+                    $"ledger {tally.Held} held, {tally.Seen} seen, tally " +
+                    $"{tally.CapturedTotal?.ToString() ?? "?"}/{tally.BeastTotal?.ToString() ?? "?"}; " +
+                    $"sheet {summary.SheetSize?.ToString() ?? "?"}; complete {tally.IsComplete}.");
+            }
         }
         catch (Exception ex)
         {

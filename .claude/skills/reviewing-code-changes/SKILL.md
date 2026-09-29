@@ -282,6 +282,12 @@ earlier version. Flag a comment if it:
 4. Describes a state the code can NO LONGER REACH (i.e. is now factually wrong). Verify each
    claim against the surrounding code — do not take the comment's word for it.
 5. Is redundant — the same rationale re-derived in two or more places. Name the canonical home.
+6. Dates itself forward — true today and false as soon as the work lands: "is growing", "is being
+   built", "coming soon", "not yet", "for now", "will be", "planned", "once X ships". Rule 4 catches
+   prose that is ALREADY wrong; this catches prose guaranteed to go wrong, which nothing else does
+   and which no grep for past-tense narration will ever match. Write what the thing IS, or what it
+   is FOR, with no reference to a development status: "A run companion can only be designed against
+   what the client exposes" rather than "the tab is growing a companion".
 
 NOT a violation: a mechanism contrast that is TRUE AT RUNTIME today ("painted through the draw
 list rather than a second Text call, so the layout cursor is not advanced"; "a copy, not the
