@@ -286,6 +286,9 @@ Project-scoped skills live in `.claude/skills/`:
   conformance, Dalamud compliance, comment quality, and test coverage.
 - **learning-summary** — the two-part learning-summary format (see the working-style rules
   at the top of this file).
+- **working-in-worktrees** — working on a branch outside the main checkout: setup under
+  `.claude/worktrees/`, swapping the in-game dev build without clobbering the shared plugin
+  config, and post-merge cleanup.
 - **releasing** — two-phase release flow (changelog entry → version/repo.json release PR,
   each gated on user approval), then a `vX.Y.Z` tag pushed to `main` after the squash merge;
   the tag-triggered Release workflow verifies every version surface agrees and publishes the
