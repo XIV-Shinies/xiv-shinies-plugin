@@ -119,3 +119,4 @@ Deleting the remote branch is a push, so it needs the maintainer's approval.
 | Two copies enabled | Every sync fires twice; `dalamud.log` has two `Finished loading XIVShinies.SyncPlugin` with no unload between | One enabled Dev Plugin Location |
 | Config backed up or restored while a copy was loaded | Settings missing or changed after switching back | Back up and restore only with no copy loaded |
 | Building another checkout | The loaded plugin reloads during someone's QA | Build only inside your own worktree |
+| A tool called by quoted full path (`"/c/Program Files/GitHub CLI/gh.exe" …`) | Refused: the command "cannot be shown not to be git" | Call it by bare name: `gh`, `dotnet` |
