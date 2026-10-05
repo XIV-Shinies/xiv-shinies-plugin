@@ -627,7 +627,9 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   and go up as `change`.
 - **`enter`** (zoning into a board) carries a baseline: `bag` and `self`, plus every window open
   at that moment. The same baseline goes up as a `change` when the client starts or reloads
-  inside a board.
+  inside a board. A kind not yet read when the `enter` goes is left out and follows as a
+  `change`: no upload has to carry any particular kind, and a diff starts at a kind's first
+  reading, whichever upload carries it.
 - **`change`** normally carries only the kinds whose content changed since the client last read
   them. A kind can still repeat unchanged: the comparison starts over with each visit, each login
   and each plugin start, and a reading no request has carried 30 minutes after it was read is

@@ -26,7 +26,7 @@ internal sealed class TokenVerifier : IDisposable
 {
     private readonly ApiClient apiClient;
 
-    /// <summary>Cancelled when the window is torn down, so a probe in flight stops.</summary>
+    /// <summary>Canceled when the window is torn down, so a probe in flight stops.</summary>
     private readonly CancellationTokenSource lifetime = new();
 
     /// <summary>Captured before the source can be disposed; reading `.Token` afterwards throws.</summary>
@@ -78,7 +78,7 @@ internal sealed class TokenVerifier : IDisposable
         // the generation it was started for rather than whatever the field holds when it finishes.
         var startedFor = ++generation;
 
-        // No token passed to Task.Run: an already-cancelled one would make it skip the delegate
+        // No token passed to Task.Run: an already-canceled one would make it skip the delegate
         // entirely, so the `finally` that clears `inFlight` would never run and the button would stay
         // stuck on "Checking..." forever. Cancellation is observed inside the task instead.
         _ = Task.Run(() => ProbeAsync(startedFor));

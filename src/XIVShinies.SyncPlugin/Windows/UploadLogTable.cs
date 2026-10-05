@@ -175,10 +175,11 @@ internal sealed class UploadLogTable
             // Brand.Gold and draws. Only the separator between categories is muted.
             ImGui.TableNextColumn();
 
-            // A live tracker row sent one thing, the instance state, and has no categories to list.
-            if (entry.Source == UploadLogSource.LiveTracker)
+            // A live tracker or Crucible sharing row sent one kind of thing and has no categories to
+            // list.
+            if (UploadLogText.LiveSentText(entry.Source) is { } liveSent)
             {
-                Widgets.DrawWrapped(UploadLogText.LiveTrackerSent, ImGuiCol.Text, null);
+                Widgets.DrawWrapped(liveSent, ImGuiCol.Text, null);
                 continue;
             }
 

@@ -1,0 +1,123 @@
+using System;
+using System.Collections.Generic;
+using XIVShinies.SyncPlugin.Api;
+
+namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
+
+/// <summary>
+/// Makes a snapshot of one window reading, at a given moment and closed or not. The same reading makes
+/// an open snapshot when its window is read and a closed one when the window closes.
+/// </summary>
+/// <param name="at">The moment the snapshot stands for.</param>
+/// <param name="closed">Whether it is the window's closing snapshot.</param>
+// A `delegate` declares the shape of a function value, like the TypeScript function type
+// `(at: Date, closed: boolean) => CrucibleObservation`.
+public delegate CrucibleObservation CrucibleSnapshot(DateTimeOffset at, bool closed);
+
+/// <summary>
+/// The Crucible windows the sharing reads: their internal names, which events carry their values, and
+/// the reader each one's values go to.
+/// </summary>
+/// <remarks>
+/// The results screen's Degree, rank and bonus names are not resolved here: each goes up as null, which
+/// the contract accepts for a name that does not resolve, and the drawn text is never sent.
+/// </remarks>
+// A `static class` holds only shared members and is never instantiated: a module of functions.
+public static class CrucibleWindows
+{
+    /// <summary>The board window's internal name.</summary>
+    public const string Board = "XBMStageDetailList";
+
+    /// <summary>The team window's internal name.</summary>
+    public const string Team = "XBMPetParty";
+
+    /// <summary>The run HUD's internal name: the token balance and the bag.</summary>
+    public const string Hud = "XBMContentsMainHUD";
+
+    /// <summary>The treasure coffer's internal name.</summary>
+    public const string Treasure = "XBMContentsTreasure";
+
+    /// <summary>The fight's loot window's internal name.</summary>
+    public const string Loot = "XBMContentsBooty";
+
+    /// <summary>The shop's internal name.</summary>
+    public const string Shop = "XBMContentsItemShop";
+
+    /// <summary>The results screen's internal name.</summary>
+    public const string Results = "XBMResult";
+
+    /// <summary>The windows whose values arrive when they are redrawn.</summary>
+    // `IReadOnlyList<T>` is a list its holder cannot change, like `readonly T[]`; `[a, b]` builds it.
+    public static readonly IReadOnlyList<string> Redrawn = [Board, Team, Hud, Treasure, Loot, Shop, Results];
+
+    /// <summary>The windows whose values are already complete when they open.</summary>
+    public static readonly IReadOnlyList<string> CompleteAtOpen = [Results];
+
+    /// <summary>The windows whose last state is sent once more, marked closed, when they close.</summary>
+    public static readonly IReadOnlyList<string> Closing = [Board, Team, Treasure, Loot, Shop];
+
+    /// <summary>
+    /// Reads one window's values, or returns null when they are not a layout its reader knows.
+    /// </summary>
+    private delegate CrucibleSnapshot? WindowReader(IReadOnlyList<AddonValue> values);
+
+    /// <summary>Each window's reader, by the window's internal name.</summary>
+    // `new() { [key] = value, ... }` builds the dictionary with these entries, like an object literal.
+    // `values => ...` is a lambda, like an arrow function: each one reads the values and, when its
+    // reader recognized them, hands back a second lambda that builds a snapshot from that reading.
+    // `x is { } reading` matches when x is not null and names it `reading`.
+    private static readonly Dictionary<string, WindowReader> Readers = new()
+    {
+        [Board] = values => CrucibleBoard.Read(values) is { } reading
+            ? (at, closed) => CrucibleUploadBuilder.Board(reading, at, closed)
+            : null,
+        [Team] = values => CrucibleTeam.Read(values) is { } reading
+            ? (at, closed) => CrucibleUploadBuilder.Team(reading, at, closed)
+            : null,
+        [Hud] = values => CrucibleHud.Read(values) is { } reading
+            ? (at, _) => CrucibleUploadBuilder.Bag(reading, at)
+            : null,
+        [Treasure] = values => CrucibleOffers.ReadTreasure(values) is { } reading
+            ? (at, closed) => CrucibleUploadBuilder.Offer(reading, at, closed)
+            : null,
+        [Loot] = values => CrucibleOffers.ReadLoot(values) is { } reading
+            ? (at, closed) => CrucibleUploadBuilder.Offer(reading, at, closed)
+            : null,
+        [Shop] = values => CrucibleOffers.ReadShop(values) is { } reading
+            ? (at, closed) => CrucibleUploadBuilder.Offer(reading, at, closed)
+            : null,
+        [Results] = values => CrucibleResults.Read(values) is { } reading
+            ? (at, _) => CrucibleUploadBuilder.Results(
+                reading, at, degree: null, rankIndex: null, bonusId: _ => null)
+            : null,
+    };
+
+    /// <summary>
+    /// Reads a window's values through its reader, or returns null for a window this sharing does not
+    /// read, or values that are not a layout its reader knows.
+    /// </summary>
+    /// <param name="windowName">The window's internal name.</param>
+    /// <param name="values">Every value the window was handed, in order.</param>
+    public static CrucibleSnapshot? Read(string windowName, IReadOnlyList<AddonValue> values) =>
+        // `TryGetValue` returns whether the key is there and, when it is, writes its value into
+        // `reader`.
+        Readers.TryGetValue(windowName, out var reader) ? reader(values) : null;
+
+    /// <summary>True for a window this sharing reads.</summary>
+    /// <param name="windowName">The window's internal name.</param>
+    public static bool IsRead(string windowName) => Readers.ContainsKey(windowName);
+
+    /// <summary>True for a window that sends a closing snapshot.</summary>
+    /// <param name="windowName">The window's internal name.</param>
+    public static bool Closes(string windowName)
+    {
+        // A plain loop rather than `Contains`, which an `IReadOnlyList` does not offer by itself.
+        foreach (var closing in Closing)
+        {
+            if (closing == windowName)
+                return true;
+        }
+
+        return false;
+    }
+}

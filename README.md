@@ -95,10 +95,10 @@ collection is marked **New** in the settings until you have seen it.
 
 The settings window keeps a **Recent uploads** log: every collection upload's time, trigger,
 outcome, and per-category counts, with changes since the previous upload highlighted. The live
-Occult tracker uploads too often to list, so it appears only when an upload is refused and
-sharing stops until you fix it. **Copy log** puts a plain-text version on your clipboard for
-bug reports — it carries counts, outcomes, and failure diagnostics only, never IDs or character
-identity. The log lives in memory and clears on logout and when the plugin unloads.
+Occult tracker and the Crucible run sharing upload too often to list, so each appears only when
+an upload is refused and sharing stops until you fix it. **Copy log** puts a plain-text version
+on your clipboard for bug reports — it carries counts, outcomes, and failure diagnostics only,
+never IDs or character identity. The log lives in memory and clears on logout and when the plugin unloads.
 
 ![The Recent uploads log: per-upload counts, outcomes, and change highlights](images/screenshots/settings-5-uploads.png)
 

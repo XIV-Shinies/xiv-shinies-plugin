@@ -198,11 +198,12 @@ internal sealed partial class MainWindow
 
             // Normal text color: this sentence is what tells the user the log is a memory-only
             // record rather than a permanent one, so it is an explanation they need to read. It
-            // also says which live tracker uploads appear, since its routine ones never do.
+            // also says which live tracker and Crucible sharing uploads appear, since their routine
+            // ones never do.
             DrawWrapped(
-                "What this plugin sent recently. The live Occult tracker appears only when an upload " +
-                "is refused. Kept in memory only — the log clears on logout and when the plugin " +
-                "unloads.",
+                "What this plugin sent recently. The live Occult tracker and the Crucible run sharing " +
+                "appear only when an upload is refused. Kept in memory only: the log clears on " +
+                "logout and when the plugin unloads.",
                 ImGuiCol.Text);
             ImGui.Spacing();
 
