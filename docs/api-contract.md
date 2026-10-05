@@ -584,7 +584,7 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
     {"kind": "results", "observedAtUtc": "…", "degree": 0, "rankIndex": 4,
      "score": {"base": 7625, "performancePct": 100, "performancePoints": 5000,
                "enemies": 4, "enemyPoints": 1000, "elites": 1, "elitePoints": 625,
-               "bosses": 1, "bossPoints": 1000, "remainingHpPoints": 462,
+               "bosses": 1, "bossPoints": 1000, "remainingHp": 462,
                "bonusPoints": 250, "total": 7875},
      "bonuses": [{"bonusId": 7, "points": 250}],
      "familiars": [{"petId": 8, "rankBefore": 7, "rankAfter": 8,
@@ -600,12 +600,14 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 | `team` | `XBMPetParty` | `mode` 0 roster pick, 1 browse, 2 lineup, 3 feed, 4 campsite, 5 Blessed Horn; `itemId` (the feed or horn) in modes 3 and 5, else null; `familiars[]` each `petId` (the `XBMPet` row), `place` 0–2 or 3 for none, `hp`, `rank` as drawn with `rankSynced`, `feedItemIds` (up to five), `resting`; `closed`. Mode 0 lists only the counted picks, in pick order. |
 | `bag` | `XBMContentsMainHUD` | `tokens`; `itemIds` (one per filled item slot, so an item in two slots appears twice); `gearIds`. No `closed`: the HUD stays open. |
 | `offer` | `XBMContentsTreasure`, `XBMContentsBooty`, `XBMContentsItemShop` | `source` `treasure`, `loot` or `shop`; `tokens`; `tokensEarned` on loot, else null; `offers[]` each `itemId`, plus `price`, `discounted` and `bought` on the shop only; `closed`. |
-| `results` | `XBMResult` | `degree` 0–3, or null; `rankIndex` 0 (Apprentice) to 8 (Legendary), or null; `score` as the numbers on screen, where `remainingHpPoints` is the HP the run ended on; `bonuses[]` each `bonusId` (an `XBMScoreBonus` row id, or null) with `points`; `familiars[]` each `petId`, `rankBefore`, `rankAfter`, `expBefore`, `expAfter`. |
+| `results` | `XBMResult` | `degree` 0–3, or null; `rankIndex` 0 (Apprentice) to 8 (Legendary), or null; `score` as the numbers on screen, where `remainingHp` is the HP the run ended on; `bonuses[]` each `bonusId` (an `XBMScoreBonus` row id, or null) with `points`; `familiars[]` each `petId`, `rankBefore`, `rankAfter`, `expBefore`, `expAfter`. |
 | `self` | the local player | `hp`. |
 
 - **Null or absent.** `currentNodeIndex`, `itemId`, `tokensEarned`, `degree`, `rankIndex` and
   `bonusId` are always present, as `null` where they do not apply or did not resolve. The three
-  shop fields are absent from a treasure or loot offer, not null.
+  shop fields are absent from a treasure or loot offer, and `closed` from a `bag`, `results` or
+  `self`, not null. Every list is present, empty where it holds nothing (`observations: []` on a
+  heartbeat or a leave, `feedItemIds: []`).
 - **`closed`** marks a window's last snapshot before it closed: a `board`, `team` or `offer`
   snapshot goes up on each refresh that changed it, and once more with `closed: true` when the
   window closes, whether or not its content changed.
@@ -617,8 +619,9 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   string does not resolve.
 - **Unknown ids.** An unknown `petId`, item, gear or bonus id is ignored; a `nodeIndex` the board
   lacks fails the whole upload with 400.
-- **`territoryTypeId`** is the territory the upload concerns: the board the character is in, the
-  entrance for the roster pick and pre-entry board, and on `leave` the board just left.
+- **`territoryTypeId`** is the territory the upload concerns, not where the character stands when
+  it is sent: the board the character is in, the entrance for the roster pick and pre-entry board,
+  on `leave` the board just left, and on `heartbeat` the territory the baseline carried.
 - **Outside a Crucible territory** the client sends nothing except `leave` and the entrance's
   roster pick (`team` mode 0) and pre-entry board (`board` view 0), which open outside the duty
   and go up as `change`.
@@ -629,16 +632,20 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   them. A kind can still repeat unchanged: the comparison starts over with each visit, each login
   and each plugin start, and a reading no request has carried 30 minutes after it was read is
   dropped, so the same content read again goes up. A reading already in a retried request is not
-  dropped for its age, so a retry can deliver one older than 30 minutes. A window's `closed`
-  snapshot and a fresh snapshot of the same kind go in two uploads, the `closed` one first.
+  dropped for its age, so a retry can deliver one older than 30 minutes. Content in an upload
+  refused with a 400 is not sent again until it changes or the comparison starts over. A
+  window's `closed` snapshot and a fresh snapshot of the same kind go in two uploads, the
+  `closed` one first.
 - **`heartbeat`** carries `observations: []` and fires only after `crucibleRuns.heartbeatSeconds`
-  with no other upload. It reads nothing, so it may go out while the character is in combat; its
-  `territoryTypeId` is the one the baseline carried.
+  with no other upload. It reads nothing, so it may go out while the character is in combat.
 - **`leave`** (zoning out) carries no observations.
 - **Order and retry.** `observedAtUtc` never decreases within an upload (equal stamps are normal,
-  since the wire is second-exact) and is never later than the request. A 429 or 503 is retried
-  after its `Retry-After`, and a network failure after a backoff, each with the same content; a
-  400 or 403 is not retried unchanged.
+  since the wire is second-exact). The server checks that order, and refuses a stamp for its
+  time only when it is more than five minutes ahead of the server's clock, so a client clock
+  running fast still uploads; a stamp may be old. Across uploads the server orders each kind by
+  `observedAtUtc`, so a retried upload may arrive late and still land in place. A 429 or 503 is
+  retried after its `Retry-After`, and a network failure after a backoff, each with the same
+  content; a 400 or 403 is not retried unchanged.
 
 #### Response
 
@@ -651,11 +658,12 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 
 The snapshots belong to the character's active run, which the player starts on the website.
 On `applied`, `events` is how many run events the snapshots produced, and `skipped` how many
-snapshots produced nothing because the player had already logged that piece by hand (the
-player's own entry wins). `held` means there is no active run yet: the server keeps the latest
-snapshots for 30 minutes and applies them once a run on that board starts. `board_mismatch`
-means the website run is on a different board; nothing is written to it. A run is never created
-from observations.
+snapshots produced nothing because the player had already logged that piece themselves on the
+website (the player's own entry wins). `held` means there is no active run yet: the server keeps
+the latest in-duty snapshot of each kind until 30 minutes past its `observedAtUtc`, so a reading
+that arrives older than that is not held. The server applies what it holds once a run on that
+board starts. `board_mismatch` means the website run is on a different board; nothing is written to
+it. A run is never created from observations.
 
 Status codes mirror `/sync` (400 `invalid_payload`, 401, the 403 family with echoed identity,
 405, 413, 429 with its own per-token budget of 240/hour), plus **503 `sync_disabled`** when the

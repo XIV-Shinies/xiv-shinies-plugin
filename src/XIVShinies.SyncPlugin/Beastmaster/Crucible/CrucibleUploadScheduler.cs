@@ -85,9 +85,9 @@ public sealed class CrucibleUploadScheduler
     private static readonly TimeSpan MaxRetryWait = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// How long an unsent snapshot is kept. The server keeps snapshots it cannot yet apply for the
-    /// same half hour, so an older one would arrive with nothing left to join; letting it go also
-    /// keeps a long hold from piling up snapshots.
+    /// How long an unsent snapshot is kept. With no run active, the server keeps a snapshot only
+    /// until 30 minutes past its <c>observedAtUtc</c>, so it would not keep an older one; letting it
+    /// go also stops a long hold from piling up snapshots.
     /// </summary>
     /// <remarks>
     /// A request waiting to be retried is not held to this age: it goes again as the very same

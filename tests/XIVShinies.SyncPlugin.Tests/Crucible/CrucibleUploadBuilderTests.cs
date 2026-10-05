@@ -204,9 +204,9 @@ public class CrucibleUploadBuilderTests
             CrucibleUploadBuilder.Offer(reading, ObservedAt, closed: false));
     }
 
-    // The mode, the rank and each bonus go out as the ids they resolved to. The score keys are the
-    // contract's, and the value at the HP place is the HP the run ended on. Every number in the
-    // sample differs from the others, so a field written under the wrong key cannot pass.
+    // The mode, the rank and each bonus go out as the ids they resolved to, and the score keys are
+    // the contract's. Every number in the sample differs from the others, so a field written under
+    // the wrong key cannot pass.
     [Fact]
     public void A_results_snapshot_sends_the_resolved_ids_and_the_score()
     {
@@ -219,7 +219,7 @@ public class CrucibleUploadBuilderTests
             {"kind":"results","observedAtUtc":"2026-09-28T12:00:00Z","degree":2,"rankIndex":4,
              "score":{"base":7631,"performancePct":98,"performancePoints":5003,
                       "enemies":5,"enemyPoints":1010,"elites":3,"elitePoints":625,
-                      "bosses":6,"bossPoints":993,"remainingHpPoints":462,
+                      "bosses":6,"bossPoints":993,"remainingHp":462,
                       "bonusPoints":250,"total":7881},
              "bonuses":[{"bonusId":17,"points":240}],
              "familiars":[{"petId":12,"rankBefore":7,"rankAfter":8,"expBefore":65,"expAfter":61}]}
@@ -314,6 +314,49 @@ public class CrucibleUploadBuilderTests
 
         Assert.Equal(word, json["trigger"]!.GetValue<string>());
         Assert.Empty(json["observations"]!.AsArray());
+    }
+
+    // Every list a kind defines goes up even when it holds nothing, as an empty array.
+    [Fact]
+    public void An_empty_list_is_sent_as_an_empty_array()
+    {
+        // Each case is a snapshot and the list keys it must carry. `(Type Name, Type Name)[]` is an
+        // array of tuples with named parts, like TypeScript's `[snapshot: X, lists: string[]][]`.
+        (CrucibleObservation Snapshot, string[] Lists)[] cases =
+        [
+            (CrucibleUploadBuilder.Board(
+                new CrucibleBoardReading(CrucibleBoardView.WholeBoard, [], null, null), ObservedAt, false),
+             ["pieces"]),
+            (CrucibleUploadBuilder.Team(
+                new CrucibleTeamReading(CrucibleTeamMode.Lineup, null, []), ObservedAt, false),
+             ["familiars"]),
+            (CrucibleUploadBuilder.Bag(new CrucibleBagReading(0, [], []), ObservedAt),
+             ["itemIds", "gearIds"]),
+            (CrucibleUploadBuilder.Offer(
+                new CrucibleOfferReading(CrucibleOfferSource.Treasure, 0, null, []), ObservedAt, false),
+             ["offers"]),
+            // `with { ... }` copies a record with the listed properties replaced, like
+            // `{ ...SampleResults(), bonuses: [], familiars: [] }`.
+            (CrucibleUploadBuilder.Results(
+                SampleResults() with { Bonuses = [], Familiars = [] },
+                ObservedAt,
+                degree: null,
+                rankIndex: null,
+                bonusId: _ => null),
+             ["bonuses", "familiars"]),
+        ];
+
+        // `var (snapshot, lists)` takes each tuple apart into two variables, by position, like
+        // `for (const [snapshot, lists] of cases)`.
+        foreach (var (snapshot, lists) in cases)
+        {
+            var json = Serialize(snapshot);
+
+            // `Assert.IsType<JsonArray>` fails on a missing key or a non-array, and hands back the
+            // array when it passes.
+            foreach (var list in lists)
+                Assert.Empty(Assert.IsType<JsonArray>(json[list]));
+        }
     }
 
     /// <summary>A results reading whose numbers all differ from one another.</summary>

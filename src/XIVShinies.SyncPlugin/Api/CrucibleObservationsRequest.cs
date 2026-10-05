@@ -272,11 +272,6 @@ public sealed record CrucibleScoreUpload
     public required int BossPoints { get; init; }
 
     /// <summary>The HP the run ended on.</summary>
-    /// <remarks>
-    /// The contract names this key <c>remainingHpPoints</c>; the value the screen holds at that
-    /// place is the HP itself, and <c>JsonPropertyName</c> pins the key to the contract's name.
-    /// </remarks>
-    [JsonPropertyName("remainingHpPoints")]
     public required int RemainingHp { get; init; }
 
     /// <summary>The points all bonuses paid together.</summary>
