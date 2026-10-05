@@ -1,0 +1,172 @@
+{
+ "window": "XBMContentsMainHUD",
+ "event": "PostRefresh",
+ "valueCount": 111,
+ "values": [
+  {
+   "i": 8,
+   "type": "String",
+   "value": "225"
+  },
+  {
+   "i": 9,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 12,
+   "type": "UInt",
+   "value": 78
+  },
+  {
+   "i": 14,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 17,
+   "type": "UInt",
+   "value": 130
+  },
+  {
+   "i": 19,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 22,
+   "type": "UInt",
+   "value": 138
+  },
+  {
+   "i": 24,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 27,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 29,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 32,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 34,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 37,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 39,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 42,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 44,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 47,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 49,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 52,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 54,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 57,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 60,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 63,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 65,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 68,
+   "type": "UInt",
+   "value": 45
+  },
+  {
+   "i": 70,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 75,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 80,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 85,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 90,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 95,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 100,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 105,
+   "type": "Bool",
+   "value": false
+  }
+ ]
+}

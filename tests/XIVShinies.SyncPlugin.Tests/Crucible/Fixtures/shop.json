@@ -1,0 +1,417 @@
+{
+ "window": "XBMContentsItemShop",
+ "event": "PostRefresh",
+ "valueCount": 269,
+ "values": [
+  {
+   "i": 1,
+   "type": "String",
+   "value": "1,328"
+  },
+  {
+   "i": 2,
+   "type": "UInt",
+   "value": 16
+  },
+  {
+   "i": 3,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 4,
+   "type": "UInt",
+   "value": 162
+  },
+  {
+   "i": 5,
+   "type": "String",
+   "value": "125"
+  },
+  {
+   "i": 6,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 7,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 8,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 9,
+   "type": "UInt",
+   "value": 157
+  },
+  {
+   "i": 10,
+   "type": "String",
+   "value": "25 (-50%)"
+  },
+  {
+   "i": 11,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 12,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 13,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 14,
+   "type": "UInt",
+   "value": 161
+  },
+  {
+   "i": 15,
+   "type": "String",
+   "value": "50"
+  },
+  {
+   "i": 16,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 17,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 18,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 19,
+   "type": "UInt",
+   "value": 165
+  },
+  {
+   "i": 20,
+   "type": "String",
+   "value": "242"
+  },
+  {
+   "i": 21,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 22,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 23,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 24,
+   "type": "UInt",
+   "value": 178
+  },
+  {
+   "i": 25,
+   "type": "String",
+   "value": "129"
+  },
+  {
+   "i": 26,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 27,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 28,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 29,
+   "type": "UInt",
+   "value": 155
+  },
+  {
+   "i": 30,
+   "type": "String",
+   "value": "298"
+  },
+  {
+   "i": 31,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 32,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 33,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 34,
+   "type": "UInt",
+   "value": 185
+  },
+  {
+   "i": 35,
+   "type": "String",
+   "value": "294"
+  },
+  {
+   "i": 36,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 37,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 38,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 39,
+   "type": "UInt",
+   "value": 172
+  },
+  {
+   "i": 40,
+   "type": "String",
+   "value": "65 (-50%)"
+  },
+  {
+   "i": 41,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 42,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 43,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 44,
+   "type": "UInt",
+   "value": 115
+  },
+  {
+   "i": 45,
+   "type": "String",
+   "value": "47 (-50%)"
+  },
+  {
+   "i": 46,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 47,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 48,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 49,
+   "type": "UInt",
+   "value": 76
+  },
+  {
+   "i": 50,
+   "type": "String",
+   "value": "70"
+  },
+  {
+   "i": 51,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 52,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 53,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 54,
+   "type": "UInt",
+   "value": 95
+  },
+  {
+   "i": 55,
+   "type": "String",
+   "value": "110"
+  },
+  {
+   "i": 56,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 57,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 58,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 59,
+   "type": "UInt",
+   "value": 81
+  },
+  {
+   "i": 60,
+   "type": "String",
+   "value": "350"
+  },
+  {
+   "i": 61,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 62,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 63,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 64,
+   "type": "UInt",
+   "value": 23
+  },
+  {
+   "i": 65,
+   "type": "String",
+   "value": "945"
+  },
+  {
+   "i": 66,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 67,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 68,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 69,
+   "type": "UInt",
+   "value": 32
+  },
+  {
+   "i": 70,
+   "type": "String",
+   "value": "833"
+  },
+  {
+   "i": 71,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 72,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 73,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 74,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 75,
+   "type": "String",
+   "value": "870"
+  },
+  {
+   "i": 76,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 77,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 78,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 79,
+   "type": "UInt",
+   "value": 64
+  },
+  {
+   "i": 80,
+   "type": "String",
+   "value": "564"
+  },
+  {
+   "i": 81,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 82,
+   "type": "Bool",
+   "value": false
+  }
+ ]
+}

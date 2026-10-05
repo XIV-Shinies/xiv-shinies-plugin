@@ -1,0 +1,52 @@
+{
+ "window": "XBMContentsTreasure",
+ "event": "PostRefresh",
+ "valueCount": 144,
+ "values": [
+  {
+   "i": 2,
+   "type": "String",
+   "value": "450"
+  },
+  {
+   "i": 3,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 6,
+   "type": "UInt",
+   "value": 12
+  },
+  {
+   "i": 8,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 11,
+   "type": "UInt",
+   "value": 53
+  },
+  {
+   "i": 13,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 16,
+   "type": "UInt",
+   "value": 140
+  },
+  {
+   "i": 18,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 21,
+   "type": "UInt",
+   "value": 37
+  }
+ ]
+}

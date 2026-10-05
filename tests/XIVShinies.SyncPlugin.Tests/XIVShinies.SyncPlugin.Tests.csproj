@@ -50,4 +50,15 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\XIVShinies.SyncPlugin\XIVShinies.SyncPlugin.csproj" />
   </ItemGroup>
+
+  <!--
+    Sample game-window values the Crucible window readers are tested against (see the README
+    beside them). The SDK lists every project file it does not compile as a <None> item, so Update
+    adds a setting to the fixtures' entries rather than listing them a second time:
+    CopyToOutputDirectory copies them into the build output under the same Crucible\Fixtures path,
+    where WindowFixture loads them by name.
+  -->
+  <ItemGroup>
+    <None Update="Crucible\Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
