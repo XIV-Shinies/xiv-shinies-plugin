@@ -44,6 +44,7 @@ internal sealed unsafe class CrucibleObserver : IDisposable
     private readonly Func<bool> isSharing;
     private readonly Action<string, CrucibleSnapshot> onRead;
     private readonly Action<string> onClosed;
+    private readonly CrucibleNames names;
     private readonly IPluginLog log;
 
     /// <summary>Which read failures have already been reported in full.</summary>
@@ -57,6 +58,7 @@ internal sealed unsafe class CrucibleObserver : IDisposable
     /// <param name="isSharing">Answers whether the sharing may read right now.</param>
     /// <param name="onRead">Takes each reading, with the name of the window it came from.</param>
     /// <param name="onClosed">Takes the name of each window that closed.</param>
+    /// <param name="names">Resolves the results screen's drawn names to ids.</param>
     // The other parameters are the Dalamud services this reads through, and the log.
     public CrucibleObserver(
         IAddonLifecycle addonLifecycle,
@@ -65,6 +67,7 @@ internal sealed unsafe class CrucibleObserver : IDisposable
         Func<bool> isSharing,
         Action<string, CrucibleSnapshot> onRead,
         Action<string> onClosed,
+        CrucibleNames names,
         IPluginLog log)
     {
         this.addonLifecycle = addonLifecycle;
@@ -73,6 +76,7 @@ internal sealed unsafe class CrucibleObserver : IDisposable
         this.isSharing = isSharing;
         this.onRead = onRead;
         this.onClosed = onClosed;
+        this.names = names;
         this.log = log;
 
         // A window's values arrive when it is redrawn, apart from the results screen's, which are
@@ -170,7 +174,7 @@ internal sealed unsafe class CrucibleObserver : IDisposable
 
         var values = new AtkValueList(window->AtkValues, window->AtkValuesCount);
         // `x is { } snapshot` matches when x is not null and names it `snapshot`.
-        if (CrucibleWindows.Read(windowName, values) is { } snapshot)
+        if (CrucibleWindows.Read(windowName, values, names) is { } snapshot)
             onRead(windowName, snapshot);
     }
 

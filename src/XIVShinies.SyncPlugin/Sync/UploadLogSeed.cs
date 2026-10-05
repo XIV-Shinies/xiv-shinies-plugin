@@ -64,7 +64,7 @@ public static class UploadLogSeed
         [CategoryKeys.OccultRecords] = 31,
 
         // Single digits, because the whole bestiary is fifty rows. A three-figure count like its
-        // larger neighbours would photograph as a collection this one can never be.
+        // larger neighbors would photograph as a collection this one can never be.
         [CategoryKeys.TamedBeasts] = 3,
     };
 

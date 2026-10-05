@@ -189,7 +189,7 @@ public sealed unsafe class TamedBeastObserver : IDisposable
 
             // A read that found no records is not worth recording: the window was open but its
             // list had not landed yet, and the tally alone would move the completeness test
-            // towards an answer the records have not earned.
+            // toward an answer the records have not earned.
             if (page.Seen.Count == 0)
                 return;
 

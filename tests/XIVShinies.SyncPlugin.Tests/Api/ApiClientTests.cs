@@ -411,7 +411,7 @@ public class ApiClientTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var (client, _) = Build(_ => throw new TaskCanceledException("cancelled"));
+        var (client, _) = Build(_ => throw new TaskCanceledException("canceled"));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.GetMeAsync(cts.Token));
@@ -498,9 +498,9 @@ public class ApiClientTests
             handler.LastRequest!.RequestUri!.ToString());
     }
 
-    // The official server needs no acknowledgement.
+    // The official server needs no acknowledgment.
     [Fact]
-    public async Task The_default_backend_needs_no_acknowledgement()
+    public async Task The_default_backend_needs_no_acknowledgment()
     {
         var (client, handler) = Build(
             _ => Json(HttpStatusCode.OK, """{"characters": [], "user": {"id": "abc"}}"""),

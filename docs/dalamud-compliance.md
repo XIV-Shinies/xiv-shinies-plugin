@@ -20,7 +20,7 @@ response fields) and a field-by-field contract conformance audit.
 | **Explicit opt-in before non-essential data collection; no silent first-run behavior** | Consent is enforced in code: `UploadGate.CanContactServer` requires completed onboarding **and** the master switch **and** a usable token before any request, including the config poll — a fresh install talks to nobody. The wizard discloses what each category and sharing feature sends before the user can enable it, every checkbox in view. Every other consent control sits under the settings' Collections header, which wears a "New" chip while a collection or group beneath it is unseen and permitted, so folding cannot bury one. Three consents stand for later, detailed below: the live tracker's and the Crucible sharing's toggles, and `AutoEnableNewFeatures`. Each setting starts OFF for configs written before it carried its present meaning — a silent default is consent by omission. | `Sync/UploadGate.cs`, `Occult/OccultGate.cs`, `Beastmaster/Crucible/CrucibleGate.cs`, `PluginSettings.ApplyUpgradeMigrations`, `PluginSettings.AutoEnableUnseenCategories`, `Collectors/ManifestConsent.cs`, `Plugin.cs` (load order), `Windows/MainWindow.Wizard.cs`, `Windows/MainWindow.Consent.cs` |
 | **No interaction with game servers without direct user action** | The plugin never interacts with the game's servers at all: it reads the local client's memory and speaks HTTPS to the XIV Shinies server only. | whole design; `Collectors/` |
 | **No plugin-usage fingerprinting** | There is no analytics identifier of any kind. The auth token is a user-supplied credential, revocable on the website. The upload log is in-memory only and clears on unload. A development-build helper can fill it with fabricated rows for screenshots; it sits inside `#if DEBUG`, so it does not exist in any Release build. | `Sync/UploadLog.cs`, `Sync/UploadLogSeed.cs` |
-| **Never block the framework thread** | Game state is read on the framework thread — every collector asserts this at runtime and refuses to run elsewhere, and the live tracker and the Crucible sharing read only inside the frame tick and window callbacks. HTTP, JSON serialization, and retries run on background tasks (`Task.Run`); nothing calls `.Wait()`/`.Result` on a framework-thread task. Results cross back via volatile fields and atomic reference swaps. Every server-sized collection consumed on that thread is bounded: each manifest and the omit-when-unseen set at `CollectContext.MaxManifestItems`, the settings window's consent-group rows and the account panel's character list at fixed ceilings — so a hostile server cannot freeze the loop by inflating any list it controls. | `Collectors/GameThread.cs`, `Sync/SyncManager.cs`, `Beastmaster/Crucible/CrucibleManager.cs`, `Collectors/CollectContext.cs`, `Collectors/CategorySettingsView.cs`, `Windows/MainWindow.Account.cs` |
+| **Never block the framework thread** | Game state is read on the framework thread — every collector asserts this at runtime and refuses to run elsewhere, and the live tracker and the Crucible sharing read the game only inside the frame tick and window callbacks; the Crucible sharing's three name sheets of static game data are read once, when the plugin loads. HTTP, JSON serialization, and retries run on background tasks (`Task.Run`); nothing calls `.Wait()`/`.Result` on a framework-thread task. Results cross back via volatile fields and atomic reference swaps. Every server-sized collection consumed on that thread is bounded: each manifest and the omit-when-unseen set at `CollectContext.MaxManifestItems`, the settings window's consent-group rows and the account panel's character list at fixed ceilings — so a hostile server cannot freeze the loop by inflating any list it controls. | `Collectors/GameThread.cs`, `Sync/SyncManager.cs`, `Beastmaster/Crucible/CrucibleManager.cs`, `Collectors/CollectContext.cs`, `Collectors/CategorySettingsView.cs`, `Windows/MainWindow.Account.cs` |
 | **Full teardown** | `Dispose()` mirrors the constructor exactly: every event subscription, command handler, window registration, and owned resource (fonts, HTTP client, cancellation sources) is released, in dependency order. Borrowed/framework-owned handles (the icon font, the shared mascot texture, injected services) are deliberately **not** disposed. Verified by a whole-repository census. | `Plugin.cs`, `Windows/MainWindow.cs` (the class spans `MainWindow.*.cs` partials; lifecycle lives here), `Sync/SyncManager.cs`, `Occult/OccultManager.cs`, `Occult/KnowledgeObserver.cs`, `Beastmaster/TamedBeastObserver.cs`, `Beastmaster/Crucible/CrucibleManager.cs`, `Beastmaster/Crucible/CrucibleObserver.cs` |
 | **Windowing API; no unprompted windows** | All UI goes through `WindowSystem`. The window opens only from `/shinies` (or its alias `/xivshinies`), the installer's open/settings buttons, or by the user's own navigation — never automatically on load or login. | `Plugin.cs`, `Windows/MainWindow.cs` |
 | **Reproducible from public source** | No obfuscation, no downloading or loading of external code or native binaries at runtime, no self-updating, no timestamp/auto-increment versioning. Everything the plugin ships is in this repository. | whole repository |
@@ -76,10 +76,11 @@ response fields) and a field-by-field contract conformance audit.
   Each snapshot carries the moment it was read (a window's closing snapshot, the moment it
   closed), and each upload names the territory its snapshots were read in. The entrance's roster
   pick and the board seen before entering go up from the entrance, before the duty; everything
-  else goes up from a board. No text the game drew is sent: the results screen's mode and rank go
-  out as null, and each bonus as its points with a null id. While the character is inside a
-  board, an empty heartbeat says the plugin is still there (it reads nothing, so it goes out
-  during a fight too), and an empty upload says when the character leaves.
+  else goes up from a board. No text the game drew is sent: the results screen's mode, rank and
+  bonus names go up as the ids the game's own sheets give them (`Addon`, `XBMScoreRank`,
+  `XBMScoreBonus`, read in the client's language), or as null when a name does not resolve. While
+  the character is inside a board, an empty heartbeat says the plugin is still there (it reads
+  nothing, so it goes out during a fight too), and an empty upload says when the character leaves.
 - **Consent is code, not UI.** The gates (`UploadGate`, `CollectorGate`) are pure, unit-tested
   classes on the request path. Unchecking a box does not merely hide a button; it makes the
   request impossible.
@@ -102,14 +103,14 @@ response fields) and a field-by-field contract conformance audit.
   and records it as OFF (`PluginSettings.SettleOccultConsent`). The default never survives a
   consent moment the user was not actually shown. The Crucible run sharing's toggle defaults OFF,
   and nothing turns it on but the user: it shares the player's own play as it happens. Its gate
-  (`CrucibleGate`) also needs the server's `crucibleRuns` switch, and nothing is read while the
-  gate is closed. `AutoEnableNewFeatures` defaults OFF and is the only route by which a collection
-  is ever switched on without its own tick; `PluginSettings.AutoEnableUnseenCategories` acts on it
-  at load and only there — for an onboarded install that ticked the box, only on collections this
-  install has never shown, never on one whose scope depends on separately-answered consent groups,
-  and never over a collection the user has been shown and switched off. Anything it switches on is
-  wearing its "New" chip when the user next opens the window, or waiting to once the server
-  permits the collection.
+  (`CrucibleGate`) also needs the server's `crucibleRuns` switch, and nothing about the player's
+  play is read while the gate is closed. `AutoEnableNewFeatures` defaults OFF and is the only route
+  by which a collection is ever switched on without its own tick;
+  `PluginSettings.AutoEnableUnseenCategories` acts on it at load and only there — for an onboarded
+  install that ticked the box, only on collections this install has never shown, never on one
+  whose scope depends on separately-answered consent groups, and never over a collection the user
+  has been shown and switched off. Anything it switches on is wearing its "New" chip when the user
+  next opens the window, or waiting to once the server permits the collection.
 - **A collection the server has switched off is not introduced yet.** It raises no "New" chip and
   is not recorded as shown on any surface, so its introduction waits for the day it can actually
   be used, and nothing is collected for it meanwhile. The server may supply one sentence about it

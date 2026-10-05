@@ -217,7 +217,7 @@ public static class CrucibleTeam
         if (CrucibleText.ReadFraction(values[record + HpTextOffset].Text) != ((int)current, (int)max))
             return null;
 
-        // `var (rank, synced)` unpacks the tuple into two variables, like `const [rank, synced]`
+        // `var (rank, synced)` unpacks the tuple into two variables, like `let [rank, synced]`
         // in TypeScript, and does not match a null, so an unreadable label refuses the record.
         if (CrucibleText.ReadRank(values[record + RankOffset].Text) is not var (rank, synced))
             return null;

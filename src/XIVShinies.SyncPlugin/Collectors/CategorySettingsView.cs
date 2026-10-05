@@ -87,8 +87,8 @@ public sealed record CategorySettingsRow
     /// its copy on — see there for why the two sentences are not interchangeable.
     /// </para>
     /// <para>
-    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbour
-    /// <see cref="ServerEnabled"/>: a test or a future surface assembling rows by hand is asking
+    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbor
+    /// <see cref="ServerEnabled"/>: a test or any other caller assembling rows by hand is asking
     /// about one collection, and a pause is not a fact about any collection. The default is the
     /// quiet answer rather than the safe one — it produces the per-category wording — which costs
     /// nothing while <see cref="Build"/> is the only producer that draws.

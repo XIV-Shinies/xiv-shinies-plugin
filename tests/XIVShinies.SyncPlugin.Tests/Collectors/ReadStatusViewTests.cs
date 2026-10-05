@@ -183,7 +183,7 @@ public class ReadStatusViewTests
     // green check IS "read", and the label is the collection's own display name. No sentence, and
     // no hover copy for a collector that attached none — a bare healthy chip is the whole message.
     [Fact]
-    public void An_enabled_collection_that_was_read_is_a_chip_labelled_with_its_name()
+    public void An_enabled_collection_that_was_read_is_a_chip_labeled_with_its_name()
     {
         var status = ReadStatusView.Build(new[] { Row("mounts") }, NoSources());
 
@@ -485,7 +485,7 @@ public class ReadStatusViewTests
 
     // The order must not turn on casing: these labels are English strings authored in this repo,
     // and every user is owed the same order whatever their machine's locale. An ordinal sort would
-    // put every capitalised label ahead of every lower-case one.
+    // put every capitalized label ahead of every lower-case one.
     [Fact]
     public void Collection_notes_are_ordered_regardless_of_case()
     {

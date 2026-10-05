@@ -13,7 +13,6 @@ public class CrucibleTerritoriesTests
     // `uint` is a whole number that can never be negative (an unsigned integer), the type of a
     // territory id; `const` fixes the value when the code compiles.
     private const uint FirstBoard = 1339;
-    private const uint SecondBoard = 1340;
     private const uint Entrance = 148;
 
     /// <summary>A moment for the snapshots, which these rules never look at.</summary>
@@ -39,20 +38,25 @@ public class CrucibleTerritoriesTests
                 new CrucibleScoreLine(8, 9), 10, 11, 12, "Exemplary", [], []),
             ObservedAt, degree: null, rankIndex: null, bonusId: _ => null);
 
+    // The five boards, in board order. The `u` suffix makes a number a `uint`.
     [Theory]
-    [InlineData(FirstBoard)]
-    [InlineData(SecondBoard)]
-    public void A_known_board_is_a_board(uint territory)
+    [InlineData(1339u)]
+    [InlineData(1340u)]
+    [InlineData(1341u)]
+    [InlineData(1342u)]
+    [InlineData(1343u)]
+    public void Each_of_the_five_boards_is_a_board(uint territory)
     {
         Assert.True(CrucibleTerritories.IsBoard(territory));
     }
 
     // The entrance hosts the roster pick but is not a board, and a territory not known to be a
-    // board is never treated as one. The `u` suffix makes a number a `uint`.
+    // board is never treated as one, the ids either side of the boards included.
     [Theory]
     [InlineData(Entrance)]
     [InlineData(0u)]
-    [InlineData(1341u)]
+    [InlineData(1338u)]
+    [InlineData(1344u)]
     public void Any_other_territory_is_not_a_board(uint territory)
     {
         Assert.False(CrucibleTerritories.IsBoard(territory));

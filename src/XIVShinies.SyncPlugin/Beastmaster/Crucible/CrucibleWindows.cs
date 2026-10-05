@@ -19,8 +19,8 @@ public delegate CrucibleObservation CrucibleSnapshot(DateTimeOffset at, bool clo
 /// the reader each one's values go to.
 /// </summary>
 /// <remarks>
-/// The results screen's Degree, rank and bonus names are not resolved here: each goes up as null, which
-/// the contract accepts for a name that does not resolve, and the drawn text is never sent.
+/// The results screen's Degree, rank and bonus names go up as the ids <see cref="CrucibleNames"/>
+/// resolves them to, or as null when a name does not resolve; the drawn text is never sent.
 /// </remarks>
 // A `static class` holds only shared members and is never instantiated: a module of functions.
 public static class CrucibleWindows
@@ -59,36 +59,44 @@ public static class CrucibleWindows
     /// <summary>
     /// Reads one window's values, or returns null when they are not a layout its reader knows.
     /// </summary>
-    private delegate CrucibleSnapshot? WindowReader(IReadOnlyList<AddonValue> values);
+    private delegate CrucibleSnapshot? WindowReader(IReadOnlyList<AddonValue> values, CrucibleNames names);
 
     /// <summary>Each window's reader, by the window's internal name.</summary>
     // `new() { [key] = value, ... }` builds the dictionary with these entries, like an object literal.
-    // `values => ...` is a lambda, like an arrow function: each one reads the values and, when its
-    // reader recognized them, hands back a second lambda that builds a snapshot from that reading.
+    // `(values, names) => ...` is a lambda, like an arrow function: each one reads the values and, when
+    // its reader recognized them, hands back a second lambda that builds a snapshot from that reading.
+    // Only the results screen's reader uses `names`; the others take it so every reader has one
+    // shape. `_`, as in `(at, _)`, stands for a parameter a lambda does not use.
     // `x is { } reading` matches when x is not null and names it `reading`.
     private static readonly Dictionary<string, WindowReader> Readers = new()
     {
-        [Board] = values => CrucibleBoard.Read(values) is { } reading
+        [Board] = (values, names) => CrucibleBoard.Read(values) is { } reading
             ? (at, closed) => CrucibleUploadBuilder.Board(reading, at, closed)
             : null,
-        [Team] = values => CrucibleTeam.Read(values) is { } reading
+        [Team] = (values, names) => CrucibleTeam.Read(values) is { } reading
             ? (at, closed) => CrucibleUploadBuilder.Team(reading, at, closed)
             : null,
-        [Hud] = values => CrucibleHud.Read(values) is { } reading
+        [Hud] = (values, names) => CrucibleHud.Read(values) is { } reading
             ? (at, _) => CrucibleUploadBuilder.Bag(reading, at)
             : null,
-        [Treasure] = values => CrucibleOffers.ReadTreasure(values) is { } reading
+        [Treasure] = (values, names) => CrucibleOffers.ReadTreasure(values) is { } reading
             ? (at, closed) => CrucibleUploadBuilder.Offer(reading, at, closed)
             : null,
-        [Loot] = values => CrucibleOffers.ReadLoot(values) is { } reading
+        [Loot] = (values, names) => CrucibleOffers.ReadLoot(values) is { } reading
             ? (at, closed) => CrucibleUploadBuilder.Offer(reading, at, closed)
             : null,
-        [Shop] = values => CrucibleOffers.ReadShop(values) is { } reading
+        [Shop] = (values, names) => CrucibleOffers.ReadShop(values) is { } reading
             ? (at, closed) => CrucibleUploadBuilder.Offer(reading, at, closed)
             : null,
-        [Results] = values => CrucibleResults.Read(values) is { } reading
+        // `names.BonusId` is passed as a function value, not called: the builder calls it once per
+        // bonus.
+        [Results] = (values, names) => CrucibleResults.Read(values) is { } reading
             ? (at, _) => CrucibleUploadBuilder.Results(
-                reading, at, degree: null, rankIndex: null, bonusId: _ => null)
+                reading,
+                at,
+                names.Degree(reading.ModeText),
+                names.RankIndex(reading.RankText),
+                names.BonusId)
             : null,
     };
 
@@ -98,10 +106,12 @@ public static class CrucibleWindows
     /// </summary>
     /// <param name="windowName">The window's internal name.</param>
     /// <param name="values">Every value the window was handed, in order.</param>
-    public static CrucibleSnapshot? Read(string windowName, IReadOnlyList<AddonValue> values) =>
+    /// <param name="names">Resolves the results screen's drawn names to ids.</param>
+    public static CrucibleSnapshot? Read(
+        string windowName, IReadOnlyList<AddonValue> values, CrucibleNames names) =>
         // `TryGetValue` returns whether the key is there and, when it is, writes its value into
         // `reader`.
-        Readers.TryGetValue(windowName, out var reader) ? reader(values) : null;
+        Readers.TryGetValue(windowName, out var reader) ? reader(values, names) : null;
 
     /// <summary>True for a window this sharing reads.</summary>
     /// <param name="windowName">The window's internal name.</param>

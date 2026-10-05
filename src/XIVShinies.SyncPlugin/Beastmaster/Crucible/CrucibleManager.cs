@@ -131,6 +131,7 @@ internal sealed class CrucibleManager : IDisposable
         ICondition condition,
         IGameGui gameGui,
         IAddonLifecycle addonLifecycle,
+        IDataManager dataManager,
         IPluginLog log,
         ApiClient apiClient,
         PluginSettings settings,
@@ -155,10 +156,12 @@ internal sealed class CrucibleManager : IDisposable
 
         // The gate, `OnWindowRead` and `OnWindowClosed` are handed over as function values, like
         // passing callbacks in TypeScript: the observer asks the first before each read and reports
-        // to the other two. `() => ...` is a lambda, like an arrow function.
+        // to the other two. `() => ...` is a lambda, like an arrow function. The names the results
+        // screen's text is resolved against are game data that does not change while the game runs,
+        // so they are read once, here.
         observer = new CrucibleObserver(
             addonLifecycle, gameGui, condition, () => GateOpen(syncManager.RemoteConfig),
-            OnWindowRead, OnWindowClosed, log);
+            OnWindowRead, OnWindowClosed, CrucibleNameSheets.Load(dataManager, log), log);
 
         // `+=` subscribes a handler to a C# event, like `addEventListener`. Every `+=` here has a
         // matching `-=` in Dispose.

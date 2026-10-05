@@ -275,9 +275,11 @@ public sealed class Plugin : IDalamudPlugin
 
             // The Crucible run sharing. Built after the SyncManager because it reads the identity,
             // server config and halt that manager owns; gated by the same consent switches plus its
-            // own toggle, which starts off, so it reads and sends nothing until the user opts in.
+            // own toggle, which starts off, so it reads none of the player's play and sends nothing
+            // until the user opts in. Before that it reads only static game data (see
+            // CrucibleManager).
             crucibleManager = new CrucibleManager(
-                Framework, ClientState, Condition, GameGui, AddonLifecycle, Log,
+                Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
             // The mascot drawn in the settings header — the same hand-made image the installer
@@ -435,7 +437,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (words.Length > 0 && words[0].Equals("dumpslots", StringComparison.OrdinalIgnoreCase))
         {
-            // Marshalled rather than called straight. Dalamud does not schedule command handlers —
+            // Marshaled rather than called straight. Dalamud does not schedule command handlers —
             // it invokes them where the command arrived, which is the game's main thread for chat
             // and the console's draw for the console — so the read is on the right thread by
             // circumstance, not by contract, and a bad read of game memory raises a

@@ -240,7 +240,7 @@ public sealed unsafe class ItemCollector : ICollector
         var container = inventory->GetInventoryContainer(type);
 
         // A container the game has not allocated (null) or not yet populated (IsLoaded == false)
-        // holds nothing we can trust; skip it rather than walk uninitialised memory.
+        // holds nothing we can trust; skip it rather than walk uninitialized memory.
         if (container is null || !container->IsLoaded)
             return;
 

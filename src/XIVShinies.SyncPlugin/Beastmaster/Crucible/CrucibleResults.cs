@@ -73,7 +73,7 @@ public sealed record CrucibleResultsReading(
 /// <para>
 /// The mode, the rank and the bonus names stay as the text the screen drew. They are in the client's
 /// language; turning them into language-independent ids is a lookup against the game's own sheets,
-/// which this reader does not do.
+/// which <see cref="CrucibleNames"/> does.
 /// </para>
 /// </remarks>
 public static class CrucibleResults

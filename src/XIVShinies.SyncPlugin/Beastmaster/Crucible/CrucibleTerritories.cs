@@ -11,8 +11,16 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// One of the few places this plugin names game ids itself. The client has to know it is standing on a
 /// board before it may send anything about a run, and a territory counts as a board only once it is
 /// known to be one: treating some other territory as a board would send enter, heartbeat and leave
-/// uploads about a place that has nothing to do with the Crucible. A board added later joins this list
-/// in a plugin release.
+/// uploads about a place that has nothing to do with the Crucible.
+/// </para>
+/// <para>
+/// The boards are the five territories from <see cref="FirstBoard"/> to <see cref="LastBoard"/>, in
+/// board order. The game data ties each row of <c>XBMContent</c>, one per board, through
+/// <c>ContentFinderCondition</c> to its <c>TerritoryType</c>, and those are the five rows it names.
+/// They are fixed here as a range rather than read from the sheets on each start, so a sheet whose
+/// columns move in a patch cannot turn some other territory into a board. The server checks every
+/// upload against the board's own layout, so a board added later needs the server to learn it too,
+/// and reaches <see cref="IsBoard"/> in a plugin release.
 /// </para>
 /// <para>
 /// The roster pick and the board seen before entering open at the entrance, outside every board, so
@@ -27,14 +35,14 @@ public static class CrucibleTerritories
     // territory id; `const` fixes the value when the code compiles.
     public const uint FirstBoard = 1339;
 
-    /// <summary>The second board's <c>TerritoryType</c> row id.</summary>
-    public const uint SecondBoard = 1340;
+    /// <summary>The fifth and last board's <c>TerritoryType</c> row id.</summary>
+    public const uint LastBoard = 1343;
 
     /// <summary>True when the territory is a Crucible board.</summary>
     /// <param name="territoryTypeId">The territory's <c>TerritoryType</c> row id.</param>
-    // `=>` makes the expression after it the whole method body, like an arrow function. `is A or B`
-    // is true when the value equals either one.
-    public static bool IsBoard(uint territoryTypeId) => territoryTypeId is FirstBoard or SecondBoard;
+    // `=>` makes the expression after it the whole method body, like an arrow function.
+    // `is >= A and <= B` is true when the value lies between the two, both ends included.
+    public static bool IsBoard(uint territoryTypeId) => territoryTypeId is >= FirstBoard and <= LastBoard;
 
     /// <summary>
     /// True when a snapshot read in this territory may go up: inside a board every kind may, and

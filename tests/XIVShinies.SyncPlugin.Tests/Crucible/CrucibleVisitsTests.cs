@@ -10,7 +10,7 @@ public class CrucibleVisitsTests
     // `uint` is a whole number that can never be negative (an unsigned integer), the type of a
     // territory id; `const` fixes the value when the code compiles.
     private const uint FirstBoard = CrucibleTerritories.FirstBoard;
-    private const uint SecondBoard = CrucibleTerritories.SecondBoard;
+    private const uint SecondBoard = 1340;
     private const uint Entrance = 148;
 
     [Fact]
