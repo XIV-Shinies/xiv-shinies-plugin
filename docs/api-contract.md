@@ -625,9 +625,12 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 - **`enter`** (zoning into a board) carries a baseline: `bag` and `self`, plus every window open
   at that moment. The same baseline goes up as a `change` when the client starts or reloads
   inside a board.
-- **`change`** carries the kinds whose content changed since the last accepted upload. A
-  window's `closed` snapshot and a fresh snapshot of the same kind go in two uploads, the
-  `closed` one first.
+- **`change`** normally carries only the kinds whose content changed since the client last read
+  them. A kind can still repeat unchanged: the comparison starts over with each visit, each login
+  and each plugin start, and a reading no request has carried 30 minutes after it was read is
+  dropped, so the same content read again goes up. A reading already in a retried request is not
+  dropped for its age, so a retry can deliver one older than 30 minutes. A window's `closed`
+  snapshot and a fresh snapshot of the same kind go in two uploads, the `closed` one first.
 - **`heartbeat`** carries `observations: []` and fires only after `crucibleRuns.heartbeatSeconds`
   with no other upload. It reads nothing, so it may go out while the character is in combat; its
   `territoryTypeId` is the one the baseline carried.

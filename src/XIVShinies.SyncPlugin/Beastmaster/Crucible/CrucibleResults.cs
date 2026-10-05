@@ -139,8 +139,7 @@ public static class CrucibleResults
             return null;
 
         // Each score number has to be there. `||` stops at the first `is not { } name` that is true
-        // (that value is missing) and the `if` returns, so past it all nine names hold their values
-        // (see CrucibleText for the pattern).
+        // (that value is missing) and the `if` returns, so past it all nine names hold their values.
         if (ReadInt(values, BaseScoreIndex) is not { } baseScore
             || CrucibleText.ReadFirstNumber(values[PerformanceTextIndex].Text) is not { } percent
             || ReadInt(values, PerformancePointsIndex) is not { } performancePoints

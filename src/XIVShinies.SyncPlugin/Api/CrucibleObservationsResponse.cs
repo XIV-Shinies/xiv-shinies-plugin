@@ -26,7 +26,7 @@ public sealed record CrucibleObservationsResponse
 
     /// <summary>
     /// On <c>applied</c>, how many snapshots produced nothing because the player had already
-    /// logged that piece by hand.
+    /// logged that piece themselves on the website.
     /// </summary>
     public int? Skipped { get; init; }
 

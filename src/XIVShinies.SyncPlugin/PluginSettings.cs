@@ -51,6 +51,17 @@ public class PluginSettings
     public bool ShareOccultInstanceState { get; set; } = true;
 
     /// <summary>
+    /// True while the user shares their Crucible runs with the website's run companion: what the
+    /// Crucible's windows show out of combat and their character's own HP.
+    /// </summary>
+    /// <remarks>
+    /// Defaults OFF, and <see cref="AutoEnableNewFeatures"/> never turns it on: it describes the
+    /// player's own play as it happens, so it waits for the user to tick it themselves. An existing
+    /// install, whose saved settings carry no value for it, starts with it off too.
+    /// </remarks>
+    public bool ShareCrucibleRuns { get; set; }
+
+    /// <summary>
     /// True when the user chose to have collections added by later updates start switched on,
     /// rather than being asked each time.
     /// </summary>

@@ -63,7 +63,7 @@ public static class CrucibleHud
             return null;
 
         // `is not { } tokens` is true when the balance does not read as a number, and the `if`
-        // returns; past it, `tokens` holds the number itself (see CrucibleText for the pattern).
+        // returns; past it, `tokens` holds the number itself.
         if (CrucibleText.ReadNumber(values[TokensIndex].Text) is not { } tokens)
             return null;
 

@@ -7,7 +7,7 @@ namespace XIVShinies.SyncPlugin.Api;
 
 /// <summary>
 /// The body of <c>POST /api/plugin/v1/crucible/observations</c>: snapshots of what the Crucible's
-/// windows showed, each at one moment (docs/api-contract.md § crucible/observations).
+/// windows showed, each at one moment (docs/api-contract.md, crucible/observations).
 /// </summary>
 /// <remarks>
 /// The server's schema is strict: a key it does not name fails the whole upload, and so does a

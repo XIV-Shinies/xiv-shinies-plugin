@@ -6,8 +6,8 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
 /// Turns the window readings into the snapshots and request of
-/// <c>POST /api/plugin/v1/crucible/observations</c>. Pure: no game, no clock, no network, so the
-/// wire shape stays unit-testable.
+/// <c>POST /api/plugin/v1/crucible/observations</c>. The readings and their moments are handed
+/// in; it reads neither the game nor the clock.
 /// </summary>
 /// <remarks>
 /// Each snapshot method returns the base <see cref="CrucibleObservation"/>, the type the request's

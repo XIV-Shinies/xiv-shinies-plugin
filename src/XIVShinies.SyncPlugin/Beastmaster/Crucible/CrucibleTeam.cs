@@ -130,9 +130,9 @@ public static class CrucibleTeam
             return null;
 
         // `is not { } modeNumber` is true when the place holds no number, and the `if` returns; past
-        // it, `modeNumber` is the number (see CrucibleText for the pattern). `is > X` is a
-        // relational pattern: true for any number above X, here any mode past the last. An enum is
-        // a named number underneath, and `(uint)` reads the number behind the last mode.
+        // it, `modeNumber` is the number. `is > X` is a relational pattern: true for any number
+        // above X, here any mode past the last. An enum is a named number underneath, and `(uint)`
+        // reads the number behind the last mode.
         if (values[ModeIndex].Number is not { } modeNumber
             || modeNumber is > (uint)CrucibleTeamMode.BlessedHorn)
         {

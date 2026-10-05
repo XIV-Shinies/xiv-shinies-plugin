@@ -111,7 +111,8 @@ public sealed record ConfigResponse
     /// The Crucible run sharing's switches, or null when the server does not send the block. Null
     /// means the server has no Crucible endpoint, and nothing may be sent there.
     /// </summary>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
+    // NOT `required`: a server without the Crucible endpoint omits the block, and a missing
+    // required member would fail the whole /config.
     public CrucibleRunsConfig? CrucibleRuns { get; init; }
 
     /// <summary>
@@ -179,7 +180,8 @@ public sealed record CrucibleRunsConfig
     public required bool Enabled { get; init; }
 
     /// <summary>The idle upload cadence while inside a board.</summary>
-    // NOT `required`, for the same whole-config reason as OccultTrackerConfig.HeartbeatSeconds above.
+    // NOT `required`: a missing required member would fail the whole /config, and the scheduler
+    // holds any cadence within its bounds, so the default is safe.
     public int HeartbeatSeconds { get; init; } = 60;
 
     /// <summary>

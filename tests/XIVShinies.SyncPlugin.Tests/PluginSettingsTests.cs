@@ -66,6 +66,9 @@ public class PluginSettingsTests
         // The standing answer about collections added later is deliberately NOT ticked by
         // default — see PluginSettings.AutoEnableNewFeatures.
         Assert.False(settings.AutoEnableNewFeatures);
+
+        // Sharing Crucible runs waits for the user to tick it themselves.
+        Assert.False(settings.ShareCrucibleRuns);
     }
 
     // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user the

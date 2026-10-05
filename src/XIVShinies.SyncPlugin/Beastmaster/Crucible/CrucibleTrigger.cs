@@ -6,12 +6,14 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// </summary>
 public enum CrucibleTrigger
 {
-    /// <summary>The character zoned into a board: the first snapshots of the visit.</summary>
+    /// <summary>
+    /// The character zoned into a board, with the visit's first snapshots if any were read.
+    /// </summary>
     Enter,
 
     /// <summary>
-    /// One or more kinds changed since the last accepted upload, or the plugin started inside a
-    /// board and sends its baseline.
+    /// Snapshots of kinds whose content changed since the plugin last read them, or the baseline
+    /// the plugin sends when it starts inside a board.
     /// </summary>
     Change,
 

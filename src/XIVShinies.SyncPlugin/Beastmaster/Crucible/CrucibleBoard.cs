@@ -106,7 +106,7 @@ public static class CrucibleBoard
             return null;
 
         // `is not { } viewNumber` is true when the place holds no number, and the `if` returns;
-        // past it, `viewNumber` is the number (see CrucibleText for the pattern).
+        // past it, `viewNumber` is the number.
         if (values[ViewIndex].Number is not { } viewNumber || viewNumber > (uint)CrucibleBoardView.Scoped)
             return null;
 
