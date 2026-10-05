@@ -612,7 +612,7 @@ internal sealed class SyncManager : IDisposable
     /// The identified character, or null when nobody usable is loaded. The live tracker and the
     /// Crucible sharing read this so every upload path attributes work to one identity, captured in
     /// one place; the window reads it to name the character in a refusal sentence, on the sync card
-    /// and the live tracker's card.
+    /// and on the live tracker's and Crucible run sharing's cards.
     /// </summary>
     /// <remarks>
     /// A reference read, so atomic. The live paths read it on the framework thread; the window reads

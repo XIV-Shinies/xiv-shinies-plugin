@@ -189,7 +189,7 @@ public static class ReadStatusView
     /// <param name="row">The category row this line is about.</param>
     /// <param name="hasContainerLines">
     /// Whether the panel's container group ended up with at least one line in it — the thing a
-    /// suppressed manifest-driven collection is being suppressed in favour of. Asked about the LINES
+    /// suppressed manifest-driven collection is being suppressed in favor of. Asked about the LINES
     /// rather than the raw statuses: a status <see cref="SourceNoteText.Describe"/> has no copy for is
     /// dropped from the panel, so it cannot stand in for anything the reader can actually see.
     /// </param>

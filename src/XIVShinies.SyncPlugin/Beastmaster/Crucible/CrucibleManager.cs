@@ -467,9 +467,10 @@ internal sealed class CrucibleManager : IDisposable
                     LogRejected(upload.Trigger, response);
                     break;
 
-                // The same halt a refused sync raises: it names the fix on the sync card, and the gate
-                // stops this path until the player acts. Raised before the upload is let go, so the
-                // next upload the scheduler hands out already sees it.
+                // The same halt a refused sync raises: it names the fix on the sync card and on every
+                // sharing card it stops, and the gate stops this path until the player acts. Raised
+                // before the upload is let go, so the next upload the scheduler hands out already
+                // sees it.
                 case CrucibleOutcomeKind.Halt:
                     syncManager.HaltFromLiveUpload(
                         UploadLogSource.CrucibleRuns,

@@ -329,7 +329,7 @@ public static class CategorySettingsView
     {
         // Re-checked rather than trusted from when the key was recorded: a config poll landing
         // mid-session can switch a collection off under a badge already on screen, and the chip must
-        // not keep promising something new beside a greyed-out row.
+        // not keep promising something new beside a grayed-out row.
         if (!row.ServerEnabled)
             return CategoryBadgeKind.Off;
 
@@ -354,7 +354,7 @@ public static class CategorySettingsView
     /// for the answer (<see cref="CategorySettingsRow.ShowingItRetiresTheBadge"/>): there the
     /// record is what the badge is spent from — see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>
     /// for why spending demands more than drawing. Neither surface counts a row the server has
-    /// switched off — greyed and unusable is not an introduction.
+    /// switched off — grayed and unusable is not an introduction.
     /// </remarks>
     /// <param name="row">The row that was just drawn.</param>
     /// <param name="showNewChips">Whether the drawing surface announces new collections.</param>

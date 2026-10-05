@@ -152,7 +152,7 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // A manifest-driven row's healthy line is suppressed in favour of the container lines, but a
+    // A manifest-driven row's healthy line is suppressed in favor of the container lines, but a
     // partial phrase says something no container line says, so it must survive the suppression.
     [Fact]
     public void A_manifest_rows_partial_note_survives_the_container_suppression()

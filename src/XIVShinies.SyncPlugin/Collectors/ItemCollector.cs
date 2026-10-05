@@ -291,7 +291,7 @@ public sealed unsafe class ItemCollector : ICollector
     //
     // SAFETY — never query a count for an id the manager does not track. CurrencyManager keeps its
     // currencies in three buckets (ItemBucket, SpecialItemBucket, ContentItemBucket per the
-    // FFXIVClientStructs docs); its GetItemCount takes an arbitrary item id and its behaviour for an id
+    // FFXIVClientStructs docs); its GetItemCount takes an arbitrary item id and its behavior for an id
     // that is in NO bucket is not documented, so we treat it as unsafe to call blind. HasItem is the
     // membership probe — the FFXIVClientStructs summary states it "Checks if the item is in any
     // bucket" — so every GetItemCount call is gated behind a HasItem check that returned true. We never

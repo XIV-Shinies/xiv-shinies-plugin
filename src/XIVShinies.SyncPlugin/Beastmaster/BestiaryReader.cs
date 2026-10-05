@@ -11,7 +11,7 @@ namespace XIVShinies.SyncPlugin.Beastmaster;
 /// <para>
 /// One number, and it is the one number that cannot come from the bestiary window. Every other
 /// figure the completeness test weighs is the window's own, so a total that came back short — from
-/// a list still loading, or from a view this code does not recognise — would have nothing to
+/// a list still loading, or from a view this code does not recognize — would have nothing to
 /// contradict it, and a window naming twelve as the whole bestiary would agree with itself
 /// perfectly. This is the outside opinion that check needs; see
 /// <see cref="TamedBeastLedger.IsComplete"/>.

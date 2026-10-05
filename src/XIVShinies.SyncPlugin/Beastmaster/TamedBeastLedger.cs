@@ -119,7 +119,7 @@ public sealed class TamedBeastLedger
             }
 
             // The largest size ever seen wins, rather than the latest. A size that comes back short
-            // — from a list still loading, or from a view this code does not recognise — is measured
+            // — from a list still loading, or from a view this code does not recognize — is measured
             // against the sheet by the completeness test, so letting it shrink the remembered one
             // would revoke a claim the player has already earned and can only win back by opening
             // the window again.

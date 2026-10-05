@@ -18,10 +18,15 @@ internal sealed partial class MainWindow
 {
     private void DrawSettings()
     {
+        // One snapshot for the whole screen; see DrawOccultConsentRow's remoteConfig parameter for
+        // why it is passed rather than re-read. `var` lets the compiler infer the type, like an
+        // unannotated `let` in TypeScript.
+        var remoteConfig = syncManager.RemoteConfig;
+
         // The three surfaces that need the category rows — the read-status panel inside the sync card,
         // the "New" chip on the Collections header, and the consent card itself — are all drawn
         // from THIS list (see BuildCategoryRows).
-        var rows = BuildCategoryRows();
+        var rows = BuildCategoryRows(remoteConfig);
 
         DrawSettingsHeader();
 
@@ -70,9 +75,12 @@ internal sealed partial class MainWindow
             ImGui.Spacing();
             DrawCategoryRows(rows, showNewChips: true);
 
-            // The live tracker's consent card, below the collections card it is not part of.
+            // The Crucible run sharing's and the live tracker's consent cards, below the collections
+            // card they are not part of.
             ImGui.Spacing();
-            DrawOccultConsentRow(syncManager.RemoteConfig);
+            DrawCrucibleConsentRow(remoteConfig);
+            ImGui.Spacing();
+            DrawOccultConsentRow(remoteConfig);
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
@@ -101,7 +109,7 @@ internal sealed partial class MainWindow
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
                 $"Your character's name and home world are sent so {BackendHost()} can match the " +
                 "character you already claimed and verified. Nothing is uploaded unless syncing " +
-                "is switched on, and you choose which collections to include.");
+                "is switched on, and you choose what to include.");
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

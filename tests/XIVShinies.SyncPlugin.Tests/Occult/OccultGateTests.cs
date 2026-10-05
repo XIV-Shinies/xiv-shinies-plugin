@@ -103,7 +103,7 @@ public class OccultGateTests
 
     // --- What the settings toggle draws ------------------------------------------------------
 
-    // ServerHasSwitchedOff decides whether the toggle draws greyed and chipped "Off". It has to
+    // ServerHasSwitchedOff decides whether the toggle draws grayed and chipped "Off". It has to
     // agree with CanTrack about what the server allows, or the control describes something other
     // than what happens — so the three arms are pinned separately from the gate's own tests.
 
@@ -125,7 +125,7 @@ public class OccultGateTests
     }
 
     // The arm most likely to regress: before the first /config answers, the server has forbidden
-    // nothing, so the toggle keeps showing the user's own choice rather than greying out.
+    // nothing, so the toggle keeps showing the user's own choice rather than graying out.
     [Fact]
     public void A_config_that_has_not_arrived_is_not_reported_off()
     {

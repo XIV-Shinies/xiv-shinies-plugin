@@ -296,7 +296,7 @@ public class SourceNoteTextTests
 
     // The chip-form twin of the invariant above: an Unreadable note draws as a muted chip whose
     // ONLY content beyond its label is the hover Detail — no Text, no alarm color — so a Detail-less
-    // Unreadable note would be a bare grey chip that explains nothing. Swept the same way, so a
+    // Unreadable note would be a bare gray chip that explains nothing. Swept the same way, so a
     // future unreadable source cannot forget its explanation without failing here.
     [Fact]
     public void Every_unreadable_note_carries_the_hover_detail_that_explains_it()

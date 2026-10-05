@@ -106,12 +106,13 @@ internal sealed partial class MainWindow
             // because the Collections card is a header the user can collapse — and collapsed, an
             // idle sync card would look like a fault with no explanation anywhere.
             //
-            // Scoped to collections. The live tracker is gated separately and has no collection
-            // term in OccultGate.CanTrack, so it can be uploading world state while every
-            // collection here is off — and this card is the surface a user trusts to say what is
-            // being sent.
+            // Scoped to collections. The live tracker and the Crucible run sharing are gated
+            // separately and have no collection term in their gates, so either can be uploading
+            // while every collection here is off — and this card is the surface a user trusts to
+            // say what is being sent.
             ImGui.TextUnformatted(
-                "No collections are switched on, so none of your progress is being uploaded.");
+                "No collections are switched on, so none of your collection progress is being " +
+                "uploaded.");
         }
         else if (status == SyncStatusKind.NothingPermittedByServer)
         {
@@ -140,7 +141,7 @@ internal sealed partial class MainWindow
         }
         else
         {
-            ImGui.TextUnformatted("Nothing has been uploaded yet this session.");
+            ImGui.TextUnformatted("No collections have been uploaded yet this session.");
         }
 
         // "When?" is half of what a status line is for: without it, a deliberately quiet stretch
@@ -257,7 +258,7 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Draws one labelled group of the "Reading from:" panel — its heading, its healthy sources as a
+    /// Draws one labeled group of the "Reading from:" panel — its heading, its healthy sources as a
     /// wrapped row of chips, then its full-line notes — and reports whether any note in it was
     /// <see cref="SourceTone.Missing"/>. An empty group draws nothing at all, heading included.
     /// </summary>
@@ -289,7 +290,7 @@ internal sealed partial class MainWindow
     private bool DrawReadStatusGroup(string label, IReadOnlyList<SourceNote> notes)
     {
         // A group with nothing in it (no collection switched on; no item pass yet) skips its heading
-        // too — an empty labelled section would only ask the reader what is supposed to be there.
+        // too — an empty labeled section would only ask the reader what is supposed to be there.
         if (notes.Count == 0)
             return false;
 
@@ -428,7 +429,8 @@ internal sealed partial class MainWindow
     /// <summary>
     /// The sentence for the current halt (see <see cref="HaltCopy"/>), built from the loaded
     /// character, the configured host and the server settings. Shared by the sync card and the
-    /// live tracker's card, so both say the same thing about one halt.
+    /// live tracker's and Crucible run sharing's cards, so every card says the same thing about one
+    /// halt.
     /// </summary>
     private string HaltSentence()
     {

@@ -317,7 +317,7 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.AllConsentGiven(serverDisabledOnly));
     }
 
-    // A row the server switched off is not the user's to answer for, and its own control is drawn greyed
+    // A row the server switched off is not the user's to answer for, and its own control is drawn grayed
     // out — so it neither holds the box unticked nor gets written by it.
     [Fact]
     public void A_server_disabled_row_does_not_hold_the_all_collections_box_unticked()

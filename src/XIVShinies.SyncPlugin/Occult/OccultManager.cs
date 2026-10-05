@@ -454,8 +454,8 @@ internal sealed class OccultManager : IDisposable
                     log.Debug($"Occult {trigger} upload skipped: not configured.");
                     break;
 
-                // The same halt a refused sync raises: it names the fix on the sync card and this
-                // tracker's card, and the gate in Tick stops this path until the player acts.
+                // The same halt a refused sync raises: it names the fix on the sync card and on every
+                // sharing card it stops, and the gate in Tick stops this path until the player acts.
                 case OccultOutcomeKind.Halt:
                     syncManager.HaltFromLiveUpload(
                         UploadLogSource.LiveTracker,

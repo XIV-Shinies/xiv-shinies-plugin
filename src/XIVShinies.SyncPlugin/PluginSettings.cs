@@ -17,8 +17,10 @@ namespace XIVShinies.SyncPlugin;
 /// thin persistence shell.
 /// </para>
 /// <para>
-/// Every default is "off". A fresh install must upload nothing until the user has been shown what
-/// gets sent and has explicitly opted in — a Dalamud compliance rule, not a preference.
+/// A fresh install must upload nothing until the user has been shown what gets sent and has
+/// explicitly opted in, a Dalamud compliance rule rather than a preference. Every default is "off"
+/// but one, the live tracker's toggle (see <see cref="ShareOccultInstanceState"/> for why it may
+/// start on).
 /// </para>
 /// </remarks>
 [Serializable]
@@ -52,7 +54,8 @@ public class PluginSettings
 
     /// <summary>
     /// True while the user shares their Crucible runs with the website's run companion: what the
-    /// Crucible's windows show out of combat and their character's own HP.
+    /// Crucible's windows show out of combat and their character's own HP, plus a regular check-in,
+    /// which reads nothing, while they are on a board.
     /// </summary>
     /// <remarks>
     /// Defaults OFF, and <see cref="AutoEnableNewFeatures"/> never turns it on: it describes the
@@ -73,7 +76,7 @@ public class PluginSettings
     /// </para>
     /// <para>
     /// Defaults OFF, unlike <see cref="ShareOccultInstanceState"/>. That toggle defaults on for a
-    /// defence that does not carry here: it is one named thing, disclosed in full on the same
+    /// defense that does not carry here: it is one named thing, disclosed in full on the same
     /// screen, and what it shares is world state. This is open-ended — an answer about collections
     /// that do not exist yet, whose disclosure the user cannot have read — and it governs uploads
     /// of their own collection data. A ticked-by-default box would collect that answer from

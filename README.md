@@ -39,8 +39,8 @@ progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records** an
 
 ## What gets sent
 
-Only your **own local character's** collection facts, and only for the categories you opt
-into:
+Only facts about your **own local character** and the instance you are in, and only for what you
+switch on (the live Occult tracker starts on; everything else starts off):
 
 - Completed **quest** IDs
 - Unlocked **achievement**, **mount**, and **minion** IDs
@@ -65,6 +65,16 @@ into:
   sends) and can be switched off any time in the settings. If XIV Shinies has the tracker
   switched off while you are setting up, the wizard cannot offer you that box — so it starts
   **off** instead, and you can turn it on from the settings whenever you like
+- **Crucible runs**, if you switch the sharing on (it starts off, and nothing turns it on but
+  you): from the familiars you pick at the Crucible of the Unbroken's entrance until you leave a
+  board, what its windows show you between fights (the board, your familiars, your bag and
+  tokens, treasure, loot and shop offers, and your results) and your character's own HP, each
+  with when it was read or its window closed and where it was read (the entrance or a board),
+  filling in your run on the site. While you are on a board it also checks in regularly, during
+  fights too, so the site can tell you are still playing, and it says when you leave. Nothing is
+  read from its windows or your HP during a fight. Enemies are skipped: nothing about them is sent
+  beyond how many your run beat and the points they were worth, as the results screen shows them.
+  Nothing about other players is read or sent
 
 For a collection the plugin can read end to end, the upload also records that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin
@@ -84,6 +94,9 @@ rule-by-rule in [`docs/dalamud-compliance.md`](docs/dalamud-compliance.md).
 Nothing uploads until you finish a short first-run setup that shows exactly what each
 collection sends and asks you to switch categories on explicitly. Every category — and syncing
 as a whole — can be toggled at any time from the settings window (`/shinies`).
+
+Sharing your Crucible runs is its own switch: it starts off, and the offer below never turns it
+on.
 
 Setup also offers to start collections added by later updates already switched on, so that if you
 always opt in you are not asked every time. It is off unless you tick it, and either way a new

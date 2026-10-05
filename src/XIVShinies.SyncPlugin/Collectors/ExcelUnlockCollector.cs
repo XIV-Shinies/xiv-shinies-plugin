@@ -111,7 +111,7 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
             return CollectResult.Skipped(skipReason);
 
         // Wraps the sheet fetch alone: a throw from the loop below is a different failure and must
-        // not be relabelled. See CollectSkipReasons.SheetUnavailable for why this is a catch.
+        // not be relabeled. See CollectSkipReasons.SheetUnavailable for why this is a catch.
         ExcelSheet<TRow> sheet;
         try
         {
