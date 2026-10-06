@@ -18,7 +18,10 @@ public sealed record CrucibleObservationsResponse
     /// <summary>What happened, as one of the <see cref="CrucibleOutcomes"/> words.</summary>
     public string? Outcome { get; init; }
 
-    /// <summary>The website run the snapshots belong to, or null when the character has none.</summary>
+    /// <summary>
+    /// The character's active website run, or null when it has none. Only on <c>applied</c> were the
+    /// snapshots written to it.
+    /// </summary>
     public string? RunId { get; init; }
 
     /// <summary>On <c>applied</c>, how many run events the snapshots produced.</summary>
@@ -43,8 +46,10 @@ public static class CrucibleOutcomes
     public const string Applied = "applied";
 
     /// <summary>
-    /// The character has no active run. The server holds the latest snapshots for a while and
-    /// applies them once a run on this board starts.
+    /// The server kept the snapshots for a while rather than applying them to a run. A board's
+    /// snapshots are held while the character has no active run, and applied once a run on that
+    /// board starts; the entrance's are held whether or not a run is active, and never applied to
+    /// one.
     /// </summary>
     public const string Held = "held";
 

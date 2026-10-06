@@ -18,8 +18,9 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// entrance in the same way.
 /// </para>
 /// <para>
-/// A closing snapshot is the window's last reading, stamped with the moment it closed: the window's
-/// values are not read again at the close, so a close in a fight reads nothing.
+/// A closing snapshot is the window's last admitted reading (see <see cref="Read"/>), stamped with the
+/// moment it closed: the window's values are not read again at the close, so a close in a fight reads
+/// nothing.
 /// </para>
 /// <para>
 /// Only the game's main thread calls it.
@@ -32,8 +33,8 @@ public sealed class CrucibleFeed
     private readonly CrucibleVisits visits = new();
 
     /// <summary>
-    /// The last reading of each open window that sends a closing snapshot, with the territory it was
-    /// read in, by window name.
+    /// The last admitted reading of each open window that sends a closing snapshot, with the territory
+    /// it was read in, by window name.
     /// </summary>
     /// <remarks>
     /// Taken out when the window closes, so a window that raises more than one close event sends one
@@ -95,25 +96,35 @@ public sealed class CrucibleFeed
     }
 
     /// <summary>
-    /// Takes in a window reading: remembered for the window's closing snapshot if it sends one, and
-    /// offered as an open snapshot.
+    /// Takes in a window reading: one that may go up from where it was read is queued as an open
+    /// snapshot, and remembered for the window's closing snapshot if it sends one.
     /// </summary>
+    /// <remarks>
+    /// A reading its territory refuses (see <see cref="CrucibleTerritories.Admits"/>) is dropped
+    /// whole, and the window's remembered reading stays the last one that could go up. So a window
+    /// redrawn on the first frames after crossing between the entrance and a board still closes on
+    /// the side it was open: the roster pick under the entrance, a board's window under that board.
+    /// </remarks>
     /// <param name="windowName">The window's internal name.</param>
     /// <param name="snapshot">What makes a snapshot of the reading.</param>
     /// <param name="territoryTypeId">The territory the window was read in.</param>
     /// <param name="now">The moment it was read.</param>
     public void Read(string windowName, CrucibleSnapshot snapshot, uint territoryTypeId, DateTimeOffset now)
     {
+        var observation = snapshot(now, false);
+        if (!CrucibleTerritories.Admits(observation, territoryTypeId))
+            return;
+
         if (CrucibleWindows.Closes(windowName))
             lastReadings[windowName] = (snapshot, territoryTypeId);
 
-        Offer(snapshot(now, false), territoryTypeId, now);
+        Queue(observation, territoryTypeId, now);
     }
 
     /// <summary>
-    /// A window closed: its last reading goes in once more, marked closed, under the territory it was
-    /// read in. A window with no reading since it opened, or one that sends no closing snapshot, adds
-    /// nothing.
+    /// A window closed: its last admitted reading goes in once more, marked closed, under the
+    /// territory it was read in. A window with no admitted reading since it opened, or one that sends
+    /// no closing snapshot, adds nothing.
     /// </summary>
     /// <param name="windowName">The window's internal name.</param>
     /// <param name="now">The moment it closed.</param>
@@ -133,9 +144,16 @@ public sealed class CrucibleFeed
     /// <param name="now">The current moment.</param>
     public void Offer(CrucibleObservation observation, uint territoryTypeId, DateTimeOffset now)
     {
-        if (!CrucibleTerritories.Admits(observation, territoryTypeId))
-            return;
+        if (CrucibleTerritories.Admits(observation, territoryTypeId))
+            Queue(observation, territoryTypeId, now);
+    }
 
+    /// <summary>Hands an admitted snapshot to the scheduler.</summary>
+    /// <param name="observation">The snapshot.</param>
+    /// <param name="territoryTypeId">The territory it was read in.</param>
+    /// <param name="now">The current moment.</param>
+    private void Queue(CrucibleObservation observation, uint territoryTypeId, DateTimeOffset now)
+    {
         scheduler.Queue(observation, territoryTypeId, now);
 
         if (observation is CrucibleBagObservation)

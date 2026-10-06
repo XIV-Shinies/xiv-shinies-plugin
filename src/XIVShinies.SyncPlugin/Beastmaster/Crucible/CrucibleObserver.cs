@@ -20,7 +20,8 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// Purely passive. A window is read only when the game draws it for the player, or when the caller asks
 /// for one the player already has open; nothing here opens, navigates or clicks one. Nothing is read
 /// while the sharing is off, and nothing during a fight. A close is reported without reading the
-/// window: its closing snapshot is made from the last reading taken (see <see cref="CrucibleFeed"/>).
+/// window: its closing snapshot is made from the last reading that could go up (see
+/// <see cref="CrucibleFeed"/>).
 /// Of each window, only what its reader names is ever looked at; the board window's enemy rows are
 /// skipped by their type.
 /// </para>

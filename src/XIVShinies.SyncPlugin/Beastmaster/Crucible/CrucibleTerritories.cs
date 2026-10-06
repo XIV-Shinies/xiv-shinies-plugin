@@ -3,8 +3,8 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
-/// Where the Crucible run sharing may send from: the boards, plus the two windows the entrance opens
-/// before the duty starts.
+/// Where the Crucible run sharing may send from: the entrance, for the two windows it opens before the
+/// duty starts, and the boards, for everything else.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,10 +22,6 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// upload against the board's own layout, so a board added later needs the server to learn it too,
 /// and reaches <see cref="IsBoard"/> in a plugin release.
 /// </para>
-/// <para>
-/// The roster pick and the board seen before entering open at the entrance, outside every board, so
-/// <see cref="Admits"/> lets those two through wherever they are read.
-/// </para>
 /// </remarks>
 // A `static class` holds only shared members and is never instantiated: a module of functions.
 public static class CrucibleTerritories
@@ -38,6 +34,12 @@ public static class CrucibleTerritories
     /// <summary>The fifth and last board's <c>TerritoryType</c> row id.</summary>
     public const uint LastBoard = 1343;
 
+    /// <summary>
+    /// The <c>TerritoryType</c> row id of the entrance, where the roster pick and the board seen
+    /// before entering open.
+    /// </summary>
+    public const uint Entrance = 148;
+
     /// <summary>True when the territory is a Crucible board.</summary>
     /// <param name="territoryTypeId">The territory's <c>TerritoryType</c> row id.</param>
     // `=>` makes the expression after it the whole method body, like an arrow function.
@@ -45,15 +47,27 @@ public static class CrucibleTerritories
     public static bool IsBoard(uint territoryTypeId) => territoryTypeId is >= FirstBoard and <= LastBoard;
 
     /// <summary>
-    /// True when a snapshot read in this territory may go up: inside a board every kind may, and
-    /// outside one only the roster pick and the board seen before entering.
+    /// True when a snapshot read in this territory may go up: the roster pick and the board seen
+    /// before entering only at the entrance, and every other kind only inside a board.
     /// </summary>
+    /// <remarks>
+    /// The server fails a whole upload over one snapshot sent from the wrong side of the line between
+    /// the entrance and the boards, so each is held to its own side, including on the first frames
+    /// after a zone change, when a window from the other side can still be drawn.
+    /// </remarks>
     /// <param name="observation">The snapshot.</param>
     /// <param name="territoryTypeId">The territory it was read in.</param>
-    // `is Type { Property: value }` matches a snapshot of that type with that value, like a
-    // TypeScript type guard checking a field; `or` joins the two shapes.
+    // `a ? b : c` picks b when a is true, else c, as in TypeScript.
     public static bool Admits(CrucibleObservation observation, uint territoryTypeId) =>
-        IsBoard(territoryTypeId)
-        || observation is CrucibleTeamObservation { Mode: (int)CrucibleTeamMode.RosterPick }
+        IsEntranceWindow(observation) ? territoryTypeId == Entrance : IsBoard(territoryTypeId);
+
+    /// <summary>True for the roster pick and the board seen before entering.</summary>
+    /// <param name="observation">The snapshot.</param>
+    // `private` keeps this helper inside the class, like a function a module does not export.
+    // `is Type { Property: value }` matches a snapshot of that type with that value, like a
+    // TypeScript type guard checking a field; `or` joins the two shapes. `(int)` turns the named
+    // mode or view into the number the snapshot carries.
+    private static bool IsEntranceWindow(CrucibleObservation observation) =>
+        observation is CrucibleTeamObservation { Mode: (int)CrucibleTeamMode.RosterPick }
             or CrucibleBoardObservation { View: (int)CrucibleBoardView.PreEntry };
 }
