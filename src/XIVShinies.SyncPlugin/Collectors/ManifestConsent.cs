@@ -210,6 +210,18 @@ public static class ManifestConsent
     }
 
     /// <summary>
+    /// Whether the server has switched off every collection one by one, without pausing syncing.
+    /// </summary>
+    /// <remarks>
+    /// The state in which every collection's box is grayed for a reason no pause sentence explains, so
+    /// a consent surface owes the user a sentence of its own. An empty list is nobody's refusal.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    // `&&` stops at the first false, as in TypeScript.
+    public static bool ServerPermitsNoCollection(IReadOnlyList<CategorySettingsRow> rows) =>
+        rows.Count > 0 && !AnyServerEnabled(rows) && !ServerHasPausedEverything(rows);
+
+    /// <summary>
     /// Whether any collection at all will actually be uploaded as things stand — both halves, the
     /// user's choice and the server's.
     /// </summary>

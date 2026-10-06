@@ -144,6 +144,12 @@ internal sealed partial class MainWindow : Window, IDisposable
     // gone up since the window opened (see CrucibleBadge). A field with no `= ...` starts false.
     private bool crucibleBadgedThisSession;
 
+    // The user's stored choices the wizard's consent step opened with (see DrawChooseCategoriesStep).
+    // Null until the step draws; cleared when the user leaves the step or closes the window.
+    // `(bool A, bool B)?` is a tuple that may be null: two named values traveling together, like
+    // `{ a, b } | null`.
+    private (bool AnythingSwitchedOn, bool TrackerOn)? chooseStepOpening;
+
     // Whether the wizard has put per-group consent checkboxes on screen during THIS frame. Reset at
     // the top of every wizard frame and set by DrawGroupCheckboxes when it actually draws a group row,
     // so by the time the footer's Finish button is handled — drawn after the rows, in the same frame —
@@ -332,7 +338,8 @@ internal sealed partial class MainWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Retires the badges shown during this visit, so reopening the window does not show them again.
+    /// Retires the badges shown during this visit, so reopening the window does not show them again,
+    /// and forgets the wizard consent step's opening state.
     /// </summary>
     /// <remarks>
     /// The session sets, and the Crucible card's session flag, keep a badge on screen after its
@@ -346,6 +353,9 @@ internal sealed partial class MainWindow : Window, IDisposable
         categoriesBadgedThisSession.Clear();
         groupsBadgedThisSession.Clear();
         crucibleBadgedThisSession = false;
+
+        // A wizard reopened later reads its consent step's opening state afresh.
+        chooseStepOpening = null;
     }
 
     /// <summary>

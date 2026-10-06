@@ -80,6 +80,10 @@ internal sealed partial class MainWindow
             syncManager.HasCharacter,
             syncManager.LastStatus is not null);
 
+        // Read once, so the status line, the wait line, the button and the sentences below all
+        // describe the same wait.
+        var backingOff = syncManager.IsBackingOff;
+
         if (status == SyncStatusKind.SwitchedOffByUser)
         {
             // Red: everything below this line is inert while the switch is off, and a quiet gray
@@ -119,7 +123,7 @@ internal sealed partial class MainWindow
             // Warned rather than stated, unlike the line above: this one is not the user's doing and
             // there is nothing for them to change, so it belongs with the other states the server
             // imposed. The rows each wear their own "Off" chip, but they are a fold away.
-            DrawWarning(ServerOffCopy.Feature);
+            DrawWarning(ServerOffCopy.EveryCollection);
         }
         else if (status == SyncStatusKind.WaitingForCharacter)
         {
@@ -137,12 +141,16 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.LastUploadOutcome && syncManager.LastStatus is { } lastStatus)
         {
-            DrawLastStatus(lastStatus);
+            DrawLastStatus(lastStatus, backingOff);
         }
         else
         {
             ImGui.TextUnformatted("No collections have been uploaded yet this session.");
         }
+
+        // Whether the wait needs a line of its own is SyncStatusView.NeedsWaitLine's rule.
+        if (SyncStatusView.NeedsWaitLine(status, syncManager.LastStatus, backingOff))
+            ImGui.TextUnformatted(SyncStatusView.WaitLine);
 
         // "When?" is half of what a status line is for: without it, a deliberately quiet stretch
         // (item acquisitions fire no event) is indistinguishable from a hang. Muted, unlike the
@@ -161,13 +169,16 @@ internal sealed partial class MainWindow
         var showSyncing = DateTime.UtcNow < syncFeedbackUntil || syncManager.UploadInFlight;
         var syncButtonPos = ImGui.GetCursorPos();
 
-        // Read off the same status the card is stating, so the control and the sentence above it
-        // cannot drift apart. PrimaryButton owns its own disabled look, so the face goes flat
-        // rather than merely dimming — see Widgets.PrimaryButton for why that matters.
+        // Read off the same status the card is stating, plus whether the server has asked the
+        // plugin to wait, so no sentence invites a press the button refuses (see
+        // SyncStatusView.SyncNowOffered and SyncNowEnabled). PrimaryButton owns its own disabled
+        // look, so the face goes flat rather than merely dimming — see Widgets.PrimaryButton for why
+        // that matters.
+        var syncNowOffered = SyncStatusView.SyncNowOffered(status, backingOff);
         if (PrimaryButton(
                 showSyncing ? "###syncNow" : "Sync now###syncNow",
                 new Vector2(syncWidth, 0f),
-                enabled: !SyncStatusView.ManualSyncWouldDoNothing(status))
+                enabled: SyncStatusView.SyncNowEnabled(status, backingOff))
             && !showSyncing)
         {
             syncManager.RequestManualSync();
@@ -190,22 +201,14 @@ internal sealed partial class MainWindow
         var pipelineRunning = SyncStatusView.CadenceHolds(status);
 
         // Sets the expectation for every collection at once, so no category's own description has
-        // to explain the sync mechanism. Phrased by mechanism, not by category name: an acquisition
-        // the game announces uploads within seconds, while anything it stays silent about (item
-        // possession, Triple Triad cards) waits for the scheduled sweep. The cadence is the live
-        // value — the server tunes it — never a hardcoded number.
-        //
-        // "Most" is load-bearing. Which acquisitions announce themselves is the game's choice, not
-        // ours, and it is not guessable from the outside: Triple Triad cards are registered for the
-        // unlock signal exactly as mounts and orchestrion rolls are, and the game simply never
-        // raises it for them — a card reaches the site on the sweep or on Sync now. Promising every
-        // unlock in seconds would be a promise this plugin cannot keep for a collection it ships.
+        // to explain the sync mechanism. Phrased by mechanism, not by category name; which
+        // collections may be promised "within seconds", and when a press is invited, is
+        // SyncStatusView.CadenceSentence's rule.
         if (pipelineRunning)
         {
             DrawWrapped(
-                "Most new unlocks upload within seconds. Everything else syncs automatically every " +
-                $"{TimeText.Interval(syncManager.FullSyncInterval)} — press Sync now to update " +
-                "immediately.",
+                SyncStatusView.CadenceSentence(
+                    rows, syncManager.FullSyncInterval, syncNowOffered, backingOff),
                 ImGuiCol.Text);
         }
 
@@ -241,18 +244,15 @@ internal sealed partial class MainWindow
             var hasMissingNote = DrawReadStatusGroup("Collections", readStatus.Collections);
             hasMissingNote |= DrawReadStatusGroup("Containers", readStatus.Containers);
 
-            // Every Missing line names its own action — open the Saddlebag, open the Achievements
-            // window — but none of them can say what happens next, because acting in game changes
-            // nothing until the plugin reads again. This is the shared other half: the sync that
-            // actually picks the change up. Hidden once nothing is Missing, since a permanently
-            // Cached container has nothing left the user can do about it.
+            // A Missing line that names an action (open the Saddlebag, open the Achievements window)
+            // cannot say what happens next, because acting in game changes nothing until the plugin
+            // reads again. This is the shared other half: the sync that actually picks the change
+            // up. Hidden once nothing is Missing, since a permanently Cached container has nothing
+            // left the user can do about it.
             if (hasMissingNote)
             {
                 ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
-                DrawWrapped(
-                    "Anything above that has not been read yet names the action that fixes it — do " +
-                    "it in game, then press Sync now.",
-                    ImGuiCol.Text);
+                DrawWrapped(SyncStatusView.MissingFollowUp(syncNowOffered), ImGuiCol.Text);
             }
         }
     }
@@ -447,7 +447,9 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>Renders the last upload's outcome. Switches on a status, never on a category.</summary>
-    private void DrawLastStatus(ApiStatus status)
+    /// <param name="status">The last upload's outcome.</param>
+    /// <param name="backingOff">Whether a server-requested wait is still in force.</param>
+    private void DrawLastStatus(ApiStatus status, bool backingOff)
     {
         switch (status)
         {
@@ -471,7 +473,7 @@ internal sealed partial class MainWindow
             // contrast. Only red says "you have to do something".
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
-                ImGui.TextUnformatted("Waiting before the next upload, as the server asked.");
+                ImGui.TextUnformatted(SyncStatusView.DeferredUploadLine(backingOff));
                 break;
 
             case ApiStatus.NetworkError:

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Xunit;
+using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Windows;
 
@@ -191,5 +192,194 @@ public class SyncStatusViewTests
         SyncStatusKind kind, bool expected)
     {
         Assert.Equal(expected, SyncStatusView.ManualSyncWouldDoNothing(kind));
+    }
+
+    // --- Whether the card offers "Sync now" --------------------------------------------------------
+
+    // Every status, with and without a server-requested wait. The sentences invite a press only where
+    // one uploads something now; a halt is the exception, since the press itself is what lifts it.
+    [Theory]
+    [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
+    [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
+    [InlineData(SyncStatusKind.PausedByServer, false, false)]
+    [InlineData(SyncStatusKind.PausedByServer, true, false)]
+    [InlineData(SyncStatusKind.BlockedPendingUserAction, false, true)]
+    [InlineData(SyncStatusKind.BlockedPendingUserAction, true, true)]
+    [InlineData(SyncStatusKind.NothingSwitchedOnByUser, false, false)]
+    [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true, false)]
+    [InlineData(SyncStatusKind.NothingPermittedByServer, false, false)]
+    [InlineData(SyncStatusKind.NothingPermittedByServer, true, false)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, false, true)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, true, false)]
+    [InlineData(SyncStatusKind.LastUploadOutcome, false, true)]
+    [InlineData(SyncStatusKind.LastUploadOutcome, true, false)]
+    [InlineData(SyncStatusKind.NothingUploadedYet, false, true)]
+    [InlineData(SyncStatusKind.NothingUploadedYet, true, false)]
+    public void The_sentences_invite_a_press_only_where_one_uploads_now(
+        SyncStatusKind kind, bool backingOff, bool expected)
+    {
+        Assert.Equal(expected, SyncStatusView.SyncNowOffered(kind, backingOff));
+    }
+
+    // The button follows the sentences, plus one state: waiting for a character during a wait, where a
+    // press restarts finding the character, which the wait does not hold back.
+    [Theory]
+    [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
+    [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
+    [InlineData(SyncStatusKind.PausedByServer, false, false)]
+    [InlineData(SyncStatusKind.PausedByServer, true, false)]
+    [InlineData(SyncStatusKind.BlockedPendingUserAction, false, true)]
+    [InlineData(SyncStatusKind.BlockedPendingUserAction, true, true)]
+    [InlineData(SyncStatusKind.NothingSwitchedOnByUser, false, false)]
+    [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true, false)]
+    [InlineData(SyncStatusKind.NothingPermittedByServer, false, false)]
+    [InlineData(SyncStatusKind.NothingPermittedByServer, true, false)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, false, true)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, true, true)]
+    [InlineData(SyncStatusKind.LastUploadOutcome, false, true)]
+    [InlineData(SyncStatusKind.LastUploadOutcome, true, false)]
+    [InlineData(SyncStatusKind.NothingUploadedYet, false, true)]
+    [InlineData(SyncStatusKind.NothingUploadedYet, true, false)]
+    public void The_button_is_live_where_a_press_does_something(
+        SyncStatusKind kind, bool backingOff, bool expected)
+    {
+        Assert.Equal(expected, SyncStatusView.SyncNowEnabled(kind, backingOff));
+    }
+
+    // --- The wait line ---------------------------------------------------------------------------------
+
+    // The refused upload's own outcome states the wait, so no second line is added under it.
+    [Theory]
+    [InlineData(ApiStatus.RateLimited)]
+    [InlineData(ApiStatus.SyncDisabled)]
+    public void A_status_line_that_states_the_wait_needs_no_second_one(ApiStatus lastStatus)
+    {
+        Assert.False(
+            SyncStatusView.NeedsWaitLine(SyncStatusKind.LastUploadOutcome, lastStatus, backingOff: true));
+    }
+
+    // A wait outlives the outcome that started it: after a relog the card states "nothing uploaded
+    // yet" or a wait for a character, and the wait line is what says uploads are held back.
+    // Every row has no last outcome, so the null is written once, in the call.
+    [Theory]
+    [InlineData(SyncStatusKind.NothingUploadedYet)]
+    [InlineData(SyncStatusKind.WaitingForCharacter)]
+    public void A_wait_the_status_line_does_not_state_gets_its_own_line(SyncStatusKind kind)
+    {
+        Assert.True(SyncStatusView.NeedsWaitLine(kind, lastStatus: null, backingOff: true));
+    }
+
+    // An outcome other than the wait's, still on the line while a wait holds, does not state the wait.
+    [Fact]
+    public void A_different_outcome_on_the_line_still_gets_the_wait_line()
+    {
+        Assert.True(SyncStatusView.NeedsWaitLine(
+            SyncStatusKind.LastUploadOutcome, ApiStatus.NetworkError, backingOff: true));
+    }
+
+    // No wait, no line; and the states with a sentence of their own (a press would do nothing, or a
+    // halt) need none.
+    [Theory]
+    [InlineData(SyncStatusKind.LastUploadOutcome, false)]
+    [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
+    [InlineData(SyncStatusKind.PausedByServer, true)]
+    [InlineData(SyncStatusKind.BlockedPendingUserAction, true)]
+    [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true)]
+    [InlineData(SyncStatusKind.NothingPermittedByServer, true)]
+    public void No_wait_line_without_a_wait_or_where_another_sentence_covers_it(
+        SyncStatusKind kind, bool backingOff)
+    {
+        Assert.False(SyncStatusView.NeedsWaitLine(kind, lastStatus: null, backingOff));
+    }
+
+    // --- The cadence sentence ------------------------------------------------------------------------
+
+    /// <summary>A switched-on collection that does, or does not, upload as soon as it unlocks.</summary>
+    // `with { ... }` copies the record with one property changed, like `{ ...row, uploadsOnUnlock }`.
+    private static CategorySettingsRow Announced(bool uploadsOnUnlock) =>
+        Row() with { UploadsOnUnlock = uploadsOnUnlock };
+
+    /// <summary>How often the scheduled sweep runs in these tests.</summary>
+    // `static readonly` builds the value once, before the class is first used.
+    private static readonly TimeSpan HalfHour = TimeSpan.FromMinutes(30);
+
+    // Collections the game announces upload within seconds, so the sentence may say so while one of
+    // them is switched on, not skipped on the last pass, and not held back by a wait.
+    [Fact]
+    public void The_cadence_promises_seconds_while_an_announced_collection_is_on()
+    {
+        Assert.Equal(
+            "Most new unlocks upload within seconds. Everything else syncs automatically every " +
+            "30 minutes — press Sync now to update immediately.",
+            SyncStatusView.CadenceSentence(
+                new[] { Announced(true) }, HalfHour, syncNowOffered: true, backingOff: false));
+    }
+
+    // Without an announced collection that counts, only the schedule is promised. An announced one does
+    // not count when the user switched it off, the server switched it off, or it was not read on the
+    // last pass (it sends nothing on an unlock until it is).
+    [Fact]
+    public void The_cadence_promises_only_the_schedule_when_no_announced_collection_counts()
+    {
+        var rows = new[]
+        {
+            Announced(false),
+            Row(userEnabled: false) with { UploadsOnUnlock = true },
+            Row(serverEnabled: false) with { UploadsOnUnlock = true },
+            Announced(true) with { SkipReason = CollectSkipReasons.AchievementListNotLoaded },
+        };
+
+        Assert.Equal(
+            "Your collections sync automatically every 30 minutes — press Sync now to update immediately.",
+            SyncStatusView.CadenceSentence(rows, HalfHour, syncNowOffered: true, backingOff: false));
+    }
+
+    // While "Sync now" is not on offer, the sentence does not invite a press, whichever opening it has.
+    [Theory]
+    [InlineData(
+        true, "Most new unlocks upload within seconds. Everything else syncs automatically every 1 hour.")]
+    [InlineData(false, "Your collections sync automatically every 1 hour.")]
+    public void The_cadence_does_not_invite_a_press_that_is_not_offered(bool announced, string expected)
+    {
+        Assert.Equal(
+            expected,
+            SyncStatusView.CadenceSentence(
+                new[] { Announced(announced) },
+                TimeSpan.FromHours(1),
+                syncNowOffered: false,
+                backingOff: false));
+    }
+
+    // A wait holds back unlock uploads as well as sweeps, so "within seconds" is not promised during one.
+    [Fact]
+    public void The_cadence_promises_no_seconds_during_a_wait()
+    {
+        Assert.Equal(
+            "Your collections sync automatically every 30 minutes.",
+            SyncStatusView.CadenceSentence(
+                new[] { Announced(true) }, HalfHour, syncNowOffered: false, backingOff: true));
+    }
+
+    // The line beneath the read-status panel tells the user what picks up a fix made in game. It
+    // speaks only of the lines that name an action: some unread lines have none to name.
+    [Theory]
+    [InlineData(true, "Where a line above names an action, do it in game, then press Sync now.")]
+    [InlineData(false, "Where a line above names an action, do it in game, and the next sync picks it up.")]
+    public void The_follow_up_names_sync_now_only_while_it_is_offered(bool syncNowOffered, string expected)
+    {
+        Assert.Equal(expected, SyncStatusView.MissingFollowUp(syncNowOffered));
+    }
+
+    // --- The deferred upload's status line -----------------------------------------------------------
+
+    // While the wait holds, the line says so; once it has ended, the same outcome no longer means
+    // waiting, so the line says what happens next instead.
+    [Theory]
+    [InlineData(true, SyncStatusView.WaitLine)]
+    [InlineData(
+        false, "The last upload was held back at the server's request. The next sync uploads as usual.")]
+    public void A_deferred_upload_says_whether_the_wait_still_holds(bool backingOff, string expected)
+    {
+        Assert.Equal(expected, SyncStatusView.DeferredUploadLine(backingOff));
     }
 }

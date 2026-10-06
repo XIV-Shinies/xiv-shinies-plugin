@@ -108,12 +108,17 @@ internal sealed partial class MainWindow
         if (ImGui.CollapsingHeader("Privacy"))
         {
             ImGui.Spacing();
-            // Names the server the data is actually sent to — see MainWindow.BackendHost.
+            // Names the server the data is actually sent to — see MainWindow.BackendHost. "You choose"
+            // is said only while the server leaves something to choose (see
+            // ConsentCopy.UserHasAChoice); `a ? b : c` picks b when a is true, else c, as in
+            // TypeScript.
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
                 $"Your character's name and home world are sent so {BackendHost()} can match the " +
                 "character you already claimed and verified. Nothing is uploaded unless syncing " +
-                "is switched on, and you choose what to include.");
+                (ConsentCopy.UserHasAChoice(rows, remoteConfig)
+                    ? "is switched on, and you choose what to include."
+                    : "is switched on."));
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

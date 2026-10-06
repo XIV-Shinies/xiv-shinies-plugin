@@ -3,6 +3,8 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility;
+using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Occult;
 using XIVShinies.SyncPlugin.Onboarding;
@@ -72,24 +74,38 @@ internal sealed partial class MainWindow
         var trackerDrawn = false;
 
         // Each collector describes itself. Adding a collection makes it appear here with no
-        // change to this window: a gold gem, then one flowed line — "Name — what it sends" —
-        // under the section heading its collector declared, with the hover elaboration trailing
-        // the sentence when the collector offered one (a category whose one-liner says
-        // everything carries no mark to wonder about). The line is the consent copy telling the
-        // user what leaves their machine, so it draws at full contrast. (See
+        // change to this window: a gem, then one flowed line, "Name — what it sends", under
+        // the section heading its collector declared, with the hover elaboration trailing the
+        // sentence when the collector offered one (a category whose one-liner says everything
+        // carries no mark to wonder about). The line is the consent copy telling the user what
+        // leaves their machine, so it draws at full contrast while the server permits it. (See
         // DrawCompletenessNote for why this pre-consent screen may never disclose less than the
         // settings.)
-        var welcomeRows = BuildCategoryRows(syncManager.RemoteConfig);
+        //
+        // A collection the server has switched off is not an open offer, so its line mutes and
+        // wears the same "Off" chip as on the consent step, its hover saying why. That state is
+        // reachable here by going Back once the server has answered.
+        //
+        // One config snapshot for the whole screen, so the lines and the privacy card below decide
+        // from the same answer.
+        var remoteConfig = syncManager.RemoteConfig;
+        var welcomeRows = BuildCategoryRows(remoteConfig);
         foreach (var section in CategorySettingsView.GroupBySection(welcomeRows))
         {
             DrawSectionLabel(section.Title);
 
             foreach (var row in section.Rows)
             {
-                DrawIcon(FontAwesomeIcon.Gem, Brand.Gold);
+                // `trailingChip:` and `muted:` below name the parameter each value fills, like keys
+                // in an options object; `a ? b : c` picks b when a is true, else c.
+                var off = !row.ServerEnabled;
+                DrawIcon(FontAwesomeIcon.Gem, off ? Brand.DisabledForeground : Brand.Gold);
                 ImGui.SameLine();
                 DrawWrappedWithTrailingHint(
-                    $"{row.DisplayName} — {row.WhatGetsSent}", row.Details);
+                    $"{row.DisplayName} — {row.WhatGetsSent}",
+                    row.Details,
+                    trailingChip: off ? OffChip(row.ServerOffText) : null,
+                    muted: off);
             }
 
             // The live Occult tracker's disclosure joins the Crescent section: it is occult
@@ -99,7 +115,7 @@ internal sealed partial class MainWindow
             // registered collector, so no collector gains a name branch by it.
             if (section.Title == CollectorRegistry.OccultSection)
             {
-                DrawOccultTrackerDisclosureLine();
+                DrawOccultTrackerDisclosureLine(remoteConfig);
                 trackerDrawn = true;
             }
         }
@@ -110,21 +126,24 @@ internal sealed partial class MainWindow
         if (!trackerDrawn)
         {
             DrawSectionLabel(CollectorRegistry.OccultSection);
-            DrawOccultTrackerDisclosureLine();
+            DrawOccultTrackerDisclosureLine(remoteConfig);
         }
 
         // The Crucible run sharing's disclosure, under a heading of its own: it is not a collection,
         // and no registered collector declares a Crucible section for it to join.
         DrawSectionLabel(CrucibleSectionTitle);
-        DrawCrucibleDisclosureLine();
+        DrawCrucibleDisclosureLine(remoteConfig);
 
         Widgets.SectionGap();
-        // Names the server the data is actually sent to — see MainWindow.BackendHost.
+        // Names the server the data is actually sent to — see MainWindow.BackendHost. "You choose"
+        // is said only while the server leaves something to choose (see ConsentCopy.UserHasAChoice).
         DrawPrivacyCard(
             "Your character is identified by a one-way fingerprint computed on this machine. " +
             $"Your character's name and home world are sent so {BackendHost()} can match the " +
             "character you already claimed and verified. Nothing is uploaded until you finish " +
-            "this setup, and you choose which of the above to include.");
+            (ConsentCopy.UserHasAChoice(welcomeRows, remoteConfig)
+                ? "this setup, and you choose which of the above to include."
+                : "this setup."));
 
         DrawWizardNav("Get started");
     }
@@ -136,26 +155,41 @@ internal sealed partial class MainWindow
     /// <summary>
     /// The welcome screen's tracker disclosure, flowed as one sentence: a broadcast tower — it
     /// shares live world state rather than adding anything to your collection — then the name
-    /// and copy flowed together, with the what-is-NOT-shared reassurance hover trailing.
+    /// and copy flowed together, with the what-is-NOT-shared reassurance hover trailing. Muted
+    /// and chipped "Off" while the server has the tracker off, like a switched-off collection.
     /// </summary>
-    private void DrawOccultTrackerDisclosureLine()
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
+    private void DrawOccultTrackerDisclosureLine(ConfigResponse? remoteConfig)
     {
-        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
+        // Null while the server permits the tracker; `is null` and `is not null` test for that, like
+        // `=== null` and `!== null`.
+        var offText = OccultGate.ServerOffText(remoteConfig);
+        DrawIcon(FontAwesomeIcon.BroadcastTower, offText is null ? Brand.Gold : Brand.DisabledForeground);
         ImGui.SameLine();
         DrawWrappedWithTrailingHint(
-            $"Live Occult instance state — {OccultWhatGetsSent}", OccultTrackerDetails);
+            $"Live Occult instance state — {OccultWhatGetsSent}",
+            OccultTrackerDetails,
+            trailingChip: offText is null ? null : OffChip(offText),
+            muted: offText is not null);
     }
 
     /// <summary>
     /// The welcome screen's Crucible disclosure, flowed as one sentence: a broadcast tower, since it
     /// shares play as it happens rather than adding anything to your collection, then the name and
-    /// copy flowed together, with the what-is-NOT-read reassurance hover trailing.
+    /// copy flowed together, with the what-is-NOT-read reassurance hover trailing. Muted and chipped
+    /// "Off" while the server has the sharing off.
     /// </summary>
-    private void DrawCrucibleDisclosureLine()
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
+    private void DrawCrucibleDisclosureLine(ConfigResponse? remoteConfig)
     {
-        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
+        var offText = CrucibleGate.ServerOffText(remoteConfig);
+        DrawIcon(FontAwesomeIcon.BroadcastTower, offText is null ? Brand.Gold : Brand.DisabledForeground);
         ImGui.SameLine();
-        DrawWrappedWithTrailingHint($"Crucible runs — {CrucibleWhatGetsSent}", CrucibleRunsDetails);
+        DrawWrappedWithTrailingHint(
+            $"Crucible runs — {CrucibleWhatGetsSent}",
+            CrucibleRunsDetails,
+            trailingChip: offText is null ? null : OffChip(offText),
+            muted: offText is not null);
     }
 
     private void DrawLinkAccountStep()
@@ -176,31 +210,9 @@ internal sealed partial class MainWindow
 
     private void DrawChooseCategoriesStep()
     {
-        // Two consent regimes, stated plainly: collections and the Crucible run sharing start OFF
-        // (they describe the player's own progress and play), while the live tracker's box starts
-        // ticked because it shares world state — and it is on this very screen, so unticking it is
-        // one click before anything can send.
-        // Scoped to the collections on this screen, because the last box below offers to start
-        // collections added by later updates switched on.
-        //
-        // The tracker sentence is dropped when the server has the tracker switched off, because
-        // then it is not true: the row below cannot be offered.
-        //
-        // The snapshot both this sentence and the row below decide from; see
+        // The snapshot the sentence, the rows and the two sharing cards below all decide from; see
         // DrawOccultConsentRow's remoteConfig parameter for why it is passed rather than re-read.
         var remoteConfig = syncManager.RemoteConfig;
-        var trackerCanBeOffered = !OccultGate.ServerHasSwitchedOff(remoteConfig);
-
-        ImGui.TextWrapped(
-            "Choose what to upload. The collections below, and sharing your Crucible runs, all " +
-            "start switched off — nothing about your progress is sent unless you turn it on here. " +
-            (trackerCanBeOffered
-                ? "Sharing live Occult instance state starts on; untick it below if you would " +
-                  "rather not. "
-                : string.Empty) +
-            "You can change any of this later.");
-
-        Widgets.SectionGap();
 
         // Everything this step will ever show is on screen from its first frame: the account step holds
         // the user until the server's config has answered (see DrawLinkAccountStep), so a category's
@@ -210,13 +222,36 @@ internal sealed partial class MainWindow
         // See DrawCategoryRows's showNewChips for why the wizard badges nothing.
         var wizardRows = BuildCategoryRows(remoteConfig);
 
+        // Two consent regimes, stated plainly: collections and the Crucible run sharing start OFF
+        // (they describe the player's own progress and play), while the live tracker's box starts
+        // ticked because it shares world state — and it is on this very screen, so unticking it is
+        // one click before anything can send. Each half is said only while the boxes below bear it
+        // out, which ConsentCopy.WizardIntro decides.
+        //
+        // What the user's own clicks change is read once, as the step opens, so the sentence does
+        // not reflow under the cursor while boxes are being ticked; what the server permits is read
+        // every frame. `??=` assigns only when the field is still null, like `x ??= y` in TypeScript.
+        chooseStepOpening ??= (
+            ConsentCopy.AnythingChosenOn(wizardRows, configuration.Settings.ShareCrucibleRuns),
+            configuration.Settings.ShareOccultInstanceState);
+
+        // `.Value` reads the tuple out of its nullable wrapper, safe because after `??=` it always
+        // holds a value.
+        var opening = chooseStepOpening.Value;
+        ImGui.TextWrapped(ConsentCopy.WizardIntro(
+            opening.AnythingSwitchedOn,
+            trackerOffered: !OccultGate.ServerHasSwitchedOff(remoteConfig),
+            trackerOn: opening.TrackerOn,
+            userHasAChoice: ConsentCopy.UserHasAChoice(wizardRows, remoteConfig)));
+
+        Widgets.SectionGap();
+
         // The wizard draws no sync card, so the sentence that card carries would reach nobody
         // setting up during a pause — and this is the one consent surface a user cannot skip. Said
-        // here instead, above the rows it explains: without it the copy above promises a choice
-        // ("turn it on here") that every grayed checkbox below refuses, with the reason buried in a
-        // chip's hover. No collection loses anything by finishing now: every box here is grayed
-        // while the pause holds, none of them spends its announcement, and they badge themselves
-        // New in the settings once the pause lifts. The tracker is the exception — grayed here
+        // here instead, above the rows it explains, so the reason every box below is grayed is not
+        // left to a chip's hover. No collection loses anything by finishing now: every box here is
+        // grayed while the pause holds, none of them spends its announcement, and they badge
+        // themselves New in the settings once the pause lifts. The tracker is the exception — grayed here
         // means it is recorded as declined (see PluginSettings.SettleOccultConsent), and the
         // settings screen is where the user turns it on. The Crucible run sharing is grayed too
         // and stays off; a grayed card is not recorded as seen, so its settings card wears "New"
@@ -224,6 +259,12 @@ internal sealed partial class MainWindow
         if (ManifestConsent.ServerHasPausedEverything(wizardRows))
         {
             DrawWarning(ServerOffCopy.Paused);
+            Widgets.SectionGap();
+        }
+        else if (ManifestConsent.ServerPermitsNoCollection(wizardRows))
+        {
+            // The same gap without a pause: every collection switched off one by one.
+            DrawWarning(ServerOffCopy.EveryCollection);
             Widgets.SectionGap();
         }
 
@@ -264,7 +305,12 @@ internal sealed partial class MainWindow
         if (onboarding.CanGoBack)
         {
             if (BoldButton("Back", buttonSize))
+            {
                 onboarding.Back();
+
+                // Leaving the step lets the consent step read its opening state afresh next time.
+                chooseStepOpening = null;
+            }
 
             ImGui.SameLine();
         }
@@ -280,6 +326,7 @@ internal sealed partial class MainWindow
         if (forwardPressed)
         {
             onboarding.Advance();
+            chooseStepOpening = null;
 
             // Finish is a no-op until the last step, so calling it unconditionally is safe: it is the
             // state machine, not this window, that decides when consent has been given.

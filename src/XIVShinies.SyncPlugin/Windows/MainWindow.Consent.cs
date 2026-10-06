@@ -184,16 +184,14 @@ internal sealed partial class MainWindow
         // Which mark to wear, and its precedence, is CategorySettingsView.BadgeFor's rule. Only the
         // look of each mark is decided here.
         //
-        // Off is gray and filled: gray so the state never competes for attention with the badge that
-        // invites the user to do something, filled because that same gray would otherwise let it read
-        // as part of the grayed row it sits on rather than as a mark about it. New is gold and
-        // unfilled — the color already carries it.
+        // Off's look is OffChip's. New is gold and unfilled, since the color already carries it. The
+        // type is a tuple that may be null: several named values traveling together, like a
+        // TypeScript `{ icon, text, color, tooltip, filled } | null`.
         (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? badge =
             CategorySettingsView.BadgeFor(
                 row, showNewChips, categoriesBadgedThisSession.Contains(row.Key)) switch
             {
-                CategoryBadgeKind.Off =>
-                    (FontAwesomeIcon.PowerOff, "Off", Brand.DisabledForeground, row.ServerOffText, true),
+                CategoryBadgeKind.Off => OffChip(row.ServerOffText),
                 CategoryBadgeKind.New =>
                     (FontAwesomeIcon.Star, "New", Brand.Gold, (string?)null, false),
                 _ => null,
@@ -314,22 +312,13 @@ internal sealed partial class MainWindow
             DrawDetailsHint(OccultTrackerDetails);
 
             // The same chip a switched-off collection wears, carrying the same sentence in the same
-            // place. The tracker's switch has no note of its own — it lives in its own config block,
-            // which the server sends without one — so which of the two standard sentences applies
-            // is the gate's to decide, exactly as it decides whether the chip appears at all.
+            // place. The tracker's switch has no note of its own (it lives in its own config block,
+            // which the server sends without one), so which of ServerOffCopy.Feature and
+            // ServerOffCopy.Paused applies is the gate's to decide, exactly as it decides whether the
+            // chip appears at all.
             // `x is { } offText` matches when x is not null and names it `offText`.
             if (OccultGate.ServerOffText(remoteConfig) is { } offText)
-            {
-                ImGui.SameLine();
-                DrawChip(
-                    FontAwesomeIcon.PowerOff,
-                    "Off",
-                    Brand.DisabledForeground,
-                    filled: true);
-
-                if (ImGui.IsItemHovered())
-                    Widgets.DrawTooltip(offText);
-            }
+                DrawOffChip(offText);
 
             if (toggled)
             {
@@ -474,15 +463,7 @@ internal sealed partial class MainWindow
             // hover sentence, and is never null while the badge is Off.
             if (badge == CategoryBadgeKind.Off && CrucibleGate.ServerOffText(remoteConfig) is { } offText)
             {
-                ImGui.SameLine();
-                DrawChip(
-                    FontAwesomeIcon.PowerOff,
-                    "Off",
-                    Brand.DisabledForeground,
-                    filled: true);
-
-                if (ImGui.IsItemHovered())
-                    Widgets.DrawTooltip(offText);
+                DrawOffChip(offText);
             }
             else if (badge == CategoryBadgeKind.New)
             {
@@ -743,6 +724,36 @@ internal sealed partial class MainWindow
         // applies to the chip itself — the same route the description's question mark uses.
         if (badge.Tooltip is { } tooltip && ImGui.IsItemHovered())
             Widgets.DrawTooltip(tooltip);
+    }
+
+    /// <summary>
+    /// The "Off" chip a switched-off collection or feature wears, in the shape
+    /// <see cref="DrawWrappedWithTrailingHint"/> flows after a sentence.
+    /// </summary>
+    /// <param name="tooltip">The sentence its hover shows, saying why it is off.</param>
+    /// <remarks>
+    /// Gray and filled: gray so the state never competes for attention with a badge that invites
+    /// the user to do something, filled so it reads as a mark about the grayed row it sits on.
+    /// </remarks>
+    // The return type is the same tuple a consent row's badge uses.
+    private static (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled) OffChip(
+        string? tooltip) =>
+        (FontAwesomeIcon.PowerOff, "Off", Brand.DisabledForeground, tooltip, true);
+
+    /// <summary>
+    /// Draws the <see cref="OffChip"/> on the current line, after whatever the line already holds,
+    /// with its hover sentence: for a sharing card's label, which the chip follows directly.
+    /// </summary>
+    /// <param name="offText">The sentence its hover shows, saying why it is off.</param>
+    private void DrawOffChip(string offText)
+    {
+        // `var chip` holds the tuple; `chip.Icon` and the rest read its named parts.
+        var chip = OffChip(offText);
+        ImGui.SameLine();
+        DrawChip(chip.Icon, chip.Text, chip.Color, chip.Filled);
+
+        if (ImGui.IsItemHovered())
+            Widgets.DrawTooltip(offText);
     }
 
     /// <summary>

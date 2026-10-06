@@ -135,6 +135,20 @@ public sealed class SyncScheduler
         }
     }
 
+    /// <summary>True while a server-instructed wait is in force at the given moment.</summary>
+    /// <remarks>
+    /// Read-only: unlike <see cref="Poll"/>, asking never ends the wait, so the sync card can ask
+    /// every frame.
+    /// </remarks>
+    /// <param name="now">The moment to ask about.</param>
+    public bool IsBackingOff(DateTimeOffset now)
+    {
+        // `lock` with no braces guards the single statement after it. `x is { } until` matches when x
+        // is not null and names the value `until`, so the comparison only runs against a real moment.
+        lock (gate)
+            return backoffUntil is { } until && now < until;
+    }
+
     /// <summary>Forgets all queued work, as when the player logs out.</summary>
     /// <remarks>
     /// <para>

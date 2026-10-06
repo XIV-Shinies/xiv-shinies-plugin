@@ -44,6 +44,9 @@ public class CategorySettingsViewTests
 
         public bool UsesItemManifest { get; }
 
+        // Set per-test, so the view's carry-through can be checked both ways.
+        public bool UploadsOnUnlock { get; init; }
+
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
 
@@ -136,6 +139,56 @@ public class CategorySettingsViewTests
                 new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
 
         Assert.Equal("Glamour", row.Section);
+    }
+
+    // Whether a collection uploads as soon as it unlocks is the collector's own self-description,
+    // carried through untouched, so the sync card can decide what to promise without naming one. A
+    // `[Theory]` runs once per `[InlineData]` row, like Jest's `it.each`.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_collectors_unlock_upload_flag_reaches_its_row(bool uploadsOnUnlock)
+    {
+        var collector = new FakeCollector(UnknownCategory, "Facewear", "what facewear sends")
+        {
+            UploadsOnUnlock = uploadsOnUnlock,
+        };
+
+        var row = Assert.Single(
+            CategorySettingsView.Build(new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.Equal(uploadsOnUnlock, row.UploadsOnUnlock);
+    }
+
+    /// <summary>
+    /// A collector that says nothing about unlock uploads, so it takes the interface's default.
+    /// </summary>
+    private sealed class SilentCollector : ICollector
+    {
+        public string CategoryKey => UnknownCategory;
+
+        public string DisplayName => "Facewear";
+
+        public string Section => "Fakes";
+
+        public string WhatGetsSent => "what facewear sends";
+
+        public string? Details => null;
+
+        public bool UsesItemManifest => false;
+
+        public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
+    }
+
+    // A collector that never declares the flag answers false.
+    [Fact]
+    public void A_collector_that_does_not_declare_the_flag_reaches_its_row_as_false()
+    {
+        var row = Assert.Single(
+            CategorySettingsView.Build(
+                new ICollector[] {new SilentCollector()}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.False(row.UploadsOnUnlock);
     }
 
     // The extensibility gate, end to end: an unknown collector declaring an unheard-of section
