@@ -6,15 +6,17 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
 // The consent surfaces: the per-category checkbox rows, their per-group checkboxes and "New"
-// badges, and the select-all control — shared by the wizard's consent step and the settings
-// screen's Collections section. One part of the MainWindow class — see MainWindow.cs for the
-// class doc, the window state, and the shared card system and widget bindings.
+// badges, the select-all control, and the Crucible run sharing's and live tracker's own consent
+// cards — shared by the wizard's consent step and the settings screen's Collections section. One
+// part of the MainWindow class — see MainWindow.cs for the class doc, the window state, and the
+// shared card system and widget bindings.
 internal sealed partial class MainWindow
 {
     /// <summary>
@@ -26,11 +28,17 @@ internal sealed partial class MainWindow
     /// list ONCE and hands it to whichever surfaces need it, rather than each surface rebuilding it
     /// for itself sixty times a second on an always-visible path.
     /// </remarks>
-    private IReadOnlyList<CategorySettingsRow> BuildCategoryRows() =>
+    /// <param name="remoteConfig">
+    /// The latest <c>/config</c>, or null if none has arrived.
+    /// </param>
+    // `ConfigResponse?` may be null, like `ConfigResponse | null` in TypeScript. `IReadOnlyList<T>` is
+    // a list its reader cannot change, like `readonly T[]`, and `=>` gives the method a single
+    // expression for its body, as an arrow function does.
+    private IReadOnlyList<CategorySettingsRow> BuildCategoryRows(ConfigResponse? remoteConfig) =>
         CategorySettingsView.Build(
             collectors,
             configuration.Settings,
-            syncManager.RemoteConfig,
+            remoteConfig,
             syncManager.LastSkipped,
             syncManager.LastPartialNotes,
             syncManager.LastCollectedDetails);
@@ -176,9 +184,9 @@ internal sealed partial class MainWindow
         // Which mark to wear, and its precedence, is CategorySettingsView.BadgeFor's rule. Only the
         // look of each mark is decided here.
         //
-        // Off is grey and filled: grey so the state never competes for attention with the badge that
-        // invites the user to do something, filled because that same grey would otherwise let it read
-        // as part of the greyed row it sits on rather than as a mark about it. New is gold and
+        // Off is gray and filled: gray so the state never competes for attention with the badge that
+        // invites the user to do something, filled because that same gray would otherwise let it read
+        // as part of the grayed row it sits on rather than as a mark about it. New is gold and
         // unfilled — the color already carries it.
         (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? badge =
             CategorySettingsView.BadgeFor(
@@ -209,7 +217,7 @@ internal sealed partial class MainWindow
 
         // Disabled along with the category above them. A group belongs to its category and is
         // only ever scanned as part of that category's pass, so leaving the groups live under a
-        // greyed-out parent would offer the user a consent choice that cannot mean anything —
+        // grayed-out parent would offer the user a consent choice that cannot mean anything —
         // and ticking one would switch its category back on behind the very control that says it
         // is off.
         using (ImRaii.Disabled(!row.ServerEnabled))
@@ -263,7 +271,7 @@ internal sealed partial class MainWindow
     /// revocable on both consent surfaces.
     /// </para>
     /// <para>
-    /// Given the same treatment a server-disabled collection gets — unticked, greyed, and chipped
+    /// Given the same treatment a server-disabled collection gets — unticked, grayed, and chipped
     /// "Off" — whenever the tracker is unavailable, with the user's own preference intact
     /// underneath. What counts as unavailable is decided at the check itself.
     /// </para>
@@ -290,12 +298,12 @@ internal sealed partial class MainWindow
         using (BrandCard())
         {
             // Measured the same way as the collections card's label column, inside the same
-            // style push, so the two cards' text edges line up when stacked.
+            // style push, so every stacked card's text edges line up.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
 
-            // Effective state, the same rule the collection rows draw by: the tick means "this is
-            // happening". The user's own preference is untouched underneath and returns when the
-            // server advertises the tracker again.
+            // Drawn by the same rule as the collection rows: the user's choice, unticked while the
+            // server has the tracker off. The user's own preference is untouched underneath and
+            // returns when the server advertises the tracker again.
             var enabled = !serverOff && configuration.Settings.ShareOccultInstanceState;
             bool toggled;
             using (ImRaii.Disabled(serverOff))
@@ -370,8 +378,116 @@ internal sealed partial class MainWindow
             DrawWrapped(
                 "Tick this and a new collection a later update adds starts switched on, instead of " +
                 "waiting for you to find it. Collections whose groups you choose separately, and " +
-                "new kinds of sharing like the live tracker above, always wait for you.",
+                "kinds of sharing like the Crucible runs and the live tracker above, are never " +
+                "switched on by this box.",
                 ImGuiCol.Text);
+            ImGui.Unindent(checkboxColumn);
+        }
+    }
+
+    /// <summary>
+    /// The Crucible run sharing's plain-language disclosure: every kind of data the sharing sends
+    /// (the character identity beside it is <see cref="DrawPrivacyCard"/>'s disclosure, as for every
+    /// category). One string, used verbatim by every surface that discloses the sharing, so no
+    /// surface can say less than another.
+    /// </summary>
+    private const string CrucibleWhatGetsSent =
+        "From the familiars you pick at the Crucible of the Unbroken's entrance until you leave a " +
+        "board, shares what its windows show you between fights (the board, your familiars, your " +
+        "bag and tokens, treasure, loot and shop offers, and your results) and your character's own " +
+        "HP, each with when it was read or its window closed and where it was read (the entrance or " +
+        "a board), to fill in your run on XIV Shinies. While you are on a board it also checks in " +
+        "regularly, during fights too, so the site can tell you are still playing, and it says when " +
+        "you leave.";
+
+    /// <summary>
+    /// The sharing's hover elaboration: what is NOT read or sent, since the natural worries are
+    /// fights, enemies and other players.
+    /// </summary>
+    private const string CrucibleRunsDetails =
+        "Nothing is read from its windows or your HP during a fight. Enemies are skipped: nothing " +
+        "about them is sent beyond how many your run beat and the points they were worth, as the " +
+        "results screen shows them. Nothing about other players is read or sent.";
+
+    /// <summary>
+    /// The Crucible run sharing's consent card: its toggle, its disclosure copy, and the fix for a
+    /// halt whenever the settings and the server would otherwise let the sharing run. Drawn as its
+    /// own card on both consent surfaces, separate from the collections list, because it is not a
+    /// collection.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The toggle starts off; see <see cref="PluginSettings.ShareCrucibleRuns"/> for why.
+    /// </para>
+    /// <para>
+    /// While the server has the sharing off, the card draws it unticked, grayed and chipped "Off",
+    /// with the user's own choice intact underneath. What counts as off is
+    /// <see cref="CrucibleGate"/>'s to decide.
+    /// </para>
+    /// </remarks>
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
+    private void DrawCrucibleConsentRow(ConfigResponse? remoteConfig)
+    {
+        // Asked of the gate that decides whether the sharing runs, so the control and the behavior
+        // cannot describe different things; CrucibleGate.ServerHasSwitchedOff holds the rule.
+        var serverOff = CrucibleGate.ServerHasSwitchedOff(remoteConfig);
+
+        using (ImRaii.PushStyle(
+                   ImGuiStyleVar.ItemInnerSpacing,
+                   new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
+        using (BrandCard())
+        {
+            // Measured inside the style push above, so the copy's left edge lines up with the label.
+            var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
+
+            // The user's choice, unticked while the server has the sharing off.
+            var enabled = !serverOff && configuration.Settings.ShareCrucibleRuns;
+            bool toggled;
+            using (ImRaii.Disabled(serverOff))
+                toggled = ImGui.Checkbox("Share your Crucible runs##crucibleRuns", ref enabled);
+
+            // The what-is-NOT-read reassurance, one hover away like every category's.
+            DrawDetailsHint(CrucibleRunsDetails);
+
+            // The same chip a switched-off collection wears; CrucibleGate.ServerOffText chooses its
+            // hover sentence.
+            if (CrucibleGate.ServerOffText(remoteConfig) is { } offText)
+            {
+                ImGui.SameLine();
+                DrawChip(
+                    FontAwesomeIcon.PowerOff,
+                    "Off",
+                    Brand.DisabledForeground,
+                    filled: true);
+
+                if (ImGui.IsItemHovered())
+                    Widgets.DrawTooltip(offText);
+            }
+
+            // Only a real click writes the choice back. The tick drawn differs from the stored choice
+            // only while the server has the sharing off, and the box is disabled then, so a click can
+            // never overwrite the stored choice with the server's.
+            if (toggled)
+            {
+                configuration.Settings.ShareCrucibleRuns = enabled;
+                configuration.Save();
+            }
+
+            ImGui.Indent(checkboxColumn);
+
+            // Full contrast while the server permits the sharing, muted with the row once it does not.
+            DrawWrapped(CrucibleWhatGetsSent, serverOff ? ImGuiCol.TextDisabled : ImGuiCol.Text);
+
+            // A halt stops the sharing as well as syncing, and a player with only the sharing
+            // switched on looks here, so the halt is named on this card too, whenever the settings
+            // and the server would otherwise let the sharing run (CrucibleGate.CanShare).
+            if (CrucibleGate.CanShare(configuration.Settings, remoteConfig)
+                && syncManager.BlockedPendingUserAction)
+            {
+                ImGui.Spacing();
+                DrawWarning($"Sharing has stopped. {HaltSentence()}");
+            }
+
             ImGui.Unindent(checkboxColumn);
         }
     }
@@ -658,7 +774,7 @@ internal sealed partial class MainWindow
     /// frame (a per-frame save would be a real bug). Marking seen happens on <b>whichever surface drew
     /// the group</b>, wizard or settings: it records that the user has been shown it, and the wizard's
     /// consent step shows it just as plainly as the settings do. The one exception is a group under a
-    /// collection the server has switched off, which was drawn greyed and unusable and so has not been
+    /// collection the server has switched off, which was drawn grayed and unusable and so has not been
     /// introduced yet (see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>).
     /// </para>
     /// <para>
@@ -720,7 +836,7 @@ internal sealed partial class MainWindow
             // surface drew it — the wizard's consent step shows a group just as plainly as the
             // settings screen does. A group under a collection the server has switched off is the
             // exception, for the same reason the collection itself is (see
-            // CategorySettingsRow.WasDrawnAsUsable): it was drawn greyed and unusable, so its turn
+            // CategorySettingsRow.WasDrawnAsUsable): it was drawn grayed and unusable, so its turn
             // has not come.
             if (group.IsNew && row.WasDrawnAsUsable)
                 (newlySeen ??= new List<string>()).Add(group.Key);

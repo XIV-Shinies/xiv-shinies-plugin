@@ -25,7 +25,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// collector, while the implementations themselves are verified by in-game QA.
 /// </para>
 /// </remarks>
-// An `interface` is a contract a class promises to fulfil — the same idea as a TypeScript
+// An `interface` is a contract a class promises to fulfill — the same idea as a TypeScript
 // `interface` used with `class Foo implements Bar`, except C# enforces it at compile time.
 public interface ICollector
 {

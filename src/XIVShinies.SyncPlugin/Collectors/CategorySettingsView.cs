@@ -87,8 +87,8 @@ public sealed record CategorySettingsRow
     /// its copy on — see there for why the two sentences are not interchangeable.
     /// </para>
     /// <para>
-    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbour
-    /// <see cref="ServerEnabled"/>: a test or a future surface assembling rows by hand is asking
+    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbor
+    /// <see cref="ServerEnabled"/>: a test or any other caller assembling rows by hand is asking
     /// about one collection, and a pause is not a fact about any collection. The default is the
     /// quiet answer rather than the safe one — it produces the per-category wording — which costs
     /// nothing while <see cref="Build"/> is the only producer that draws.
@@ -329,7 +329,7 @@ public static class CategorySettingsView
     {
         // Re-checked rather than trusted from when the key was recorded: a config poll landing
         // mid-session can switch a collection off under a badge already on screen, and the chip must
-        // not keep promising something new beside a greyed-out row.
+        // not keep promising something new beside a grayed-out row.
         if (!row.ServerEnabled)
             return CategoryBadgeKind.Off;
 
@@ -354,7 +354,7 @@ public static class CategorySettingsView
     /// for the answer (<see cref="CategorySettingsRow.ShowingItRetiresTheBadge"/>): there the
     /// record is what the badge is spent from — see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>
     /// for why spending demands more than drawing. Neither surface counts a row the server has
-    /// switched off — greyed and unusable is not an introduction.
+    /// switched off — grayed and unusable is not an introduction.
     /// </remarks>
     /// <param name="row">The row that was just drawn.</param>
     /// <param name="showNewChips">Whether the drawing surface announces new collections.</param>

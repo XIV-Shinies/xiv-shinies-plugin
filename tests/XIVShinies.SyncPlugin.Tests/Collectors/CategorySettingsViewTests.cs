@@ -366,7 +366,7 @@ public class CategorySettingsViewTests
 
     // A collection the server has switched off cannot be used, so it does not announce itself yet.
     // This is what a beta gate looks like from the plugin's side: the server sends the category
-    // disabled for everyone outside the test group, and they see a quiet greyed row rather than a
+    // disabled for everyone outside the test group, and they see a quiet grayed row rather than a
     // badge pointing at something they cannot turn on.
     [Fact]
     public void A_collection_the_server_switched_off_does_not_announce_itself()
@@ -708,7 +708,7 @@ public class CategorySettingsViewTests
     // --- What a switched-off category says for itself -------------------------------------------
     // Two unlike reasons a category can be off, and the row draws a different sentence for each.
     // Generic like everything else here: the fake announces a category nobody wrote code for, so a
-    // future gated collection gets this behaviour without an edit.
+    // future gated collection gets this behavior without an edit.
 
     // A category still being tested: the server explains it, and the plugin prints that verbatim.
     // "It is off" alone would invite the reader to conclude something is broken.
@@ -761,7 +761,7 @@ public class CategorySettingsViewTests
         Assert.Equal("In testing.", Assert.Single(rows).ServerNote);
     }
 
-    // A note against a live category is legal and has nowhere to go — there is no greyed row to
+    // A note against a live category is legal and has nowhere to go — there is no grayed row to
     // explain. Dropped by the same rule rather than special-cased, so the server may send one
     // without the panel growing a branch for it.
     [Fact]
@@ -914,7 +914,7 @@ public class CategorySettingsViewTests
             CategorySettingsView.ShowingRetiresTheBadge(UnseenRowWithNoConfig(), showNewChips: false));
     }
 
-    // Greyed and unusable is not an introduction, on either surface.
+    // Grayed and unusable is not an introduction, on either surface.
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

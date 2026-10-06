@@ -45,7 +45,7 @@ public static class CollectorRegistry
 
         // The game answers for every row in the Quest sheet, and the catalog is a pruned subset of
         // that same sheet — the safe direction, since a sweep of the whole sheet cannot miss a
-        // catalogued quest.
+        // cataloged quest.
         EnumeratesCompleteDomain = true,
     };
 

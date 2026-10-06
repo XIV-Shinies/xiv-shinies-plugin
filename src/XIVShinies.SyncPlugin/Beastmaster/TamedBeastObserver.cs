@@ -183,13 +183,13 @@ public sealed unsafe class TamedBeastObserver : IDisposable
 
             var values = new List<AddonValue>(addon->AtkValuesCount);
             for (var i = 0; i < addon->AtkValuesCount; i++)
-                values.Add(Narrow(&addon->AtkValues[i]));
+                values.Add(AtkValueList.Narrow(&addon->AtkValues[i]));
 
             var page = BestiaryPage.Read(values);
 
             // A read that found no records is not worth recording: the window was open but its
             // list had not landed yet, and the tally alone would move the completeness test
-            // towards an answer the records have not earned.
+            // toward an answer the records have not earned.
             if (page.Seen.Count == 0)
                 return;
 
@@ -242,40 +242,6 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         // schedule a sync per page with nothing to add.
         if (isNews)
             BeastsLearned?.Invoke(CategoryKeys.TamedBeasts);
-    }
-
-    /// <summary>
-    /// Reduces one of the window's values to the three shapes <see cref="BestiaryPage"/> reads.
-    /// </summary>
-    /// <remarks>
-    /// Anything else becomes an unreadable slot rather than a guess. That is what lets the reader
-    /// recognize where the run of per-beast records stops, since the values after it are of kinds
-    /// a record never holds.
-    /// </remarks>
-    private static AddonValue Narrow(AtkValue* value)
-    {
-        switch (value->Type)
-        {
-            case AtkValueType.Int:
-                // Negative values are not bestiary numbers or tallies, and would wrap if widened.
-                return value->Int >= 0 ? AddonValue.FromInteger((uint)value->Int) : AddonValue.Unreadable;
-
-            case AtkValueType.UInt:
-                return AddonValue.FromInteger(value->UInt);
-
-            case AtkValueType.Bool:
-                return AddonValue.FromBoolean(value->Byte != 0);
-
-            case AtkValueType.String:
-            case AtkValueType.ConstString:
-            case AtkValueType.ManagedString:
-                return value->String.Value == null
-                    ? AddonValue.Unreadable
-                    : AddonValue.FromText(value->String.ToString());
-
-            default:
-                return AddonValue.Unreadable;
-        }
     }
 
     /// <summary>The bestiary's size, read once and kept, or null when the sheet cannot be read.</summary>

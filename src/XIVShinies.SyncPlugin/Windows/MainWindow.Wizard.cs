@@ -79,7 +79,8 @@ internal sealed partial class MainWindow
         // user what leaves their machine, so it draws at full contrast. (See
         // DrawCompletenessNote for why this pre-consent screen may never disclose less than the
         // settings.)
-        foreach (var section in CategorySettingsView.GroupBySection(BuildCategoryRows()))
+        var welcomeRows = BuildCategoryRows(syncManager.RemoteConfig);
+        foreach (var section in CategorySettingsView.GroupBySection(welcomeRows))
         {
             DrawSectionLabel(section.Title);
 
@@ -112,6 +113,11 @@ internal sealed partial class MainWindow
             DrawOccultTrackerDisclosureLine();
         }
 
+        // The Crucible run sharing's disclosure, under a heading of its own: it is not a collection,
+        // and no registered collector declares a Crucible section for it to join.
+        DrawSectionLabel(CrucibleSectionTitle);
+        DrawCrucibleDisclosureLine();
+
         Widgets.SectionGap();
         // Names the server the data is actually sent to — see MainWindow.BackendHost.
         DrawPrivacyCard(
@@ -122,6 +128,10 @@ internal sealed partial class MainWindow
 
         DrawWizardNav("Get started");
     }
+
+    /// <summary>The welcome screen's heading for the Crucible run sharing.</summary>
+    // `const` fixes the value when the code compiles.
+    private const string CrucibleSectionTitle = "The Crucible of the Unbroken";
 
     /// <summary>
     /// The welcome screen's tracker disclosure, flowed as one sentence: a broadcast tower — it
@@ -134,6 +144,18 @@ internal sealed partial class MainWindow
         ImGui.SameLine();
         DrawWrappedWithTrailingHint(
             $"Live Occult instance state — {OccultWhatGetsSent}", OccultTrackerDetails);
+    }
+
+    /// <summary>
+    /// The welcome screen's Crucible disclosure, flowed as one sentence: a broadcast tower, since it
+    /// shares play as it happens rather than adding anything to your collection, then the name and
+    /// copy flowed together, with the what-is-NOT-read reassurance hover trailing.
+    /// </summary>
+    private void DrawCrucibleDisclosureLine()
+    {
+        DrawIcon(FontAwesomeIcon.BroadcastTower, Brand.Gold);
+        ImGui.SameLine();
+        DrawWrappedWithTrailingHint($"Crucible runs — {CrucibleWhatGetsSent}", CrucibleRunsDetails);
     }
 
     private void DrawLinkAccountStep()
@@ -154,10 +176,10 @@ internal sealed partial class MainWindow
 
     private void DrawChooseCategoriesStep()
     {
-        // Two consent regimes, stated plainly: collections start OFF (they describe the
-        // player's own progress), while the live tracker's box starts ticked because it shares
-        // world state — and it is on this very screen, so unticking it is one click before
-        // anything can send.
+        // Two consent regimes, stated plainly: collections and the Crucible run sharing start OFF
+        // (they describe the player's own progress and play), while the live tracker's box starts
+        // ticked because it shares world state — and it is on this very screen, so unticking it is
+        // one click before anything can send.
         // Scoped to the collections on this screen, because the last box below offers to start
         // collections added by later updates switched on.
         //
@@ -170,8 +192,8 @@ internal sealed partial class MainWindow
         var trackerCanBeOffered = !OccultGate.ServerHasSwitchedOff(remoteConfig);
 
         ImGui.TextWrapped(
-            "Choose what to upload. The collections below all start switched off — nothing about " +
-            "your progress is sent unless you turn it on here. " +
+            "Choose what to upload. The collections below, and sharing your Crucible runs, all " +
+            "start switched off — nothing about your progress is sent unless you turn it on here. " +
             (trackerCanBeOffered
                 ? "Sharing live Occult instance state starts on; untick it below if you would " +
                   "rather not. "
@@ -186,17 +208,19 @@ internal sealed partial class MainWindow
         // a category able to tick the groups it means, and it is why no consent here can ever be granted
         // for a checkbox the user was not looking at.
         // See DrawCategoryRows's showNewChips for why the wizard badges nothing.
-        var wizardRows = BuildCategoryRows();
+        var wizardRows = BuildCategoryRows(remoteConfig);
 
         // The wizard draws no sync card, so the sentence that card carries would reach nobody
         // setting up during a pause — and this is the one consent surface a user cannot skip. Said
         // here instead, above the rows it explains: without it the copy above promises a choice
-        // ("turn it on here") that every greyed checkbox below refuses, with the reason buried in a
-        // chip's hover. No collection loses anything by finishing now: every box here is greyed
+        // ("turn it on here") that every grayed checkbox below refuses, with the reason buried in a
+        // chip's hover. No collection loses anything by finishing now: every box here is grayed
         // while the pause holds, none of them spends its announcement, and they badge themselves
-        // New in the settings once the pause lifts. The tracker is the exception — greyed here
+        // New in the settings once the pause lifts. The tracker is the exception — grayed here
         // means it is recorded as declined (see PluginSettings.SettleOccultConsent), and the
-        // settings screen is where the user turns it on.
+        // settings screen is where the user turns it on. The Crucible run sharing is grayed too
+        // and stays off; it carries no "New" chip, so after a pause its settings card is where the
+        // user finds it.
         if (ManifestConsent.ServerHasPausedEverything(wizardRows))
         {
             DrawWarning(ServerOffCopy.Paused);
@@ -205,7 +229,10 @@ internal sealed partial class MainWindow
 
         DrawCategoryRows(wizardRows, showNewChips: false);
 
-        // The live tracker's own consent card, right below the collections it is not part of.
+        // The Crucible run sharing's and the live tracker's own consent cards, right below the
+        // collections they are not part of.
+        ImGui.Spacing();
+        DrawCrucibleConsentRow(remoteConfig);
         ImGui.Spacing();
         DrawOccultConsentRow(remoteConfig);
 

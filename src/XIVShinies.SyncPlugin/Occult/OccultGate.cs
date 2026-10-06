@@ -46,7 +46,7 @@ public static class OccultGate
 
     /// <summary>
     /// True when the server has answered and its answer rules the tracker out — what the settings
-    /// toggle draws greyed and chipped "Off".
+    /// toggle draws grayed and chipped "Off".
     /// </summary>
     /// <remarks>
     /// <para>

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Occult;
@@ -62,10 +61,12 @@ public static class OccultUploadBuilder
     }
 
     /// <summary>
-    /// Formats a timestamp the way the contract's fingerprint comparison expects: second-exact
-    /// UTC with a trailing <c>Z</c> (e.g. <c>2026-08-11T16:02:15Z</c>). The tracker already
-    /// guarantees whole seconds, so no precision is discarded here.
+    /// Formats a timestamp the way the contract's fingerprint comparison expects (see
+    /// <see cref="WireTime"/>), or null when there is none. The tracker already guarantees whole
+    /// seconds, so no precision is discarded here.
     /// </summary>
+    // `since is { } moment` is true when `since` is not null and names its value `moment`, already
+    // unwrapped from `DateTimeOffset?`; `? :` then picks the text or null, as in TypeScript.
     private static string? FormatSinceUtc(DateTimeOffset? since) =>
-        since?.UtcDateTime.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'", CultureInfo.InvariantCulture);
+        since is { } moment ? WireTime.Format(moment) : null;
 }

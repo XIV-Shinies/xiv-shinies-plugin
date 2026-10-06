@@ -5,11 +5,11 @@ namespace XIVShinies.SyncPlugin;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every surface that reports a server-side "off" reaches for one of these, and they sit here —
-/// owned by neither the collections nor the occult tracker — because they belong to both. A
-/// collection row and the live tracker's row are drawn on the same screen, so two copies of these
-/// strings would let a reword leave them saying different things about the same state, in view of
-/// each other.
+/// Every surface that reports a server-side "off" reaches for one of these, and they sit here,
+/// owned by no single feature, because the collections, the live tracker and the Crucible run
+/// sharing all use them. Their rows are drawn on the same screen, so two copies of these strings
+/// would let a reword leave them saying different things about the same state, in view of each
+/// other.
 /// </para>
 /// <para>
 /// The distinction between them is the whole point: one names a decision about a single thing, the

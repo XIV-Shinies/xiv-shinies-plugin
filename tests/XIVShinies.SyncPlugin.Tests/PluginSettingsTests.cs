@@ -66,6 +66,9 @@ public class PluginSettingsTests
         // The standing answer about collections added later is deliberately NOT ticked by
         // default — see PluginSettings.AutoEnableNewFeatures.
         Assert.False(settings.AutoEnableNewFeatures);
+
+        // Sharing Crucible runs waits for the user to tick it themselves.
+        Assert.False(settings.ShareCrucibleRuns);
     }
 
     // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user the
@@ -474,7 +477,7 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("mounts"));
     }
 
-    // The standing answer is the whole licence for switching anything on without a click. Without
+    // The standing answer is the whole license for switching anything on without a click. Without
     // it there is no consent to lean on, so nothing happens.
     [Fact]
     public void Nothing_is_switched_on_when_the_user_did_not_ask_for_that()

@@ -23,6 +23,8 @@ using Dalamud.Plugin.Services;
 using XIVShinies.SyncPlugin.Api;
 // The bestiary capture behind the tamed beasts collection.
 using XIVShinies.SyncPlugin.Beastmaster;
+// The Crucible run sharing (window observer, scheduler, uploader).
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 // The registered fact sources.
 using XIVShinies.SyncPlugin.Collectors;
 #if DEBUG
@@ -106,6 +108,18 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 
+    /// <summary>
+    /// The local character's condition flags. The Crucible run sharing reads only "in combat", and
+    /// reads nothing while it is set.
+    /// </summary>
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
+
+    /// <summary>
+    /// Finds a game window by name. The Crucible run sharing uses it to read a Crucible window the
+    /// player already has open, such as the run HUD on entering a board.
+    /// </summary>
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+
     // --- Plugin state --------------------------------------------------------------------
 
     /// <summary>The persisted settings object (see Configuration.cs).</summary>
@@ -144,6 +158,11 @@ public sealed class Plugin : IDalamudPlugin
     // state to the live tracker. Subscribes to game events, so it must be disposed — before the
     // SyncManager and ApiClient it borrows.
     private readonly OccultManager occultManager;
+
+    // Follows the character through the Crucible's boards and shares what its windows show. Subscribes
+    // to game events and window events, so it must be disposed, before the SyncManager and ApiClient
+    // it borrows.
+    private readonly CrucibleManager crucibleManager;
 
     /// <summary>
     /// Constructor — Dalamud calls this once on load. Wire everything up here, and be sure to
@@ -254,6 +273,15 @@ public sealed class Plugin : IDalamudPlugin
                 Framework, ClientState, FateTable, PlayerState, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
+            // The Crucible run sharing. Built after the SyncManager because it reads the identity,
+            // server config and halt that manager owns; gated by the same consent switches plus its
+            // own toggle, which starts off, so it reads none of the player's play and sends nothing
+            // until the user opts in. Before that it reads only static game data (see
+            // CrucibleManager).
+            crucibleManager = new CrucibleManager(
+                Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, Log,
+                apiClient, Configuration.Settings, syncManager, version);
+
             // The mascot drawn in the settings header — the same hand-made image the installer
             // shows, shipped next to the DLL. GetFromFile returns a shared texture that loads
             // lazily and is owned by Dalamud, so there is nothing to dispose on our side; if the
@@ -302,8 +330,9 @@ public sealed class Plugin : IDalamudPlugin
         catch
         {
             // Unassigned readonly fields are still null here, so `?.` skips whatever never got
-            // built. Removing a handler or unsubscribing an event that was never added is a
-            // no-op, which is what lets this mirror Dispose() without tracking progress flags.
+            // built. Unsubscribing an event that was never added does nothing, and removing a
+            // command that was never added only logs that it was not found, which is what lets this
+            // mirror Dispose() without tracking progress flags.
             PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
             PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
             PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainUi;
@@ -319,6 +348,7 @@ public sealed class Plugin : IDalamudPlugin
             if (tamedBeastObserver is not null && syncManager is not null)
                 tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
+            crucibleManager?.Dispose();
             occultManager?.Dispose();
             syncManager?.Dispose();
             knowledgeObserver?.Dispose();
@@ -353,8 +383,9 @@ public sealed class Plugin : IDalamudPlugin
         // further upload through a manager that is about to go away.
         tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
-        // Before the SyncManager and ApiClient it borrows, deliberately: this unsubscribes its
-        // game events and cancels any occult upload in flight first.
+        // Before the SyncManager and ApiClient they borrow, deliberately: each unsubscribes everything
+        // it subscribed to and cancels any upload of its own in flight first.
+        crucibleManager.Dispose();
         occultManager.Dispose();
 
         // Before the ApiClient, deliberately: this unsubscribes the game events and cancels any
@@ -406,7 +437,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (words.Length > 0 && words[0].Equals("dumpslots", StringComparison.OrdinalIgnoreCase))
         {
-            // Marshalled rather than called straight. Dalamud does not schedule command handlers —
+            // Marshaled rather than called straight. Dalamud does not schedule command handlers —
             // it invokes them where the command arrived, which is the game's main thread for chat
             // and the console's draw for the console — so the read is on the right thread by
             // circumstance, not by contract, and a bad read of game memory raises a

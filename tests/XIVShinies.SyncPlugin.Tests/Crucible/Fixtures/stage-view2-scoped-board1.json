@@ -1,0 +1,97 @@
+{
+ "window": "XBMStageDetailList",
+ "event": "PostRefresh",
+ "valueCount": 40058,
+ "values": [
+  {
+   "i": 1,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 2,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 3,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 5,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 6,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 7,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 8,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 9,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 11,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 12,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 15,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 16,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 46,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 47,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 86,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 87,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 40032,
+   "type": "Int",
+   "value": 0
+  },
+  {
+   "i": 40047,
+   "type": "String",
+   "value": "Standard"
+  }
+ ]
+}

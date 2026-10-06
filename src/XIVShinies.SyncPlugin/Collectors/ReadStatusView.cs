@@ -176,7 +176,7 @@ public static class ReadStatusView
     /// The null case is the manifest-driven rule. A manifest-driven collection's facts ARE the item
     /// counts read out of the containers, so when it has no skip reason its own line says nothing the
     /// container group below does not already say in more detail — and a line that only repeats its
-    /// neighbours teaches the reader to skim past both. It is dropped only while there is at least one
+    /// neighbors teaches the reader to skim past both. It is dropped only while there is at least one
     /// container line to stand in for it: no pass has reported yet, or every status it did report was
     /// one this copy set has no line for, and dropping this line as well would leave the panel silent
     /// about a collection the user has switched on. A <i>skipped</i> manifest-driven collection is a
@@ -189,7 +189,7 @@ public static class ReadStatusView
     /// <param name="row">The category row this line is about.</param>
     /// <param name="hasContainerLines">
     /// Whether the panel's container group ended up with at least one line in it — the thing a
-    /// suppressed manifest-driven collection is being suppressed in favour of. Asked about the LINES
+    /// suppressed manifest-driven collection is being suppressed in favor of. Asked about the LINES
     /// rather than the raw statuses: a status <see cref="SourceNoteText.Describe"/> has no copy for is
     /// dropped from the panel, so it cannot stand in for anything the reader can actually see.
     /// </param>

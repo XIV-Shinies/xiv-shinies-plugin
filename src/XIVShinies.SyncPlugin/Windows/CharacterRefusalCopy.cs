@@ -5,7 +5,8 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// <summary>
 /// What the plugin tells a player whose upload the server refused because it could not match
 /// their character (on the sync card, and through <see cref="HaltCopy"/> on the live tracker's
-/// card): one sentence per refusal, each naming the fix that refusal needs.
+/// and Crucible run sharing's cards): one sentence per refusal, each naming the fix that refusal
+/// needs.
 /// </summary>
 /// <remarks>
 /// <para>

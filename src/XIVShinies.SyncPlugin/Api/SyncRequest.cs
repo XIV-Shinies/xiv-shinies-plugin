@@ -217,8 +217,7 @@ public static class SyncFacts
             facts["knowledge"] = new JsonObject
             {
                 ["level"] = (int)knowledge.Level,
-                ["observedAt"] = knowledge.ObservedAt.UtcDateTime.ToString(
-                    "yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'", CultureInfo.InvariantCulture),
+                ["observedAt"] = WireTime.Format(knowledge.ObservedAt),
             };
         }
 

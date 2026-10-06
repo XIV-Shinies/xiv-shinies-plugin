@@ -4,10 +4,10 @@ using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
-// The sentence a halt shows, on the sync card and on the live tracker's card alike. Each kind of
-// halt has its own fix, so each test pins where its sentence comes from (the refusal copy, the
-// backend check, or, for the token, the exact string), and a sentence that named the wrong fix
-// cannot pass for the right one.
+// The sentence a halt shows, on the sync card and on the live tracker's and Crucible run sharing's
+// cards alike. Each kind of halt has its own fix, so each test pins where its sentence comes from
+// (the refusal copy, the backend check, or, for the token, the exact string), and a sentence that
+// named the wrong fix cannot pass for the right one.
 public class HaltCopyTests
 {
     private const string Host = "xiv-shinies.com";

@@ -108,6 +108,14 @@ public sealed record ConfigResponse
     public OccultTrackerConfig? OccultTracker { get; init; }
 
     /// <summary>
+    /// The Crucible run sharing's switches, or null when the server does not send the block. Null
+    /// means the server has no Crucible endpoint, and nothing may be sent there.
+    /// </summary>
+    // NOT `required`: a server without the Crucible endpoint omits the block, and a missing
+    // required member would fail the whole /config.
+    public CrucibleRunsConfig? CrucibleRuns { get; init; }
+
+    /// <summary>
     /// Quest ids whose journal sequence the server wants reported — quests with several
     /// sequential turn-ins, where knowing which step the journal is on lets the server credit
     /// the batches already handed over. Null when the server does not send the field.
@@ -158,6 +166,29 @@ public sealed record OccultTrackerConfig
     /// range anyway, so a defaulted cadence is strictly safe where a guessed kill switch is not.
     /// </remarks>
     public int HeartbeatSeconds { get; init; } = 60;
+}
+
+/// <summary>
+/// The <c>crucibleRuns</c> block of <c>/config</c>: the Crucible run sharing's switches.
+/// </summary>
+public sealed record CrucibleRunsConfig
+{
+    /// <summary>
+    /// The sharing's kill switch. The server folds the global, per-user and category switches,
+    /// and whether the feature is open to this user, into this one value.
+    /// </summary>
+    public required bool Enabled { get; init; }
+
+    /// <summary>The idle upload cadence while inside a board.</summary>
+    // NOT `required`: a missing required member would fail the whole /config, and the scheduler
+    // holds any cadence within its bounds, so the default is safe.
+    public int HeartbeatSeconds { get; init; } = 60;
+
+    /// <summary>
+    /// A line the server wants shown beside the setting, or null. The server sends one only when
+    /// the feature is held back for this user, such as while it is in testing.
+    /// </summary>
+    public string? Note { get; init; }
 }
 
 /// <summary>Server-chosen sync cadence.</summary>

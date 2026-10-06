@@ -1000,15 +1000,16 @@ public class UploadLogTests
             UploadLogText.IssuesText(error));
     }
 
-    // --- Live tracker halts -------------------------------------------------------------------
-    // The live tracker's uploads get no row of their own, except the one that halts it: a
-    // refused character or token. That row is what tells a player with only the tracker switched
-    // on why sharing stopped, so its reading is pinned.
+    // --- Live upload halts --------------------------------------------------------------------
+    // The live tracker's and the Crucible sharing's uploads get no row of their own, except the one
+    // that halts them: a refused character or token. That row is what tells a player with only one of
+    // them switched on why sharing stopped, so its reading is pinned.
 
     [Fact]
     public void A_live_tracker_halt_reads_as_the_live_tracker_with_its_refusal()
     {
-        var entry = UploadLogEntry.LiveTrackerHalt(
+        var entry = UploadLogEntry.LiveHalt(
+            UploadLogSource.LiveTracker,
             new DateTimeOffset(2026, 9, 28, 20, 0, 0, TimeSpan.Zero), ApiStatus.CharacterNotVerified, 403);
 
         Assert.Equal(UploadLogSource.LiveTracker, entry.Source);
@@ -1016,7 +1017,24 @@ public class UploadLogTests
         Assert.Empty(entry.Categories);
         Assert.Empty(entry.Skipped);
         Assert.Equal("live tracker", UploadLogText.TriggerText(entry));
+        Assert.Equal("Occult instance state", UploadLogText.LiveSentText(entry.Source));
         Assert.Equal("refused — character not verified", UploadLogText.OutcomeText(entry));
+    }
+
+    // The Crucible run sharing halts the same way, and its row names the sharing rather than the
+    // live tracker.
+    [Fact]
+    public void A_crucible_sharing_halt_reads_as_the_crucible_sharing_with_its_refusal()
+    {
+        var entry = UploadLogEntry.LiveHalt(
+            UploadLogSource.CrucibleRuns,
+            new DateTimeOffset(2026, 10, 5, 20, 0, 0, TimeSpan.Zero), ApiStatus.InvalidToken, 401);
+
+        Assert.Equal(UploadLogSource.CrucibleRuns, entry.Source);
+        Assert.Null(entry.Trigger);
+        Assert.Empty(entry.Categories);
+        Assert.Equal("Crucible sharing", UploadLogText.TriggerText(entry));
+        Assert.Equal("Crucible run snapshots", UploadLogText.LiveSentText(entry.Source));
     }
 
     [Fact]
@@ -1026,17 +1044,38 @@ public class UploadLogTests
 
         Assert.Equal(UploadLogSource.Sync, entry.Source);
         Assert.Equal("manual sync", UploadLogText.TriggerText(entry));
+
+        // A sync row lists its categories in the Sent column, so it has no single thing it sent.
+        Assert.Null(UploadLogText.LiveSentText(UploadLogSource.Sync));
+        Assert.Null(UploadLogText.LiveEndpoint(UploadLogSource.Sync));
     }
 
-    // A live tracker row carries no categories, so it is never a category's baseline: the sync
-    // rows either side of it still compare with each other.
+    // Every live upload path names what it sent and the endpoint it sent it to, so a path added later
+    // cannot print an empty Sent column or an empty endpoint.
     [Fact]
-    public void A_live_tracker_row_leaves_the_change_signal_intact()
+    public void Every_live_upload_path_names_what_it_sent_and_where()
+    {
+        foreach (var source in Enum.GetValues<UploadLogSource>())
+        {
+            if (source == UploadLogSource.Sync)
+                continue;
+
+            Assert.False(string.IsNullOrEmpty(UploadLogText.LiveSentText(source)));
+            Assert.False(string.IsNullOrEmpty(UploadLogText.LiveEndpoint(source)));
+        }
+    }
+
+    // A live upload row carries no categories, so it is never a category's baseline: the sync rows
+    // either side of it still compare with each other.
+    [Theory]
+    [InlineData(UploadLogSource.LiveTracker)]
+    [InlineData(UploadLogSource.CrucibleRuns)]
+    public void A_live_upload_row_leaves_the_change_signal_intact(UploadLogSource source)
     {
         var newestFirst = new[]
         {
             EntryWith(("minions", 390)),
-            UploadLogEntry.LiveTrackerHalt(DateTimeOffset.UnixEpoch, ApiStatus.InvalidToken, 401),
+            UploadLogEntry.LiveHalt(source, DateTimeOffset.UnixEpoch, ApiStatus.InvalidToken, 401),
             EntryWith(("minions", 389)),
         };
 
@@ -1045,9 +1084,24 @@ public class UploadLogTests
     }
 
     [Fact]
+    public void Clipboard_text_names_a_crucible_sharing_row_by_its_source_and_endpoint()
+    {
+        var entry = UploadLogEntry.LiveHalt(
+            UploadLogSource.CrucibleRuns,
+            new DateTimeOffset(2026, 10, 5, 20, 0, 0, TimeSpan.Zero), ApiStatus.InvalidToken, 401);
+
+        var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });
+
+        Assert.Contains(
+            "2026-10-05 20:00:00Z | CrucibleRuns | InvalidToken | sent: crucible/observations | http: 401",
+            text);
+    }
+
+    [Fact]
     public void Clipboard_text_names_a_live_tracker_row_by_its_source_and_endpoint()
     {
-        var entry = UploadLogEntry.LiveTrackerHalt(
+        var entry = UploadLogEntry.LiveHalt(
+            UploadLogSource.LiveTracker,
             new DateTimeOffset(2026, 9, 28, 20, 0, 0, TimeSpan.Zero), ApiStatus.CharacterNotVerified, 403);
 
         var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });

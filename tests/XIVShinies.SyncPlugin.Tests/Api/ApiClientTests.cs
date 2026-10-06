@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Xunit;
 using XIVShinies.SyncPlugin;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Occult;
 using XIVShinies.SyncPlugin.Sync;
 
@@ -179,6 +180,36 @@ public class ApiClientTests
         Assert.Equal(
             "https://xiv-shinies.com/api/plugin/v1/occult/instance-state",
             handler.LastRequest.RequestUri!.ToString());
+        Assert.NotNull(handler.LastContentLength);
+        Assert.Contains("\"trigger\":\"enter\"", handler.LastBody);
+    }
+
+    [Fact]
+    public async Task PostCrucibleObservations_posts_to_the_contract_url()
+    {
+        const string body = """
+        {"ok": true, "outcome": "applied", "runId": "6f9619ff-8b86-d011-b42d-00cf4fc964ff",
+         "events": 3, "skipped": 0}
+        """;
+        var (client, handler) = Build(_ => Json(HttpStatusCode.OK, body));
+
+        var request = CrucibleUploadBuilder.Request(
+            new string('a', 64), "Some Name", "Excalibur", "1.2.3",
+            CrucibleTrigger.Enter, territoryTypeId: 1339, []);
+
+        var response = await client.PostCrucibleObservationsAsync(request);
+
+        Assert.Equal(ApiStatus.Ok, response.Status);
+        Assert.Equal(CrucibleOutcomes.Applied, response.Value!.Outcome);
+        Assert.Equal("6f9619ff-8b86-d011-b42d-00cf4fc964ff", response.Value.RunId);
+        Assert.Equal(3, response.Value.Events);
+
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal(
+            "https://xiv-shinies.com/api/plugin/v1/crucible/observations",
+            handler.LastRequest.RequestUri!.ToString());
+
+        // The contract requires a Content-Length on every upload.
         Assert.NotNull(handler.LastContentLength);
         Assert.Contains("\"trigger\":\"enter\"", handler.LastBody);
     }
@@ -361,7 +392,7 @@ public class ApiClientTests
         Assert.True(ApiStatusMap.IsRetryable(response.Status));
     }
 
-    // A timeout surfaces as TaskCanceledException while the CALLER's token is not cancelled. The
+    // A timeout surfaces as TaskCanceledException while the CALLER's token is not canceled. The
     // exception filter must classify that as a network error rather than let it escape.
     [Fact]
     public async Task A_timeout_becomes_a_network_error()
@@ -380,7 +411,7 @@ public class ApiClientTests
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var (client, _) = Build(_ => throw new TaskCanceledException("cancelled"));
+        var (client, _) = Build(_ => throw new TaskCanceledException("canceled"));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.GetMeAsync(cts.Token));
@@ -467,9 +498,9 @@ public class ApiClientTests
             handler.LastRequest!.RequestUri!.ToString());
     }
 
-    // The official server needs no acknowledgement.
+    // The official server needs no acknowledgment.
     [Fact]
-    public async Task The_default_backend_needs_no_acknowledgement()
+    public async Task The_default_backend_needs_no_acknowledgment()
     {
         var (client, handler) = Build(
             _ => Json(HttpStatusCode.OK, """{"characters": [], "user": {"id": "abc"}}"""),

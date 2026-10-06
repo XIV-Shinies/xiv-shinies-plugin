@@ -136,7 +136,7 @@ public static class ManifestConsent
     /// seeded true and then shown nothing — no collectors at all, or every category switched off by the
     /// server — would render ticked while nothing whatsoever is on, which is the one reading a consent
     /// control must never give. Rows the server has switched off are skipped: they are not the user's to
-    /// answer for, and their own controls are drawn greyed out.
+    /// answer for, and their own controls are drawn grayed out.
     /// </remarks>
     /// <param name="rows">The category rows on screen, group state included.</param>
     public static bool AllConsentGiven(IReadOnlyList<CategorySettingsRow> rows)

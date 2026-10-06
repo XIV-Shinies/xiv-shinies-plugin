@@ -1,0 +1,302 @@
+{
+ "window": "XBMResult",
+ "event": "PostSetup",
+ "valueCount": 169,
+ "values": [
+  {
+   "i": 1,
+   "type": "String",
+   "value": "Standard"
+  },
+  {
+   "i": 2,
+   "type": "UInt",
+   "value": 7375
+  },
+  {
+   "i": 3,
+   "type": "String",
+   "value": "100%"
+  },
+  {
+   "i": 4,
+   "type": "UInt",
+   "value": 5000
+  },
+  {
+   "i": 5,
+   "type": "String",
+   "value": "x 3"
+  },
+  {
+   "i": 6,
+   "type": "UInt",
+   "value": 750
+  },
+  {
+   "i": 7,
+   "type": "String",
+   "value": "x 1"
+  },
+  {
+   "i": 8,
+   "type": "UInt",
+   "value": 625
+  },
+  {
+   "i": 9,
+   "type": "ManagedString",
+   "value": "x 1"
+  },
+  {
+   "i": 10,
+   "type": "UInt",
+   "value": 1000
+  },
+  {
+   "i": 11,
+   "type": "UInt",
+   "value": 7
+  },
+  {
+   "i": 12,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 13,
+   "type": "UInt",
+   "value": 250
+  },
+  {
+   "i": 14,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 15,
+   "type": "String",
+   "value": "Willing Sacrifice I"
+  },
+  {
+   "i": 31,
+   "type": "UInt",
+   "value": 250
+  },
+  {
+   "i": 68,
+   "type": "UInt",
+   "value": 7625
+  },
+  {
+   "i": 69,
+   "type": "String",
+   "value": "Exemplary"
+  },
+  {
+   "i": 72,
+   "type": "UInt",
+   "value": 8
+  },
+  {
+   "i": 73,
+   "type": "Int",
+   "value": 242016
+  },
+  {
+   "i": 74,
+   "type": "Int",
+   "value": 242010
+  },
+  {
+   "i": 75,
+   "type": "Int",
+   "value": 242008
+  },
+  {
+   "i": 76,
+   "type": "Int",
+   "value": 242040
+  },
+  {
+   "i": 77,
+   "type": "Int",
+   "value": 242041
+  },
+  {
+   "i": 78,
+   "type": "Int",
+   "value": 242042
+  },
+  {
+   "i": 79,
+   "type": "Int",
+   "value": 242043
+  },
+  {
+   "i": 80,
+   "type": "Int",
+   "value": 242044
+  },
+  {
+   "i": 89,
+   "type": "UInt",
+   "value": 20
+  },
+  {
+   "i": 90,
+   "type": "UInt",
+   "value": 58
+  },
+  {
+   "i": 91,
+   "type": "UInt",
+   "value": 50
+  },
+  {
+   "i": 92,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 93,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 94,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 95,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 96,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 105,
+   "type": "UInt",
+   "value": 41
+  },
+  {
+   "i": 106,
+   "type": "UInt",
+   "value": 79
+  },
+  {
+   "i": 107,
+   "type": "UInt",
+   "value": 71
+  },
+  {
+   "i": 108,
+   "type": "UInt",
+   "value": 55
+  },
+  {
+   "i": 109,
+   "type": "UInt",
+   "value": 55
+  },
+  {
+   "i": 110,
+   "type": "UInt",
+   "value": 55
+  },
+  {
+   "i": 111,
+   "type": "UInt",
+   "value": 55
+  },
+  {
+   "i": 112,
+   "type": "UInt",
+   "value": 55
+  },
+  {
+   "i": 121,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 122,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 123,
+   "type": "UInt",
+   "value": 10
+  },
+  {
+   "i": 124,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 125,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 126,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 127,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 128,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 137,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 138,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 139,
+   "type": "UInt",
+   "value": 10
+  },
+  {
+   "i": 140,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 141,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 142,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 143,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 144,
+   "type": "UInt",
+   "value": 3
+  }
+ ]
+}
