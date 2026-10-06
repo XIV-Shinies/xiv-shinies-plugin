@@ -6,6 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Utility;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -37,9 +38,12 @@ internal sealed partial class MainWindow
         BrandSeparator();
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Whether anything in the list still counts as "New" — a whole collection or a manifest group
-        // inside one (see AnythingIsNew).
-        var hasNewCollection = AnythingIsNew(rows);
+        // Whether anything under the header still counts as "New": a whole collection or a manifest
+        // group inside one (see AnythingIsNew), or the Crucible run sharing's card, which sits under
+        // the same header (see CrucibleBadge).
+        var hasNewCollection = AnythingIsNew(rows)
+            || CrucibleBadge.IsNew(
+                configuration.Settings.CrucibleSharingSeen, remoteConfig, crucibleBadgedThisSession);
 
         // Captured immediately before the header so the "New" chip below can be placed on the
         // header's own row: CollapsingHeader always spans the full available width regardless of
@@ -78,7 +82,7 @@ internal sealed partial class MainWindow
             // The Crucible run sharing's and the live tracker's consent cards, below the collections
             // card they are not part of.
             ImGui.Spacing();
-            DrawCrucibleConsentRow(remoteConfig);
+            DrawCrucibleConsentRow(remoteConfig, showNewChip: true);
             ImGui.Spacing();
             DrawOccultConsentRow(remoteConfig);
         }
@@ -104,12 +108,17 @@ internal sealed partial class MainWindow
         if (ImGui.CollapsingHeader("Privacy"))
         {
             ImGui.Spacing();
-            // Names the server the data is actually sent to — see MainWindow.BackendHost.
+            // Names the server the data is actually sent to — see MainWindow.BackendHost. "You choose"
+            // is said only while the server leaves something to choose (see
+            // ConsentCopy.UserHasAChoice); `a ? b : c` picks b when a is true, else c, as in
+            // TypeScript.
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
                 $"Your character's name and home world are sent so {BackendHost()} can match the " +
                 "character you already claimed and verified. Nothing is uploaded unless syncing " +
-                "is switched on, and you choose what to include.");
+                (ConsentCopy.UserHasAChoice(rows, remoteConfig)
+                    ? "is switched on, and you choose what to include."
+                    : "is switched on."));
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

@@ -488,6 +488,13 @@ internal sealed class SyncManager : IDisposable
     /// <remarks>A volatile bool read, so safe from the draw call; at worst one frame stale.</remarks>
     public bool UploadInFlight => uploadInFlight;
 
+    /// <summary>
+    /// True while the server has asked the plugin to wait before its next upload, so a "Sync now"
+    /// press would upload nothing until the wait ends.
+    /// </summary>
+    /// <remarks>The scheduler takes its lock to answer, so this is safe from the draw call.</remarks>
+    public bool IsBackingOff => scheduler.IsBackingOff(timeProvider.GetUtcNow());
+
     /// <summary>The recent uploads, newest first, for the settings window's upload log.</summary>
     public IReadOnlyList<UploadLogEntry> UploadHistory => uploadLog.Entries;
 

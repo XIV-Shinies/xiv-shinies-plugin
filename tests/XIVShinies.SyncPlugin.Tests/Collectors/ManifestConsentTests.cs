@@ -445,6 +445,31 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.ServerHasPausedEverything(Array.Empty<CategorySettingsRow>()));
     }
 
+    // --- Whether the server permits no collection, without a pause --------------------------------
+
+    // Every collection switched off one by one: the wizard's consent step owes the user the reason
+    // its collection boxes are all grayed, as the settings screen's status line gives it.
+    [Fact]
+    public void Collections_all_switched_off_individually_permit_none()
+    {
+        var rows = new[] {Row("quests", serverEnabled: false), Row("mounts", serverEnabled: false)};
+
+        Assert.True(ManifestConsent.ServerPermitsNoCollection(rows));
+    }
+
+    // A pause has its own sentence, so it is not this state; one permitted collection is not it
+    // either; and an empty list is nobody's refusal.
+    [Fact]
+    public void A_pause_a_permitted_collection_or_an_empty_list_is_not_that_state()
+    {
+        var paused = new[] {Row("quests", serverEnabled: false, serverGloballyOff: true)};
+        var onePermitted = new[] {Row("quests", serverEnabled: false), Row("mounts")};
+
+        Assert.False(ManifestConsent.ServerPermitsNoCollection(paused));
+        Assert.False(ManifestConsent.ServerPermitsNoCollection(onePermitted));
+        Assert.False(ManifestConsent.ServerPermitsNoCollection(Array.Empty<CategorySettingsRow>()));
+    }
+
     // --- Whether anything at all will be uploaded ----------------------------------------------
 
     // Both halves have to agree before the cadence promise is true, and the user's half is the one

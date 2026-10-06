@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using XIVShinies.SyncPlugin.Collectors;
 using Xunit;
 
@@ -15,11 +14,7 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>.
 /// </para>
 /// <para>
-/// The flag is reachable from a unit test because <see cref="CategoryInfo"/> is Dalamud-free:
-/// reflecting over <see cref="CollectorRegistry"/>'s private static fields runs only their
-/// initializers, which construct records and load no game assembly. (Its <c>Create</c> method
-/// mentions Dalamud services in its signature, but a signature is not resolved unless the method
-/// is called.)
+/// The flag is reachable from a unit test through <see cref="CategoryInfoReflection"/>.
 /// </para>
 /// </remarks>
 public class CompletenessDeclarationTests
@@ -41,21 +36,8 @@ public class CompletenessDeclarationTests
         CategoryKeys.TripleTriadCards,
     };
 
-    /// <summary>
-    /// Reads every category the registry declares, by reflection, so a collection added tomorrow is
-    /// covered without anyone remembering to extend a hand-written list.
-    /// </summary>
-    /// <remarks>
-    /// <c>BindingFlags.NonPublic</c> because the registry's <see cref="CategoryInfo"/> fields are
-    /// private — they are implementation detail to every caller except this test, and making them
-    /// visible purely to be tested would be the wrong trade.
-    /// </remarks>
-    private static IReadOnlyList<CategoryInfo> AllCategories() =>
-        typeof(CollectorRegistry)
-            .GetFields(BindingFlags.NonPublic | BindingFlags.Static)
-            .Where(field => field.FieldType == typeof(CategoryInfo))
-            .Select(field => (CategoryInfo)field.GetValue(null)!)
-            .ToList();
+    /// <summary>Every category the registry declares (see <see cref="CategoryInfoReflection"/>).</summary>
+    private static IReadOnlyList<CategoryInfo> AllCategories() => CategoryInfoReflection.All();
 
     /// <summary>
     /// Asserts the whole declaring set at once.

@@ -89,6 +89,18 @@ public interface ICollector
     bool UsesItemManifest { get; }
 
     /// <summary>
+    /// True when the game announces each new entry of this collection the moment it is earned, so it
+    /// uploads within seconds (see <see cref="CategoryInfo.UploadsOnUnlock"/>).
+    /// </summary>
+    /// <remarks>
+    /// Self-description, like <see cref="UsesItemManifest"/>: carried onto each
+    /// <see cref="CategorySettingsRow"/>, where the sync card reads it rather than naming collections.
+    /// </remarks>
+    // `=> false` gives the member a default body, so a collector that does not declare it answers
+    // false. TypeScript interfaces cannot carry a body; this is closer to a base class's getter.
+    bool UploadsOnUnlock => false;
+
+    /// <summary>
     /// Reads the facts from the game, or explains why it could not.
     /// </summary>
     /// <param name="context">

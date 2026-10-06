@@ -69,6 +69,18 @@ public sealed record CategorySettingsRow
     public required bool UsesItemManifest { get; init; }
 
     /// <summary>
+    /// Whether this row's collector uploads each new entry within seconds (see
+    /// <see cref="ICollector.UploadsOnUnlock"/>).
+    /// </summary>
+    /// <remarks>
+    /// Carried on the row so the sync card can decide whether it may promise uploads within seconds
+    /// from the rows alone, without holding collectors or naming any. Defaulted rather than required,
+    /// unlike <see cref="UsesItemManifest"/>, because false is the safe answer for a row built by hand:
+    /// it only withholds a promise.
+    /// </remarks>
+    public bool UploadsOnUnlock { get; init; }
+
+    /// <summary>
     /// False when the server will not accept this category — either it is switched off for
     /// everyone, or the server has paused syncing entirely. The checkbox stays visible but
     /// disabled: the user's own preference is remembered and reapplied when the server allows it
@@ -471,6 +483,9 @@ public static class CategorySettingsView
                 // Carried through verbatim from the collector's own self-description. Nothing here
                 // decides which collections are manifest-driven; the collector says so itself.
                 UsesItemManifest = collector.UsesItemManifest,
+
+                // The same verbatim carry: the collector says whether the game announces it.
+                UploadsOnUnlock = collector.UploadsOnUnlock,
 
                 ServerEnabled = serverEnabled,
 

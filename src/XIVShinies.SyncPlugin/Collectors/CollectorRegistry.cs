@@ -47,6 +47,10 @@ public static class CollectorRegistry
         // that same sheet — the safe direction, since a sweep of the whole sheet cannot miss a
         // cataloged quest.
         EnumeratesCompleteDomain = true,
+
+        // The game announces each completed quest the moment it happens, so it uploads within
+        // seconds rather than on the sweep.
+        UploadsOnUnlock = true,
     };
 
     private static readonly CategoryInfo QuestSequences = new()
@@ -84,6 +88,9 @@ public static class CollectorRegistry
         // The plain case: the game answers for every Mount sheet row the catalog can hold, so an
         // exhaustive walk is an exhaustive answer.
         EnumeratesCompleteDomain = true,
+
+        // The game announces each new entry the moment it is earned.
+        UploadsOnUnlock = true,
     };
 
     private static readonly CategoryInfo Minions = new()
@@ -96,6 +103,9 @@ public static class CollectorRegistry
         // The plain case, exactly as for mounts: the game answers for every Companion sheet row the
         // catalog can hold.
         EnumeratesCompleteDomain = true,
+
+        // The game announces each new entry the moment it is earned.
+        UploadsOnUnlock = true,
     };
 
     private static readonly CategoryInfo Achievements = new()
@@ -110,6 +120,9 @@ public static class CollectorRegistry
         // question, handled by this collector's precondition (see its construction below), which
         // skips the pass rather than reporting a list the game had not filled in.
         EnumeratesCompleteDomain = true,
+
+        // The game announces each new entry the moment it is earned.
+        UploadsOnUnlock = true,
     };
 
     private static readonly CategoryInfo OrchestrionRolls = new()
@@ -131,6 +144,9 @@ public static class CollectorRegistry
         // The game answers for every Orchestrion row, and the catalog holds a subset of those same
         // rows, so the sweep covers it.
         EnumeratesCompleteDomain = true,
+
+        // The game announces each new entry the moment it is earned.
+        UploadsOnUnlock = true,
     };
 
     private static readonly CategoryInfo TripleTriadCards = new()

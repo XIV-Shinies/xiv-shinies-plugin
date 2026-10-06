@@ -184,16 +184,14 @@ internal sealed partial class MainWindow
         // Which mark to wear, and its precedence, is CategorySettingsView.BadgeFor's rule. Only the
         // look of each mark is decided here.
         //
-        // Off is gray and filled: gray so the state never competes for attention with the badge that
-        // invites the user to do something, filled because that same gray would otherwise let it read
-        // as part of the grayed row it sits on rather than as a mark about it. New is gold and
-        // unfilled — the color already carries it.
+        // Off's look is OffChip's. New is gold and unfilled, since the color already carries it. The
+        // type is a tuple that may be null: several named values traveling together, like a
+        // TypeScript `{ icon, text, color, tooltip, filled } | null`.
         (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? badge =
             CategorySettingsView.BadgeFor(
                 row, showNewChips, categoriesBadgedThisSession.Contains(row.Key)) switch
             {
-                CategoryBadgeKind.Off =>
-                    (FontAwesomeIcon.PowerOff, "Off", Brand.DisabledForeground, row.ServerOffText, true),
+                CategoryBadgeKind.Off => OffChip(row.ServerOffText),
                 CategoryBadgeKind.New =>
                     (FontAwesomeIcon.Star, "New", Brand.Gold, (string?)null, false),
                 _ => null,
@@ -208,7 +206,8 @@ internal sealed partial class MainWindow
         // how they decide. A collection the server has switched off is not an open offer: nothing
         // on this row can send it whatever the user does, so the copy mutes with the rest of the
         // row. The reason it is off rides the chip's tooltip rather than a line of its own, so a
-        // switched-off row stays one line.
+        // switched-off row stays one line. `muted:` names the parameter the value fills, like a key in
+        // an options object.
         ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
         DrawWrappedWithTrailingHint(
             $"— {row.WhatGetsSent}", row.Details, labelColumn, badge, muted: !row.ServerEnabled);
@@ -313,21 +312,13 @@ internal sealed partial class MainWindow
             DrawDetailsHint(OccultTrackerDetails);
 
             // The same chip a switched-off collection wears, carrying the same sentence in the same
-            // place. The tracker's switch has no note of its own — it lives in its own config block,
-            // which the server sends without one — so which of the two standard sentences applies
-            // is the gate's to decide, exactly as it decides whether the chip appears at all.
+            // place. The tracker's switch has no note of its own (it lives in its own config block,
+            // which the server sends without one), so which of ServerOffCopy.Feature and
+            // ServerOffCopy.Paused applies is the gate's to decide, exactly as it decides whether the
+            // chip appears at all.
+            // `x is { } offText` matches when x is not null and names it `offText`.
             if (OccultGate.ServerOffText(remoteConfig) is { } offText)
-            {
-                ImGui.SameLine();
-                DrawChip(
-                    FontAwesomeIcon.PowerOff,
-                    "Off",
-                    Brand.DisabledForeground,
-                    filled: true);
-
-                if (ImGui.IsItemHovered())
-                    Widgets.DrawTooltip(offText);
-            }
+                DrawOffChip(offText);
 
             if (toggled)
             {
@@ -424,13 +415,28 @@ internal sealed partial class MainWindow
     /// with the user's own choice intact underneath. What counts as off is
     /// <see cref="CrucibleGate"/>'s to decide.
     /// </para>
+    /// <para>
+    /// While the server permits the sharing and the user has not yet seen the card, the settings
+    /// screen chips it "New"; when the chip shows and when a drawing counts as seen are
+    /// <see cref="CrucibleBadge"/>'s rules.
+    /// </para>
     /// </remarks>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
-    private void DrawCrucibleConsentRow(ConfigResponse? remoteConfig)
+    /// <param name="showNewChip">
+    /// Whether this surface may chip the card "New"; see <see cref="CrucibleBadge.BadgeFor"/>.
+    /// </param>
+    private void DrawCrucibleConsentRow(ConfigResponse? remoteConfig, bool showNewChip)
     {
         // Asked of the gate that decides whether the sharing runs, so the control and the behavior
         // cannot describe different things; CrucibleGate.ServerHasSwitchedOff holds the rule.
         var serverOff = CrucibleGate.ServerHasSwitchedOff(remoteConfig);
+
+        // Read before this drawing records anything, so the frame that first shows the card still
+        // wears the chip; the session flag keeps it up after the record is saved.
+        var seen = configuration.Settings.CrucibleSharingSeen;
+        var badge = CrucibleBadge.BadgeFor(seen, remoteConfig, showNewChip, crucibleBadgedThisSession);
+        if (badge == CategoryBadgeKind.New)
+            crucibleBadgedThisSession = true;
 
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemInnerSpacing,
@@ -446,32 +452,40 @@ internal sealed partial class MainWindow
             using (ImRaii.Disabled(serverOff))
                 toggled = ImGui.Checkbox("Share your Crucible runs##crucibleRuns", ref enabled);
 
+            // Asked of the checkbox just drawn: false while the card sits below the visible part of
+            // the window, where the user has not seen it yet.
+            var onScreen = ImGui.IsItemVisible();
+
             // The what-is-NOT-read reassurance, one hover away like every category's.
             DrawDetailsHint(CrucibleRunsDetails);
 
-            // The same chip a switched-off collection wears; CrucibleGate.ServerOffText chooses its
-            // hover sentence.
-            if (CrucibleGate.ServerOffText(remoteConfig) is { } offText)
+            // The same chips a collection wears. CrucibleGate.ServerOffText chooses the "Off" chip's
+            // hover sentence, and is never null while the badge is Off.
+            if (badge == CategoryBadgeKind.Off && CrucibleGate.ServerOffText(remoteConfig) is { } offText)
+            {
+                DrawOffChip(offText);
+            }
+            else if (badge == CategoryBadgeKind.New)
             {
                 ImGui.SameLine();
-                DrawChip(
-                    FontAwesomeIcon.PowerOff,
-                    "Off",
-                    Brand.DisabledForeground,
-                    filled: true);
-
-                if (ImGui.IsItemHovered())
-                    Widgets.DrawTooltip(offText);
+                DrawChip(FontAwesomeIcon.Star, "New", Brand.Gold);
             }
 
             // Only a real click writes the choice back. The tick drawn differs from the stored choice
             // only while the server has the sharing off, and the box is disabled then, so a click can
             // never overwrite the stored choice with the server's.
             if (toggled)
-            {
                 configuration.Settings.ShareCrucibleRuns = enabled;
+
+            // Recorded once, the first time the card is seen; the record makes this false on every
+            // later frame.
+            var retires = CrucibleBadge.ShowingRetires(seen, remoteConfig, onScreen, clicked: toggled);
+            if (retires)
+                configuration.Settings.CrucibleSharingSeen = true;
+
+            // One save for whatever this frame changed.
+            if (toggled || retires)
                 configuration.Save();
-            }
 
             ImGui.Indent(checkboxColumn);
 
@@ -713,6 +727,36 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
+    /// The "Off" chip a switched-off collection or feature wears, in the shape
+    /// <see cref="DrawWrappedWithTrailingHint"/> flows after a sentence.
+    /// </summary>
+    /// <param name="tooltip">The sentence its hover shows, saying why it is off.</param>
+    /// <remarks>
+    /// Gray and filled: gray so the state never competes for attention with a badge that invites
+    /// the user to do something, filled so it reads as a mark about the grayed row it sits on.
+    /// </remarks>
+    // The return type is the same tuple a consent row's badge uses.
+    private static (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled) OffChip(
+        string? tooltip) =>
+        (FontAwesomeIcon.PowerOff, "Off", Brand.DisabledForeground, tooltip, true);
+
+    /// <summary>
+    /// Draws the <see cref="OffChip"/> on the current line, after whatever the line already holds,
+    /// with its hover sentence: for a sharing card's label, which the chip follows directly.
+    /// </summary>
+    /// <param name="offText">The sentence its hover shows, saying why it is off.</param>
+    private void DrawOffChip(string offText)
+    {
+        // `var chip` holds the tuple; `chip.Icon` and the rest read its named parts.
+        var chip = OffChip(offText);
+        ImGui.SameLine();
+        DrawChip(chip.Icon, chip.Text, chip.Color, chip.Filled);
+
+        if (ImGui.IsItemHovered())
+            Widgets.DrawTooltip(offText);
+    }
+
+    /// <summary>
     /// Draws a muted question mark on the current line that reveals <paramref name="details"/> on
     /// hover.
     /// </summary>
@@ -748,7 +792,9 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Whether the folded "Collections" header (see <see cref="DrawSettings"/>) wears a "New" chip.
+    /// Whether anything in the collection rows still counts as "New", one of the two things the
+    /// folded "Collections" header (see <see cref="DrawSettings"/>) asks before wearing a "New" chip;
+    /// the other is the Crucible card's own <see cref="CrucibleBadge.IsNew"/>.
     /// </summary>
     /// <remarks>
     /// With the header folded, none of the badges beneath it are visible, so something added since

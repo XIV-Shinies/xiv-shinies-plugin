@@ -83,7 +83,7 @@ public static class CollectSkipReasons
     public static string? Describe(string reason) => reason switch
     {
         AchievementListNotLoaded =>
-            "not read yet — open your Achievements window in game once, then press Sync now.",
+            "not read yet — open your Achievements window in game once.",
 
         NotInOccultInstance =>
             "not read yet — enter the Occult Crescent once; it syncs during your visit.",

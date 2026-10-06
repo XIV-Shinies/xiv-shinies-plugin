@@ -114,4 +114,25 @@ public sealed record CategoryInfo
     /// </para>
     /// </remarks>
     public bool EnumeratesCompleteDomain { get; init; }
+
+    /// <summary>
+    /// True when the game announces each new entry of this collection the moment it is earned, so the
+    /// plugin uploads it within seconds rather than on the scheduled sweep.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Self-description in the same sense as <see cref="UsesItemManifest"/>: the sync card reads it
+    /// to decide whether it may promise uploads within seconds, without naming any collection.
+    /// </para>
+    /// <para>
+    /// Being registered for the game's unlock signal is not enough. Triple Triad cards are, exactly
+    /// as mounts are, and the game never raises the signal for them, so a card reaches the site on
+    /// the sweep. Defaults to <c>false</c>, which only withholds a promise.
+    /// </para>
+    /// <para>
+    /// Only a collector that routes unlocks (<see cref="IUnlockAware"/>) passes this through to its
+    /// rows; set on any other collection's info, it never reaches the sync card.
+    /// </para>
+    /// </remarks>
+    public bool UploadsOnUnlock { get; init; }
 }

@@ -20,7 +20,7 @@ public class CollectSkipReasonsTests
         var hint = CollectSkipReasons.Describe(CollectSkipReasons.AchievementListNotLoaded);
 
         Assert.Equal(
-            "not read yet — open your Achievements window in game once, then press Sync now.", hint);
+            "not read yet — open your Achievements window in game once.", hint);
     }
 
     // The whole string is asserted, not just a keyword: a keyword check would still pass if two
