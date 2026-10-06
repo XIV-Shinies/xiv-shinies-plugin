@@ -46,4 +46,13 @@ public static class CategoryKeys
 
     /// <summary>Bestiary numbers of the beasts a pact has been forged with.</summary>
     public const string TamedBeasts = "tamedBeasts";
+
+    /// <summary>
+    /// The gear held for glamour and where it is kept: dresser, outfit glamours, Armoire and held
+    /// gear.
+    /// </summary>
+    public const string Glamour = "glamour";
+
+    /// <summary>The local character's appearance, as one record.</summary>
+    public const string Appearance = "appearance";
 }

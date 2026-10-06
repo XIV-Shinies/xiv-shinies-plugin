@@ -34,8 +34,8 @@ seconds of the unlock, because the game announces those the moment they happen.
 
 Everything else travels with the periodic full sync, or immediately when you press
 **Sync now**: **Tracked items** (the item counts that prove relic progress), **Quest
-progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records** and
-**Phantom jobs**.
+progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records**, **Phantom jobs**,
+**Gear & glamour storage** and **Character appearance**.
 
 ## What gets sent
 
@@ -55,8 +55,23 @@ into:
 - Discovered **occult record** IDs
 - Bestiary numbers of the **beasts you have tamed** as a beastmaster, read from your Master's
   Bestiary when you open it. The bestiary shows part of itself at a time and remembers the last
-  filter you set, so page through it once with no filter applied and the whole set is recorded.
+  filter you set, so page through it once with no filter applied and the whole set is read.
   Nothing is read while the window is closed, and other players are never involved
+- The ID numbers and copy counts of the **gear you hold and where it is kept**: your Glamour
+  Dresser (with each piece's quality and dyes), outfit glamours, Armoire, and the gear you wear or
+  keep in your bags, armoury chest, saddlebag, retainers and retainer market listings — plus which
+  of those storage locations could be read and how many retainers you have. Gear only; materials and
+  other items are never included. Your bags, equipped gear and armoury chest are read at login and
+  on every scheduled or manual sync; the dresser, Armoire and saddlebag once you have opened and
+  closed each one this session (dresser dyes only in the area where you opened it); and your
+  retainers from the game's saved copy of each one you have summoned, which survives logging out,
+  plus the market listings of the one summoned most recently. Nothing is read while a storage
+  window is open. This is a picture of what you hold right now, so the site can tell when a piece
+  has left your storage — though nothing you marked by hand is ever unmarked
+- Your **character's appearance** as set in the character creator (race, clan, gender, face, hair,
+  eyes, colors and body), the glasses you wear, and your display settings: whether your weapon,
+  headgear, visor, Viera ears and Free Company crest are shown — read from your own character, so
+  XIV Shinies can draw you as you are
 - **Live Occult Crescent instance state**, while you are inside one: which critical
   encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
   are on, powering the site's live occult tracker on the right data center. This is world
@@ -66,7 +81,10 @@ into:
   switched off while you are setting up, the wizard cannot offer you that box — so it starts
   **off** instead, and you can turn it on from the settings whenever you like
 
-For a collection the plugin can read end to end, the upload also records that the list is
+The gear and appearance collections are read only once the XIV Shinies server names them; until
+it does, the settings show them as not offered, and neither is read.
+
+For a collection the plugin can read end to end, the upload also declares that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin
 did not find, so you can review it — nothing is ever unmarked for you.
 
@@ -87,7 +105,9 @@ as a whole — can be toggled at any time from the settings window (`/shinies`).
 
 Setup also offers to start collections added by later updates already switched on, so that if you
 always opt in you are not asked every time. It is off unless you tick it, and either way a new
-collection is marked **New** in the settings until you have seen it.
+collection is marked **New** in the settings until you have seen it. Collections whose groups you
+choose separately, anything describing your character itself (such as its appearance), and new
+kinds of sharing like the live tracker always wait for you.
 
 ![The first-run wizard: what it sends, and your privacy, before anything uploads](images/screenshots/wizard-1-welcome.png)
 

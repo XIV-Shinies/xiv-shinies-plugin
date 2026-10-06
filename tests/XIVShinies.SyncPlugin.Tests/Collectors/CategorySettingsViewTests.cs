@@ -44,11 +44,30 @@ public class CategorySettingsViewTests
 
         public bool UsesItemManifest { get; }
 
+        // Set per-test, so the stricter server gate can be checked against a fake that asks for
+        // it; every other test leaves the ordinary default.
+        public bool RequiresServerSupport { get; init; }
+
+        // The settings view never reads this; the interface requires it.
+        public bool IsSingleRecord { get; init; }
+
+        // Set per-test, so the view's carry-through of the storage flag can be checked both ways;
+        // every other test leaves the default of a collection that reads no storage.
+        public bool ReadsStorage { get; init; }
+
+        // The settings view never reads this; the interface requires it.
+        public bool RequiresOwnOptIn { get; init; }
+
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
 
     private static ICollector Fake(string key) =>
         new FakeCollector(key, $"{key} display", $"what {key} sends");
+
+    // A collector for a collection that needs the server to know it, declared through
+    // RequiresServerSupport the way a real one is.
+    private static ICollector FakeNeedingServerSupport(string key) =>
+        new FakeCollector(key, $"{key} display", $"what {key} sends") {RequiresServerSupport = true};
 
     // A collector that announces itself as manifest-driven, the same way ItemCollector does. Used to
     // prove group rows attach via self-description rather than a check on the category's name.
@@ -568,6 +587,30 @@ public class CategorySettingsViewTests
         Assert.Null(rows[0].Groups);
     }
 
+    // The collector's self-reported storage flag rides through to the row, both ways. It is the seam
+    // ReadStatusView keys its container lines on, so a collection that reads storage brings those
+    // lines with it whether or not it is manifest-driven — and a collection for a category this plugin
+    // has never heard of is enough to prove nothing here decides the answer by name.
+    [Fact]
+    public void A_collectors_storage_flag_is_carried_onto_its_row()
+    {
+        var rows = CategorySettingsView.Build(
+            new ICollector[]
+            {
+                new FakeCollector(UnknownCategory, "facewear display", "what facewear sends")
+                {
+                    ReadsStorage = true,
+                },
+                Fake("mounts"),
+            },
+            OptedIn(),
+            RemoteConfig());
+
+        Assert.True(rows[0].ReadsStorage);
+        Assert.False(rows[0].UsesItemManifest);
+        Assert.False(rows[1].ReadsStorage);
+    }
+
     // A blank group key is malformed server data that no downstream path can handle: consent reads
     // treat it as off, seen-marking skips it (a forever-"New" badge that would re-save the config
     // every frame), and the consent write throws. The view drops it at the boundary; its healthy
@@ -707,8 +750,8 @@ public class CategorySettingsViewTests
 
     // --- What a switched-off category says for itself -------------------------------------------
     // Two unlike reasons a category can be off, and the row draws a different sentence for each.
-    // Generic like everything else here: the fake announces a category nobody wrote code for, so a
-    // future gated collection gets this behaviour without an edit.
+    // Generic like everything else here: the fake announces a category nobody wrote code for, so any
+    // gated collection gets this behavior without an edit.
 
     // A category still being tested: the server explains it, and the plugin prints that verbatim.
     // "It is off" alone would invite the reader to conclude something is broken.
@@ -1109,5 +1152,100 @@ public class CategorySettingsViewTests
         Assert.True(row.ServerEnabled);
         Assert.False(row.ServerGloballyOff);
         Assert.Null(row.ServerOffText);
+    }
+
+    // --- A collection that needs the server to name it ------------------------------------------
+    // A collection declaring RequiresServerSupport is only worth uploading to a server that knows
+    // it, so a key the server's map does not carry reads as off. The row says so in its own words:
+    // a server that has never named a collection has not switched it off, it has not offered it.
+
+    [Fact]
+    public void A_collection_the_server_never_names_is_drawn_as_not_offered()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            RemoteConfig()));
+
+        Assert.False(row.ServerEnabled);
+        Assert.True(row.NotOfferedByServer);
+
+        // Pinned by identity with the constant, so a reword moves every surface that draws it.
+        Assert.Equal(ServerOffCopy.NotOffered, row.ServerOffText);
+    }
+
+    // Once the server names the collection, it is an ordinary switched-off collection: the server
+    // made a decision about it, and its own note is the thing to print.
+    [Fact]
+    public void A_collection_the_server_names_off_says_what_the_server_said()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            categoryNotes: new Dictionary<string, string> {[UnknownCategory] = "In testing."});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.False(row.ServerEnabled);
+        Assert.False(row.NotOfferedByServer);
+        Assert.Equal("In testing.", row.ServerOffText);
+    }
+
+    // The permitted case: named and switched on, the stricter rule asks nothing more.
+    [Fact]
+    public void A_collection_the_server_names_on_is_server_enabled()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = true});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.True(row.ServerEnabled);
+        Assert.False(row.NotOfferedByServer);
+        Assert.Null(row.ServerOffText);
+    }
+
+    // Before /config arrives nothing says the server knows the collection, so the row waits with
+    // it — matching the gate, which holds the same collection back from the upload. Unlike an
+    // ordinary row drawn before the config, it wears no "New" badge: there is nothing to use yet.
+    [Fact]
+    public void A_collection_needing_server_support_waits_for_the_config()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            remoteConfig: null));
+
+        Assert.False(row.ServerEnabled);
+        Assert.True(row.NotOfferedByServer);
+        Assert.False(row.IsEffectivelyOn);
+        Assert.False(row.IsEffectivelyNew);
+    }
+
+    // A pause still outranks everything said about one collection, including that it was never
+    // offered: while syncing is stopped for everyone, the pause is the fact that explains the row.
+    [Fact]
+    public void A_paused_server_outranks_a_collection_it_never_named()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            RemoteConfig(enabled: false)));
+
+        Assert.True(row.NotOfferedByServer);
+        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
+    }
+
+    // The stricter rule does not reach an ordinary collection: one the server never names is
+    // enabled, and is never described as not offered.
+    [Fact]
+    public void An_ordinary_collection_the_server_never_names_is_never_drawn_as_not_offered()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.True(row.ServerEnabled);
+        Assert.False(row.NotOfferedByServer);
     }
 }

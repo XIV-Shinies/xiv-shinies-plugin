@@ -12,9 +12,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <remarks>
 /// The two groups answer different questions, which is why they are two lists and not one. A
 /// <b>collection</b> line answers "can the sync see this collection at all?"; a <b>container</b> line
-/// answers "and where did the item counts come from?". A reader who cannot tell which kind of line they
-/// are looking at cannot act on it, and the shape of this record is what keeps the two apart without
-/// anything downstream having to rely on their order.
+/// answers "and which of my storage locations could the collections that read storage see?". A reader
+/// who cannot tell which kind of line they are looking at cannot act on it, and the shape of this
+/// record is what keeps the two apart without anything downstream having to rely on their order.
 /// </remarks>
 public sealed record ReadStatus
 {
@@ -22,8 +22,8 @@ public sealed record ReadStatus
     public required IReadOnlyList<SourceNote> Collections { get; init; }
 
     /// <summary>
-    /// One line per storage container the item pass looked at (inventory, saddlebag, armoire, …), in
-    /// the order the pass reported them.
+    /// One line per storage container the storage-reading collections looked at (inventory, saddlebag,
+    /// armoire, …), in the order the pass reported them.
     /// </summary>
     public required IReadOnlyList<SourceNote> Containers { get; init; }
 }
@@ -37,8 +37,8 @@ public sealed record ReadStatus
 /// The panel answers one question — "is the plugin actually seeing my collections?" — and that
 /// question has two halves. A <b>collection</b> can fail to be read at all (the game will not answer
 /// for achievements until the player has opened their Achievements window once), and a <b>storage
-/// container</b> the item counts are drawn from can be stale or never opened (the saddlebag, a
-/// never-summoned retainer). Both halves are reported here, as the two lists of
+/// container</b> the storage-reading collections draw on can be stale or never opened (the saddlebag,
+/// a never-summoned retainer). Both halves are reported here, as the two lists of
 /// <see cref="SourceNote"/> on a <see cref="ReadStatus"/> which the window prints without interpreting.
 /// </para>
 /// <para>
@@ -70,8 +70,9 @@ public static class ReadStatusView
     /// and a "not read" line beside it would read as a fault rather than as a decision.
     /// </param>
     /// <param name="sourceNotes">
-    /// Per-container scan status from the most recent item pass, keyed by <see cref="SourceKeys"/>.
-    /// Empty before any pass has looked at the item sources, which simply means no container lines.
+    /// Per-container scan status from the most recent pass that looked at the storage containers,
+    /// keyed by <see cref="SourceKeys"/>. Empty before any pass has looked at them, which simply means
+    /// no container lines.
     /// </param>
     public static ReadStatus Build(
         IReadOnlyList<CategorySettingsRow> rows,
@@ -80,16 +81,19 @@ public static class ReadStatusView
         var collections = new List<SourceNote>(rows.Count);
         var containers = new List<SourceNote>(sourceNotes.Count);
 
-        // The containers are only ever looked at on behalf of a manifest-driven collection, so with
+        // The containers are only ever looked at on behalf of a collection that reads storage, so with
         // every such collection switched off they are not being read at all — and the scan status of a
         // container nothing consults describes nothing. Left in, those lines would keep urging the user
         // to open their saddlebag for a scan that is no longer happening.
-        var anyManifestCollectionOn = false;
+        //
+        // Keyed on each row's own ReadsStorage flag, never on a category name, so a collection that
+        // reads storage brings the container lines with it whether or not it is manifest-driven.
+        var anyStorageCollectionOn = false;
         foreach (var row in rows)
         {
-            if (row.UsesItemManifest && row.IsEffectivelyOn)
+            if (row.ReadsStorage && row.IsEffectivelyOn)
             {
-                anyManifestCollectionOn = true;
+                anyStorageCollectionOn = true;
                 break;
             }
         }
@@ -100,7 +104,7 @@ public static class ReadStatusView
         //
         // `foreach` over an IReadOnlyDictionary hands back each entry as a KeyValuePair, which
         // deconstructs straight into (key, value) here.
-        if (anyManifestCollectionOn)
+        if (anyStorageCollectionOn)
         {
             foreach (var (sourceKey, status) in sourceNotes)
             {
@@ -134,7 +138,7 @@ public static class ReadStatusView
         //
         // The CONTAINERS are deliberately left in the order the pass reported them, because that
         // order groups the sources by how they behave — the ones a user can act on ahead of the one
-        // nothing can change — and alphabetising would scatter that grouping. It is the pass's
+        // nothing can change — and alphabetizing would scatter that grouping. It is the pass's
         // emission order rather than a guarantee this type makes: the notes arrive in a dictionary,
         // whose enumeration order the runtime does not promise, so nothing here can assert where any
         // particular container lands. Sorting them would trade a helpful order for a merely
@@ -176,20 +180,28 @@ public static class ReadStatusView
     /// The null case is the manifest-driven rule. A manifest-driven collection's facts ARE the item
     /// counts read out of the containers, so when it has no skip reason its own line says nothing the
     /// container group below does not already say in more detail — and a line that only repeats its
-    /// neighbours teaches the reader to skim past both. It is dropped only while there is at least one
-    /// container line to stand in for it: no pass has reported yet, or every status it did report was
-    /// one this copy set has no line for, and dropping this line as well would leave the panel silent
-    /// about a collection the user has switched on. A <i>skipped</i> manifest-driven collection is a
-    /// third case: why it was missed (the server's config has not arrived, the inventory is unreadable,
-    /// no consent group beneath it is switched on) exists nowhere else in the panel, so that line is
-    /// always owed. Keyed on the collector's own <see cref="CategorySettingsRow.UsesItemManifest"/>
-    /// flag, never on a category name — a future manifest-driven collection inherits the rule for free.
+    /// neighbors teaches the reader to skim past both. It is dropped only while there is at least one
+    /// container line to stand in for it. With none — no pass has reported yet, or every status it did
+    /// report was one this copy set has no line for — dropping this line as well would leave the panel
+    /// silent about a collection the user has switched on. A <i>skipped</i> manifest-driven collection
+    /// is a third case: why it was missed (the server's config has not arrived, the inventory is
+    /// unreadable, no consent group beneath it is switched on) exists nowhere else in the panel, so that
+    /// line is always owed. Keyed on the collector's own
+    /// <see cref="CategorySettingsRow.UsesItemManifest"/> flag, never on a category name — any
+    /// manifest-driven collection inherits the rule for free.
+    /// </para>
+    /// <para>
+    /// The rule belongs to manifest-driven collections alone, which is why it is keyed on
+    /// <see cref="CategorySettingsRow.UsesItemManifest"/> rather than on
+    /// <see cref="CategorySettingsRow.ReadsStorage"/>. A collection that reads the same containers
+    /// without being manifest-driven keeps its healthy chip: its facts are more than counts read out of
+    /// those containers, so the container lines do not say everything its chip does.
     /// </para>
     /// </remarks>
     /// <param name="row">The category row this line is about.</param>
     /// <param name="hasContainerLines">
     /// Whether the panel's container group ended up with at least one line in it — the thing a
-    /// suppressed manifest-driven collection is being suppressed in favour of. Asked about the LINES
+    /// suppressed manifest-driven collection is being suppressed in favor of. Asked about the LINES
     /// rather than the raw statuses: a status <see cref="SourceNoteText.Describe"/> has no copy for is
     /// dropped from the panel, so it cannot stand in for anything the reader can actually see.
     /// </param>

@@ -30,7 +30,8 @@ Two principles govern every upload:
 - **Monotonic writes.** Collections only grow. An ID absent from a snapshot means "not read
   this time" (list not loaded, category disabled) — never "lost" — so a partial upload is
   always safe. Acquisition flags are set, never auto-unset, and rows are never deleted by a
-  sync.
+  sync. The `glamour` category is the exception by design: it reports current holdings, under
+  its own rules (see its bullet below).
 
 ## Transport basics
 
@@ -100,6 +101,8 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
 {
   "categories": {              // per-category kill switches (true = enabled)
     "achievements": true,
+    "appearance": true,        // must be named to be collected at all (see below)
+    "glamour": true,           // must be named to be collected at all (see below)
     "items": true,
     "minions": true,
     "mounts": true,
@@ -108,6 +111,7 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "orchestrionRolls": true,
     "questSequences": true,
     "quests": true,
+    "tamedBeasts": true,
     "tripleTriadCards": true,
     "tripleTriadNpcs": true
   },
@@ -141,6 +145,11 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   collecting/sending disabled categories. The server enforces them too, but a compliant
   client saves the round trips. A gated category ships as an explicit `false`, never omitted —
   an absent key means "the server has never heard of it", which the client reads as enabled.
+  **`glamour` and `appearance` are the exception:** they are worth reading and sending only to a
+  server that knows them, so for these two an absent key — or no `/config` yet — reads as
+  **off**, and the plugin neither collects nor sends them; its settings show "Not offered by the
+  server yet." A server that implements them sends either as `false` with a `categoryNotes`
+  sentence while the feature is closed to that user, which the plugin shows instead.
 - **Category notes.** `categoryNotes` is optional, keyed like `categories`, and explains why a
   category is off. It is absent entirely when nothing needs explaining, never an empty map.
   **Presence is the whole signal** — the client prints the sentence verbatim and never parses
@@ -235,7 +244,21 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
     "orchestrionRolls": [1, 113, 580], // Orchestrion sheet row ids — the tunes, not the roll items
     "tamedBeasts": [{"number": 30}], // bestiary numbers == XBMPet row ids; rank/battlehorn optional
     "tripleTriadCards": [1, 475], // TripleTriadCard sheet row ids
-    "tripleTriadNpcs": [2293762] // TripleTriadResident row ids (== TripleTriad row ids)
+    "tripleTriadNpcs": [2293762], // TripleTriadResident row ids (== TripleTriad row ids)
+    "glamour": { // current holdings, not history; an unread container's list is omitted
+      "version": 1,
+      "dresser": [{"id": 2642, "hq": true, "stains": [12, 0]}], // one entry per loose dresser slot
+      "outfitGlamours": [{"outfitId": 45094, "pieceIds": [2642, 2965]}], // one per outfit slot
+      "armoire": [3747],
+      "held": [{"id": 2965, "count": 2}] // gear outside the dresser and Armoire, copies summed
+    },
+    "appearance": { // one record about the local character
+      "version": 1,
+      "customize": {"Race": 1, "Gender": 1, "ModelType": 1, "Height": 50, "Tribe": 2 /* …21 more */},
+      "glasses": [0, 0],
+      "fcCrest": {"head": false, "body": true, "offHand": false},
+      "weaponHidden": false, "hatHidden": false, "visorToggled": false, "vieraEarsHidden": false
+    }
   },
   "collectionScopes": { // optional — per-category completeness; omitted key/object == "partial"
     "orchestrionRolls": "full", // "full" | "partial"
@@ -264,15 +287,25 @@ Field constraints:
 | `trigger`                | `interval` \| `login` \| `manual` \| `unlock`                                            |
 | id-list categories       | arrays of positive integers, **max 50,000 ids per category**                             |
 | `items`                  | `{id: positive int, count: non-negative int, hqCount?: non-negative int, collectableCount?: non-negative int, fresh: boolean}[]`, **max 10,000 entries** |
-| `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
+| `itemSources`            | optional object keyed by source name, always sent with `glamour`; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
 | `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet for what the deployed server enforces |
+| `glamour`                | `{version: 1, dresser?, outfitGlamours?, armoire?, held}` — `dresser` `{id, hq?: true, stains?: [int, int]}[]`, **max 1,000**; `outfitGlamours` `{outfitId, pieceIds: int[]}[]`, **max 1,000**; `armoire` id array, **max 5,000**; `held` `{id, count: int ≤ 9,999}[]`, **max 20,000**. Past any limit, or with any other violation, this key alone is dropped and named in `rejectedCategories`; the rest of the upload applies — see its bullet for what the deployed server enforces |
+| `appearance`             | `{version: 1, customize, glasses, fcCrest, weaponHidden, hatHidden, visorToggled, vieraEarsHidden}` — `customize` maps each of 26 fixed names to a raw byte (int 0–255); `glasses` two ints; `fcCrest` `{head, body, offHand}` booleans; the four toggles booleans. Any violation drops this key alone and names it in `rejectedCategories`; the rest of the upload applies — see its bullet for what the deployed server enforces |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
   than the server keeps working (payload evolution is additive-only). An older plugin simply
   omits keys, which is safe under monotonic writes.
+- **A bad `glamour` or `appearance` drops that key alone.** When either object fails validation —
+  the wrong shape, a list past its cap, a `version` the server does not accept — the server drops
+  that one key, applies the rest of the upload, and names the dropped key in the 200 response's
+  `rejectedCategories`. Envelope errors and bad id-list categories still fail the upload as a
+  whole, with a **400** that applies nothing. Both objects are versioned, and the server accepts
+  `version: 1` only. Inside either object a field the server does not name is dropped silently
+  rather than rejected, so a new field ships with a new `version`; under the same number the
+  server would discard it without a word.
 - **Ids the server's catalog does not recognize are ignored, never an error.** The
   plugin is a dumb fact-reader and should send every id the game reports; the server's
   catalog tables are deliberately pruned subsets (quests especially) and can trail the
@@ -282,7 +315,8 @@ Field constraints:
   everything on every sweep, so a dropped id lands as soon as the catalog imports it.
   Dropped ids are simply absent from the `written` counts.
 - An **empty array carries no facts** and writes nothing (absence and emptiness are both "no
-  information").
+  information"). Inside `glamour` the two differ: an empty list there reports a container read
+  and found empty (see its bullet).
 - **Explicit zeros.** An `items` entry PRESENT — even with `count: 0` — is a reported fact
   for that id; an id ABSENT from the list was not scanned and carries no information. What
   a count *means* is decided per id by which manifest group the id belongs to — see the
@@ -301,8 +335,22 @@ Field constraints:
   optional `total` is how many the character has, when the game can say — `3` of `5`
   scanned means two retainers contribute nothing yet. Both are counts only; nothing
   identifies an individual retainer. `inventory` covers the containers read live each pass
-  (bags, equipped gear, the armoury chest, crystals); `currencies` covers the game's
-  currency subsystem (gil, tomestones, scrips, and the rest), also read live. The accepted
+  (bags, equipped gear, the armory chest, crystals); `currencies` covers the game's
+  currency subsystem (gil, tomestones, scrips, and the rest), also read live. `itemSources`
+  also accompanies every `glamour` upload, with the same keys and states (every source but
+  `currencies`, which only `items` reports), whether or not `items` is switched on: it is how
+  the server decides which containers the snapshot read. One entry per
+  source serves both categories, because both gate their reads and build these entries from the
+  same code. For `glamour` the state also decides whether a missing piece is evidence. A source counts as
+  **current** when it is `inventory` `live`; `armoire` `loaded`; `glamourDresser` or `saddlebag`
+  `cached` (the game refreshes those two copies when their window closes, a copy counts as
+  `cached` only once that has happened this session, and the glamour category never reads while
+  one is open); or `retainers` `cached` with `count` equal to `total`. `unscanned` never counts. A
+  character that has not unlocked its chocobo companion has no saddlebag, so `saddlebag` is
+  `cached` with nothing from it: an empty source, current without a read. The plugin decides
+  "has none" only once the player's state has loaded. A character with no retainers stays
+  `unscanned`, because the game offers no signal that separates "has none" from "not loaded
+  yet". The accepted
   source keys are a **closed set** (`inventory`, `saddlebag`, `retainers`, `armoire`,
   `glamourDresser`, `currencies`) — an unrecognized key fails validation and rejects the
   whole upload, so a new source key ships server-first, and any source the plugin tracks
@@ -365,7 +413,7 @@ Field constraints:
   row ids (0–23, and **0 — Freelancer — is a real job**); values come from the occult
   instance director, which the plugin can read only inside an Occult instance. `jobs` may be
   sent as an **empty map** — the server accepts it and an empty map writes nothing — which is
-  how a knowledge sighting recorded outside an instance still reaches the server. Job writes
+  how a knowledge sighting taken outside an instance still reaches the server. Job writes
   are monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
   the TRUE knowledge level from the review window (the in-instance HUD shows only the
   zone-synced level), sent with the time the window was opened; the server keeps the
@@ -399,6 +447,70 @@ Field constraints:
   window whose total disagrees with the game's own data at all. Until all three agree it is
   `"partial"` and an absent number means only "not seen". The server writes `plugin_acquired`
   monotonically, insert-only, stamping the upload time on first sight.
+- **`glamour` semantics — current holdings.** ⚠️ *The deployed server does not implement this
+  category. Its `/config` does not name it, so the plugin neither reads nor sends it (a key that
+  did arrive would be stripped under the unknown-key rule), and none of the validation or clearing
+  described here happens on that server; this describes what the plugin sends to a server that
+  names it. The deployed server wins over this doc, as always.* Unlike every other
+  category, `glamour` is what the character holds **now**, not a record that only grows: for a
+  source read as current (see `itemSources` above), a piece missing from it has left it. The server
+  tracks storage per container, clearing a piece from a container that was read and no longer holds
+  it. The server's ownership flag for a piece is slower to clear. An **all-current miss** is an upload whose
+  sources were all current and whose whole snapshot lacks the piece; the flag clears only on a
+  second all-current miss at least 25 minutes after the first, and a miss inside that gap writes
+  nothing. A manual mark is never cleared; it shows as disputed. So absent and empty are different
+  facts: a list is **omitted** when its container was not read (`dresser` and `outfitGlamours`
+  while `glamourDresser` is unscanned, `armoire` while `armoire` is unscanned) and `[]` when it was
+  read and holds nothing. `version` and `held` are always present.
+  - `dresser` has one entry per loose dresser slot, so two copies are two entries. `id` is the base
+    item id; `hq: true` marks a high-quality copy, and an absent `hq` means normal quality. `stains`
+    holds the two dye channels (0 = undyed) only when they were readable this pass — the game keeps
+    them only in the dresser's live copy, which is loaded in the zone where the dresser was opened —
+    so an absent `stains` means unknown, never undyed. An outfit slot never appears here.
+  - `outfitGlamours` has one entry per outfit slot. `outfitId` is the `MirageStoreSetItem` row id,
+    which is the outfit item's id, and repeats when two copies are stored. `pieceIds` lists the
+    pieces currently stored in it, sorted and distinct, and may be `[]`. No stains or quality:
+    storing an outfit removes its dyes.
+  - `armoire` lists the item ids the Armoire holds, readable only once the player has opened it
+    that session.
+  - `held` has one entry per base id, its `count` the copies summed over bags, equipped gear, the
+    armory chest, the saddlebag, retainers (their bags and equipped gear), and the market listings
+    of the retainer summoned most recently (read additively; listings on other retainers are not
+    visible). Glamour gear only — an item with an equip slot, soul crystals excluded — and never the
+    dresser or the Armoire, which have their own lists.
+  - The plugin skips the category (absent, so nothing clears) while a storage window is open (the
+    Glamour Dresser and its outfit-glamour window, the Armoire, the saddlebag) or a summoning bell
+    is in use; when the inventory cannot be read — no inventory is available,
+    bags, equipped gear or an armory chest are not loaded, or a remembered retainer cannot be read;
+    when a dresser reading cannot be interpreted; and when a game sheet it needs cannot be read. A
+    list or held count past its limit withholds the whole category too, never truncated or
+    clamped, since a shortened list would read as pieces removed. It is sent on full sweeps only
+    (`login`, `interval`, `manual`), never on an `unlock` upload, and carries no
+    `collectionScopes` declaration.
+- **`appearance` semantics.** ⚠️ *The deployed server does not implement this category. Its
+  `/config` does not name it, so the plugin neither reads nor sends it (a key that did arrive would
+  be stripped under the unknown-key rule), and none of the validation described here happens on
+  that server; this describes what the plugin sends to a server that names it. The deployed server
+  wins over this doc, as always.* One record describing how the local character looks, sent
+  whole each time. It is versioned, and a layout change ships as a new `version`; the server
+  accepts `version: 1` only (see the bad-key bullet above). `customize` always carries all 26 keys,
+  named and ordered exactly as the
+  game's customization bytes: `Race`, `Gender`, `ModelType`, `Height`, `Tribe`, `FaceType`,
+  `HairStyle`, `HasHighlights`, `SkinColor`, `EyeColor`, `HairColor`, `HairColor2`, `FaceFeatures`,
+  `FaceFeaturesColor`, `Eyebrows`, `EyeColor2`, `EyeShape`, `NoseShape`, `JawShape`, `LipStyle`,
+  `LipColor`, `RaceFeatureSize`, `RaceFeatureType`, `BustSize`, `Facepaint`, `FacepaintColor`. Each
+  value is the raw byte — a color byte is a palette index, not a color. Five bytes are packed,
+  carrying a flag in bit 7 (`0x80`): byte 7 `HasHighlights` (highlights on), byte 12
+  `FaceFeatures` (bits 0–6 switch facial features 1–7 on, bit 7 is the legacy tattoo), byte 16
+  `EyeShape` (small iris), byte 19 `LipStyle` (lipstick) and byte 24 `Facepaint` (reversed). They
+  travel raw, and the server stores `customize` exactly as sent, as the 26 named raw bytes: it
+  unpacks nothing, and the site's fitting room unpacks the packed bytes when it reads them.
+  `glasses` is always two `Glasses` sheet row ids; the second slot is unused in practice and
+  arrives as 0. `fcCrest` says per slot whether the free company crest is shown, and the four
+  toggles are reported as shown in game. Read from the local player only; the plugin skips the category when no
+  character is loaded, while the character is transformed (drawn as something other than
+  themselves), and when the read's size disagrees with the plugin's layout table. Like `glamour`,
+  it is sent on full sweeps only, never on an `unlock` upload.
 
 #### Response (200)
 
@@ -420,26 +532,43 @@ Field constraints:
   "provenSteps": 3, // present iff items were applied and relic-proof derivation succeeded
   "itemCounts": 1268, // rows written to item-count storage by this upload's items
   "skippedCategories": ["minions"], // present iff the server stripped disabled categories from this payload
+  "rejectedCategories": ["appearance"], // present iff a glamour or appearance key failed validation and was dropped alone; never overlaps skippedCategories
   "storedSequences": 1, // present iff questSequences survived the strip and stored; NEW observations this upload (0 = all already known)
   "storedProgression": 3, // present iff occultProgression survived and stored; jobs whose value ADVANCED (knowledge not counted)
-  "storedRecords": 5 // present iff occultRecords survived and stored; NEW sticky rows this upload
+  "storedRecords": 5, // present iff occultRecords survived and stored; NEW sticky rows this upload
+  "storedGlamour": 412, // present iff glamour survived and stored; known pieces the snapshot holds
+  "storedAppearance": true // present iff appearance survived and was processed; false = not applied
 }
 ```
 
-Optional keys are **omitted rather than null**, so the plugin can feature-detect them.
+Optional keys are **omitted rather than null**, so the plugin can feature-detect them. The
+example lists every optional key at once for reference; a real response never names a category
+in `skippedCategories` or `rejectedCategories` and also carries that category's `stored…` key.
 `items` never appears in `written` (it feeds relic proofs and count storage, not a
 collection count). The plugin reads `written` as a plain category-keyed map, so a category
 it has never heard of arrives intact and a server that names fewer causes no error.
-`itemCounts`, `storedSequences`, `storedProgression`, and `storedRecords` are
-informational, like `written`: the plugin ignores them — no plugin logic may branch on
-them.
+
+- **`rejectedCategories`** names each key dropped under the bad-key rule above (only `glamour`
+  and `appearance` can appear); it is omitted when nothing was rejected, never an empty array,
+  and never names a key that `skippedCategories` names.
+- **`storedGlamour`** is the number of known pieces the stored snapshot holds. It is absent when
+  the category was skipped, rejected or failed.
+- **`storedAppearance`** is `true` when the record was applied and `false` when it was not: the
+  owner has pinned a look on the site, or a newer report already landed. It is absent when the
+  category was skipped, rejected or failed.
+- These three keys, like the two categories, come only from a server that implements them (see
+  the ⚠️ notes on `glamour` and `appearance` above).
+
+`itemCounts`, `storedSequences`, `storedProgression`, `storedRecords`, `storedGlamour` and
+`storedAppearance` are informational, like `written`: the plugin ignores them — no plugin
+logic may branch on them.
 
 #### Status codes
 
 | Status  | Body                                                            | Plugin behavior                                                                                                       |
 | ------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **200** | see above                                                       | Applied.                                                                                                             |
-| **400** | `{"error": "invalid_payload", "issues": {…}}`                   | Validation failed; `issues` is `{fieldErrors, formErrors}`. A non-JSON body gets the same shape with a `formErrors` message. Don't retry unchanged. |
+| **400** | `{"error": "invalid_payload", "issues": {…}}`                   | Validation failed; `issues` is `{fieldErrors, formErrors}`. A non-JSON body gets the same shape with a `formErrors` message. A bad `glamour` or `appearance` alone is not a 400 (see `rejectedCategories`). Don't retry unchanged. |
 | **401** | `{"error": "invalid_token"}` + `WWW-Authenticate: Bearer`       | Token missing/malformed/unknown. Stop; user must generate a new token.                                               |
 | **403** | `{"error": "<code>", "name": "…", "world": "…"}`               | Character resolution failed; `<code>` says why (see [403 recovery](#character-binding)). Render the fix for that code. Don't retry until the user acts. |
 | **405** | —                                                               | Wrong method (the route accepts only POST).                                                                          |
@@ -575,7 +704,8 @@ players.
 
 ## Behavior the plugin author should know
 
-- **`collectionScopes` — the one way absence becomes meaningful.** A category's list
+- **`collectionScopes` — the one way absence becomes meaningful in an id list.** (`glamour`, a
+  current-holdings snapshot rather than an id list, has its own rules.) A category's list
   normally proves only what IS present. Declaring it `"full"` asserts *this array is the
   character's complete set for this category at upload time* — send it only when the
   collector genuinely enumerated its whole domain and got an answer for every candidate.
@@ -594,7 +724,7 @@ players.
   A category may only declare `"full"` when its collector can enumerate everything the
   **server's catalog** may contain, not merely everything the game will answer for —
   `tripleTriadNpcs` withholds the claim for exactly that reason (see the **Triple Triad id
-  spaces** note above, which records the opponents the game keeps no beaten flag for). More categories declare `"full"` than the server acts on; a declaration the server
+  spaces** note above, which describes the opponents the game keeps no beaten flag for). More categories declare `"full"` than the server acts on; a declaration the server
   records and ignores still has to be honest, because the server may begin acting on it
   without a plugin change.
 
@@ -605,7 +735,7 @@ players.
   an id the catalog does not know is dropped and never becomes markable. That skew analysis is
   per-catalog, and has been done for these two. The other declaring categories rest on their own
   argument — for the sheet-backed ones, that the game answers for every sheet row the catalog
-  draws from — recorded beside each `CategoryInfo` in the plugin's collector registry.
+  draws from — documented beside each `CategoryInfo` in the plugin's collector registry.
 - **`acquiredAt` timestamps.** An `unlock`-triggered upload stamps the upload moment as the
   acquisition time for every category in it. Snapshot uploads (`interval`/`login`/`manual`)
   stamp the upload time for achievements, minions, mounts, and Triple Triad cards, for
@@ -623,12 +753,13 @@ players.
   nothing.
 - **Count-tracked items.** For ids in the materials and currencies groups, the reported
   counts are the current total, replacing the stored value — including downward, including
-  to zero. This is the one deliberate exception to grow-only semantics, and it is scoped to
-  counts: absence still never clears anything, and proof/collection flags remain monotonic.
+  to zero. This is a deliberate exception to grow-only semantics (`glamour` is the other), and
+  it is scoped to counts: absence still never clears anything, and proof/collection flags
+  remain monotonic.
   GC seals are three independent count-tracked currencies (every Grand Company's balance
   persists in the game and is reported; the website resolves which is spendable from the
   character's Lodestone affiliation). Which currency classes the plugin can read, and
-  through which game mechanism, is recorded in [currency-coverage.md](currency-coverage.md)
+  through which game mechanism, is documented in [currency-coverage.md](currency-coverage.md)
   — the reference for curating currency ids into manifest groups.
 - **Rate limits and backoff.** The default limit is 60 uploads per token per hour. Honor
   `Retry-After` on 429 and 503 and back off — do not tight-loop retries.

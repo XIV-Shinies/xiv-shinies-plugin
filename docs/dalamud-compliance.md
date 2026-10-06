@@ -12,11 +12,11 @@ response fields) and a field-by-field contract conformance audit.
 
 | Rule | How this plugin complies | Where |
 |---|---|---|
-| **Local player only** — never collect account IDs or data of other player characters, in any form, regardless of intended use (ban-enforced) | Only the local player is ever read: identity via `IPlayerState`, unlocks via `IUnlockState`, neither of which exposes other-player data. **No object-table or party-list access exists anywhere in the codebase.** The item scan reads the player's own storage only, the live occult tracker reads world state only, the occult progression collectors read the local character's own data only, and the bestiary watcher reads one window the player opens themselves — each is broken down below, because each touches an API that *could* have exposed another player and deliberately does not. | `Sync/CharacterIdentity.cs`, `Collectors/ItemCollector.cs`, `Occult/OccultInstanceReader.cs`, `Collectors/OccultProgressionCollector.cs`, `Collectors/OccultRecordsCollector.cs`, `Occult/KnowledgeObserver.cs`, `Beastmaster/TamedBeastObserver.cs` |
+| **Local player only** — never collect account IDs or data of other player characters, in any form, regardless of intended use (ban-enforced) | Only the local player is ever read: identity via `IPlayerState`, unlocks via `IUnlockState`, and the character itself, for its appearance, via the game's `Control.GetLocalPlayer()` — none of which exposes other-player data. **No object-table or party-list access exists anywhere in the codebase.** Six surfaces touch an API that *could* have exposed another player and deliberately do not — the item scan, the glamour and appearance collectors, the live occult tracker, the occult progression collectors and the bestiary watcher; each is broken down under **Where "local player only" is load-bearing** below. | `Sync/CharacterIdentity.cs`, `Collectors/ItemCollector.cs`, `Collectors/GlamourCollector.cs`, `Collectors/StorageSources.cs`, `Collectors/AppearanceCollector.cs`, `Occult/OccultInstanceReader.cs`, `Collectors/OccultProgressionCollector.cs`, `Collectors/OccultRecordsCollector.cs`, `Occult/KnowledgeObserver.cs`, `Beastmaster/TamedBeastObserver.cs` |
 | **Hash player identifiers client-side** | The ContentId is SHA-256-hashed on the machine with a fixed byte representation (deterministic across sessions). The raw ulong never travels, is never logged, and is never persisted. Verified in-game: logs and config contain no raw ContentId. | `Sync/ContentIdHash.cs` |
 | **HTTPS only, trusted CA, DNS hostname (never a raw IP)** | The backend URL is normalized and validated before any request: raw IP addresses are refused in every spelling (dotted, and the numeric/hex encodings the OS still resolves); plaintext HTTP is refused for remote hosts (tolerated only for loopback development); auto-redirects are disabled so the server cannot hand the token to an unvalidated host. The production server uses a Let's Encrypt certificate. A response body larger than a few MB is refused before it is buffered, so a hostile backend cannot exhaust the game's memory. | `Api/BackendUrl.cs`, `Api/ApiClient.cs` |
 | **Backend URL user-overridable** | The base URL is a persisted setting, overridable by editing the plugin's config file (there is deliberately no UI for it). Because the token is sent to whatever host is configured, a non-default backend additionally requires setting an acknowledgment flag in the same config file — until it is set, the client refuses to send anything (unit tests prove zero requests leave, not merely an error status). Every user-facing sentence that says where data goes or where the user must act names the configured host, including the two identity-disclosure cards, and the profile link opens the configured server. The brand link row and the manifest punchline keep the official name, since neither describes the sync target. | `PluginSettings.BaseUrl`, `Api/ApiClient.cs`, `tests/…/ApiClientTests.cs` |
-| **Minimize data sent** | Uploads carry ID numbers and item counts only — no names of things, no timestamps of acquisition, no inventory contents beyond the counts of items the server explicitly asked about. `collectionScopes` adds one per-category word saying whether the plugin read that collection completely; it names no id and is disclosed on the consent surface, because it lets the site flag a manual mark the plugin did not find. Currency balances (gil included) travel only for currency ids the server's manifest names AND the user's opted-in group covers, disclosed in the consent copy. Per-source scan states (`itemSources`) are status words and counts only — nothing identifies an individual retainer or container slot — and the consent copy names them, including the retainer count, because a headcount is a fact about the account rather than a count of any item asked about. Categories and groups the user did not opt into are never collected. | `Api/SyncRequest.cs`, `Collectors/CollectorGate.cs`, `Collectors/ManifestConsent.cs` |
+| **Minimize data sent** | Uploads carry ID numbers, counts and raw game values only — no names of things, no timestamps of acquisition. Every collection names each kind of data it sends on its consent line, and categories and item groups the user did not opt into are never collected. Gear & glamour storage and character appearance stay unread and unsent until the server's `/config` names them. What each upload carries — item counts, gear and its storage, quality and dyes, appearance bytes, currencies, `itemSources`, `collectionScopes` — is broken down under **What each upload carries** below. | `Api/SyncRequest.cs`, `Collectors/CollectorGate.cs`, `Collectors/ManifestConsent.cs`, `Collectors/CollectorRegistry.cs`, `Glamour/GlamourFacts.cs`, `Appearance/AppearanceSnapshot.cs` |
 | **Explicit opt-in before non-essential data collection; no silent first-run behavior** | Consent is enforced in code, not just reflected in UI: `UploadGate.CanContactServer` requires completed onboarding **and** the master switch **and** a usable token before any request, including the config poll — a fresh install talks to nobody. The wizard discloses what each category sends before the user can enable it, on a flat list with every checkbox visible. Every other consent control sits under the settings' outer Collections header, and it wears a "New" chip whenever anything beneath it has never been shown and the server permits it, so folding cannot bury a collection or an item group. Two consents stand for later, detailed below: the live occult tracker's toggle, and `AutoEnableNewFeatures`. Each setting is migrated OFF for configs written before it carried its present meaning — a silent default is consent by omission. | `Sync/UploadGate.cs`, `Occult/OccultGate.cs`, `PluginSettings.ApplyUpgradeMigrations`, `PluginSettings.AutoEnableUnseenCategories`, `Collectors/ManifestConsent.cs`, `Plugin.cs` (load order), `Windows/MainWindow.Wizard.cs`, `Windows/MainWindow.Consent.cs` |
 | **No interaction with game servers without direct user action** | The plugin never interacts with the game's servers at all: it reads the local client's memory and speaks HTTPS to the XIV Shinies server only. | whole design; `Collectors/` |
 | **No plugin-usage fingerprinting** | There is no analytics identifier of any kind. The auth token is a user-supplied credential, revocable on the website. The upload log is in-memory only and clears on unload. A development-build helper can fill it with fabricated rows for screenshots; it sits inside `#if DEBUG`, so it does not exist in any Release build. | `Sync/UploadLog.cs`, `Sync/UploadLogSeed.cs` |
@@ -37,13 +37,33 @@ response fields) and a field-by-field contract conformance audit.
   the plugin declares it read *completely* is the one case where an absent id carries meaning,
   and even then the meaning is "worth your review", never a deletion: the server unmarks
   nothing, and the plugin declares completeness only for a collection whose read answers for
-  every candidate the site's catalog can hold.
-- **Where "local player only" is load-bearing.** Four surfaces touch an API that could have
+  every candidate the site's catalog can hold. The gear & glamour storage collection is the
+  deliberate exception: it reports current holdings, so for a source read as current a missing
+  piece reads as gone. The plugin keeps that honest by leaving out any container it did not read,
+  withholding the whole collection rather than truncating it, and skipping it whenever it cannot be
+  sure what it reads is current: while a storage window is open or a retainer bell is in use,
+  among the other cases the API contract lists. Under the contract, the server clears
+  its own record only on a second miss with every source current, at least 25 minutes after the
+  first, and never clears a manual mark.
+- **Where "local player only" is load-bearing.** Six surfaces touch an API that could have
   exposed another player. The **item scan** reads the player's own storage: their retainers'
   inventories through `ItemFinderModule.RetainerInventories` **values** (the retainer-ID keys are
   never read and never leave the process; `RetainerManager` supplies a count only), their glamour
   dresser through `GlamourDresserItemIds` paired with `GlamourDresserItemSetUnlockBits`, and their
-  currency balances through the game's `Currency` container plus `CurrencyManager`. The **live
+  currency balances through the game's `Currency` container plus `CurrencyManager`. The **glamour
+  collector** reads the same storage through the same gates (`StorageSources`), and adds two
+  reads of the player's own: the live `RetainerMarket` container (the market listings of the
+  retainer the player summoned most recently) and the game's live dresser copy (`MirageManager`)
+  for dye bytes. Before reading, it asks only whether four storage windows
+  (`MiragePrismPrismBox`, `MiragePrismPrismSetConvert`, `Cabinet`, `InventoryBuddy`) exist and
+  whether the summoning-bell condition is set; it reads nothing from those windows. Both
+  collectors also ask the game, through `UIState`, whether the local player has completed the
+  quest that unlocks the chocobo companion, which decides whether the character has a saddlebag
+  at all. The **appearance collector** reaches the character through
+  `Control.GetLocalPlayer()`, the game's
+  own reference to the local player, and copies its customization bytes, glasses ids, crest bits
+  and display toggles from that one character's `DrawData`; the object table, where every nearby
+  character lives, is never touched. The **live
   occult tracker** reads world state only — the instance's CE container
   (`PublicContentOccultCrescent`) and Dalamud's FATE table — carrying forward encounter ids,
   phases, and server timestamps alone; participant counts and positions never leave the reader.
@@ -57,6 +77,25 @@ response fields) and a field-by-field contract conformance audit.
   have it on screen. It listens for that one window by name and reads nothing else; the chat and
   log-message channels, which carry more than the local character, are not subscribed to anywhere
   in the plugin.
+- **What each upload carries.** Inventory contents travel in two scoped forms, each behind its own
+  opt-in. The items scan sends counts only for the items the server explicitly asked about. The
+  gear & glamour storage collection sends gear alone (items with an equip slot, soul crystals
+  excluded — materials, consumables and other non-gear never travel): each piece's id and copy
+  count, which pieces sit in the Glamour Dresser, its outfit glamours and the Armoire, and a loose
+  dresser piece's quality and dyes. The character appearance collection sends the local
+  character's own character-creator choices as the raw bytes the game stores (palette indices, not
+  colors), the glasses worn, where the free company crest is shown, and four display toggles. Both
+  of those stay unread and unsent until the server's `/config` names them (see below). Currency
+  balances (gil included) travel only for currency ids the server's manifest names AND the user's
+  opted-in group covers, disclosed in the consent copy.
+  Per-source scan states (`itemSources`) are status words and counts only — nothing identifies an
+  individual retainer or container slot — and both consent lines that send them name them,
+  including the retainer count, because a headcount is a fact about the account rather than a
+  count of any item asked about. The saddlebag's state also reflects whether the character has a
+  saddlebag at all: one without a chocobo companion reports it read and empty. `collectionScopes`
+  adds one per-category word saying whether the
+  plugin read that collection completely; it names no id and is disclosed on the consent surface,
+  because it lets the site flag a manual mark the plugin did not find.
 - **Consent is code, not UI.** The gates (`UploadGate`, `CollectorGate`) are pure, unit-tested
   classes on the request path. Unchecking a box does not merely hide a button; it makes the
   request impossible.
@@ -78,19 +117,29 @@ response fields) and a field-by-field contract conformance audit.
   offer the choice at all; finishing setup in that state records the answer the user never got to
   give, and records it as OFF (`PluginSettings.SettleOccultConsent`). The default never survives a
   consent moment the user was not actually shown. `AutoEnableNewFeatures` defaults OFF and is the
-  only route by which a collection is ever switched on without its own tick;
-  `PluginSettings.AutoEnableUnseenCategories` acts on it at load and only there — for an onboarded
-  install that ticked the box, only on collections this install has never shown, never on one
-  whose scope depends on separately-answered consent groups, and never over a collection the user
-  has been shown and switched off. Anything it switches on is wearing its "New" chip when the user
+  only route by which a collection is ever switched on without the user acting on the consent
+  list; `PluginSettings.AutoEnableUnseenCategories` acts on it at load and only there — for an
+  onboarded install that ticked the box, only on collections this install has never shown, never
+  on one whose scope depends on separately-answered consent groups, never on one that declares
+  `RequiresOwnOptIn` because it describes the character itself rather than what it has done or
+  holds (the character's appearance), and never over a collection the user has been shown and
+  switched off. `AutoEnableScope` holds the two exclusions that depend on the kind of collection,
+  and is unit-tested. Anything it switches on is wearing its "New" chip when the user
   next opens the window, or waiting to once the server permits the collection.
-- **A collection the server has switched off is not introduced yet.** It raises no "New" chip and
-  is not recorded as shown on any surface, so its introduction waits for the day it can actually
-  be used, and nothing is collected for it meanwhile. The server may supply one sentence about it
-  — `categoryNotes`, explaining why it is off — and that sentence's reach is bounded structurally:
-  it renders only where the plugin's own "switched off" line would have, which is only under a
-  collection the server disabled. It can never displace the collector-authored disclosure of what
-  a collection sends, and can never appear beside a checkbox the user is able to tick.
+- **A collection the server has switched off — or, for one that needs the server to name it, has
+  not named — is not introduced yet.** It raises no "New" chip and is not recorded as shown on any
+  surface, so its introduction waits for the day it can actually be used, and nothing is collected
+  for it meanwhile. The server may supply one sentence about it — `categoryNotes`, explaining why
+  it is off — and that sentence's reach is bounded structurally: it renders only where the
+  plugin's own "switched off" line would have, which is only under a collection the server
+  disabled. It can never displace the collector-authored disclosure of what a collection sends,
+  and can never appear beside a checkbox the user is able to tick.
+  Some collections need the server to name them before they count as offered at all — gear &
+  glamour storage and character appearance declare this (`CategoryInfo.RequiresServerSupport`).
+  For them a `/config` that never mentions the key, or no `/config` yet, reads as off rather than
+  on, so neither is read or sent until the server names it, and the row says "Not offered by the
+  server yet." rather than describing a decision nobody made. A note cannot replace that line
+  until the server names the collection; once it does, even as off, the ordinary rules above apply.
 - **`User-Agent: XIVShinies.SyncPlugin/<version>`** is sent on every request — our own
   convention, not a Dalamud rule, so the server can tell plugin traffic apart.
 - **Every string adopted from the server is bounded before it is kept, drawn, or logged**
@@ -107,9 +156,8 @@ response fields) and a field-by-field contract conformance audit.
   `Dalamud.Bindings.ImGui`'s `Text`, `TextColored`, `TextDisabled`, `TextWrapped` and
   `SetTooltip` all resolve to `igTextUnformatted`; the varargs `igText` family has no managed
   overload. A `%s` or `%n` in a server string therefore renders literally instead of reading the
-  stack. Recorded because the plugin draws server-authored text at several sites and nothing in
-  its own source states this — a future move to a binding that keeps printf semantics would
-  introduce a real crash-and-disclose vector everywhere at once, silently.
+  stack. The plugin draws server-authored text at several sites, so a binding with printf
+  semantics would make every one of them a crash-and-disclose vector at once.
 
 ## Keeping this document true
 

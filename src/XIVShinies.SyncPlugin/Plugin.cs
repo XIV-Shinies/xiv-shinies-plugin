@@ -106,6 +106,19 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 
+    /// <summary>
+    /// Access to the game's windows. Used to check whether a storage window (the Glamour Dresser
+    /// and its outfit-glamour window, the Armoire, the saddlebag) is open, so the glamour
+    /// collection can wait for it to close (see <see cref="GlamourCollector"/>).
+    /// </summary>
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+
+    /// <summary>
+    /// The game's condition flags for the local player. Used to check whether a summoning bell is
+    /// in use, so the glamour collection is not read while a retainer's windows are open.
+    /// </summary>
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
+
     // --- Plugin state --------------------------------------------------------------------
 
     /// <summary>The persisted settings object (see Configuration.cs).</summary>
@@ -198,8 +211,11 @@ public sealed class Plugin : IDalamudPlugin
                 Log);
 
             // Build the fact sources. Nothing reads the game until something explicitly runs them.
+            // The window and condition services are only asked questions during a pass; nothing
+            // subscribes to them, so they add nothing to tear down.
             collectors = CollectorRegistry.Create(
-                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver);
+                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver,
+                GameGui, Condition);
 
             // Establishes which collections count as already-seen, so the settings screen can badge
             // a genuinely new one. It runs here rather than with the migrations above because it
@@ -213,11 +229,10 @@ public sealed class Plugin : IDalamudPlugin
             // never-shown — and before the window exists, so a collection is switched on before
             // anything can draw it and mark it shown.
             //
-            // Only the collections a tick settles on its own — see
-            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
-            // separately must not be switched on for them.
+            // Only the collections that answer may reach: AutoEnableScope says which, and why the
+            // rest wait for the user to switch them on.
             var autoEnabled = Configuration.Settings.AutoEnableUnseenCategories(
-                ManifestConsent.FixedScopeCategoryKeys(collectors));
+                AutoEnableScope.EligibleCategoryKeys(collectors));
             if (autoEnabled.Count > 0)
             {
                 Configuration.Save();
@@ -406,12 +421,12 @@ public sealed class Plugin : IDalamudPlugin
 
         if (words.Length > 0 && words[0].Equals("dumpslots", StringComparison.OrdinalIgnoreCase))
         {
-            // Marshalled rather than called straight. Dalamud does not schedule command handlers —
+            // Marshaled rather than called straight. Dalamud does not schedule command handlers —
             // it invokes them where the command arrived, which is the game's main thread for chat
             // and the console's draw for the console — so the read is on the right thread by
             // circumstance, not by contract, and a bad read of game memory raises a
-            // corrupted-state exception no catch can rescue. RunOnFrameworkThread is a no-op when
-            // already there.
+            // corrupted-state exception no catch can rescue. When already on that thread,
+            // RunOnFrameworkThread runs the call in place.
             _ = Framework.RunOnFrameworkThread(
                 () => UnlockSlotAudit.Run(ClientState, DataManager, UnlockState, Log));
             return;

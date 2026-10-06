@@ -135,6 +135,37 @@ public sealed record ConfigResponse
     // key the map does not carry.
     public bool IsCategoryEnabled(string categoryKey) =>
         Categories is null || !Categories.TryGetValue(categoryKey, out var enabled) || enabled;
+
+    /// <summary>
+    /// True only when the server's category map names this category and switches it on.
+    /// </summary>
+    /// <remarks>
+    /// The stricter sibling of <see cref="IsCategoryEnabled"/>, for a collection that declares
+    /// <see cref="Collectors.CategoryInfo.RequiresServerSupport"/>: such a collection is only
+    /// worth uploading to a server that knows it, so a key the map does not carry reads as off
+    /// rather than on.
+    /// </remarks>
+    // The same null guard as IsCategoryEnabled, for the same reason: an explicit JSON null gets
+    // past `required`. Here a null map names nothing, so every category reads as off. `out var
+    // enabled` declares the variable TryGetValue fills; `&&` stops at the first false, so it is
+    // only read once the key is known to exist.
+    public bool IsCategoryExplicitlyEnabled(string categoryKey) =>
+        Categories is not null && Categories.TryGetValue(categoryKey, out var enabled) && enabled;
+
+    /// <summary>
+    /// True when the server's category map carries this category at all, switched on or off.
+    /// </summary>
+    /// <remarks>
+    /// Answers a different question from the two switches above: not "may this be sent?" but "has
+    /// the server made any decision about it?". The settings window asks it of a collection that
+    /// declares <see cref="Collectors.CategoryInfo.RequiresServerSupport"/>, to tell a collection
+    /// the server has not offered yet apart from one it has switched off — the two draw different
+    /// sentences. Kept here, beside the switches, so nothing outside this record reads
+    /// <see cref="Categories"/> directly and every reader gets the same null guard.
+    /// </remarks>
+    // An explicit JSON null map names nothing, the same reading the two switches above give it.
+    public bool NamesCategory(string categoryKey) =>
+        Categories is not null && Categories.ContainsKey(categoryKey);
 }
 
 /// <summary>

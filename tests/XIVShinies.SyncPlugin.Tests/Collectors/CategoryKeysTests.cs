@@ -25,6 +25,8 @@ public class CategoryKeysTests
     private static readonly Dictionary<string, string> ContractSpellings = new()
     {
         [nameof(CategoryKeys.Achievements)] = "achievements",
+        [nameof(CategoryKeys.Appearance)] = "appearance",
+        [nameof(CategoryKeys.Glamour)] = "glamour",
         [nameof(CategoryKeys.Items)] = "items",
         [nameof(CategoryKeys.Minions)] = "minions",
         [nameof(CategoryKeys.Mounts)] = "mounts",

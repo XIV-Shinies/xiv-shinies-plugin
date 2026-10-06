@@ -25,7 +25,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// collector, while the implementations themselves are verified by in-game QA.
 /// </para>
 /// </remarks>
-// An `interface` is a contract a class promises to fulfil — the same idea as a TypeScript
+// An `interface` is a contract a class promises to fulfill — the same idea as a TypeScript
 // `interface` used with `class Foo implements Bar`, except C# enforces it at compile time.
 public interface ICollector
 {
@@ -87,6 +87,48 @@ public interface ICollector
     /// group rows for free just by setting this flag on its own <see cref="CategoryInfo"/>.
     /// </remarks>
     bool UsesItemManifest { get; }
+
+    /// <summary>
+    /// True when this collection may be collected only once the server's <c>/config</c> names it and
+    /// switches it on (see <see cref="CategoryInfo.RequiresServerSupport"/>).
+    /// </summary>
+    /// <remarks>
+    /// Read by <see cref="CollectorGate"/> and the settings window rather than decided by either, so
+    /// a collection that needs the server to know it says so itself and no list of such collections
+    /// exists anywhere. False keeps the ordinary rule that a key the server never names reads as on.
+    /// </remarks>
+    bool RequiresServerSupport { get; }
+
+    /// <summary>
+    /// True when this collection's facts are one record about the character rather than a collection
+    /// of things (see <see cref="CategoryInfo.IsSingleRecord"/>).
+    /// </summary>
+    /// <remarks>
+    /// The upload log reads this to name the category without a count; self-description, like
+    /// <see cref="UsesItemManifest"/>.
+    /// </remarks>
+    bool IsSingleRecord { get; }
+
+    /// <summary>
+    /// True when this collection's facts come from the character's storage containers and its pass
+    /// reports their scan state (see <see cref="CategoryInfo.ReadsStorage"/>).
+    /// </summary>
+    /// <remarks>
+    /// The settings panel reads this to decide whether the storage container lines belong on screen;
+    /// self-description, like <see cref="UsesItemManifest"/>.
+    /// </remarks>
+    bool ReadsStorage { get; }
+
+    /// <summary>
+    /// True when the standing answer for new collections never reaches this one (see
+    /// <see cref="CategoryInfo.RequiresOwnOptIn"/>).
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AutoEnableScope"/> reads this to leave the collection out of the standing
+    /// "turn on new collections automatically" answer; self-description, like
+    /// <see cref="UsesItemManifest"/>.
+    /// </remarks>
+    bool RequiresOwnOptIn { get; }
 
     /// <summary>
     /// Reads the facts from the game, or explains why it could not.

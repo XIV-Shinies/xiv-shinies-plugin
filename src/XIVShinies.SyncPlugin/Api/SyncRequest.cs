@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using XIVShinies.SyncPlugin.Glamour;
 
 namespace XIVShinies.SyncPlugin.Api;
 
@@ -230,6 +231,18 @@ public static class SyncFacts
     /// </summary>
     public static JsonNode TamedBeasts(IReadOnlyList<TamedBeast> beasts) =>
         JsonSerializer.SerializeToNode(beasts, ApiJson.Options)!;
+
+    /// <summary>
+    /// Facts for the <c>glamour</c> category: one object describing the gear the character holds
+    /// and which container holds it.
+    /// </summary>
+    /// <remarks>
+    /// Serialized from the record rather than built by hand: every key is a fixed property name, so
+    /// the shared camelCase policy shapes them, and its omit-null rule is what leaves an unread
+    /// (null) container out of the object rather than writing it as null.
+    /// </remarks>
+    public static JsonNode Glamour(GlamourFacts facts) =>
+        JsonSerializer.SerializeToNode(facts, ApiJson.Options)!;
 }
 
 /// <summary>A beast the character has forged a pact with, and what is known about that pact.</summary>

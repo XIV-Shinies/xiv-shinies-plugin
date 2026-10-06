@@ -1,7 +1,10 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
+using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Glamour;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
@@ -156,6 +159,39 @@ public class PayloadCapsTests
         Assert.Empty(dropped);
         Assert.Same(collections, bounded);
         Assert.Same(collections["future"], bounded["future"]);
+    }
+
+    // The glamour category must be withheld, never truncated: the server reads it as current
+    // holdings, so a shortened list would report every piece left off as gone. GlamourSnapshot
+    // enforces the category's own caps by sending nothing instead. These caps only ever cut a
+    // category's top-level array, and glamour's facts are one object, so it must ride through whole
+    // even when a list inside it is longer than any cap here. This is the tripwire for a change
+    // that starts looking inside objects.
+    [Fact]
+    public void A_glamour_object_passes_through_untouched_whatever_its_inner_lists_hold()
+    {
+        var held = Enumerable.Range(1, PayloadCaps.MaxIdsPerCategory + 1)
+            .Select(i => new HeldPiece { Id = (uint)i, Count = 1 })
+            .ToArray();
+        var dresser = Enumerable.Range(1, PayloadCaps.MaxEntriesPerCategory + 1)
+            .Select(i => new DresserPiece { Id = (uint)i })
+            .ToArray();
+        var glamour = SyncFacts.Glamour(new GlamourFacts { Dresser = dresser, Held = held });
+
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode> { [CategoryKeys.Glamour] = glamour },
+            Skipped = new Dictionary<string, string>(),
+            CompleteKeys = new HashSet<string>(),
+        };
+
+        var (bounded, dropped) = PayloadCaps.Bound(snapshot);
+
+        Assert.Empty(dropped);
+        Assert.Same(snapshot, bounded);
+        Assert.Same(glamour, bounded.Collections[CategoryKeys.Glamour]);
+        Assert.Equal(held.Length, glamour["held"]!.AsArray().Count);
+        Assert.Equal(dresser.Length, glamour["dresser"]!.AsArray().Count);
     }
 
     // A truncated list is not the character's complete set, so the cut must retract the claim

@@ -97,6 +97,126 @@ public class UploadLogTests
         Assert.Null(category.Count);
     }
 
+    // --- A category whose facts are one record ---------------------------------------------
+    // Some categories are not a collection of things but one record about the character. Counted
+    // from their shape they would read as the number of fields in the record, nested entries
+    // included ("Appearance 36"), a number that means nothing to a reader, so the log names them
+    // without one.
+
+    // Facts for a single-record category, as a draft would see them. The shape is deliberately a
+    // flat object of several fields, which the shape count would report as several facts.
+    private static UploadLogEntry SingleRecordDraft(string factsJson, int minute = 0) =>
+        UploadLogEntry.Draft(
+            new DateTimeOffset(2026, 7, 10, 20, minute, 0, TimeSpan.Zero),
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode>
+                {
+                    ["appearance"] = JsonNode.Parse(factsJson)!,
+                },
+                Skipped = new Dictionary<string, string>(),
+                SingleRecordKeys = new HashSet<string> { "appearance" },
+            });
+
+    // "One record" is the count, so the content diff still compares it like any other category —
+    // with the fingerprint carrying the change, since the count never moves.
+    [Fact]
+    public void Draft_counts_a_single_record_category_as_one_record()
+    {
+        var category = Assert.Single(
+            SingleRecordDraft("""{"race":1,"tribe":2,"height":50}""").Categories);
+
+        Assert.Equal(1, category.Count);
+        Assert.True(category.IsSingleRecord);
+    }
+
+    // A record is one record even when its collector also reports a count of its own: the
+    // declaration says what the category IS, so it outranks a number about its contents.
+    [Fact]
+    public void A_single_record_outranks_a_count_its_collector_reported()
+    {
+        var entry = UploadLogEntry.Draft(
+            DateTimeOffset.UnixEpoch,
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode>
+                {
+                    ["appearance"] = JsonNode.Parse("""{"race":1,"tribe":2,"height":50}""")!,
+                },
+                Skipped = new Dictionary<string, string>(),
+                SingleRecordKeys = new HashSet<string> { "appearance" },
+                FactCounts = new Dictionary<string, int> { ["appearance"] = 26 },
+            });
+
+        Assert.Equal(1, Assert.Single(entry.Categories).Count);
+    }
+
+    // The flag is the snapshot's to give: a category it does not name is a collection of things,
+    // counted from its shape as always.
+    [Fact]
+    public void Draft_leaves_a_category_the_snapshot_does_not_name_as_a_collection()
+    {
+        var entry = UploadLogEntry.Draft(
+            DateTimeOffset.UnixEpoch,
+            SyncTrigger.Manual,
+            SnapshotWith(new Dictionary<string, JsonNode>
+            {
+                ["quests"] = JsonNode.Parse("[1,2,3]")!,
+            }));
+
+        var category = Assert.Single(entry.Categories);
+        Assert.Equal(3, category.Count);
+        Assert.False(category.IsSingleRecord);
+    }
+
+    // A single-record category that read none of what it is about still makes no claim, the same
+    // as any other category: no count rather than "one record".
+    [Fact]
+    public void A_single_record_category_that_read_nothing_keeps_no_count()
+    {
+        var entry = UploadLogEntry.Draft(
+            DateTimeOffset.UnixEpoch,
+            SyncTrigger.Manual,
+            new CollectionSnapshot
+            {
+                Collections = new Dictionary<string, JsonNode>
+                {
+                    ["appearance"] = JsonNode.Parse("""{"toggles":{}}""")!,
+                },
+                Skipped = new Dictionary<string, string>(),
+                SingleRecordKeys = new HashSet<string> { "appearance" },
+                NothingReadKeys = new HashSet<string> { "appearance" },
+            });
+
+        Assert.Null(Assert.Single(entry.Categories).Count);
+    }
+
+    [Fact]
+    public void A_single_record_category_whose_record_changed_is_flagged()
+    {
+        var newestFirst = new[]
+        {
+            SingleRecordDraft("""{"race":1,"tribe":2,"height":51}""", minute: 1),
+            SingleRecordDraft("""{"race":1,"tribe":2,"height":50}"""),
+        };
+
+        Assert.Contains("appearance", UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
+    [Fact]
+    public void A_single_record_category_whose_record_held_still_is_not_flagged()
+    {
+        var newestFirst = new[]
+        {
+            SingleRecordDraft("""{"race":1,"tribe":2,"height":50}""", minute: 1),
+            SingleRecordDraft("""{"race":1,"tribe":2,"height":50}"""),
+        };
+
+        Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
+    }
+
     // --- What the log calls unread ---------------------------------------------------------
 
     // A collection the user switched off is skipped, but nothing failed. Reporting it as unread
@@ -1122,6 +1242,25 @@ public class UploadLogTests
         Assert.Contains("sent: occultProgression=none_seen quests=3120", text);
     }
 
+    // A single-record category's count is always one, which tells the person debugging nothing; a
+    // word says what it is instead — one record, under the line's "sent:" heading.
+    [Fact]
+    public void Clipboard_text_reports_a_single_record_category_as_a_record()
+    {
+        var entry = SomeEntry() with
+        {
+            Categories = new[]
+            {
+                new UploadLogCategory("appearance", 1, "fp", IsSingleRecord: true),
+                new UploadLogCategory("quests", 3120),
+            },
+        };
+
+        var text = UploadLogText.ClipboardText("1.2.3", "https://xiv-shinies.com", new[] { entry });
+
+        Assert.Contains("sent: appearance=record quests=3120", text);
+    }
+
     // The backend is user-overridable, and "you are pointed at the wrong server" is a classic
     // support case — the dump must say which server the log is about.
     [Fact]
@@ -1433,6 +1572,43 @@ public class UploadLogTests
             "Phantom jobs", category, changed: false, proof: null, stepsProven: false);
 
         Assert.Equal(new[] { ("Phantom jobs (none seen)", false) }, spans);
+    }
+
+    // A single-record category is named without its count: "Appearance 1" would read as one of
+    // something, when the category is one record about the character.
+    [Fact]
+    public void Sent_spans_name_a_single_record_category_without_a_count()
+    {
+        var category = new UploadLogCategory("appearance", 1, "fp", IsSingleRecord: true);
+
+        var spans = UploadLogText.SentSpans(
+            "Appearance", category, changed: false, proof: null, stepsProven: false);
+
+        Assert.Equal(new[] { ("Appearance", false) }, spans);
+    }
+
+    [Fact]
+    public void Sent_spans_mark_a_changed_single_record_category()
+    {
+        var category = new UploadLogCategory("appearance", 1, "fp", IsSingleRecord: true);
+
+        var spans = UploadLogText.SentSpans(
+            "Appearance", category, changed: true, proof: null, stepsProven: false);
+
+        Assert.Equal(new[] { ("Appearance (changed)", true) }, spans);
+    }
+
+    // A single-record category that read nothing says so like any other: a bare name would claim
+    // the record went out read.
+    [Fact]
+    public void Sent_spans_say_none_seen_for_a_single_record_category_with_no_count()
+    {
+        var category = new UploadLogCategory("appearance", Count: null, "fp", IsSingleRecord: true);
+
+        var spans = UploadLogText.SentSpans(
+            "Appearance", category, changed: false, proof: null, stepsProven: false);
+
+        Assert.Equal(new[] { ("Appearance (none seen)", false) }, spans);
     }
 
     // --- The Sent column's order ---------------------------------------------------------------

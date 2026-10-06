@@ -143,9 +143,10 @@ internal sealed partial class MainWindow
         // flowed description's wrapped lines come home to.
         var labelColumn = ImGui.GetCursorPosX() + checkboxColumn;
 
-        // The server switched this category off for everyone. Show it, disabled, with the
-        // user's own preference intact underneath — flipping it back on later restores what
-        // they chose.
+        // The server is not accepting this category: it is switched off for everyone, syncing is
+        // paused, or the server has not named it yet (see CategorySettingsRow.ServerEnabled). Show
+        // it, disabled, with the user's own preference intact underneath — once the server allows
+        // it again, what they chose applies.
         using (ImRaii.Disabled(!row.ServerEnabled))
         {
             // Everything after `##` is hidden from the label but forms part of the widget's
@@ -352,8 +353,8 @@ internal sealed partial class MainWindow
 
             // The standing choice for collections that do not exist yet — see
             // PluginSettings.AutoEnableUnseenCategories for what acts on it at load, and
-            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
-            // separately is left out. Ticking it here is the explicit consent that answer rests on.
+            // AutoEnableScope for which collections it may reach. Ticking it here is the explicit
+            // consent that answer rests on.
             var autoEnable = configuration.Settings.AutoEnableNewFeatures;
             if (ImGui.Checkbox(
                     "Turn on new collections automatically##autoEnableNew",
@@ -365,12 +366,15 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
 
-            // Scoped to exactly what the tick reaches: collections with a fixed scope, and no
-            // sharing feature.
+            // Scoped to exactly what the tick reaches (see AutoEnableScope): collections of what the
+            // character has done or holds, with a fixed scope. Each exclusion is described rather
+            // than listed by name, so the sentence stays true as collections are added; appearance
+            // is the example because it is the record that describes the character itself.
             DrawWrapped(
                 "Tick this and a new collection a later update adds starts switched on, instead of " +
-                "waiting for you to find it. Collections whose groups you choose separately, and " +
-                "new kinds of sharing like the live tracker above, always wait for you.",
+                "waiting for you to find it. Collections whose groups you choose separately, " +
+                "anything describing your character itself, such as its appearance, and new kinds " +
+                "of sharing like the live tracker above always wait for you.",
                 ImGuiCol.Text);
             ImGui.Unindent(checkboxColumn);
         }

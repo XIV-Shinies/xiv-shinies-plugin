@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using XIVShinies.SyncPlugin.Collectors;
 using Xunit;
 
@@ -15,11 +14,9 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>.
 /// </para>
 /// <para>
-/// The flag is reachable from a unit test because <see cref="CategoryInfo"/> is Dalamud-free:
-/// reflecting over <see cref="CollectorRegistry"/>'s private static fields runs only their
-/// initializers, which construct records and load no game assembly. (Its <c>Create</c> method
-/// mentions Dalamud services in its signature, but a signature is not resolved unless the method
-/// is called.)
+/// The flag is reachable from a unit test because <see cref="CategoryInfo"/> is Dalamud-free; the
+/// registry is read through <see cref="CollectorRegistryReflection"/>, which explains why that
+/// loads no game assembly. This class also guards that reflection for every test that shares it.
 /// </para>
 /// </remarks>
 public class CompletenessDeclarationTests
@@ -42,20 +39,11 @@ public class CompletenessDeclarationTests
     };
 
     /// <summary>
-    /// Reads every category the registry declares, by reflection, so a collection added tomorrow is
-    /// covered without anyone remembering to extend a hand-written list.
+    /// Every category the registry declares, so every collection is covered without anyone
+    /// remembering to extend a hand-written list.
     /// </summary>
-    /// <remarks>
-    /// <c>BindingFlags.NonPublic</c> because the registry's <see cref="CategoryInfo"/> fields are
-    /// private — they are implementation detail to every caller except this test, and making them
-    /// visible purely to be tested would be the wrong trade.
-    /// </remarks>
     private static IReadOnlyList<CategoryInfo> AllCategories() =>
-        typeof(CollectorRegistry)
-            .GetFields(BindingFlags.NonPublic | BindingFlags.Static)
-            .Where(field => field.FieldType == typeof(CategoryInfo))
-            .Select(field => (CategoryInfo)field.GetValue(null)!)
-            .ToList();
+        CollectorRegistryReflection.Categories();
 
     /// <summary>
     /// Asserts the whole declaring set at once.
@@ -95,16 +83,20 @@ public class CompletenessDeclarationTests
     /// one withholds stays attached to the category rather than living only in the set above.
     /// </summary>
     /// <remarks>
-    /// <c>tripleTriadNpcs</c> withholds for the reason recorded beside its
-    /// <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>. The other three never reach
-    /// a factory that takes the claim at all, which is why they cannot declare — see
-    /// <see cref="CollectResult.CompleteEnumeration"/>.
+    /// <c>tripleTriadNpcs</c> withholds for the reason documented beside its
+    /// <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>. The others never reach a
+    /// factory that takes the claim at all, which is why they cannot declare — see
+    /// <see cref="CollectResult.CompleteEnumeration"/>. <c>glamour</c> is a snapshot of current
+    /// holdings and <c>appearance</c> is one record about the character; neither is an id list,
+    /// which is the only shape the claim speaks about.
     /// </remarks>
     [Theory]
     [InlineData(CategoryKeys.TripleTriadNpcs)]
     [InlineData(CategoryKeys.Items)]
     [InlineData(CategoryKeys.QuestSequences)]
     [InlineData(CategoryKeys.OccultProgression)]
+    [InlineData(CategoryKeys.Glamour)]
+    [InlineData(CategoryKeys.Appearance)]
     public void A_category_that_cannot_see_its_whole_domain_withholds_the_claim(string categoryKey)
     {
         var info = AllCategories().Single(candidate => candidate.Key == categoryKey);

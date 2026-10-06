@@ -60,17 +60,39 @@ public sealed record CategorySettingsRow
     /// </summary>
     /// <remarks>
     /// Carried on the row so a pure view can act on it without holding a collector, and it is what keeps
-    /// <see cref="ReadStatusView"/> free of a category-name branch: the container lines belong to a
-    /// manifest-driven collection, so the panel needs to know which row that is — to stand its container
-    /// lines in for the collection's own line, and to drop them when no such collection is switched on.
-    /// The per-group checkboxes are governed by the same flag one step earlier: <see cref="Groups"/> is
-    /// only ever populated for a collector that announced it.
+    /// <see cref="ReadStatusView"/> free of a category-name branch: a manifest-driven collection's facts
+    /// are the item counts read out of the storage containers, so the panel lets its container lines
+    /// stand in for that collection's own healthy line. Whether the container lines are shown at all is
+    /// a different question, answered by <see cref="ReadsStorage"/>. The per-group checkboxes are
+    /// governed by this flag one step earlier: <see cref="Groups"/> is only ever populated for a
+    /// collector that announced it.
     /// </remarks>
     public required bool UsesItemManifest { get; init; }
 
     /// <summary>
-    /// False when the server will not accept this category — either it is switched off for
-    /// everyone, or the server has paused syncing entirely. The checkbox stays visible but
+    /// Whether this row's collector announced that it reads the character's storage containers and
+    /// reports their scan state (see <see cref="ICollector.ReadsStorage"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Carried on the row for the same reason as <see cref="UsesItemManifest"/>, and it keeps
+    /// <see cref="ReadStatusView"/> free of a category-name branch the same way: the panel reads this
+    /// flag on every row to decide whether the container lines show (see
+    /// <see cref="ReadStatusView.Build"/>).
+    /// </para>
+    /// <para>
+    /// Defaulted rather than required, like <see cref="IsNew"/>: a test or a surface assembling rows
+    /// by hand for something other than the read-status panel need not answer it, and the default is
+    /// the quiet answer, which brings no container lines. <see cref="CategorySettingsView.Build"/>, the
+    /// producer the panel draws from, always sets it from the collector.
+    /// </para>
+    /// </remarks>
+    public bool ReadsStorage { get; init; }
+
+    /// <summary>
+    /// False when the server will not accept this category — it is switched off for everyone, the
+    /// server has paused syncing entirely, or the collection needs the server to name it and the
+    /// server has not (see <see cref="NotOfferedByServer"/>). The checkbox stays visible but
     /// disabled: the user's own preference is remembered and reapplied when the server allows it
     /// again.
     /// </summary>
@@ -87,14 +109,35 @@ public sealed record CategorySettingsRow
     /// its copy on — see there for why the two sentences are not interchangeable.
     /// </para>
     /// <para>
-    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbour
-    /// <see cref="ServerEnabled"/>: a test or a future surface assembling rows by hand is asking
+    /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbor
+    /// <see cref="ServerEnabled"/>: a test or another surface assembling rows by hand is asking
     /// about one collection, and a pause is not a fact about any collection. The default is the
     /// quiet answer rather than the safe one — it produces the per-category wording — which costs
     /// nothing while <see cref="Build"/> is the only producer that draws.
     /// </para>
     /// </remarks>
     public bool ServerGloballyOff { get; init; }
+
+    /// <summary>
+    /// True when this row's collection needs the server to name it (see
+    /// <see cref="ICollector.RequiresServerSupport"/>) and the server's category map does not — or
+    /// no config has arrived to say either way. The row then reads
+    /// <see cref="ServerOffCopy.NotOffered"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It separates "the server has not offered this yet" from "the server switched this off": a
+    /// map that never mentions a collection has made no decision about it, so
+    /// <see cref="ServerOffText"/> draws a different sentence for it. Always false for an ordinary
+    /// collection, which a missing key leaves enabled.
+    /// </para>
+    /// <para>
+    /// Defaulted rather than required, like <see cref="ServerGloballyOff"/>: a test or another
+    /// surface assembling rows by hand need not answer it, and the default produces the ordinary
+    /// per-category wording.
+    /// </para>
+    /// </remarks>
+    public bool NotOfferedByServer { get; init; }
 
     /// <summary>
     /// The server's own explanation for this category being switched off, or null when it offered
@@ -109,7 +152,7 @@ public sealed record CategorySettingsRow
     public string? ServerNote { get; init; }
 
     /// <summary>
-    /// What to print under a category the server has switched off, or null when it is on and
+    /// What to print under a category the server is not accepting, or null when it is on and
     /// nothing needs saying.
     /// </summary>
     /// <remarks>
@@ -125,12 +168,23 @@ public sealed record CategorySettingsRow
     /// everything is stopped, "this collection is switched off" would send the user looking for a
     /// decision about it that nobody made.
     /// </para>
+    /// <para>
+    /// A collection the server has never named (<see cref="NotOfferedByServer"/>) comes next, and
+    /// says it is not offered yet rather than switched off — the same reasoning one level down: the
+    /// server made no decision about it, so neither the generic "switched off" line nor a note can
+    /// be the true sentence. Once the server names the collection, even as off, it is an ordinary
+    /// switched-off collection and the note or the generic line takes over.
+    /// </para>
     /// </remarks>
+    // A chain of ternaries, read top to bottom like an if / else-if ladder: the first condition
+    // that holds picks the sentence. `??` takes the left side unless it is null, as in TypeScript.
     public string? ServerOffText => ServerEnabled
         ? null
         : ServerGloballyOff
             ? ServerOffCopy.Paused
-            : ServerNote ?? ServerOffCopy.Feature;
+            : NotOfferedByServer
+                ? ServerOffCopy.NotOffered
+                : ServerNote ?? ServerOffCopy.Feature;
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.
@@ -174,8 +228,9 @@ public sealed record CategorySettingsRow
     /// <remarks>
     /// A collection the server has switched off cannot be used, so badging it would say "here is
     /// something new for you" about something that is not. While the server's answer is still
-    /// unknown the badge shows, because a user whose config poll is failing should still learn a
-    /// collection exists.
+    /// unknown an ordinary collection's badge shows, because a user whose config poll is failing
+    /// should still learn a collection exists. A collection that needs the server to name it stays
+    /// quiet until then: without that answer it is not offered, so there is nothing new to use yet.
     /// </remarks>
     public bool IsEffectivelyNew => IsNew && ServerEnabled;
 
@@ -277,7 +332,10 @@ public enum CategoryBadgeKind
     /// <summary>Nothing to say about this row beyond its own copy.</summary>
     None,
 
-    /// <summary>The server has switched this collection off for everyone.</summary>
+    /// <summary>
+    /// The server is not accepting this collection; <see cref="CategorySettingsRow.ServerOffText"/>
+    /// says why.
+    /// </summary>
     Off,
 
     /// <summary>This settings window has never shown the collection before.</summary>
@@ -329,7 +387,7 @@ public static class CategorySettingsView
     {
         // Re-checked rather than trusted from when the key was recorded: a config poll landing
         // mid-session can switch a collection off under a badge already on screen, and the chip must
-        // not keep promising something new beside a greyed-out row.
+        // not keep promising something new beside a grayed-out row.
         if (!row.ServerEnabled)
             return CategoryBadgeKind.Off;
 
@@ -444,16 +502,18 @@ public static class CategorySettingsView
             // keep a click from rewriting stored consent assume the two agree — so they are given
             // no way to disagree.
             //
-            // A config we have not fetched forbids nothing, matching how the collectors and the
-            // upload gate treat it. Otherwise a plugin that cannot reach /config would show every
-            // category as disabled by the server, which would be a lie.
-            //
-            // Both of the server's switches are read, in the same order CollectorGate reads them:
-            // the global pause stops everything regardless of what the per-category map says, so a
-            // row drawn from the category switch alone would promise a collection that cannot run.
+            // Asked of the gate itself, so the row can never promise a collection the upload pass
+            // would refuse, or gray out one it would run; CollectorGate.ServerPermits holds the
+            // rules.
             var serverPaused = remoteConfig is { Enabled: false };
-            var serverEnabled = remoteConfig is null
-                || (remoteConfig.Enabled && remoteConfig.IsCategoryEnabled(key));
+            var serverEnabled = CollectorGate.ServerPermits(collector, remoteConfig);
+
+            // Whether the reason is that the server never named the collection, which the row words
+            // differently from a decision to switch it off. `?.` yields null instead of calling
+            // NamesCategory when there is no config, and `!= true` treats that null the same as
+            // "not named": with no config, nothing has been named.
+            var notOfferedByServer = collector.RequiresServerSupport
+                && remoteConfig?.NamesCategory(key) != true;
 
             rows.Add(new CategorySettingsRow
             {
@@ -472,9 +532,14 @@ public static class CategorySettingsView
                 // decides which collections are manifest-driven; the collector says so itself.
                 UsesItemManifest = collector.UsesItemManifest,
 
+                // The same: whether this collection reads storage is the collector's own answer.
+                ReadsStorage = collector.ReadsStorage,
+
                 ServerEnabled = serverEnabled,
 
                 ServerGloballyOff = serverPaused,
+
+                NotOfferedByServer = notOfferedByServer,
 
                 // Carried verbatim from the server, bounded on the way in.
                 ServerNote = remoteConfig?.CategoryNote(key),

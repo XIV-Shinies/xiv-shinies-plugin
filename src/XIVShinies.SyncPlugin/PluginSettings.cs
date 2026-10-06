@@ -444,14 +444,16 @@ public class PluginSettings
     }
 
     /// <summary>
-    /// Switches on every collection this install has never been shown, for a user who asked not to
-    /// be asked again.
+    /// Switches on every given collection this install has never been shown, for a user who asked
+    /// not to be asked again.
     /// </summary>
-    /// <param name="categoryKeys">Every category registered in this build.</param>
+    /// <param name="categoryKeys">
+    /// The collections this answer may reach, from <see cref="Collectors.AutoEnableScope"/>.
+    /// </param>
     /// <returns>The keys switched on, in the order given — empty when nothing changed.</returns>
     /// <remarks>
     /// <para>
-    /// This is the one place a collection is switched on without the user ticking its own box.
+    /// This is the one place a collection is switched on without the user acting on the consent list.
     /// What licenses it: <see cref="AutoEnableNewFeatures"/> is an explicit, visible, disclosed
     /// standing answer to exactly this question, ticked on a consent surface that says collections
     /// added later start switched on. A user who did not tick it gets nothing here, and neither

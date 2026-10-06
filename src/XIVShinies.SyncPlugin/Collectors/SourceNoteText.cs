@@ -76,14 +76,17 @@ public static class SourceNoteText
             // Cached is this source's healthy resting state: the game never exposes a live read of
             // the saddlebag, so nothing is wrong here and the note is a chip. The refresh action is
             // optional, so it lives in the hover detail — which also names the premium half, since
-            // both halves travel under this one key.
+            // both halves travel under this one key. A character without a chocobo companion has no
+            // saddlebag and reports it cached and empty (see SaddlebagNote); the state cannot tell
+            // that apart from a real read, so the detail covers it too.
             (SourceKeys.Saddlebag, SourceStates.Cached) =>
                 new SourceNote
                 {
                     Label = "Saddlebag",
                     Tone = SourceTone.Cached,
                     Detail = "Read from cache, including the premium saddlebag — open it once in " +
-                        "game to refresh as needed.",
+                        "game to refresh as needed. Without a chocobo companion there is no " +
+                        "saddlebag, so it reads as empty.",
                 },
 
             // Never opened, so it contributes nothing yet. The one action that includes it must stay

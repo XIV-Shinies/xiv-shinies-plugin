@@ -27,6 +27,7 @@ public static class CollectorRegistry
     private const string TripleTriadSection = "Triple Triad";
     private const string ItemsSection = "Items & relics";
     private const string LimitedJobsSection = "Limited jobs";
+    private const string GlamourSection = "Glamour";
 
     /// <summary>
     /// The Occult Crescent section's heading. Public, unlike its siblings, because the wizard's
@@ -45,7 +46,7 @@ public static class CollectorRegistry
 
         // The game answers for every row in the Quest sheet, and the catalog is a pruned subset of
         // that same sheet — the safe direction, since a sweep of the whole sheet cannot miss a
-        // catalogued quest.
+        // cataloged quest.
         EnumeratesCompleteDomain = true,
     };
 
@@ -216,6 +217,10 @@ public static class CollectorRegistry
         // The only collection whose scope comes from the server's item manifest rather than being
         // fixed at compile time, so it is the one that gets per-group consent rows in settings.
         UsesItemManifest = true,
+
+        // Counts are read out of the storage containers, and each pass reports their scan state,
+        // so the settings panel shows the container lines while this is on.
+        ReadsStorage = true,
     };
 
     private static readonly CategoryInfo OccultProgression = new()
@@ -283,18 +288,116 @@ public static class CollectorRegistry
         EnumeratesCompleteDomain = true,
     };
 
+    private static readonly CategoryInfo Glamour = new()
+    {
+        Key = CategoryKeys.Glamour,
+        DisplayName = "Gear & glamour storage",
+        Section = GlamourSection,
+
+        // Every kind of data on the visible line, and nothing more. The copy counts are named
+        // because "the gear you hold" alone would not tell a reader that how many of each piece they
+        // hold travels too. Where each piece is kept, its quality and its dyes are facts about the
+        // piece beyond its id: a loose dresser piece carries `hq: true` when it is high quality, and
+        // its two dye channels when they could be read. The storage clause names the source notes
+        // that travel beside these facts too, worded as the items category's is and for the reason
+        // given there.
+        WhatGetsSent =
+            "The gear you hold, with copy counts, where each piece is kept, its quality and its " +
+            "dyes, plus which storage locations could be read and how many retainers you have.",
+
+        // Which locations are searched, named one by one as the items category names its own, and
+        // grouped by when each is read, which the player cannot see happen. The live containers are
+        // read on every pass; the dresser, Armoire and saddlebag only once their window has been
+        // opened and closed this session; the retainers from the game's saved copy, which outlasts
+        // the session, plus the live market listings of the retainer summoned most recently. Without
+        // that timing, a dresser never opened this session simply does not arrive and reads as a
+        // broken sync. All of it is elaboration: the fact that storage locations travel at all is
+        // disclosure and sits on the visible line.
+        //
+        // Written as "where: when" pairs so a hover can be scanned rather than read; the README
+        // carries the longer account. "Armoury chest" is the game's own spelling, and the inventory
+        // chip's hover (see SourceNoteText) uses it too, so one screen never shows two spellings of
+        // the same window. The storage-window clause matches the skip hint the settings window
+        // shows, and the closing clause is the reassurance that no other player's gear is involved.
+        Details =
+            "Bags, equipped gear and armoury chest: every login, scheduled or manual sync. Glamour " +
+            "Dresser, Armoire and saddlebag: once you've opened and closed each this session. " +
+            "Retainers: the game's saved copy, plus the market listings of the one summoned last. " +
+            "Nothing is read while a storage window is open, and only your own character is read.",
+
+        // Held back until the server names it. The snapshot is large, and the server reads it as
+        // current holdings, so it is only worth reading and sending to a server that knows it.
+        RequiresServerSupport = true,
+
+        // The pieces are read out of the same storage containers the items category reads, and each
+        // pass reports their scan state. A dresser or saddlebag that has not been opened this session
+        // is simply missing from the snapshot, so the container lines telling the player which
+        // window to open matter here at least as much as they do for the item counts.
+        ReadsStorage = true,
+    };
+
+    private static readonly CategoryInfo Appearance = new()
+    {
+        Key = CategoryKeys.Appearance,
+        DisplayName = "Character appearance",
+        Section = GlamourSection,
+
+        // Three kinds of data, each named on the visible line: the appearance chosen in the character
+        // creator, the glasses worn (the wire carries which glasses, not merely whether any are),
+        // and the display settings that decide what of the character's gear is shown.
+        WhatGetsSent =
+            "Your character's appearance from the character creator, the glasses you wear, and " +
+            "your display settings.",
+
+        // What each of those covers, spelled out: the creator's choices in a reader's terms rather
+        // than as the game's customization bytes, and every display setting that travels by name.
+        // Then why it is read and how often, and the reassurance that no other player is involved.
+        // All of it details the three kinds the visible line names, so it belongs in the hover.
+        //
+        // "How often" names the full syncs only: login, scheduled and manual. The small upload an
+        // unlock triggers carries only the unlocked collection, so the appearance never rides on it.
+        Details =
+            "Race, clan, gender, face, hair, eyes, colors and body as set in the character " +
+            "creator, and whether your weapon, headgear, visor, Viera ears and Free Company crest " +
+            "are shown. Read from your own character at login and on each scheduled or manual " +
+            "sync, so XIV Shinies can draw you as you are; nothing about any other player is read.",
+
+        // Held back until the server names it: a record sent to a server that does not store
+        // appearances would be a disclosure for nothing.
+        RequiresServerSupport = true,
+
+        // One record about the character, not a collection of things, so the upload log names it
+        // without a count (see CategoryInfo.IsSingleRecord).
+        IsSingleRecord = true,
+
+        // A description of the character itself rather than what it has done or holds, so the
+        // standing answer for new collections does not cover it, and it waits for the user (see
+        // CategoryInfo.RequiresOwnOptIn).
+        RequiresOwnOptIn = true,
+    };
+
     /// <summary>Creates every collector, in the order they will be run.</summary>
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="unlockState">Dalamud's local-player unlock state.</param>
     /// <param name="framework">Used by each collector to verify it is on the framework thread.</param>
     /// <param name="knowledgeObserver">The passive knowledge-level capture the phantom jobs collector reads.</param>
     /// <param name="tamedBeastObserver">The passive bestiary capture the tamed beasts collector reads.</param>
+    /// <param name="gameGui">
+    /// Dalamud's access to the game's windows, used by the glamour collector to check, before it
+    /// reads, whether a storage window is open.
+    /// </param>
+    /// <param name="condition">
+    /// The game's condition flags, used by the glamour collector to check whether a summoning bell
+    /// is in use before it reads.
+    /// </param>
     public static IReadOnlyList<ICollector> Create(
         IDataManager dataManager,
         IUnlockState unlockState,
         IFramework framework,
         KnowledgeObserver knowledgeObserver,
-        TamedBeastObserver tamedBeastObserver) =>
+        TamedBeastObserver tamedBeastObserver,
+        IGameGui gameGui,
+        ICondition condition) =>
         new ICollector[]
         {
             // `unlockState.IsQuestCompleted` is a "method group": the method is passed as a value
@@ -369,5 +472,14 @@ public static class CollectorRegistry
             // The odd one out: it reports possession counts rather than IDs, and it only looks at
             // the items the server named in its manifest. The runner treats it like any other.
             new ItemCollector(Items, dataManager, framework),
+
+            // A snapshot of current holdings rather than a list that only grows: the dresser, the
+            // outfit glamours, the Armoire and the gear held elsewhere. It reads the same storage as
+            // the items collector; GlamourCollector.Collect and its class remarks say when it skips a pass.
+            new GlamourCollector(Glamour, dataManager, framework, gameGui, condition),
+
+            // One record about the local character's look, read from the character itself rather
+            // than from any container. A transformed character is skipped, never reported.
+            new AppearanceCollector(Appearance, framework),
         };
 }

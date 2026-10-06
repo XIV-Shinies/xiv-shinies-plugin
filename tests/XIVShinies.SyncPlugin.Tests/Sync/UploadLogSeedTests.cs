@@ -24,9 +24,10 @@ public class UploadLogSeedTests
     private static readonly DateTimeOffset Now =
         new(2026, 8, 27, 18, 0, 0, TimeSpan.Zero);
 
-    // The seed asks a collector only for its key and its manifest flag; the rest of ICollector is
-    // implemented because the interface requires it. Using a fake rather than the real registry
-    // keeps these tests Dalamud-free and pins the seed's promise that it reads what it is GIVEN.
+    // The seed asks a collector only for its key, its manifest flag, and whether its facts are one
+    // record; the rest of ICollector is implemented because the interface requires it. Using a fake
+    // rather than the real registry keeps these tests Dalamud-free and pins the seed's promise that
+    // it reads what it is GIVEN.
     private sealed class FakeCollector : ICollector
     {
         public FakeCollector(string categoryKey) => CategoryKey = categoryKey;
@@ -42,6 +43,14 @@ public class UploadLogSeedTests
         public string? Details => null;
 
         public bool UsesItemManifest { get; init; }
+
+        public bool RequiresServerSupport { get; init; }
+
+        public bool IsSingleRecord { get; init; }
+
+        public bool ReadsStorage { get; init; }
+
+        public bool RequiresOwnOptIn { get; init; }
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids([1u]);
     }
@@ -221,6 +230,45 @@ public class UploadLogSeedTests
         var index = displayed.FindIndex(e => e.Trigger == SyncTrigger.Interval);
 
         Assert.Contains(CategoryKeys.Items, UploadLogDiff.ChangedCategories(displayed, index));
+    }
+
+    // A single-record collection is one record about the character, not a collection of things,
+    // so the seed records it the way a real upload does: one record, flagged, so the window names
+    // it without a number and the diff compares it on its fingerprint alone.
+    [Fact]
+    public void A_single_record_collection_is_seeded_as_one_record()
+    {
+        var collectors = new List<ICollector>
+        {
+            new FakeCollector(CategoryKeys.Mounts),
+            new FakeCollector("facewear") { IsSingleRecord = true },
+        };
+
+        var swept = UploadLogSeed.Build(collectors, Now)
+            .Single(e => e.Trigger == SyncTrigger.Interval);
+
+        var record = Assert.Single(swept.Categories, c => c.Key == "facewear");
+        Assert.Equal(1, record.Count);
+        Assert.True(record.IsSingleRecord);
+    }
+
+    // Moving a single-record collection changes the record, not how many records there are — so
+    // the diff marks it while it stays one record.
+    [Fact]
+    public void Moving_a_single_record_collection_marks_it_changed_and_keeps_it_one_record()
+    {
+        // Only the single-record collection is registered, so it is the one the scheduled row
+        // moves — the seed falls back to the first collection when the key it names is absent.
+        var collectors = new List<ICollector>
+        {
+            new FakeCollector("facewear") { IsSingleRecord = true },
+        };
+
+        var displayed = UploadLogSeed.Build(collectors, Now).Reverse().ToList();
+        var index = displayed.FindIndex(e => e.Trigger == SyncTrigger.Interval);
+
+        Assert.Contains("facewear", UploadLogDiff.ChangedCategories(displayed, index));
+        Assert.Equal(1, Assert.Single(displayed[index].Categories).Count);
     }
 
     // Pins that a collection absent from the seeded list takes its skip reason with it, rather

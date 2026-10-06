@@ -79,6 +79,18 @@ public sealed unsafe class QuestSequenceCollector : ICollector
     public bool UsesItemManifest => info.UsesItemManifest;
 
     /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
+    /// <inheritdoc/>
+    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
+
+    /// <inheritdoc/>
     public CollectResult Collect(CollectContext context)
     {
         // Reading game memory off the framework thread races the game's own writes, and the

@@ -64,8 +64,17 @@ public static class UploadLogSeed
         [CategoryKeys.OccultRecords] = 31,
 
         // Single digits, because the whole bestiary is fifty rows. A three-figure count like its
-        // larger neighbours would photograph as a collection this one can never be.
+        // larger neighbors would photograph as a collection this one can never be.
         [CategoryKeys.TamedBeasts] = 3,
+
+        // Distinct pieces across the dresser, the Armoire and held gear, which for a long-time
+        // glamour collector runs into four figures.
+        [CategoryKeys.Glamour] = 1384,
+
+        // A single-record category's figure is never drawn: the seed records it as one record and
+        // the window names it without a number (see Category below). It is on file only so every
+        // declared category has an entry.
+        [CategoryKeys.Appearance] = 1,
     };
 
     /// <summary>The count to show for a collection this file has never heard of.</summary>
@@ -172,14 +181,23 @@ public static class UploadLogSeed
 
     /// <summary>One category as an upload sent it, with a count in a believable range.</summary>
     /// <remarks>
+    /// <para>
     /// The fingerprint is derived from the key and count rather than hashed from facts: nothing
     /// here has facts, and the diff only ever asks whether two fingerprints are equal.
+    /// </para>
+    /// <para>
+    /// A single-record category is recorded the way <see cref="UploadLogEntry.Draft"/> records one
+    /// — a count of one record, flagged — so the window draws it by its name alone, as it would
+    /// after a real upload. Its figure in <see cref="PlausibleCounts"/>, if any, is never used.
+    /// </para>
     /// </remarks>
     private static UploadLogCategory Category(ICollector collector)
     {
-        var count = PlausibleCounts.TryGetValue(collector.CategoryKey, out var known)
-            ? known
-            : UnknownCategoryCount;
+        var count = collector.IsSingleRecord
+            ? 1
+            : PlausibleCounts.TryGetValue(collector.CategoryKey, out var known)
+                ? known
+                : UnknownCategoryCount;
 
         return new UploadLogCategory(
             collector.CategoryKey,
@@ -190,16 +208,17 @@ public static class UploadLogSeed
             // A manifest-driven category is compared on how many of its entries the character
             // holds, so it needs one for the diff to have anything to say. Fewer than the fact
             // count, since a manifest asks about items the character does not have.
-            collector.UsesItemManifest ? 43 : null);
+            collector.UsesItemManifest ? 43 : null,
+            collector.IsSingleRecord);
     }
 
     /// <summary>The same categories with one of them moved, so the diff marks it "(changed)".</summary>
     /// <remarks>
     /// <para>
     /// Moves whichever signal that category is actually compared on — the owned-entry count for a
-    /// manifest-driven collection, the fact count and fingerprint for every other. Asking the same
-    /// question the diff asks is what keeps a seeded row from claiming a change the window then
-    /// declines to draw.
+    /// manifest-driven collection, the fingerprint alone for a single record (it stays one record),
+    /// the fact count and fingerprint for every other. Asking the same question the diff asks is
+    /// what keeps a seeded row from claiming a change the window then declines to draw.
     /// </para>
     /// <para>
     /// Falls back to the first collection when the named one is not registered, so the row still
@@ -232,14 +251,18 @@ public static class UploadLogSeed
         return null;
     }
 
+    // `with` copies a record, changing only the properties listed — like `{ ...category, x: 1 }`
+    // in TypeScript.
     private static UploadLogCategory Moved(UploadLogCategory category) =>
         category.UsesItemManifest
             ? category with { OwnedCount = category.OwnedCount + 1 }
-            : category with
-            {
-                Count = category.Count + 1,
-                Fingerprint = category.Fingerprint + "-moved",
-            };
+            : category.IsSingleRecord
+                ? category with { Fingerprint = category.Fingerprint + "-moved" }
+                : category with
+                {
+                    Count = category.Count + 1,
+                    Fingerprint = category.Fingerprint + "-moved",
+                };
 
     /// <summary>The categories minus one, for a row where that collection could not be read.</summary>
     /// <remarks>
