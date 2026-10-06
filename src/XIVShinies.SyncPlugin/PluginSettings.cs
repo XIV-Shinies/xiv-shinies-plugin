@@ -65,6 +65,21 @@ public class PluginSettings
     public bool ShareCrucibleRuns { get; set; }
 
     /// <summary>
+    /// True once the user has seen the Crucible run sharing's card while the server permitted it, or
+    /// clicked its checkbox; until then the settings screen badges the card "New" whenever the server
+    /// permits the sharing.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="SeenCategoryKeys"/>: that set is what
+    /// <see cref="AutoEnableUnseenCategories"/> reads, and the sharing is never switched on by it.
+    /// A fresh install starts false, and its wizard records the card when the user sees it there
+    /// (see <c>CrucibleBadge.ShowingRetires</c>); a card the wizard drew grayed or off screen still
+    /// announces itself in the settings. An existing install, whose saved settings carry no value
+    /// here, starts false too, which is what lets its card announce itself.
+    /// </remarks>
+    public bool CrucibleSharingSeen { get; set; }
+
+    /// <summary>
     /// True when the user chose to have collections added by later updates start switched on,
     /// rather than being asked each time.
     /// </summary>

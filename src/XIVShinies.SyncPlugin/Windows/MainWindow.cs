@@ -140,6 +140,10 @@ internal sealed partial class MainWindow : Window, IDisposable
     // to share its key had been drawn.
     private readonly HashSet<string> categoriesBadgedThisSession = new();
 
+    // The same lifecycle again, for the Crucible run sharing's card: true once its "New" chip has
+    // gone up since the window opened (see CrucibleBadge). A field with no `= ...` starts false.
+    private bool crucibleBadgedThisSession;
+
     // Whether the wizard has put per-group consent checkboxes on screen during THIS frame. Reset at
     // the top of every wizard frame and set by DrawGroupCheckboxes when it actually draws a group row,
     // so by the time the footer's Finish button is handled — drawn after the rows, in the same frame —
@@ -320,8 +324,8 @@ internal sealed partial class MainWindow : Window, IDisposable
     {
         var displayLogical = ImGui.GetIO().DisplaySize / ImGuiHelpers.GlobalScale;
 
-        // The height preference is generous because the settings list is currently tall; when the
-        // rows become more compact, lower the preference rather than raising the cap.
+        // The height preference is generous because the settings list is tall; if the rows are made
+        // more compact, lower the preference rather than raising the cap.
         Size = new Vector2(
             Math.Min(560f, displayLogical.X * 0.45f),
             Math.Min(620f, displayLogical.Y * 0.70f));
@@ -331,15 +335,17 @@ internal sealed partial class MainWindow : Window, IDisposable
     /// Retires the badges shown during this visit, so reopening the window does not show them again.
     /// </summary>
     /// <remarks>
-    /// The two session sets keep a badge on screen after its seen flag is persisted (see the
-    /// fields' own note). Closing the window is the user finishing with the list, which makes it
-    /// the moment to drop them: the window object lives as long as the plugin, so without this the
-    /// chips would linger until the plugin unloaded, long after they had been seen and acted on.
+    /// The session sets, and the Crucible card's session flag, keep a badge on screen after its
+    /// seen flag is persisted (see the fields' own note). Closing the window is the user finishing
+    /// with the list, which makes it the moment to drop them: the window object lives as long as
+    /// the plugin, so without this the chips would linger until the plugin unloaded, long after
+    /// they had been seen and acted on.
     /// </remarks>
     public override void OnClose()
     {
         categoriesBadgedThisSession.Clear();
         groupsBadgedThisSession.Clear();
+        crucibleBadgedThisSession = false;
     }
 
     /// <summary>

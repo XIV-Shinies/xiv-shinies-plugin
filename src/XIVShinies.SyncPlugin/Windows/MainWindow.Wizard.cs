@@ -219,8 +219,8 @@ internal sealed partial class MainWindow
         // New in the settings once the pause lifts. The tracker is the exception — grayed here
         // means it is recorded as declined (see PluginSettings.SettleOccultConsent), and the
         // settings screen is where the user turns it on. The Crucible run sharing is grayed too
-        // and stays off; it carries no "New" chip, so after a pause its settings card is where the
-        // user finds it.
+        // and stays off; a grayed card is not recorded as seen, so its settings card wears "New"
+        // once the pause lifts.
         if (ManifestConsent.ServerHasPausedEverything(wizardRows))
         {
             DrawWarning(ServerOffCopy.Paused);
@@ -232,7 +232,7 @@ internal sealed partial class MainWindow
         // The Crucible run sharing's and the live tracker's own consent cards, right below the
         // collections they are not part of.
         ImGui.Spacing();
-        DrawCrucibleConsentRow(remoteConfig);
+        DrawCrucibleConsentRow(remoteConfig, showNewChip: false);
         ImGui.Spacing();
         DrawOccultConsentRow(remoteConfig);
 

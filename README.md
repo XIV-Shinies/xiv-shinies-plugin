@@ -95,8 +95,8 @@ Nothing uploads until you finish a short first-run setup that shows exactly what
 collection sends and asks you to switch categories on explicitly. Every category — and syncing
 as a whole — can be toggled at any time from the settings window (`/shinies`).
 
-Sharing your Crucible runs is its own switch: it starts off, and the offer below never turns it
-on.
+Sharing your Crucible runs is its own switch: it starts off, the offer below never turns it on,
+and it is marked **New** in the settings until you have seen it.
 
 Setup also offers to start collections added by later updates already switched on, so that if you
 always opt in you are not asked every time. It is off unless you tick it, and either way a new

@@ -6,6 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Utility;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -37,9 +38,12 @@ internal sealed partial class MainWindow
         BrandSeparator();
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Whether anything in the list still counts as "New" — a whole collection or a manifest group
-        // inside one (see AnythingIsNew).
-        var hasNewCollection = AnythingIsNew(rows);
+        // Whether anything under the header still counts as "New": a whole collection or a manifest
+        // group inside one (see AnythingIsNew), or the Crucible run sharing's card, which sits under
+        // the same header (see CrucibleBadge).
+        var hasNewCollection = AnythingIsNew(rows)
+            || CrucibleBadge.IsNew(
+                configuration.Settings.CrucibleSharingSeen, remoteConfig, crucibleBadgedThisSession);
 
         // Captured immediately before the header so the "New" chip below can be placed on the
         // header's own row: CollapsingHeader always spans the full available width regardless of
@@ -78,7 +82,7 @@ internal sealed partial class MainWindow
             // The Crucible run sharing's and the live tracker's consent cards, below the collections
             // card they are not part of.
             ImGui.Spacing();
-            DrawCrucibleConsentRow(remoteConfig);
+            DrawCrucibleConsentRow(remoteConfig, showNewChip: true);
             ImGui.Spacing();
             DrawOccultConsentRow(remoteConfig);
         }
