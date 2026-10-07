@@ -26,21 +26,29 @@ cp <root>/.claude/settings.local.json <root>/.claude/worktrees/<slug>/.claude/
 git -C <root> check-ignore -v .claude/worktrees     # must print a rule
 ```
 
-`<type>` is the change's commit type (`feat`, `fix`, `docs`, …). Then call **EnterWorktree with
-`path`** set to `<root>/.claude/worktrees/<slug>`.
+`<type>` is the change's commit type (`feat`, `fix`, `docs`, …). Then open the worktree in its
+own VS Code window and hand the work to a new session there:
+
+```bash
+code -n <root>/.claude/worktrees/<slug>
+```
+
+Give the maintainer a short starter prompt to paste into a new Claude session in that window: the
+task, the branch, and any brief or plan to read first.
 
 - **`--no-track`**: without it the branch's upstream is `origin/main`. `git status` then reports
   "ahead of origin/main", and the bare `git push` in `opening-pull-requests` fails on the
   name mismatch. Fix an existing branch with `git branch --unset-upstream`.
-- **Enter the worktree.** `committing-code`, `opening-pull-requests` and `reviewing-code-changes`
-  run bare `git` and `dotnet` in the session's working directory. Run from the main checkout,
-  they diff, build and commit the *other* session's branch.
-- **Invoke the worktree's skills.** After EnterWorktree, Claude Code lists each project skill
-  twice: plain `committing-code` is the copy in the checkout the session started in, from
-  whatever branch that has out; `.claude/worktrees/<slug>:committing-code` is this branch's.
-  Use the prefixed one.
-- **Manual `worktree add`, not EnterWorktree `name`**: the tool names the branch
-  `worktree-<name>`, not the `feat/`/`fix/`/`docs/` names commits and PRs use.
+- **Work from the worktree's own window.** `committing-code`, `opening-pull-requests` and
+  `reviewing-code-changes` run bare `git` and `dotnet` in the session's working directory. A
+  session started in the worktree's window works in the worktree, and the plain skill names
+  there are this branch's copies. Run from the main checkout, the same skills diff, build and
+  commit the *other* session's branch.
+- **Never EnterWorktree.** It moves the session's history into a folder of its own, which the
+  main checkout's VS Code session list never shows. Once VS Code restarts and the session's tab
+  closes, that window cannot reopen it; a window opened on the worktree folder still lists it.
+  The tool's `name` form also names the branch `worktree-<name>`, not the `feat/`/`fix/`/`docs/`
+  names commits and PRs use.
 - **`settings.local.json`** is gitignored, so a worktree starts without the `dotnet` allowlist.
   The copy stays ignored and is never committed.
 - **`check-ignore`**: Claude Code lists `.claude/worktrees/` in `.git/info/exclude`, which keeps
@@ -100,8 +108,10 @@ edit `dalamudConfig.json` while the game runs, because Dalamud saves its in-memo
 Confirm the PR merged first: `-D` deletes the branch without checking. If the worktree's Dev
 Plugin Location is still listed, remove it too, or Dalamud keeps pointing at a deleted path.
 
+Close the worktree's VS Code window first, since its session works in the folder being removed.
+Run these from the main checkout's window:
+
 ```bash
-# ExitWorktree action "keep" first (it never deletes a worktree entered by path)
 git worktree remove <root>/.claude/worktrees/<slug>
 git branch -D <type>/<slug>                 # -d refuses: squash merges leave it "unmerged"
 git ls-remote --heads origin <type>/<slug>  # if listed: git push origin --delete <type>/<slug>
@@ -114,7 +124,8 @@ Deleting the remote branch is a push, so it needs the maintainer's approval.
 | Trap | Symptom | Fix |
 |------|---------|-----|
 | Branch created without `--no-track` | "ahead of origin/main"; `git push` fails on the name mismatch | `git branch --unset-upstream` |
-| A project skill run from the main checkout | Review or commit shows the other session's files | EnterWorktree `path` before invoking it |
+| A project skill run from the main checkout | Review or commit shows the other session's files | Run it from a session in the worktree's own window |
+| EnterWorktree called | The session is missing from the main checkout's session list after VS Code restarts | Open the worktree folder in VS Code; its session list shows the session |
 | Relative paths in setup or cleanup | A worktree nested inside another, or `worktree remove` finds nothing | Absolute `<root>` paths |
 | Two copies enabled | Every sync fires twice; `dalamud.log` has two `Finished loading XIVShinies.SyncPlugin` with no unload between | One enabled Dev Plugin Location |
 | Config backed up or restored while a copy was loaded | Settings missing or changed after switching back | Back up and restore only with no copy loaded |
