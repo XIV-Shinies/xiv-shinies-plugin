@@ -55,9 +55,6 @@ public class CategorySettingsViewTests
         // every other test leaves the default of a collection that reads no storage.
         public bool ReadsStorage { get; init; }
 
-        // The settings view never reads this; the interface requires it.
-        public bool RequiresOwnOptIn { get; init; }
-
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
 

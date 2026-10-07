@@ -46,9 +46,7 @@ public static class ManifestConsent
     /// What this exists for: switching a category on without its groups leaves it ticked and
     /// collecting nothing, reporting itself skipped — the state <see cref="SetGroupConsent"/> calls
     /// the one a consent surface must never reach. Anything that enables a category on the user's
-    /// behalf therefore never passes the full list; it asks
-    /// <see cref="AutoEnableScope.EligibleCategoryKeys"/>, which applies this rule and the
-    /// collectors' own opt-in declarations together.
+    /// behalf must therefore ask for this list rather than the full one.
     /// </para>
     /// <para>
     /// Asked of the collectors, so no category is named. The flag names the item manifest
@@ -56,10 +54,7 @@ public static class ManifestConsent
     /// collection driven by some other manifest has no groups to strand and stays included.
     /// </para>
     /// </remarks>
-    /// <param name="collectors">
-    /// The collectors to choose from; <see cref="AutoEnableScope"/> passes every registered one
-    /// that does not require its own opt-in.
-    /// </param>
+    /// <param name="collectors">Every registered collector.</param>
     public static IReadOnlyList<string> FixedScopeCategoryKeys(IEnumerable<ICollector> collectors)
     {
         var keys = new List<string>();

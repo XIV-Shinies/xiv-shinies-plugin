@@ -103,9 +103,6 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     public bool ReadsStorage => info.ReadsStorage;
 
     /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
-
-    /// <inheritdoc/>
     // Each collector recognizes only its own sheet, so routing an unlock needs no lookup table and
     // no branch on category names. `Is<TRow>()` compares the row type the game reported against the
     // one this collector was built for.

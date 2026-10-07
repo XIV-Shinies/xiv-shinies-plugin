@@ -225,7 +225,8 @@ nit (sources: dalamud.dev `plugin-publishing/restrictions`, `plugin-development/
   the player's Content ID or name) on the client side" — but this project treats it as a
   hard requirement: SHA-256 the ContentId before it leaves the process, the raw ulong never
   travels and never lands in logs, config, or request bodies, and the digest stays
-  deterministic across sessions (fixed byte representation).
+  deterministic across sessions (fixed byte representation). The player's own retainer ids
+  get the same treatment (`RetainerIdHash`).
 - **Network (documented rules):** HTTPS only, with the server's certificate "issued from a
   trusted certificate authority such as Let's Encrypt"; connect by **DNS hostname, never a raw
   IP** (no loopback exemption is stated — use `localhost`, not `127.0.0.1`); minimize the data
@@ -271,12 +272,13 @@ can pin the exact set of declaring categories: it fails both when a category sto
 when a new one starts. A collection that declares completeness has to be added to that set.
 
 The `glamour` category is the exception by design. Its payload is the character's **current
-holdings**, not a list that only grows, so for a source read as current, a missing piece is
+holdings**, not a list that only grows, so for a place read as current, a missing piece is
 evidence it has left; each source's state travels in `itemSources`, built by `StorageSources`, the
-same class whose predicates gate the reads. That is why `GlamourCollector` omits a container it
-did not read rather than sending `[]`, why a list or held count over its cap withholds the whole
-category rather than being truncated or clamped, and why, whenever it cannot be sure what it reads
-is current, it skips the whole pass rather than send a partial picture. `GlamourCollector` (its
+same class whose predicates gate the reads, and which retainers were read travels in the facts'
+own `retainers` list. That is why `GlamourCollector` omits a container it did not read rather
+than sending `[]`, why a list or held count over its cap withholds the whole category rather than
+being truncated or clamped, and why, whenever it cannot be sure what it reads is current, it skips
+the whole pass rather than send a partial picture. `GlamourCollector` (its
 class remarks and `Collect`) and the `glamour` bullet in `docs/api-contract.md` list the
 conditions. It makes no completeness declaration — `CollectResult.Glamour` takes none — and is
 never part of an `unlock` upload.

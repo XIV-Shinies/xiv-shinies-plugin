@@ -61,6 +61,11 @@ public class PluginSettings
     /// not have to keep ticking boxes.
     /// </para>
     /// <para>
+    /// It reaches a collection whatever that collection sends. The one exclusion is a collection
+    /// whose groups the user answers separately;
+    /// <see cref="Collectors.ManifestConsent.FixedScopeCategoryKeys"/> says why.
+    /// </para>
+    /// <para>
     /// Defaults OFF, unlike <see cref="ShareOccultInstanceState"/>. That toggle defaults on for a
     /// defence that does not carry here: it is one named thing, disclosed in full on the same
     /// screen, and what it shares is world state. This is open-ended — an answer about collections
@@ -448,7 +453,8 @@ public class PluginSettings
     /// not to be asked again.
     /// </summary>
     /// <param name="categoryKeys">
-    /// The collections this answer may reach, from <see cref="Collectors.AutoEnableScope"/>.
+    /// The collections this answer may reach, from
+    /// <see cref="Collectors.ManifestConsent.FixedScopeCategoryKeys"/>.
     /// </param>
     /// <returns>The keys switched on, in the order given — empty when nothing changed.</returns>
     /// <remarks>

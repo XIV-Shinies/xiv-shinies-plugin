@@ -48,29 +48,47 @@ public class GlamourSnapshotTests
     private static DresserReading FinderOnly(params uint[] ids) =>
         new(ids, new ushort[ids.Length], LiveIds: null, LiveStain0: null, LiveStain1: null);
 
-    // Held slots as (stored id, quantity) pairs, one copy each — the common case for gear, which
-    // never stacks. `(id, 1u)` builds a tuple; the `u` suffix makes the literal a uint.
-    private static (uint StoredId, uint Quantity)[] OneEach(params uint[] storedIds) =>
-        storedIds.Select(id => (id, 1u)).ToArray();
+    // Held slots in the bags, one copy each — the common case for gear, which never stacks.
+    private static HeldSlot[] OneEach(params uint[] storedIds) =>
+        storedIds.Select(id => new HeldSlot(id, 1, HeldPlaces.Bags)).ToArray();
+
+    // Held slots in the bags with their quantities. `(uint StoredId, uint Quantity)[]` is an array of
+    // named tuples, so a call can write the pairs inline as `(Coat, 2)`.
+    private static HeldSlot[] InBags(params (uint StoredId, uint Quantity)[] slots) =>
+        slots.Select(slot => new HeldSlot(slot.StoredId, slot.Quantity, HeldPlaces.Bags)).ToArray();
 
     // No held slots at all.
-    private static readonly (uint StoredId, uint Quantity)[] NothingHeld =
-        Array.Empty<(uint StoredId, uint Quantity)>();
+    private static readonly HeldSlot[] NothingHeld = Array.Empty<HeldSlot>();
+
+    // Two retainers read this pass, the second one's market listings read too.
+    private const ulong Mogwin = 33_000_000_001;
+    private const ulong Kupo = 33_000_000_002;
+
+    private static RetainerRoster TwoRetainers() => RetainerRoster.Build(
+        new[] { Mogwin, Kupo },
+        new Dictionary<ulong, string> { [Mogwin] = "Mogwin" },
+        marketRetainerId: Kupo);
 
     // Calls the builder with "nothing read" defaults for every input a test does not care about.
     // The `= null` defaults make those parameters optional, like `dresser?: DresserReading` in
     // TypeScript, and the `??` operator supplies the fallback when one is omitted. Every caller
-    // stays well under the caps and hands over a consistent reading, so a withheld result is a
+    // stays within the caps and hands over a consistent reading, so a withheld result is a
     // failure; the asserts report it as one, naming the reason, rather than as a null dereference
     // somewhere later in the test.
     private static GlamourFacts BuildFrom(
         DresserReading? dresser = null,
         IEnumerable<uint>? armoire = null,
-        IEnumerable<(uint StoredId, uint Quantity)>? held = null,
+        IEnumerable<HeldSlot>? held = null,
+        RetainerRoster? roster = null,
         Func<uint, bool>? isGear = null)
     {
         var built = GlamourSnapshot.Build(
-            dresser, SetIndex, armoire, held ?? NothingHeld, isGear ?? (_ => true));
+            dresser,
+            SetIndex,
+            armoire,
+            held ?? NothingHeld,
+            roster ?? RetainerRoster.Empty,
+            isGear ?? (_ => true));
 
         Assert.Null(built.WithheldReason);
         Assert.NotNull(built.Facts);
@@ -241,7 +259,8 @@ public class GlamourSnapshotTests
             LiveStain0: null,
             LiveStain1: null);
 
-        var built = GlamourSnapshot.Build(bitsShorter, SetIndex, null, OneEach(Hat), _ => true);
+        var built = GlamourSnapshot.Build(
+            bitsShorter, SetIndex, null, OneEach(Hat), RetainerRoster.Empty, _ => true);
 
         Assert.Null(built.Facts);
         Assert.Equal(CollectSkipReasons.UnexpectedLayout, built.WithheldReason);
@@ -258,7 +277,8 @@ public class GlamourSnapshotTests
             LiveStain0: null,
             LiveStain1: null);
 
-        var built = GlamourSnapshot.Build(idsShorter, SetIndex, null, OneEach(Hat), _ => true);
+        var built = GlamourSnapshot.Build(
+            idsShorter, SetIndex, null, OneEach(Hat), RetainerRoster.Empty, _ => true);
 
         Assert.Null(built.Facts);
         Assert.Equal(CollectSkipReasons.UnexpectedLayout, built.WithheldReason);
@@ -272,7 +292,7 @@ public class GlamourSnapshotTests
         var noOutfitRows = new Dictionary<uint, uint[]>();
 
         var built = GlamourSnapshot.Build(
-            FinderOnly(OutfitId, Hat), noOutfitRows, null, NothingHeld, _ => true);
+            FinderOnly(OutfitId, Hat), noOutfitRows, null, NothingHeld, RetainerRoster.Empty, _ => true);
 
         Assert.Null(built.Facts);
         Assert.Equal(CollectSkipReasons.UnexpectedLayout, built.WithheldReason);
@@ -286,7 +306,7 @@ public class GlamourSnapshotTests
         var noOutfitRows = new Dictionary<uint, uint[]>();
 
         var built = GlamourSnapshot.Build(
-            null, noOutfitRows, new uint[] { 3747 }, OneEach(Hat), _ => true);
+            null, noOutfitRows, new uint[] { 3747 }, OneEach(Hat), RetainerRoster.Empty, _ => true);
 
         Assert.Null(built.WithheldReason);
         Assert.NotNull(built.Facts);
@@ -413,32 +433,31 @@ public class GlamourSnapshotTests
         Assert.Equal(new uint[] { 1601, 3747 }, facts.Armoire);
     }
 
-    // Held slots arrive raw from several containers: some in the high-quality encoding, some
-    // repeated, some empty, some not gear at all. Each gear base id survives once, carrying every
-    // copy held, and the list is ordered by id.
+    // Held slots arrive raw: some in the high-quality encoding, some repeated, some empty, some not
+    // gear at all. Each gear base id survives once per place, carrying every copy held there, and the
+    // list is ordered by id.
     [Fact]
     public void Held_keeps_gear_once_per_base_id_with_its_copies_in_id_order()
     {
         const uint potion = 5;
-        var stored = new (uint, uint)[]
-        {
-            (Coat, 1), (1601, 1), (potion, 5), (0, 3), (1_000_000, 1), (Hat, 1), (1_000_000 + Coat, 1),
-        };
+        var stored = InBags(
+            (Coat, 1), (1601, 1), (potion, 5), (0, 3), (1_000_000, 1), (Hat, 1), (1_000_000 + Coat, 1));
 
         var facts = BuildFrom(held: stored, isGear: id => id != potion);
 
         Assert.Equal(
-            """[{"id":1601,"count":1},{"id":2642,"count":1},{"id":2965,"count":2}]""",
+            """[{"id":1601,"place":"bags","count":1},{"id":2642,"place":"bags","count":1},""" +
+            """{"id":2965,"place":"bags","count":2}]""",
             Json(facts.Held));
     }
 
     // Every outfit glamour needs a copy of its own, so the count is what the server builds on.
-    // Copies of one item are summed wherever they sit and whatever their quality: a normal-quality
-    // and a high-quality copy are both copies of the same piece.
+    // Copies of one item in one place are summed across its slots whatever their quality: a
+    // normal-quality and a high-quality copy are both copies of the same piece.
     [Fact]
     public void Held_sums_copies_across_slots_and_qualities()
     {
-        var stored = new (uint, uint)[] { (Coat, 1), (1_000_000 + Coat, 1), (Coat, 2) };
+        var stored = InBags((Coat, 1), (1_000_000 + Coat, 1), (Coat, 2));
 
         var piece = Assert.Single(BuildFrom(held: stored).Held);
 
@@ -454,14 +473,14 @@ public class GlamourSnapshotTests
         var asked = new List<uint>();
 
         var facts = BuildFrom(
-            held: new (uint, uint)[] { (Coat, 0), (Hat, 1) },
+            held: InBags((Coat, 0), (Hat, 1)),
             isGear: id =>
             {
                 asked.Add(id);
                 return true;
             });
 
-        Assert.Equal("""[{"id":2642,"count":1}]""", Json(facts.Held));
+        Assert.Equal("""[{"id":2642,"place":"bags","count":1}]""", Json(facts.Held));
         Assert.Equal(new uint[] { Hat }, asked);
     }
 
@@ -472,7 +491,7 @@ public class GlamourSnapshotTests
     {
         var facts = BuildFrom(held: OneEach(1_000_000 + Coat), isGear: id => id == Coat);
 
-        Assert.Equal("""[{"id":2965,"count":1}]""", Json(facts.Held));
+        Assert.Equal("""[{"id":2965,"place":"bags","count":1}]""", Json(facts.Held));
     }
 
     // The predicate's contract, as Build documents it: asked only about non-zero base ids, once per
@@ -494,6 +513,238 @@ public class GlamourSnapshotTests
             });
 
         Assert.Equal(new uint[] { Coat }, asked);
+    }
+
+    // --- Places and retainers --------------------------------------------------------------------
+
+    // One item held in several places is one entry per place, so the server can show where each
+    // copy sits. The places come in the contract's order: bags, armory, equipped, saddlebag,
+    // retainer, market.
+    [Fact]
+    public void One_item_in_several_places_is_one_entry_per_place()
+    {
+        var held = new[]
+        {
+            new HeldSlot(Coat, 1, HeldPlaces.Saddlebag),
+            new HeldSlot(Coat, 1, HeldPlaces.Equipped),
+            new HeldSlot(Coat, 2, HeldPlaces.Bags),
+            new HeldSlot(Coat, 1, HeldPlaces.Armory),
+        };
+
+        Assert.Equal(
+            """[{"id":2965,"place":"bags","count":2},{"id":2965,"place":"armory","count":1},""" +
+            """{"id":2965,"place":"equipped","count":1},{"id":2965,"place":"saddlebag","count":1}]""",
+            Json(BuildFrom(held: held).Held));
+    }
+
+    // A copy on a retainer carries that retainer's key from the roster, and the same item on two
+    // retainers is two entries, in key order.
+    [Fact]
+    public void Retainer_copies_carry_their_retainers_key()
+    {
+        var roster = TwoRetainers();
+        var held = new[]
+        {
+            new HeldSlot(Coat, 2, HeldPlaces.Retainer, RetainerId: Mogwin),
+            new HeldSlot(Coat, 1, HeldPlaces.Retainer, RetainerId: Kupo),
+        };
+
+        var pieces = BuildFrom(held: held, roster: roster).Held;
+
+        Assert.Equal(2, pieces.Count);
+        Assert.All(pieces, piece => Assert.Equal(HeldPlaces.Retainer, piece.Place));
+        Assert.Equal(2u, pieces.Single(piece => piece.Retainer == roster.KeyOf(Mogwin)).Count);
+        Assert.Equal(1u, pieces.Single(piece => piece.Retainer == roster.KeyOf(Kupo)).Count);
+        Assert.True(pieces[0].Retainer < pieces[1].Retainer);
+    }
+
+    // Copies in places that are not a retainer's carry no retainer key at all.
+    [Fact]
+    public void Copies_outside_a_retainer_carry_no_key()
+    {
+        var piece = Assert.Single(BuildFrom(held: OneEach(Coat), roster: TwoRetainers()).Held);
+
+        Assert.Null(piece.Retainer);
+        Assert.Equal("""[{"id":2965,"place":"bags","count":1}]""", Json(new[] { piece }));
+    }
+
+    // Listed copies belong to the retainer whose listings were read, and carry its key.
+    [Fact]
+    public void Market_copies_carry_the_market_retainers_key()
+    {
+        var roster = TwoRetainers();
+
+        var piece = Assert.Single(
+            BuildFrom(held: new[] { new HeldSlot(Coat, 1, HeldPlaces.Market) }, roster: roster).Held);
+
+        Assert.Equal(HeldPlaces.Market, piece.Place);
+        Assert.Equal(roster.MarketKey, piece.Retainer);
+    }
+
+    // With no retainer to tie them to, listed copies cannot be reported: a market entry must name
+    // the retainer it was listed on.
+    [Fact]
+    public void Market_copies_are_dropped_without_a_market_retainer()
+    {
+        var roster = RetainerRoster.Build(new[] { Mogwin }, new Dictionary<ulong, string>(), null);
+
+        var facts = BuildFrom(held: new[] { new HeldSlot(Coat, 1, HeldPlaces.Market) }, roster: roster);
+
+        Assert.Empty(facts.Held);
+    }
+
+    // A retainer slot whose retainer is not on the roster has no key to carry, so it is dropped
+    // rather than sent pointing at nothing.
+    [Fact]
+    public void A_retainer_copy_from_a_retainer_not_on_the_roster_is_dropped()
+    {
+        var held = new[] { new HeldSlot(Coat, 1, HeldPlaces.Retainer, RetainerId: 99) };
+
+        Assert.Empty(BuildFrom(held: held, roster: TwoRetainers()).Held);
+    }
+
+    // The gear question is about the item, so it is asked once per distinct base id however many
+    // places hold it.
+    [Fact]
+    public void The_gear_question_is_asked_once_across_places()
+    {
+        var asked = new List<uint>();
+        var held = new[]
+        {
+            new HeldSlot(Coat, 1, HeldPlaces.Bags),
+            new HeldSlot(Coat, 1, HeldPlaces.Retainer, RetainerId: Mogwin),
+            new HeldSlot(Coat, 1, HeldPlaces.Market),
+        };
+
+        BuildFrom(
+            held: held,
+            roster: TwoRetainers(),
+            isGear: id =>
+            {
+                asked.Add(id);
+                return true;
+            });
+
+        Assert.Equal(new uint[] { Coat }, asked);
+    }
+
+    // The facts list every retainer on the roster, exactly as the roster built them.
+    [Fact]
+    public void The_retainers_list_is_the_roster()
+    {
+        var roster = TwoRetainers();
+
+        var facts = BuildFrom(roster: roster);
+
+        Assert.Equal(Json(roster.Entries), Json(facts.Retainers));
+    }
+
+    // With no retainer read, the list is left out rather than sent empty.
+    [Fact]
+    public void No_retainers_read_leaves_the_list_out()
+    {
+        Assert.Null(BuildFrom(roster: RetainerRoster.Empty).Retainers);
+    }
+
+    // The contract allows keys 1 to 10, and the game allows ten retainers, so more than ten is a
+    // misread and the whole category is withheld rather than sent with a list the server rejects.
+    [Fact]
+    public void More_than_ten_retainers_withhold_the_whole_snapshot()
+    {
+        var eleven = Enumerable.Range(1, GlamourCaps.Retainers + 1).Select(i => (ulong)i).ToArray();
+        var roster = RetainerRoster.Build(eleven, new Dictionary<ulong, string>(), null);
+
+        var built = GlamourSnapshot.Build(null, SetIndex, null, NothingHeld, roster, _ => true);
+
+        Assert.Null(built.Facts);
+        Assert.Equal(CollectSkipReasons.OverCap, built.WithheldReason);
+    }
+
+    // The retainer cap is inclusive, like the others: ten retainers are sent whole.
+    [Fact]
+    public void Ten_retainers_are_kept()
+    {
+        var ten = Enumerable.Range(1, GlamourCaps.Retainers).Select(i => (ulong)i).ToArray();
+        var roster = RetainerRoster.Build(ten, new Dictionary<ulong, string>(), null);
+
+        Assert.Equal(GlamourCaps.Retainers, BuildFrom(roster: roster).Retainers!.Count);
+    }
+
+    // One item on two retainers and in the market listings: the retainer entries come in key order,
+    // then the market entry, whatever order the slots arrived in. The listing stays its own entry even
+    // though the same retainer also holds a copy.
+    [Fact]
+    public void Retainer_entries_sort_by_key_and_come_before_the_market()
+    {
+        var roster = TwoRetainers();
+        var held = new[]
+        {
+            new HeldSlot(Coat, 1, HeldPlaces.Market),
+            new HeldSlot(Coat, 1, HeldPlaces.Retainer, RetainerId: Kupo),
+            new HeldSlot(Coat, 2, HeldPlaces.Retainer, RetainerId: Mogwin),
+        };
+
+        // `$$"""…"""` is an interpolated raw string: `{{…}}` inserts a value, while a single brace
+        // stays a literal brace, so the JSON needs no escaping.
+        Assert.Equal(
+            $$"""[{"id":2965,"place":"retainer","retainer":{{roster.KeyOf(Mogwin)}},"count":2},""" +
+            $$"""{"id":2965,"place":"retainer","retainer":{{roster.KeyOf(Kupo)}},"count":1},""" +
+            $$"""{"id":2965,"place":"market","retainer":{{roster.KeyOf(Kupo)}},"count":1}]""",
+            Json(BuildFrom(held: held, roster: roster).Held));
+        Assert.True(roster.KeyOf(Mogwin) < roster.KeyOf(Kupo));
+    }
+
+    // A retainer's saved copy stores a high-quality piece in the encoded form, and both qualities in
+    // one retainer count toward one entry.
+    [Fact]
+    public void Both_qualities_in_one_retainer_are_one_entry()
+    {
+        var held = new[]
+        {
+            new HeldSlot(Coat, 1, HeldPlaces.Retainer, RetainerId: Mogwin),
+            new HeldSlot(1_000_000 + Coat, 1, HeldPlaces.Retainer, RetainerId: Mogwin),
+        };
+
+        var piece = Assert.Single(BuildFrom(held: held, roster: TwoRetainers()).Held);
+
+        Assert.Equal(2u, piece.Count);
+    }
+
+    // The count cap applies to each entry: copies split across places are each within it, so the
+    // snapshot is built even though their total would pass it.
+    [Fact]
+    public void The_count_cap_applies_per_place()
+    {
+        var held = new[]
+        {
+            new HeldSlot(Coat, GlamourCaps.HeldCount, HeldPlaces.Bags),
+            new HeldSlot(Coat, GlamourCaps.HeldCount, HeldPlaces.Retainer, RetainerId: Mogwin),
+        };
+
+        var pieces = BuildFrom(held: held, roster: TwoRetainers()).Held;
+
+        Assert.Equal(2, pieces.Count);
+        Assert.All(pieces, piece => Assert.Equal((uint)GlamourCaps.HeldCount, piece.Count));
+    }
+
+    // From the raw ids the collector reads to the bytes that go on the wire: each retainer is sent
+    // as its digest, and no raw id appears anywhere in the payload.
+    [Fact]
+    public void Raw_retainer_ids_never_reach_the_wire()
+    {
+        var roster = TwoRetainers();
+        var held = new[]
+        {
+            new HeldSlot(Coat, 1, HeldPlaces.Retainer, RetainerId: Mogwin),
+            new HeldSlot(Hat, 1, HeldPlaces.Market),
+        };
+
+        var wire = SyncFacts.Glamour(BuildFrom(held: held, roster: roster)).ToJsonString(ApiJson.Options);
+
+        Assert.DoesNotContain(Mogwin.ToString(), wire);
+        Assert.DoesNotContain(Kupo.ToString(), wire);
+        Assert.Contains(RetainerIdHash.Compute(Mogwin), wire);
+        Assert.Contains(RetainerIdHash.Compute(Kupo), wire);
     }
 
     // --- Order -----------------------------------------------------------------------------------
@@ -563,6 +814,8 @@ public class GlamourSnapshotTests
             [nameof(GlamourCaps.Armoire)] = 5_000,
             [nameof(GlamourCaps.Held)] = 20_000,
             [nameof(GlamourCaps.HeldCount)] = 9_999,
+            [nameof(GlamourCaps.Retainers)] = 10,
+            [nameof(GlamourCaps.RetainerName)] = 32,
         };
 
         var declared = typeof(GlamourCaps)
@@ -595,18 +848,22 @@ public class GlamourSnapshotTests
         return list switch
         {
             CappedList.Dresser =>
-                GlamourSnapshot.Build(FinderOnly(ids), SetIndex, null, NothingHeld, _ => true),
+                GlamourSnapshot.Build(
+                    FinderOnly(ids), SetIndex, null, NothingHeld, RetainerRoster.Empty, _ => true),
             CappedList.OutfitGlamours =>
                 GlamourSnapshot.Build(
                     FinderOnly(Enumerable.Repeat(OutfitId, length).ToArray()),
                     SetIndex,
                     null,
                     NothingHeld,
+                    RetainerRoster.Empty,
                     _ => true),
             CappedList.Armoire =>
-                GlamourSnapshot.Build(null, SetIndex, ids, NothingHeld, _ => true),
+                GlamourSnapshot.Build(
+                    null, SetIndex, ids, NothingHeld, RetainerRoster.Empty, _ => true),
             CappedList.Held =>
-                GlamourSnapshot.Build(null, SetIndex, null, OneEach(ids), _ => true),
+                GlamourSnapshot.Build(
+                    null, SetIndex, null, OneEach(ids), RetainerRoster.Empty, _ => true),
             _ => throw new ArgumentOutOfRangeException(nameof(list)),
         };
     }
@@ -665,7 +922,7 @@ public class GlamourSnapshotTests
         // `Append` adds one more element to the end of a sequence, like `[...nonGear, gear]`.
         var facts = BuildFrom(held: OneEach(nonGear.Append(gear).ToArray()), isGear: id => id == gear);
 
-        Assert.Equal("""[{"id":50000,"count":1}]""", Json(facts.Held));
+        Assert.Equal("""[{"id":50000,"place":"bags","count":1}]""", Json(facts.Held));
     }
 
     // The count cap is inclusive too. The copies are split across two slots so the cap is pinned
@@ -673,7 +930,7 @@ public class GlamourSnapshotTests
     [Fact]
     public void A_held_count_exactly_at_its_cap_is_kept()
     {
-        var stored = new (uint, uint)[] { (Coat, GlamourCaps.HeldCount - 1), (1_000_000 + Coat, 1) };
+        var stored = InBags((Coat, GlamourCaps.HeldCount - 1), (1_000_000 + Coat, 1));
 
         var piece = Assert.Single(BuildFrom(held: stored).Held);
 
@@ -685,9 +942,9 @@ public class GlamourSnapshotTests
     [Fact]
     public void A_held_count_past_its_cap_withholds_the_whole_snapshot()
     {
-        var stored = new (uint, uint)[] { (Coat, GlamourCaps.HeldCount), (1_000_000 + Coat, 1) };
+        var stored = InBags((Coat, GlamourCaps.HeldCount), (1_000_000 + Coat, 1));
 
-        var built = GlamourSnapshot.Build(null, SetIndex, null, stored, _ => true);
+        var built = GlamourSnapshot.Build(null, SetIndex, null, stored, RetainerRoster.Empty, _ => true);
 
         Assert.Null(built.Facts);
         Assert.Equal(CollectSkipReasons.OverCap, built.WithheldReason);
@@ -699,11 +956,11 @@ public class GlamourSnapshotTests
     public void A_large_count_of_something_that_is_not_gear_is_dropped_not_withheld()
     {
         const uint material = 5;
-        var stored = new (uint, uint)[] { (material, 999), (material, GlamourCaps.HeldCount), (Hat, 1) };
+        var stored = InBags((material, 999), (material, GlamourCaps.HeldCount), (Hat, 1));
 
         var facts = BuildFrom(held: stored, isGear: id => id != material);
 
-        Assert.Equal("""[{"id":2642,"count":1}]""", Json(facts.Held));
+        Assert.Equal("""[{"id":2642,"place":"bags","count":1}]""", Json(facts.Held));
     }
 
     // Two quantities whose 32-bit sum would wrap to 0 are withheld as over the cap
@@ -711,9 +968,9 @@ public class GlamourSnapshotTests
     [Fact]
     public void Summing_misread_quantities_cannot_wrap_into_a_plausible_count()
     {
-        var stored = new (uint, uint)[] { (Coat, uint.MaxValue), (Coat, 1) };
+        var stored = InBags((Coat, uint.MaxValue), (Coat, 1));
 
-        var built = GlamourSnapshot.Build(null, SetIndex, null, stored, _ => true);
+        var built = GlamourSnapshot.Build(null, SetIndex, null, stored, RetainerRoster.Empty, _ => true);
 
         Assert.Null(built.Facts);
         Assert.Equal(CollectSkipReasons.OverCap, built.WithheldReason);
@@ -739,7 +996,11 @@ public class GlamourSnapshotTests
                 new OutfitGlamour { OutfitId = OutfitId, PieceIds = new[] { Hat, Coat } },
             },
             Armoire = new uint[] { 3747, Coat },
-            Held = new[] { new HeldPiece { Id = 1601, Count = 3 }, new HeldPiece { Id = Coat, Count = 1 } },
+            Held = new[]
+            {
+                new HeldPiece { Id = 1601, Place = HeldPlaces.Bags, Count = 3 },
+                new HeldPiece { Id = Coat, Place = HeldPlaces.Retainer, Retainer = 1, Count = 1 },
+            },
         };
 
         // Hat, Coat, 3747 and 1601.
@@ -749,7 +1010,14 @@ public class GlamourSnapshotTests
     [Fact]
     public void CountPieces_skips_unread_containers()
     {
-        var oneHeld = new GlamourFacts { Held = new[] { new HeldPiece { Id = 1601, Count = 2 } } };
+        var oneHeld = new GlamourFacts
+        {
+            Held = new[]
+            {
+                new HeldPiece { Id = 1601, Place = HeldPlaces.Bags, Count = 2 },
+                new HeldPiece { Id = 1601, Place = HeldPlaces.Equipped, Count = 1 },
+            },
+        };
         var nothingHeld = new GlamourFacts { Held = Array.Empty<HeldPiece>() };
 
         Assert.Equal(1, GlamourSnapshot.CountPieces(oneHeld));

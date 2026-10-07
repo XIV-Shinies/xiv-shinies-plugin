@@ -66,9 +66,6 @@ public sealed class TamedBeastCollector : ICollector
     /// <inheritdoc/>
     public bool ReadsStorage => info.ReadsStorage;
 
-    /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
-
     // Nothing from the context: what the window said is self-contained, scoped by no server
     // manifest.
     /// <inheritdoc/>

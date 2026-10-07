@@ -40,8 +40,6 @@ public class CollectorSelectionTests
 
         public bool ReadsStorage { get; init; }
 
-        public bool RequiresOwnOptIn { get; init; }
-
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
 

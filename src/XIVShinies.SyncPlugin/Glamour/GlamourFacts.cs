@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace XIVShinies.SyncPlugin.Glamour;
@@ -87,9 +88,9 @@ public sealed record GlamourFacts
     public IReadOnlyList<uint>? Armoire { get; init; }
 
     /// <summary>
-    /// Equippable pieces held in bags, equipped, the armory chest, the saddlebag, retainers and the
-    /// last-summoned retainer's market listings, one entry per item with how many copies are held,
-    /// ordered by id.
+    /// Equippable pieces held outside the dresser and the Armoire, one entry per item per place
+    /// (see <see cref="HeldPlaces"/>), each with how many copies that place holds, ordered by id, then
+    /// by place, then by retainer key.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -98,22 +99,70 @@ public sealed record GlamourFacts
     /// "not read" state of its own.
     /// </para>
     /// <para>
-    /// Each item appears once, under its base id, with its copies summed across every container
-    /// that holds one (see <see cref="HeldPiece.Count"/>). The count matters because every outfit
-    /// glamour needs a copy of its own. Only gear is listed; materials, consumables and other
-    /// non-equippable items are left out.
+    /// An item held in two places is two entries, so the server can show where each copy sits; a
+    /// retainer's copies and its market listings are further split by retainer (see
+    /// <see cref="HeldPiece.Retainer"/>). The count matters because every outfit glamour needs a
+    /// copy of its own. Only gear is listed; materials, consumables and other non-equippable items
+    /// are left out.
     /// </para>
     /// </remarks>
     // `required` makes the compiler refuse to build a GlamourFacts unless this property is set in
     // the initializer — a compile-time guarantee, rather than a runtime check, that it is never
     // forgotten.
     public required IReadOnlyList<HeldPiece> Held { get; init; }
+
+    /// <summary>
+    /// Every retainer whose copies were read this pass, or null (omitted) when none was.
+    /// </summary>
+    /// <remarks>
+    /// A retainer listed here tells the server its <see cref="HeldPlaces.Retainer"/> place is
+    /// current, so a piece missing from it has left that retainer; one that carries
+    /// <see cref="RetainerEntry.Market"/> does the same for its market listings. The
+    /// <see cref="HeldPiece.Retainer"/> keys in <see cref="Held"/> point into this list.
+    /// </remarks>
+    public IReadOnlyList<RetainerEntry>? Retainers { get; init; }
 }
 
-/// <summary>One piece of gear the character holds, and how many copies of it.</summary>
+/// <summary>The places a held copy can be in, as the wire names them, in the wire's order.</summary>
+/// <remarks>
+/// The bags, the armory chest and the equipped set are read live; the saddlebag and the retainers
+/// from the game's saved copies; the market listings live, one retainer's, normally the one
+/// summoned most recently (see <see cref="RetainerRoster.MarketOwner"/>).
+/// </remarks>
+// `const string` fields are compile-time constants, like an exported `as const` string union in
+// TypeScript. The array below keeps their wire order in one place.
+public static class HeldPlaces
+{
+    /// <summary>The four inventory bags.</summary>
+    public const string Bags = "bags";
+
+    /// <summary>The armory chest, every slot type but the soul crystals.</summary>
+    public const string Armory = "armory";
+
+    /// <summary>The gear the character has on.</summary>
+    public const string Equipped = "equipped";
+
+    /// <summary>The chocobo saddlebag, premium half included.</summary>
+    public const string Saddlebag = "saddlebag";
+
+    /// <summary>A retainer's bags and the gear it has on; the entry names the retainer.</summary>
+    public const string Retainer = "retainer";
+
+    /// <summary>A retainer's market listings; the entry names the retainer.</summary>
+    public const string Market = "market";
+
+    /// <summary>Every place, in the order the wire lists them.</summary>
+    // `Array.AsReadOnly` wraps the array in an object that enforces read-only at run time: writing
+    // through it throws, and it cannot be cast back to the array underneath.
+    public static readonly IReadOnlyList<string> InWireOrder =
+        Array.AsReadOnly(new[] { Bags, Armory, Equipped, Saddlebag, Retainer, Market });
+}
+
+/// <summary>Copies of one piece of gear held in one place.</summary>
 /// <remarks>
 /// The glamour dresser and the Armoire are reported in their own lists, and their copies are not
-/// included here.
+/// included here. Properties are declared in the wire's key order: <c>id</c>, <c>place</c>,
+/// <c>retainer</c>, <c>count</c>.
 /// </remarks>
 public sealed record HeldPiece
 {
@@ -121,16 +170,62 @@ public sealed record HeldPiece
     // `uint` is an unsigned 32-bit integer, so a negative id is unrepresentable.
     public required uint Id { get; init; }
 
+    /// <summary>Where these copies are, one of the <see cref="HeldPlaces"/> values.</summary>
+    public required string Place { get; init; }
+
     /// <summary>
-    /// How many copies are held, at least 1: summed across bags, equipped gear, the armory chest,
-    /// the saddlebag, retainers' bags and equipped gear, and a retainer's market listings, at every
-    /// quality.
+    /// For a <see cref="HeldPlaces.Retainer"/> or <see cref="HeldPlaces.Market"/> entry, the
+    /// <see cref="RetainerEntry.Key"/> of the retainer that holds or listed the copies; null
+    /// (omitted) for every other place.
+    /// </summary>
+    // `int?` is a nullable int, `number | null` in TypeScript; the serializer leaves a null out.
+    public int? Retainer { get; init; }
+
+    /// <summary>
+    /// How many copies this place holds, at least 1, summed across its slots at every quality.
     /// </summary>
     /// <remarks>
     /// Always sent, even at 1: the number of copies is what says how many outfit glamours they can
     /// fill.
     /// </remarks>
     public required uint Count { get; init; }
+}
+
+/// <summary>One retainer whose copies were read this pass.</summary>
+public sealed record RetainerEntry
+{
+    /// <summary>
+    /// The number held entries use to name this retainer, 1 to 10, unique within one upload.
+    /// </summary>
+    /// <remarks>
+    /// Local to the upload: it keeps every held entry short, and the stable identity is
+    /// <see cref="Id"/>.
+    /// </remarks>
+    public required int Key { get; init; }
+
+    /// <summary>
+    /// The retainer's id as a SHA-256 digest in 64 lowercase hex characters (see
+    /// <see cref="RetainerIdHash"/>). The game's own id never leaves the plugin.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// The retainer's name, or null (omitted) when the game has not loaded the retainer list this
+    /// session or holds no usable name for it (blank, or past <see cref="GlamourCaps.RetainerName"/>).
+    /// The server keeps the last name it received.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// True on the one retainer whose market listings were read this pass; null (omitted) on every
+    /// other.
+    /// </summary>
+    /// <remarks>
+    /// Sent even when that retainer lists no gear, which is how the server tells "listed nothing"
+    /// from "not read". Nullable for the same reason as <see cref="DresserPiece.Hq"/>: only
+    /// <c>"market":true</c> ever reaches the wire.
+    /// </remarks>
+    public bool? Market { get; init; }
 }
 
 /// <summary>One loose piece stored in one glamour dresser slot.</summary>

@@ -353,8 +353,8 @@ internal sealed partial class MainWindow
 
             // The standing choice for collections that do not exist yet — see
             // PluginSettings.AutoEnableUnseenCategories for what acts on it at load, and
-            // AutoEnableScope for which collections it may reach. Ticking it here is the explicit
-            // consent that answer rests on.
+            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
+            // separately is left out. Ticking it here is the explicit consent that answer rests on.
             var autoEnable = configuration.Settings.AutoEnableNewFeatures;
             if (ImGui.Checkbox(
                     "Turn on new collections automatically##autoEnableNew",
@@ -366,15 +366,12 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
 
-            // Scoped to exactly what the tick reaches (see AutoEnableScope): collections of what the
-            // character has done or holds, with a fixed scope. Each exclusion is described rather
-            // than listed by name, so the sentence stays true as collections are added; appearance
-            // is the example because it is the record that describes the character itself.
+            // Scoped to exactly what the tick reaches: every collection with a fixed scope, and no
+            // sharing feature.
             DrawWrapped(
                 "Tick this and a new collection a later update adds starts switched on, instead of " +
-                "waiting for you to find it. Collections whose groups you choose separately, " +
-                "anything describing your character itself, such as its appearance, and new kinds " +
-                "of sharing like the live tracker above always wait for you.",
+                "waiting for you to find it. Collections whose groups you choose separately, and " +
+                "new kinds of sharing like the live tracker above, always wait for you.",
                 ImGuiCol.Text);
             ImGui.Unindent(checkboxColumn);
         }

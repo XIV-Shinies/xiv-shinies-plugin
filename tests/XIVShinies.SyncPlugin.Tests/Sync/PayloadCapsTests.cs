@@ -171,7 +171,7 @@ public class PayloadCapsTests
     public void A_glamour_object_passes_through_untouched_whatever_its_inner_lists_hold()
     {
         var held = Enumerable.Range(1, PayloadCaps.MaxIdsPerCategory + 1)
-            .Select(i => new HeldPiece { Id = (uint)i, Count = 1 })
+            .Select(i => new HeldPiece { Id = (uint)i, Place = HeldPlaces.Bags, Count = 1 })
             .ToArray();
         var dresser = Enumerable.Range(1, PayloadCaps.MaxEntriesPerCategory + 1)
             .Select(i => new DresserPiece { Id = (uint)i })

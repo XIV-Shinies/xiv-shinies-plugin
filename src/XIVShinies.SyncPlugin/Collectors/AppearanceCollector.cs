@@ -95,9 +95,6 @@ public sealed unsafe class AppearanceCollector : ICollector
     /// <inheritdoc/>
     public bool ReadsStorage => info.ReadsStorage;
 
-    /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
-
     // This collector needs nothing from the context: the character's appearance is read whole, with
     // no server manifest narrowing the scope.
     /// <inheritdoc/>

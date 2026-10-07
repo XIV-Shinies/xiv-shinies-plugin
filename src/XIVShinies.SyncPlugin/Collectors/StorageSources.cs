@@ -135,9 +135,8 @@ internal static unsafe class StorageSources
     /// <param name="finder">The game's item finder, or null when it is not available.</param>
     /// <remarks>
     /// <c>RetainerInventories.Count</c> is the number of retainers whose contents the item finder
-    /// remembers. Reading it does not touch the map's keys, which are retainer ids and are never
-    /// read. The rule applied to the count is <see cref="RetainerNote.HasRemembered"/>, the same one
-    /// the note uses.
+    /// remembers. Reading the count does not touch the map's keys, which are retainer ids. The rule
+    /// applied to the count is <see cref="RetainerNote.HasRemembered"/>, the same one the note uses.
     /// </remarks>
     public static bool HasRememberedRetainers(ItemFinderModule* finder) =>
         finder is not null && RetainerNote.HasRemembered(finder->RetainerInventories.Count);
@@ -152,8 +151,8 @@ internal static unsafe class StorageSources
     /// This reads the two counts out of the game and hands them to <see cref="RetainerNote.Build"/>,
     /// which decides the note and documents its rules. The remembered count is the one
     /// <see cref="HasRememberedRetainers"/> gates a read on. The total comes from
-    /// <c>RetainerManager.GetRetainerCount</c>, a count only — the manager's per-retainer entries
-    /// (ids, names) are never read.
+    /// <c>RetainerManager.GetRetainerCount</c>, a count only; the note reads none of the manager's
+    /// per-retainer entries.
     /// </para>
     /// <para>
     /// With no item finder at all nothing can be read, so the source is unscanned and no total is

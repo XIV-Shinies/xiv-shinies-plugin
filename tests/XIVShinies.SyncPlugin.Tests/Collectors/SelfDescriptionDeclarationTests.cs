@@ -8,18 +8,20 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// <summary>
 /// Pins the exact sets of collections that declare <see cref="CategoryInfo.RequiresServerSupport"/>,
 /// <see cref="CategoryInfo.IsSingleRecord"/>, <see cref="CategoryInfo.ReadsStorage"/> and
-/// <see cref="CategoryInfo.RequiresOwnOptIn"/>.
+/// <see cref="CategoryInfo.UsesItemManifest"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Each flag changes behavior no collector test would catch: the first holds a collection back,
 /// unread and unsent, until the server names it; the second drops its count from the upload log;
 /// the third decides whether the settings panel shows the storage container lines while the
-/// collection is on; the fourth keeps the standing "turn on new collections automatically" answer
-/// from switching the collection on. A flag copied along with an existing
-/// <see cref="CategoryInfo"/>, or lost from one, would do any of these silently. Comparing the whole
-/// set is what makes each test fail in both directions — a category that stops declaring, and one
-/// that starts — so every change to any set has to be made here on purpose.
+/// collection is on; the fourth marks a collection whose scope comes from the server's item
+/// manifest, which attaches its consent-group rows and keeps the standing "turn on new collections
+/// automatically" answer from switching it on (see
+/// <see cref="ManifestConsent.FixedScopeCategoryKeys"/>). A flag copied along with an existing
+/// <see cref="CategoryInfo"/>, or lost from one, would do any of these silently. Comparing the
+/// whole set is what makes each test fail in both directions — a category that stops declaring,
+/// and one that starts — so every change to any set has to be made here on purpose.
 /// </para>
 /// <para>
 /// The same pattern as <see cref="CompletenessDeclarationTests"/>, reading the registry through the
@@ -66,12 +68,13 @@ public class SelfDescriptionDeclarationTests
     };
 
     /// <summary>
-    /// The collections the standing answer for new collections never reaches, so only the user
-    /// switches them on.
+    /// The collections whose scope comes from the server's item manifest and the consent groups the
+    /// user answers separately. They are the only collections the standing answer for new
+    /// collections never switches on.
     /// </summary>
-    private static readonly HashSet<string> RequiringOwnOptIn = new()
+    private static readonly HashSet<string> UsingItemManifest = new()
     {
-        CategoryKeys.Appearance,
+        CategoryKeys.Items,
     };
 
     [Fact]
@@ -108,13 +111,13 @@ public class SelfDescriptionDeclarationTests
     }
 
     [Fact]
-    public void Exactly_the_expected_categories_require_their_own_opt_in()
+    public void Exactly_the_expected_categories_use_the_item_manifest()
     {
         var actual = CollectorRegistryReflection.Categories()
-            .Where(info => info.RequiresOwnOptIn)
+            .Where(info => info.UsesItemManifest)
             .Select(info => info.Key)
             .ToHashSet();
 
-        Assert.Equal(RequiringOwnOptIn, actual);
+        Assert.Equal(UsingItemManifest, actual);
     }
 }

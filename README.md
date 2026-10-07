@@ -59,15 +59,17 @@ into:
   Nothing is read while the window is closed, and other players are never involved
 - The ID numbers and copy counts of the **gear you hold and where it is kept**: your Glamour
   Dresser (with each piece's quality and dyes), outfit glamours, Armoire, and the gear you wear or
-  keep in your bags, armoury chest, saddlebag, retainers and retainer market listings — plus which
-  of those storage locations could be read and how many retainers you have. Gear only; materials and
-  other items are never included. Your bags, equipped gear and armoury chest are read at login and
-  on every scheduled or manual sync; the dresser, Armoire and saddlebag once you have opened and
-  closed each one this session (dresser dyes only in the area where you opened it); and your
-  retainers from the game's saved copy of each one you have summoned, which survives logging out,
-  plus the market listings of the one summoned most recently. Nothing is read while a storage
-  window is open. This is a picture of what you hold right now, so the site can tell when a piece
-  has left your storage — though nothing you marked by hand is ever unmarked
+  keep in your bags, armoury chest, saddlebag, retainers and retainer market listings, down to
+  which retainer holds each piece — plus which of those storage locations could be read, how many
+  retainers you have, and their names. A retainer is identified by a one-way hash of its id, never
+  the id itself, and its name is read only once you have used a summoning bell this session. Gear
+  only; materials and other items are never included. Your bags, equipped gear and armoury chest
+  are read at login and on every scheduled or manual sync; the dresser, Armoire and saddlebag once
+  you have opened and closed each one this session (dresser dyes only in the area where you opened
+  it); and your retainers from the game's saved copy of each one you have summoned, which survives
+  logging out, plus the market listings of the one summoned most recently. Nothing is read while a
+  storage window is open. This is a picture of what you hold right now, so the site can tell when
+  a piece has left your storage — though nothing you marked by hand is ever unmarked
 - Your **character's appearance** as set in the character creator (race, clan, gender, face, hair,
   eyes, colors and body), the glasses you wear, and your display settings: whether your weapon,
   headgear, visor, Viera ears and Free Company crest are shown — read from your own character, so
@@ -105,9 +107,7 @@ as a whole — can be toggled at any time from the settings window (`/shinies`).
 
 Setup also offers to start collections added by later updates already switched on, so that if you
 always opt in you are not asked every time. It is off unless you tick it, and either way a new
-collection is marked **New** in the settings until you have seen it. Collections whose groups you
-choose separately, anything describing your character itself (such as its appearance), and new
-kinds of sharing like the live tracker always wait for you.
+collection is marked **New** in the settings until you have seen it.
 
 ![The first-run wizard: what it sends, and your privacy, before anything uploads](images/screenshots/wizard-1-welcome.png)
 

@@ -298,18 +298,22 @@ public static class CollectorRegistry
         // because "the gear you hold" alone would not tell a reader that how many of each piece they
         // hold travels too. Where each piece is kept, its quality and its dyes are facts about the
         // piece beyond its id: a loose dresser piece carries `hq: true` when it is high quality, and
-        // its two dye channels when they could be read. The storage clause names the source notes
-        // that travel beside these facts too, worded as the items category's is and for the reason
-        // given there.
+        // its two dye channels when they could be read. "Down to which retainer" says the location
+        // goes as far as naming the retainer that holds a piece. The storage clause names the source
+        // notes that travel beside these facts too, worded as the items category's is and for the
+        // reason given there; the retainers' names close it, because a name is a kind of data no
+        // other part of the sentence implies.
         WhatGetsSent =
-            "The gear you hold, with copy counts, where each piece is kept, its quality and its " +
-            "dyes, plus which storage locations could be read and how many retainers you have.",
+            "The gear you hold, with copy counts, where each piece is kept (down to which " +
+            "retainer), its quality and its dyes, plus which storage locations could be read, how " +
+            "many retainers you have and their names.",
 
         // Which locations are searched, named one by one as the items category names its own, and
         // grouped by when each is read, which the player cannot see happen. The live containers are
         // read on every pass; the dresser, Armoire and saddlebag only once their window has been
         // opened and closed this session; the retainers from the game's saved copy, which outlasts
-        // the session, plus the live market listings of the retainer summoned most recently. Without
+        // the session, plus the live market listings of the retainer summoned most recently, and
+        // their names only once the game has loaded its retainer list at a summoning bell. Without
         // that timing, a dresser never opened this session simply does not arrive and reads as a
         // broken sync. All of it is elaboration: the fact that storage locations travel at all is
         // disclosure and sits on the visible line.
@@ -322,8 +326,9 @@ public static class CollectorRegistry
         Details =
             "Bags, equipped gear and armoury chest: every login, scheduled or manual sync. Glamour " +
             "Dresser, Armoire and saddlebag: once you've opened and closed each this session. " +
-            "Retainers: the game's saved copy, plus the market listings of the one summoned last. " +
-            "Nothing is read while a storage window is open, and only your own character is read.",
+            "Retainers: the game's saved copy, plus the market listings of the one summoned last, " +
+            "and their names once you've used a summoning bell this session. Nothing is read while " +
+            "a storage window is open, and only your own character is read.",
 
         // Held back until the server names it. The snapshot is large, and the server reads it as
         // current holdings, so it is only worth reading and sending to a server that knows it.
@@ -369,11 +374,6 @@ public static class CollectorRegistry
         // One record about the character, not a collection of things, so the upload log names it
         // without a count (see CategoryInfo.IsSingleRecord).
         IsSingleRecord = true,
-
-        // A description of the character itself rather than what it has done or holds, so the
-        // standing answer for new collections does not cover it, and it waits for the user (see
-        // CategoryInfo.RequiresOwnOptIn).
-        RequiresOwnOptIn = true,
     };
 
     /// <summary>Creates every collector, in the order they will be run.</summary>

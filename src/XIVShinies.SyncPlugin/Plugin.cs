@@ -229,10 +229,11 @@ public sealed class Plugin : IDalamudPlugin
             // never-shown — and before the window exists, so a collection is switched on before
             // anything can draw it and mark it shown.
             //
-            // Only the collections that answer may reach: AutoEnableScope says which, and why the
-            // rest wait for the user to switch them on.
+            // Only the collections a tick settles on its own — see
+            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
+            // separately must not be switched on for them.
             var autoEnabled = Configuration.Settings.AutoEnableUnseenCategories(
-                AutoEnableScope.EligibleCategoryKeys(collectors));
+                ManifestConsent.FixedScopeCategoryKeys(collectors));
             if (autoEnabled.Count > 0)
             {
                 Configuration.Save();

@@ -120,17 +120,6 @@ public interface ICollector
     bool ReadsStorage { get; }
 
     /// <summary>
-    /// True when the standing answer for new collections never reaches this one (see
-    /// <see cref="CategoryInfo.RequiresOwnOptIn"/>).
-    /// </summary>
-    /// <remarks>
-    /// <see cref="AutoEnableScope"/> reads this to leave the collection out of the standing
-    /// "turn on new collections automatically" answer; self-description, like
-    /// <see cref="UsesItemManifest"/>.
-    /// </remarks>
-    bool RequiresOwnOptIn { get; }
-
-    /// <summary>
     /// Reads the facts from the game, or explains why it could not.
     /// </summary>
     /// <param name="context">

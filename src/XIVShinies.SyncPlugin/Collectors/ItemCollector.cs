@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
@@ -79,10 +80,11 @@ public sealed unsafe class ItemCollector : ICollector
     // must never walk are listed on StorageContainers.
     //
     // `[.. a, b, c]` is a collection expression with a spread, the C# counterpart of `[...a, b, c]`
-    // in TypeScript.
+    // in TypeScript. Item counts have no use for the held places the shared list pairs with each
+    // container, so `Select` keeps only the container types, like `.map(c => c.type)`.
     private static readonly InventoryType[] LiveContainers =
     [
-        .. StorageContainers.GearContainers,
+        .. StorageContainers.GearContainers.Select(container => container.Type),
         InventoryType.ArmorySoulCrystal,
         InventoryType.Crystals,
         InventoryType.Currency,
@@ -130,9 +132,6 @@ public sealed unsafe class ItemCollector : ICollector
 
     /// <inheritdoc/>
     public bool ReadsStorage => info.ReadsStorage;
-
-    /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
 
     /// <inheritdoc/>
     public CollectResult Collect(CollectContext context)
@@ -445,8 +444,8 @@ public sealed unsafe class ItemCollector : ICollector
     /// </para>
     /// <para>
     /// <c>IsRetainerCurrent</c> could tell a this-session read apart from the disk cache, but using
-    /// it would mean reading the map's retainer-ID keys, which this plugin deliberately never
-    /// touches. The distinction would change nothing: both are reported as not fresh.
+    /// it would mean reading the map's retainer-id keys, which item counts have no use for. The
+    /// distinction would change nothing: both are reported as not fresh.
     /// </para>
     /// </remarks>
     private static void TallyRetainers(

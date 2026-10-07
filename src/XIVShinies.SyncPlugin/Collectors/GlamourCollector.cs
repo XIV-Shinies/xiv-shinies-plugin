@@ -18,20 +18,24 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <summary>
 /// Reports the gear the local character holds for glamour, and where: the glamour dresser's loose
 /// pieces and outfit glamours, the Armoire, and the gear held in bags, equipped, the armory chest,
-/// the saddlebag and retainers, with how many copies of each held piece there are.
+/// the saddlebag, each retainer and one retainer's market listings, with how many copies each
+/// place holds.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Current holdings, so "not read" and "read, empty" are different facts</b> (see
 /// <see cref="GlamourFacts"/>). A container this pass could not read is handed to
 /// <see cref="GlamourSnapshot.Build"/> as null and stays off the wire. The held list is a union of
-/// several containers and has no "not read" state of its own, so the source notes that travel
-/// beside the facts are what tell the server which of those containers fed it this pass.
+/// several containers and has no "not read" state of its own, so the source notes that travel beside
+/// the facts, together with the facts' own retainers list, tell the server which places fed it.
 /// </para>
 /// <para>
 /// <b>The local player's own storage only.</b> Every container read here belongs to the local
-/// character. The item finder's retainer map is walked by its values only; its keys, which are
-/// retainer ids, are never read and never leave the process. No other character's data is touched.
+/// character, and so does every retainer. The retainers' ids, the keys of the item finder's
+/// retainer map, are read to tie each held copy to its retainer, and are hashed by
+/// <see cref="RetainerRoster"/> before anything is sent: the raw ids never leave the process. The
+/// retainers' names are read from the game's own retainer list and sent, as the consent line
+/// discloses. No other character's data is touched.
 /// </para>
 /// <para>
 /// <b>Where each container is read from.</b> Bags, equipped gear and the armory chest are read live
@@ -41,13 +45,13 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <para>
 /// The saddlebag and the retainers are read from the game's item finder copies, never from their
 /// live containers (<see cref="StorageContainers"/> says why), with one exception: the live market
-/// container, which holds the last summoned retainer's listings, is read only to add their copies
-/// to the held counts. The dresser is read from the item finder's copy, with dyes taken from the
-/// game's live dresser copy when it is loaded. The Armoire is read through <c>UIState</c> while the
-/// game has it loaded. The saddlebag, retainer, dresser and Armoire reads are each gated by a
+/// container, which holds one retainer's listings, normally the last summoned one's. The dresser
+/// is read from the item finder's copy, with dyes taken from the game's live dresser copy when it
+/// is loaded. The Armoire is read through <c>UIState</c> while the game has it loaded. The
+/// saddlebag, retainer, dresser and Armoire reads are each gated by a
 /// <see cref="StorageSources"/> predicate, which also documents when an item finder copy counts as
-/// read this session. The market listings and the dyes only add to those reads, and are taken
-/// whenever their own container is loaded.
+/// read this session. The market listings count only when they can be credited to a retainer (see
+/// <see cref="RetainerRoster.MarketOwner"/>).
 /// </para>
 /// <para>
 /// <b>Skipped while a storage window is open.</b> The live containers change in the same frame as a
@@ -74,8 +78,8 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// closed sends a stale copy, and a piece just stored would read as removed.
 /// </para>
 /// <para>
-/// <b>Withheld, never truncated or clamped.</b> A list or a held count past the server's ceiling
-/// sends no glamour facts at all (<see cref="CollectSkipReasons.OverCap"/>);
+/// <b>Withheld, never truncated or clamped.</b> A list, a held count or the number of retainers
+/// past the server's ceiling sends no glamour facts at all (<see cref="CollectSkipReasons.OverCap"/>);
 /// <see cref="GlamourSnapshot"/>'s class remarks say why.
 /// </para>
 /// <para>
@@ -90,7 +94,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// verified by in-game QA rather than by unit tests. It only copies values out of the game and hands
 /// them over; the rules live in pure, tested classes: <see cref="GlamourSnapshot"/> (assembling the
 /// facts), <see cref="GlamourGear"/> (which held items are gear), <see cref="GameItemId"/> (the
-/// high-quality encoding) and <see cref="MirageSetIndex"/> (which of an outfit's pieces are stored).
+/// high-quality encoding), <see cref="MirageSetIndex"/> (which of an outfit's pieces are stored)
+/// and <see cref="RetainerRoster"/> (which retainers are listed, their keys and whose listings were
+/// read).
 /// </para>
 /// </remarks>
 // `unsafe` allows raw pointers. FFXIVClientStructs maps the game's own memory layout, so its
@@ -191,9 +197,6 @@ public sealed unsafe class GlamourCollector : ICollector
     public bool ReadsStorage => info.ReadsStorage;
 
     /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
-
-    /// <inheritdoc/>
     // This collector needs nothing from the context: it reports all the gear the character holds,
     // with no server manifest narrowing the scope.
     public CollectResult Collect(CollectContext context)
@@ -247,6 +250,10 @@ public sealed unsafe class GlamourCollector : ICollector
         if (held is null)
             return CollectResult.Skipped(CollectSkipReasons.StorageUnreadable);
 
+        // The retainers whose copies were just read, with their names and the market's owner when
+        // the game has them; RetainerRoster turns them into the upload's retainers list.
+        var roster = ReadRoster(held.RetainerIds, held.MarketRead, held.ListingsRead);
+
         var dresser = ReadDresser(finder);
         var armoire = ReadArmoire(uiState, cabinetRows);
 
@@ -269,12 +276,12 @@ public sealed unsafe class GlamourCollector : ICollector
             dresser,
             mirageSetIndex,
             armoire,
-            held,
+            held.Slots,
+            roster,
             itemId => IsGlamourGear(itemSheet, itemId));
 
-        // A withheld snapshot names its reason, already a skip reason: a list or a held count past
-        // its ceiling, or a dresser reading the builder cannot interpret (GlamourSnapshot's class
-        // remarks cover both).
+        // A withheld snapshot names its reason, already a skip reason (GlamourSnapshot's class
+        // remarks list them).
         if (built.WithheldReason is not null)
             return CollectResult.Skipped(built.WithheldReason);
 
@@ -305,33 +312,40 @@ public sealed unsafe class GlamourCollector : ICollector
         return false;
     }
 
-    // Every occupied slot of the containers that can hold the character's gear, as a (stored id,
-    // quantity) pair: the live containers, the item finder's saddlebag and retainer copies when it
-    // has them, and the last summoned retainer's market listings. Slots holding anything other than
-    // gear are included too; GlamourSnapshot keeps only the gear. Repeats are expected; the builder
-    // sums them per item.
+    // What ReadHeld read: every slot with its place, the raw ids of the retainers whose saved copies
+    // were read, whether the market listings container was loaded, and how many occupied listing
+    // slots it held. A positional record, like the builder's DresserReading.
+    private sealed record HeldReading(
+        List<HeldSlot> Slots, List<ulong> RetainerIds, bool MarketRead, int ListingsRead);
+
+    // Every occupied slot of the containers that can hold the character's gear, tagged with its
+    // place: the live containers, the item finder's saddlebag and retainer copies when it has them,
+    // and one retainer's market listings. Slots holding anything other than gear are included too;
+    // GlamourSnapshot keeps only the gear. Repeats are expected; the builder sums them per item,
+    // place and retainer.
     //
     // Returns null when the held list cannot be read as a whole: a gear container (a bag, the
     // equipped set or an armory chest) is not loaded, or a retainer the item finder remembers has
-    // no inventory behind it. The inventory note says Live and the retainer note vouches for every
-    // remembered retainer, and the server can read both as current, so a container left unread would
-    // arrive as read and every piece in it would read as a removal. The category is not read at
-    // all instead: the caller reports a null as storage that could not be read
-    // (CollectSkipReasons.StorageUnreadable).
-    private static List<(uint StoredId, uint Quantity)>? ReadHeld(
-        InventoryManager* inventory,
-        ItemFinderModule* finder)
+    // no inventory behind it or a zero id. The inventory note says Live, so a gear container left
+    // unread would arrive as current and every piece in it would read as removed. A retainer left
+    // unread would be missing from the retainers list, yet the retainer note would still count it,
+    // so the upload would still count as all-current and every piece only that retainer holds would
+    // count toward clearing its ownership flag. The category is not read at all instead: the caller
+    // reports a null as storage that could not be read (CollectSkipReasons.StorageUnreadable).
+    private static HeldReading? ReadHeld(InventoryManager* inventory, ItemFinderModule* finder)
     {
-        var held = new List<(uint StoredId, uint Quantity)>();
+        var slots = new List<HeldSlot>();
+        var retainerIds = new List<ulong>();
 
         // BAGS, EQUIPPED SET AND ARMORY CHESTS — every one must be read, or the pass reads nothing
         // (the method comment says why). IsLoaded is the game's own signal that a container's
         // contents are ready. Once a character is in the world every one of these reports itself
         // loaded, the waist chest included, though no belt can be equipped, so this skip appears
         // only while the game is still loading the inventory.
-        foreach (var type in StorageContainers.GearContainers)
+        // `var (type, place)` unpacks each (container, place) pair StorageContainers lists.
+        foreach (var (type, place) in StorageContainers.GearContainers)
         {
-            if (!AddLiveContainer(inventory, type, held))
+            if (!AddLiveContainer(inventory, type, place, slots))
                 return null;
         }
 
@@ -341,64 +355,124 @@ public sealed unsafe class GlamourCollector : ICollector
         // StorageSources.IsSaddlebagCached). The gate is false for a missing item finder too.
         if (StorageSources.IsSaddlebagCached(finder))
         {
-            AddStoredSlots(finder->SaddleBagItemIds, finder->SaddleBagItemCount, held);
-            AddStoredSlots(finder->PremiumSaddleBagItemIds, finder->PremiumSaddleBagItemCount, held);
+            AddStoredSlots(
+                finder->SaddleBagItemIds, finder->SaddleBagItemCount, HeldPlaces.Saddlebag, 0, slots);
+            AddStoredSlots(
+                finder->PremiumSaddleBagItemIds,
+                finder->PremiumSaddleBagItemCount,
+                HeldPlaces.Saddlebag,
+                0,
+                slots);
         }
 
-        // RETAINERS, from the item finder's copy. `.Values` walks the map's inventories without
-        // ever reading its keys, which are retainer ids. A retainer whose contents the finder has
-        // never remembered is simply not in the map. The gate is the one the retainer note is built
-        // on, and is false for a missing item finder.
+        // RETAINERS, from the item finder's copy, one map entry per retainer whose contents it
+        // remembers. Walking the map itself yields key/value pairs: `Item1` is the retainer's id and
+        // `Item2` its inventory. The id is kept only to tie each slot to its retainer and to be
+        // hashed by RetainerRoster; it never leaves the process. A retainer the finder has never
+        // remembered is simply not in the map. The gate is the one the retainer note is built on,
+        // and is false for a missing item finder.
         if (StorageSources.HasRememberedRetainers(finder))
         {
-            foreach (var inventoryPointer in finder->RetainerInventories.Values)
+            foreach (var pair in finder->RetainerInventories)
             {
-                // A map entry with no inventory behind it is a retainer that cannot be read, so the
-                // whole pass is not read (see the method comment).
-                var retainer = inventoryPointer.Value;
-                if (retainer is null)
+                // `Item2` is a small wrapper around a pointer to the retainer's inventory, and
+                // `.Value` is the raw pointer inside it, null when the entry has nothing behind it.
+                var retainerId = pair.Item1;
+                var retainer = pair.Item2.Value;
+
+                // An entry with no inventory, or with a zero id, is a retainer that cannot be read
+                // and named: its copies could not be tied to it, yet the retainer note still counts
+                // it. So the whole pass is not read (see the method comment).
+                if (retainer is null || retainerId == 0)
                     return null;
 
+                retainerIds.Add(retainerId);
+
                 // What the retainer stores, with a quantity per slot, and what it has equipped, one
-                // copy each: both are the player's own gear.
-                AddStoredSlots(retainer->ItemIds, retainer->ItemCount, held);
+                // copy each: both are the player's own gear, and both count under its retainer place.
+                AddStoredSlots(
+                    retainer->ItemIds, retainer->ItemCount, HeldPlaces.Retainer, retainerId, slots);
                 foreach (var equippedId in retainer->EquippedItemIds)
                 {
                     if (equippedId != 0)
-                        held.Add((equippedId, 1));
+                        slots.Add(new HeldSlot(equippedId, 1, HeldPlaces.Retainer, retainerId));
                 }
             }
         }
 
-        // MARKET LISTINGS — the one live retainer container read anywhere, and only to ADD copies.
-        // A piece put up for sale leaves its retainer's bags, and so leaves the item finder's saved
-        // copy of them; without this read, a listed piece would be missing from the held counts.
-        // Because it has left the bags, no copy is ever counted twice.
+        // MARKET LISTINGS — the one live retainer container read anywhere. A piece put up for sale
+        // leaves its retainer's bags, and so leaves the item finder's saved copy of them; without
+        // this read, a listed piece would be missing from the held counts. Because it has left the
+        // bags, no copy is ever counted twice.
         //
-        // The coverage is partial. The container holds the listings of the retainer summoned most
-        // recently this session, and only those: listings on any other retainer are not seen, before
-        // the first summon of a session nothing is seen (the container is empty, which adds
-        // nothing), and summoning a different retainer drops the earlier one's listings from the held
-        // counts. So this read makes a listed piece read as gone less often; it does not prevent it.
+        // The coverage is partial. The container holds one retainer's listings, normally those of
+        // the retainer summoned most recently this session (RetainerRoster.MarketOwner covers when
+        // it does not), and only those: listings on any other retainer are not seen, before the first
+        // summon of a session nothing is seen (the container is empty, which adds nothing), and
+        // summoning a different retainer drops the earlier one's listings from the held counts. So
+        // this read makes a listed piece read as gone less often; it does not prevent it.
         //
         // It can also overcount for a while: a piece that has sold since that retainer was summoned
-        // stays counted until the retainer is summoned again. That stale positive is the lesser
-        // error here, since the alternative is an outfit cleared while its piece is merely for sale.
+        // stays counted while the game's retainer list still gives that retainer the listing count
+        // the container holds (see RetainerRoster.MarketOwner), at most until the retainer is
+        // summoned again. That stale positive is the lesser error here, since the alternative is an
+        // outfit cleared while its piece is merely for sale.
         //
-        // The result is ignored on purpose: unlike the bags, a market that is not loaded only means
-        // there is nothing to add.
-        AddLiveContainer(inventory, InventoryType.RetainerMarket, held);
+        // Unlike a bag, a market that is not loaded never stops the pass: it only means there are no
+        // listings to report. Whether it was read, and how many listings it held, are kept so the
+        // roster can decide whose listings these are (see ReadRoster). The slots carry no retainer
+        // of their own; the roster's market key is the one they take, and without one they are
+        // left out.
+        var slotsBefore = slots.Count;
+        var marketRead =
+            AddLiveContainer(inventory, InventoryType.RetainerMarket, HeldPlaces.Market, slots);
+        var listingsRead = slots.Count - slotsBefore;
 
-        return held;
+        return new HeldReading(slots, retainerIds, marketRead, listingsRead);
     }
 
-    // Adds every occupied slot of one live container to the held list, with its quantity. Returns
-    // whether the container was read at all, so the caller can tell "read, and empty" from "not
-    // read".
+    // The retainers whose saved copies were read, as the upload's roster. Names, listing counts and
+    // the last selection come from the game's retainer list, which it loads only once a summoning
+    // bell has been used this session; before then the roster still lists every read retainer,
+    // without names and without a market flag. Which retainer owns the listings is decided by
+    // RetainerRoster.MarketOwner, which documents the rule.
+    private static RetainerRoster ReadRoster(
+        IReadOnlyList<ulong> readRetainerIds, bool marketRead, int listingsRead)
+    {
+        var names = new Dictionary<ulong, string>();
+        var listingCounts = new Dictionary<ulong, int>();
+        ulong lastSelected = 0;
+
+        var manager = RetainerManager.Instance();
+        if (manager is not null && manager->IsReady)
+        {
+            // An entry is a retainer only when its id is non-zero: an unused entry can still hold
+            // leftover name bytes. `ref readonly` reads each entry where it sits in game memory
+            // rather than copying it, and NameString decodes the name's bytes into a string.
+            foreach (ref readonly var entry in manager->Retainers)
+            {
+                if (entry.RetainerId == 0)
+                    continue;
+
+                names[entry.RetainerId] = entry.NameString;
+                listingCounts[entry.RetainerId] = entry.MarketItemCount;
+            }
+
+            lastSelected = manager->LastSelectedRetainerId;
+        }
+
+        var marketOwner = RetainerRoster.MarketOwner(marketRead, listingsRead, lastSelected, listingCounts);
+        return RetainerRoster.Build(readRetainerIds, names, marketOwner);
+    }
+
+    // Adds every occupied slot of one live container to the held list, with its quantity and place.
+    // Returns whether the container was read at all, so the caller can tell "read, and empty" from
+    // "not read".
     private static bool AddLiveContainer(
         InventoryManager* inventory,
         InventoryType type,
-        List<(uint StoredId, uint Quantity)> held)
+        string place,
+        List<HeldSlot> slots)
     {
         var container = inventory->GetInventoryContainer(type);
 
@@ -431,30 +505,32 @@ public sealed unsafe class GlamourCollector : ICollector
             if (quantity <= 0)
                 continue;
 
-            held.Add((id, (uint)quantity));
+            slots.Add(new HeldSlot(id, (uint)quantity, place));
         }
 
         return true;
     }
 
     // Adds an item finder container's parallel (stored id, quantity) arrays to the held list, one
-    // pair per occupied slot. The loop bound is the shorter of the two spans, so a mismatched pair
-    // can never read out of bounds. The ids keep the item finder's high-quality encoding (see
-    // GameItemId), which GlamourSnapshot reads back out, so they are passed through untouched. Zero
-    // is an empty slot and is skipped; a zero quantity is passed through, and the builder ignores
-    // it.
+    // slot per occupied entry, tagged with its place and, for a retainer, the retainer's id. The
+    // loop bound is the shorter of the two spans, so a mismatched pair can never read out of
+    // bounds. The ids keep the item finder's high-quality encoding (see GameItemId), which
+    // GlamourSnapshot reads back out, so they are passed through untouched. Zero is an empty slot
+    // and is skipped; a zero quantity is passed through, and the builder ignores it.
     //
     // A Span<T> is a window onto memory that already exists, here an array inside the game's own
-    // struct. Nothing is copied until a pair is added to the list.
+    // struct. Nothing is copied until a slot is added to the list.
     private static void AddStoredSlots(
         Span<uint> storedIds,
         Span<ushort> quantities,
-        List<(uint StoredId, uint Quantity)> held)
+        string place,
+        ulong retainerId,
+        List<HeldSlot> slots)
     {
         for (var slot = 0; slot < storedIds.Length && slot < quantities.Length; slot++)
         {
             if (storedIds[slot] != 0)
-                held.Add((storedIds[slot], quantities[slot]));
+                slots.Add(new HeldSlot(storedIds[slot], quantities[slot], place, retainerId));
         }
     }
 

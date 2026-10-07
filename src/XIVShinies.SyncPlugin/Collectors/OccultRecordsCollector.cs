@@ -78,9 +78,6 @@ public sealed unsafe class OccultRecordsCollector : ICollector
     /// <inheritdoc/>
     public bool ReadsStorage => info.ReadsStorage;
 
-    /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
-
     // This collector needs nothing from the context: the seen-set is self-contained game data,
     // scoped by no server manifest.
     /// <inheritdoc/>

@@ -104,9 +104,6 @@ public sealed unsafe class OccultProgressionCollector : ICollector
     /// <inheritdoc/>
     public bool ReadsStorage => info.ReadsStorage;
 
-    /// <inheritdoc/>
-    public bool RequiresOwnOptIn => info.RequiresOwnOptIn;
-
     // This collector needs nothing from the context: the director's state is self-contained,
     // scoped by no server manifest.
     /// <inheritdoc/>

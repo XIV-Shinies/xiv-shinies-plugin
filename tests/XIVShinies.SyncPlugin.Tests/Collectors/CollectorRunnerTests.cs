@@ -56,9 +56,6 @@ public class CollectorRunnerTests
         // The settings panel's concern, never the runner's; the interface requires it.
         public bool ReadsStorage { get; init; }
 
-        // The auto-enable scope's concern, never the runner's; the interface requires it.
-        public bool RequiresOwnOptIn { get; init; }
-
         public int CollectCallCount { get; private set; }
 
         public CollectContext? LastContext { get; private set; }

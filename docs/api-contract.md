@@ -250,7 +250,12 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
       "dresser": [{"id": 2642, "hq": true, "stains": [12, 0]}], // one entry per loose dresser slot
       "outfitGlamours": [{"outfitId": 45094, "pieceIds": [2642, 2965]}], // one per outfit slot
       "armoire": [3747],
-      "held": [{"id": 2965, "count": 2}] // gear outside the dresser and Armoire, copies summed
+      "held": [ // gear outside the dresser and Armoire: one entry per item per place (and retainer)
+        {"id": 2965, "place": "bags", "count": 1},
+        {"id": 3747, "place": "retainer", "retainer": 1, "count": 2},
+        {"id": 3747, "place": "market", "retainer": 1, "count": 1}
+      ],
+      "retainers": [{"key": 1, "id": "<64 lowercase hex>", "name": "Mogwin", "market": true}]
     },
     "appearance": { // one record about the local character
       "version": 1,
@@ -291,7 +296,7 @@ Field constraints:
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
 | `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet for what the deployed server enforces |
-| `glamour`                | `{version: 1, dresser?, outfitGlamours?, armoire?, held}` — `dresser` `{id, hq?: true, stains?: [int, int]}[]`, **max 1,000**; `outfitGlamours` `{outfitId, pieceIds: int[]}[]`, **max 1,000**; `armoire` id array, **max 5,000**; `held` `{id, count: int ≤ 9,999}[]`, **max 20,000**. Past any limit, or with any other violation, this key alone is dropped and named in `rejectedCategories`; the rest of the upload applies — see its bullet for what the deployed server enforces |
+| `glamour`                | `{version: 1, dresser?, outfitGlamours?, armoire?, held, retainers?}` — `dresser` `{id, hq?: true, stains?: [int, int]}[]`, **max 1,000**; `outfitGlamours` `{outfitId, pieceIds: int[]}[]`, **max 1,000**; `armoire` id array, **max 5,000**; `held` `{id, place, retainer?, count: int ≤ 9,999}[]`, **max 20,000**; `retainers` `{key: int 1–10, id: 64 lowercase hex, name?: string ≤ 32, market?: true}[]`, **max 10**, keys and ids unique, at most one `market`. Past any limit, or with any other violation (an unknown `place`, a `retainer` key not in `retainers`), this key alone is dropped and named in `rejectedCategories`; the rest of the upload applies — see its bullet for what the deployed server enforces |
 | `appearance`             | `{version: 1, customize, glasses, fcCrest, weaponHidden, hatHidden, visorToggled, vieraEarsHidden}` — `customize` maps each of 26 fixed names to a raw byte (int 0–255); `glasses` two ints; `fcCrest` `{head, body, offHand}` booleans; the four toggles booleans. Any violation drops this key alone and names it in `rejectedCategories`; the rest of the upload applies — see its bullet for what the deployed server enforces |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
@@ -339,22 +344,22 @@ Field constraints:
   currency subsystem (gil, tomestones, scrips, and the rest), also read live. `itemSources`
   also accompanies every `glamour` upload, with the same keys and states (every source but
   `currencies`, which only `items` reports), whether or not `items` is switched on: it is how
-  the server decides which containers the snapshot read. One entry per
-  source serves both categories, because both gate their reads and build these entries from the
-  same code. For `glamour` the state also decides whether a missing piece is evidence. A source counts as
-  **current** when it is `inventory` `live`; `armoire` `loaded`; `glamourDresser` or `saddlebag`
-  `cached` (the game refreshes those two copies when their window closes, a copy counts as
-  `cached` only once that has happened this session, and the glamour category never reads while
-  one is open); or `retainers` `cached` with `count` equal to `total`. `unscanned` never counts. A
-  character that has not unlocked its chocobo companion has no saddlebag, so `saddlebag` is
-  `cached` with nothing from it: an empty source, current without a read. The plugin decides
-  "has none" only once the player's state has loaded. A character with no retainers stays
-  `unscanned`, because the game offers no signal that separates "has none" from "not loaded
-  yet". The accepted
-  source keys are a **closed set** (`inventory`, `saddlebag`, `retainers`, `armoire`,
-  `glamourDresser`, `currencies`) — an unrecognized key fails validation and rejects the
-  whole upload, so a new source key ships server-first, and any source the plugin tracks
-  for display only (an unreadable source such as mannequins) must stay off the wire.
+  the server decides which containers the snapshot read. One entry per source serves both
+  categories, because both gate their reads and build these entries from the same code. For
+  `glamour` the state also decides whether a missing piece is evidence, per place (see its
+  **Current-ness per place** bullet). A source counts as **current** when it is `inventory`
+  `live`; `armoire` `loaded`; `glamourDresser` or `saddlebag` `cached` (the game refreshes those
+  two copies when their window closes, a copy counts as `cached` only once that has happened this
+  session, and the glamour category never reads while one is open); or `retainers` `cached` with
+  `count` equal to `total`. `unscanned` never counts. A character that has not unlocked its
+  chocobo companion has no saddlebag, so `saddlebag` is `cached` with nothing from it: an empty
+  source, current without a read. The plugin decides "has none" only once the player's state has
+  loaded. A character with no retainers stays `unscanned`, because the game offers no signal that
+  separates "has none" from "not loaded yet". The accepted source keys are a **closed set**
+  (`inventory`, `saddlebag`, `retainers`, `armoire`, `glamourDresser`, `currencies`) — an
+  unrecognized key fails validation and rejects the whole upload, so a new source key ships
+  server-first, and any source the plugin tracks for display only (an unreadable source such as
+  mannequins) must stay off the wire.
 - `fresh: false` means the count came from a cache rather than a live container read. The
   server treats a stale positive as a positive (the item *was* there), so the flag does not
   change the outcome.
@@ -453,15 +458,16 @@ Field constraints:
   described here happens on that server; this describes what the plugin sends to a server that
   names it. The deployed server wins over this doc, as always.* Unlike every other
   category, `glamour` is what the character holds **now**, not a record that only grows: for a
-  source read as current (see `itemSources` above), a piece missing from it has left it. The server
-  tracks storage per container, clearing a piece from a container that was read and no longer holds
-  it. The server's ownership flag for a piece is slower to clear. An **all-current miss** is an upload whose
-  sources were all current and whose whole snapshot lacks the piece; the flag clears only on a
-  second all-current miss at least 25 minutes after the first, and a miss inside that gap writes
-  nothing. A manual mark is never cleared; it shows as disputed. So absent and empty are different
-  facts: a list is **omitted** when its container was not read (`dresser` and `outfitGlamours`
-  while `glamourDresser` is unscanned, `armoire` while `armoire` is unscanned) and `[]` when it was
-  read and holds nothing. `version` and `held` are always present.
+  place read as current (see **Current-ness per place** below), a piece missing from it has left
+  it. The server tracks storage per container, clearing a piece from a container that was read and
+  no longer holds it. The server's ownership flag for a piece is slower to clear. An **all-current
+  miss** is an upload whose sources were all current and whose whole snapshot lacks the piece;
+  the flag clears only on a second all-current miss at least 25 minutes after the first, and a
+  miss inside that gap writes nothing. A manual mark is never cleared; it shows as disputed. So
+  absent and empty are different facts: a list is **omitted** when its container was not read
+  (`dresser` and `outfitGlamours` while `glamourDresser` is unscanned, `armoire` while `armoire`
+  is unscanned) and `[]` when it was read and holds nothing. `version` and `held` are always
+  present.
   - `dresser` has one entry per loose dresser slot, so two copies are two entries. `id` is the base
     item id; `hq: true` marks a high-quality copy, and an absent `hq` means normal quality. `stains`
     holds the two dye channels (0 = undyed) only when they were readable this pass — the game keeps
@@ -473,19 +479,36 @@ Field constraints:
     storing an outfit removes its dyes.
   - `armoire` lists the item ids the Armoire holds, readable only once the player has opened it
     that session.
-  - `held` has one entry per base id, its `count` the copies summed over bags, equipped gear, the
-    armory chest, the saddlebag, retainers (their bags and equipped gear), and the market listings
-    of the retainer summoned most recently (read additively; listings on other retainers are not
-    visible). Glamour gear only — an item with an equip slot, soul crystals excluded — and never the
-    dresser or the Armoire, which have their own lists.
+  - `held` has one entry per base id per place, and per retainer for a `retainer` or `market`
+    place, its `count` the copies that place holds at every quality. `place` is one of `bags`,
+    `armory`, `equipped`, `saddlebag`, `retainer` (a retainer's bags and equipped gear) and
+    `market` (one retainer's listings, normally the one summoned most recently; listings on other
+    retainers are not visible). `retainer` is present exactly on a `retainer` or `market` entry
+    and names a `key` in `retainers`. Glamour gear only — an item with an equip slot, soul
+    crystals excluded — and never the dresser or the Armoire, which have their own lists.
+  - `retainers` lists every retainer whose saved copy was read this pass, and only those; it is
+    omitted when none was. `key` (1–10, unique in the upload) is what `held` entries name; `id` is
+    the SHA-256 digest of the retainer's id, the same representation as the character's
+    (`characterContentIdHash`), so the raw id never travels; `name` (at most 32 characters) is
+    present whenever the game has loaded its retainer list this session, unless it is blank or
+    longer, and the server keeps the last name it received. `market: true` sits on the one retainer
+    whose listings were read this pass, even when it lists no gear, so "listed nothing" differs
+    from "not read". The plugin credits listings to the retainer the game says was selected last,
+    and only when the number of listings read matches that retainer's own listing count; listings
+    it cannot credit, or whose retainer's own copy was not read, are not sent.
+  - **Current-ness per place.** `bags`, `armory` and `equipped` are current when `inventory` is
+    `live`; `saddlebag` when `saddlebag` is `cached`; a retainer's `retainer` place when that
+    retainer is listed in `retainers`; its `market` place when it carries `market: true`. Each
+    current place is brought in line on its own. Clearing the ownership flag, by contrast, needs
+    every source current, `retainers` `cached` with `count` equal to `total` included.
   - The plugin skips the category (absent, so nothing clears) while a storage window is open (the
     Glamour Dresser and its outfit-glamour window, the Armoire, the saddlebag) or a summoning bell
     is in use; when the inventory cannot be read — no inventory is available,
     bags, equipped gear or an armory chest are not loaded, or a remembered retainer cannot be read;
     when a dresser reading cannot be interpreted; and when a game sheet it needs cannot be read. A
-    list or held count past its limit withholds the whole category too, never truncated or
-    clamped, since a shortened list would read as pieces removed. It is sent on full sweeps only
-    (`login`, `interval`, `manual`), never on an `unlock` upload, and carries no
+    list, a held count or the number of retainers past its limit withholds the whole category too,
+    never truncated or clamped, since a shortened list would read as pieces removed. It is sent on
+    full sweeps only (`login`, `interval`, `manual`), never on an `unlock` upload, and carries no
     `collectionScopes` declaration.
 - **`appearance` semantics.** ⚠️ *The deployed server does not implement this category. Its
   `/config` does not name it, so the plugin neither reads nor sends it (a key that did arrive would

@@ -211,7 +211,11 @@ public class CollectResultTests
         },
         OutfitGlamours = new[] { new OutfitGlamour { OutfitId = 500, PieceIds = new uint[] { 20, 21 } } },
         Armoire = new uint[] { 10, 30 },
-        Held = new[] { new HeldPiece { Id = 21, Count = 1 }, new HeldPiece { Id = 40, Count = 3 } },
+        Held = new[]
+        {
+            new HeldPiece { Id = 21, Place = HeldPlaces.Bags, Count = 1 },
+            new HeldPiece { Id = 40, Place = HeldPlaces.Bags, Count = 3 },
+        },
     };
 
     // The factory is the one place the glamour facts are turned into wire JSON for a collector, so
@@ -227,7 +231,7 @@ public class CollectResultTests
         Assert.True(result.WasCollected);
         Assert.Null(result.SkipReason);
         Assert.Equal(
-            """{"version":1,"dresser":[{"id":10},{"id":11,"hq":true,"stains":[0,5]}],"outfitGlamours":[{"outfitId":500,"pieceIds":[20,21]}],"armoire":[10,30],"held":[{"id":21,"count":1},{"id":40,"count":3}]}""",
+            """{"version":1,"dresser":[{"id":10},{"id":11,"hq":true,"stains":[0,5]}],"outfitGlamours":[{"outfitId":500,"pieceIds":[20,21]}],"armoire":[10,30],"held":[{"id":21,"place":"bags","count":1},{"id":40,"place":"bags","count":3}]}""",
             result.Facts!.ToJsonString(ApiJson.Options));
     }
 

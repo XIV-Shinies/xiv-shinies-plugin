@@ -50,8 +50,6 @@ public class UploadLogSeedTests
 
         public bool ReadsStorage { get; init; }
 
-        public bool RequiresOwnOptIn { get; init; }
-
         public CollectResult Collect(CollectContext context) => CollectResult.Ids([1u]);
     }
 

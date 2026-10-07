@@ -184,25 +184,4 @@ public sealed record CategoryInfo
     /// </para>
     /// </remarks>
     public bool ReadsStorage { get; init; }
-
-    /// <summary>
-    /// True when the standing "turn on new collections automatically" answer never reaches this
-    /// collection, so only the user's own action on the consent list switches it on.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// That standing answer is consent given in advance, to collections the user has not seen yet,
-    /// and its checkbox says what it covers. A collection records what the character has done or
-    /// holds, however much detail it carries about each entry, and the answer reaches those. A
-    /// record that describes the character itself, such as its appearance, is a different kind of
-    /// sharing that the answer was never asked about, so it declares this flag and waits for the
-    /// user, as the other kinds of sharing do.
-    /// </para>
-    /// <para>
-    /// Self-description like the flags above: <see cref="AutoEnableScope"/> asks the collector
-    /// instead of keeping a list of excluded names. Defaults to <c>false</c>, matching every
-    /// collection of what the character has done or holds.
-    /// </para>
-    /// </remarks>
-    public bool RequiresOwnOptIn { get; init; }
 }
