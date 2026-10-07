@@ -24,7 +24,7 @@ public class CrucibleObservationsResponseTests
         Assert.Null(response.BoardId);
     }
 
-    // Held: no run is active yet, so there is no run id.
+    // Held with no run active yet: there is no run id.
     [Fact]
     public void A_held_upload_reads_with_no_run()
     {
@@ -32,6 +32,18 @@ public class CrucibleObservationsResponseTests
 
         Assert.Equal(CrucibleOutcomes.Held, response.Outcome);
         Assert.Null(response.RunId);
+        Assert.Null(response.Events);
+    }
+
+    // The entrance's windows are held even while a run is active, never applied to it, and the
+    // answer names that run.
+    [Fact]
+    public void An_entrance_upload_held_during_a_run_reads_that_run()
+    {
+        var response = Parse("""{"ok":true,"outcome":"held","runId":"0f1e2d3c"}""");
+
+        Assert.Equal(CrucibleOutcomes.Held, response.Outcome);
+        Assert.Equal("0f1e2d3c", response.RunId);
         Assert.Null(response.Events);
     }
 

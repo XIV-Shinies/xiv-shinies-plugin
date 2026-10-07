@@ -37,11 +37,11 @@ public class CrucibleUploadSchedulerTests
     private static CrucibleObservation Bag(int tokens, double seconds) =>
         CrucibleUploadBuilder.Bag(new CrucibleBagReading(tokens, [], []), At(seconds));
 
-    /// <summary>A team snapshot in the lineup mode, open or closing.</summary>
-    private static CrucibleObservation Team(bool closed, double seconds, int hp = 500) =>
+    /// <summary>A team snapshot, open or closing, in the lineup mode unless another is named.</summary>
+    private static CrucibleObservation Team(
+        bool closed, double seconds, int hp = 500, CrucibleTeamMode mode = CrucibleTeamMode.Lineup) =>
         CrucibleUploadBuilder.Team(
-            new CrucibleTeamReading(
-                CrucibleTeamMode.Lineup, null, [new CrucibleFamiliar(10, 0, hp, 667, 5, false, [], false)]),
+            new CrucibleTeamReading(mode, null, [new CrucibleFamiliar(10, 0, hp, 667, 5, false, [], false)]),
             At(seconds),
             closed);
 
@@ -217,7 +217,7 @@ public class CrucibleUploadSchedulerTests
     public void Snapshots_from_different_territories_go_in_separate_uploads()
     {
         var scheduler = new CrucibleUploadScheduler();
-        scheduler.Queue(Team(false, 0), Entrance, At(0));
+        scheduler.Queue(Team(false, 0, mode: CrucibleTeamMode.RosterPick), Entrance, At(0));
         scheduler.Queue(Bag(100, 1), Board, At(1));
 
         var first = scheduler.Poll(At(3))!;
@@ -325,7 +325,7 @@ public class CrucibleUploadSchedulerTests
     public void An_entrance_snapshot_read_before_entering_goes_up_as_a_change()
     {
         var scheduler = new CrucibleUploadScheduler();
-        scheduler.Queue(Team(false, 0), Entrance, At(0));
+        scheduler.Queue(Team(false, 0, mode: CrucibleTeamMode.RosterPick), Entrance, At(0));
         scheduler.NotifyEntered(Board, At(0.5), freshEntry: true);
         scheduler.Queue(Bag(100, 0.5), Board, At(0.5));
 
@@ -402,7 +402,7 @@ public class CrucibleUploadSchedulerTests
     {
         var scheduler = new CrucibleUploadScheduler();
         scheduler.NotifyEntered(Board, At(10), freshEntry: true);
-        scheduler.Queue(Team(true, 10.1), Entrance, At(10.1));
+        scheduler.Queue(Team(true, 10.1, mode: CrucibleTeamMode.RosterPick), Entrance, At(10.1));
         scheduler.Queue(Bag(100, 10.2), Board, At(10.2));
 
         var first = scheduler.Poll(At(12.2))!;
@@ -450,7 +450,7 @@ public class CrucibleUploadSchedulerTests
     {
         var scheduler = EnteredAndSettled();
         scheduler.NotifyLeft(At(10));
-        scheduler.Queue(Team(false, 11), Entrance, At(11));
+        scheduler.Queue(Team(false, 11, mode: CrucibleTeamMode.RosterPick), Entrance, At(11));
 
         var leave = scheduler.Poll(At(12))!;
         Assert.Equal(CrucibleTrigger.Leave, leave.Trigger);

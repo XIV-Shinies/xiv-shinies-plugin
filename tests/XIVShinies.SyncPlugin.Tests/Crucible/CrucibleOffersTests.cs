@@ -67,6 +67,7 @@ public class CrucibleOffersTests
         Assert.NotNull(reading);
         Assert.Equal(CrucibleOfferSource.Shop, reading.Source);
         Assert.Equal(1328, reading.Tokens);
+        Assert.Null(reading.TokensEarned);
         Assert.Equal(16, reading.Offers.Count);
 
         Assert.Equal(new CrucibleOffer(162, 125, false, false), reading.Offers[0]);

@@ -618,13 +618,24 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   `rankIndex` and `bonusId` from the game's own sheets, and sends `null`, never a guess, when a
   string does not resolve.
 - **Unknown ids.** An unknown `petId`, item, gear or bonus id is ignored; a `nodeIndex` the board
-  lacks fails the whole upload with 400.
+  lacks fails the whole upload with 400. A view 0 `board` goes up under the entrance, which names
+  no board, so the server identifies the board by its piece count, which differs on each of the
+  five boards: the snapshot must list every piece, and a `pieces` list whose length and
+  `nodeIndex` values fit no board fails the same way.
 - **`territoryTypeId`** is the territory the upload concerns, not where the character stands when
   it is sent: the board the character is in, the entrance for the roster pick and pre-entry board,
   on `leave` the board just left, and on `heartbeat` the territory the baseline carried.
-- **Outside a Crucible territory** the client sends nothing except `leave` and the entrance's
-  roster pick (`team` mode 0) and pre-entry board (`board` view 0), which open outside the duty
-  and go up as `change`.
+- **Outside a board** the client sends nothing except `leave` and, from the entrance (148), its
+  roster pick (`team` mode 0) and pre-entry board (`board` view 0), which open before the duty and
+  go up as `change`.
+- **Refused outright (400 `invalid_payload`, before the character is resolved):**
+  - observations under a `territoryTypeId` that is neither a board (1339–1343) nor the entrance
+    (148);
+  - an entrance window (`team` mode 0, `board` view 0) under any `territoryTypeId` but 148, and
+    any other observation under 148;
+  - a `heartbeat` or `leave` whose `observations` is not empty;
+  - a non-null `currentNodeIndex` outside view 2, a non-null `team.itemId` outside modes 3 and
+    5, or a non-null `offer.tokensEarned` outside `loot`.
 - **`enter`** (zoning into a board) carries a baseline: `bag` and `self`, plus every window open
   at that moment. The same baseline goes up as a `change` when the client starts or reloads
   inside a board. A kind not yet read when the `enter` goes is left out and follows as a
@@ -640,7 +651,7 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   `closed` one first.
 - **`heartbeat`** carries `observations: []` and fires only after `crucibleRuns.heartbeatSeconds`
   with no other upload. It reads nothing, so it may go out while the character is in combat.
-- **`leave`** (zoning out) carries no observations.
+- **`leave`** (zoning out) carries `observations: []`.
 - **Order and retry.** `observedAtUtc` never decreases within an upload (equal stamps are normal,
   since the wire is second-exact). The server checks that order, and refuses a stamp for its
   time only when it is more than five minutes ahead of the server's clock, so a client clock
@@ -653,23 +664,42 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 
 ```jsonc
 200 {"ok": true, "outcome": "applied", "runId": "…uuid…", "events": 3, "skipped": 0}
-200 {"ok": true, "outcome": "held", "runId": null}             // no active run yet
+200 {"ok": true, "outcome": "held", "runId": "…uuid or null…"} // not applied to a run (see below)
 200 {"ok": true, "outcome": "board_mismatch", "runId": "…uuid…", "boardId": 2}
 200 {"ok": true, "outcome": "left", "runId": "…uuid or null…"}
 ```
 
-The snapshots belong to the character's active run, which the player starts on the website.
+In-duty snapshots belong to the character's active run, which the player starts on the website.
 On `applied`, `events` is how many run events the snapshots produced, and `skipped` how many
 snapshots produced nothing because the player had already logged that piece themselves on the
-website (the player's own entry wins). `held` means there is no active run yet: the server keeps
-the latest in-duty snapshot of each kind until 30 minutes past its `observedAtUtc`, so a reading
-that arrives older than that is not held. The server applies what it holds once a run on that
-board starts. `board_mismatch` means the website run is on a different board; nothing is written to
-it. A run is never created from observations.
+website (the player's own entry wins). An undo sticks: a run event the server derived and the
+player undid is not derived again from a later snapshot of the same piece and kind.
 
-Status codes mirror `/sync` (400 `invalid_payload`, 401, the 403 family with echoed identity,
-405, 413, 429 with its own per-token budget of 240/hour), plus **503 `sync_disabled`** when the
-global, per-user, category or flag switch is off.
+For an upload whose `territoryTypeId` is a board, `held` means there is no active run yet: the
+server keeps the latest snapshot of each kind for 30 minutes past its `observedAtUtc`, so a
+reading that arrives older than that is not kept. The server applies what it keeps once a run on
+that board starts. `board_mismatch` means the website run is on a different board: nothing is
+written to it, and the snapshots are kept as for `held`, because starting a run on this board
+abandons the run on the other one. A `results` snapshot that is not applied to a run is not kept,
+and drops every kept snapshot, so a later run never receives an earlier attempt's snapshots. A
+`leave` drops them too, and never ends a run, since the player may have suspended the board to
+resume it later. A run is never created from observations.
+
+The entrance's roster pick and pre-entry board are kept apart from in-duty snapshots and are never
+applied to a run, because a run's roster is fixed when it starts. They only prefill the website's
+setup for the run the player is about to start, and lapse 30 minutes after their `observedAtUtc`,
+or sooner when an unapplied `results` snapshot or a `leave` drops every kept snapshot. An
+entrance upload answers `held` whether or not the character has an active run, with that run's
+id as `runId` when it has one.
+
+Status codes mirror `/sync` (400 `invalid_payload`, 401, the 403 family with echoed identity, 405,
+413, 429 with its own per-token budget of 240/hour), plus **503 `sync_disabled`** when the global,
+per-user, category or flag switch is off.
+
+**Liveness.** Every upload answered `applied`, a heartbeat included, refreshes the run's "Plugin
+connected" mark on the website, and a `leave` clears it. After a few minutes with no `applied`
+upload (four by default) the mark turns to "Plugin disconnected"; a `board_mismatch` or `held`
+upload does not touch it.
 
 ## Character binding
 

@@ -516,9 +516,9 @@ internal sealed class CrucibleManager : IDisposable
     /// <param name="trigger">Why the upload was sent.</param>
     private void LogAccepted(CrucibleObservationsResponse? value, CrucibleTrigger trigger)
     {
-        // The run id is the server's identity for the run, so the log shows which run the uploads
-        // attached to. Both server strings are clamped: the log is durable, and the backend is
-        // user-overridable.
+        // The run id names the character's active run (see CrucibleObservationsResponse.RunId), so
+        // the log shows which run was active when the server answered. Both server strings are
+        // clamped: the log is durable, and the backend is user-overridable.
         var outcome = ServerText.Clamp(value?.Outcome ?? "ok");
         var run = value?.RunId is { } id ? $" run={ServerText.Clamp(id)}" : string.Empty;
         var events = value?.Events is { } count ? $" events={count}" : string.Empty;

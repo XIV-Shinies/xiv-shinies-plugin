@@ -5,7 +5,8 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
-// The team window (XBMPetParty): the player's own familiars, in one of six modes.
+// The team window (XBMPetParty): the player's own familiars, in one of six modes. Each `[Fact]` is
+// one test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
 public class CrucibleTeamTests
 {
     // Positions in the window's values: its mode and count, the item being chosen for, and where
@@ -132,6 +133,26 @@ public class CrucibleTeamTests
         Assert.Equal(
             new uint[] { 20, 35 },
             reading.Familiars.Where(familiar => familiar.CurrentHp == 0).Select(familiar => familiar.PetId));
+    }
+
+    // Only the feed and Blessed Horn modes choose for an item. The item's value can still hold a
+    // stale id in the other modes, and the server refuses an item outside those two, so a reading
+    // in any other mode carries none. These fixtures leave the item's value unreadable, so each test
+    // plants a stale id there.
+    [Theory]
+    [InlineData("petparty-mode0-roster-stale.json")]
+    [InlineData("petparty-mode1-browse-downed.json")]
+    [InlineData("petparty-mode2-lineup-picked.json")]
+    [InlineData("petparty-mode4-campsite-resting.json")]
+    public void Outside_the_feed_and_blessed_horn_modes_a_stale_item_reads_as_none(string fixture)
+    {
+        var values = WindowFixture.Load(fixture);
+        values[ItemId] = AddonValue.FromInteger(148);
+
+        var reading = CrucibleTeam.Read(values);
+
+        Assert.NotNull(reading);
+        Assert.Null(reading.ItemId);
     }
 
     // The feed and Blessed Horn modes are choosing for an item, so a window in either mode without
