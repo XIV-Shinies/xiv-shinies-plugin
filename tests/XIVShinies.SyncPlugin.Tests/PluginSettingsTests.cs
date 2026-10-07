@@ -66,6 +66,11 @@ public class PluginSettingsTests
         // The standing answer about collections added later is deliberately NOT ticked by
         // default — see PluginSettings.AutoEnableNewFeatures.
         Assert.False(settings.AutoEnableNewFeatures);
+
+        // Sharing Crucible runs waits for the user to tick it themselves, and its card starts unseen
+        // (see PluginSettings.CrucibleSharingSeen for what records it).
+        Assert.False(settings.ShareCrucibleRuns);
+        Assert.False(settings.CrucibleSharingSeen);
     }
 
     // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user the
@@ -91,6 +96,10 @@ public class PluginSettingsTests
         // `fromVersion >= 1 && fromVersion < 2` would pass every test in the file.
         Assert.True(settings.SeenCategoriesInitialized);
         Assert.True(settings.IsCategorySeen(CategoryKeys.Quests));
+
+        // No migration records the Crucible card as seen: an existing install's card announcing
+        // itself is the point of its badge.
+        Assert.False(settings.CrucibleSharingSeen);
     }
 
     // An install still ahead of its wizard keeps the default: the wizard is about to put the box
@@ -416,6 +425,9 @@ public class PluginSettingsTests
 
         Assert.True(settings.IsCategorySeen("quests"));
         Assert.True(settings.IsCategorySeen("mounts"));
+
+        // The baseline covers collections only; the Crucible card keeps its own record.
+        Assert.False(settings.CrucibleSharingSeen);
     }
 
     // The baseline is one-shot. Were it to re-run, it would swallow every collection added since —
@@ -474,7 +486,7 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("mounts"));
     }
 
-    // The standing answer is the whole licence for switching anything on without a click. Without
+    // The standing answer is the whole license for switching anything on without a click. Without
     // it there is no consent to lean on, so nothing happens.
     [Fact]
     public void Nothing_is_switched_on_when_the_user_did_not_ask_for_that()

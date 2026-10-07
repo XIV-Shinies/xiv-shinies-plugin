@@ -7,9 +7,8 @@ namespace XIVShinies.SyncPlugin.Beastmaster;
 /// <remarks>
 /// <para>
 /// The game's own value type is a union carrying integers, booleans, floats, text and several
-/// kinds of pointer, and only three of those matter here. Narrowing to this on the way in is what
-/// lets everything downstream be tested without the game: a page of values is then an ordinary
-/// list a test can write out by hand.
+/// kinds of pointer, and only three of those matter here. Narrowing to this on the way in means
+/// everything downstream works on an ordinary list of values, with no game types involved.
 /// </para>
 /// <para>
 /// Every property is nullable, and null means "the slot did not hold this kind of thing" rather

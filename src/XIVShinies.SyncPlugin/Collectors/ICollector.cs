@@ -60,7 +60,8 @@ public interface ICollector
     /// Shown next to the opt-in toggle. Dalamud requires that users be told what is collected before
     /// they consent to it, so this is a compliance surface, not decoration: it must describe the real
     /// payload, and it must be updated whenever <see cref="Collect"/> starts sending something new.
-    /// Write it for someone who has never read this code.
+    /// Write it for someone who has never read this code. Name the website the data goes to as
+    /// <see cref="HostPlaceholder.Token"/>; the surface that draws the line fills in its address.
     /// </remarks>
     string WhatGetsSent { get; }
 
@@ -72,6 +73,7 @@ public interface ICollector
     /// Self-description like the two above. <see cref="WhatGetsSent"/> still has to name every kind
     /// of data that leaves the machine on its own — this carries the scope and reassurance detail
     /// that would otherwise crowd the consent list, never a disclosure the visible line omitted.
+    /// Where it names the website, it writes <see cref="HostPlaceholder.Token"/> the same way.
     /// </remarks>
     string? Details { get; }
 
@@ -118,6 +120,18 @@ public interface ICollector
     /// self-description, like <see cref="UsesItemManifest"/>.
     /// </remarks>
     bool ReadsStorage { get; }
+
+    /// <summary>
+    /// True when the game announces each new entry of this collection the moment it is earned, so it
+    /// uploads within seconds (see <see cref="CategoryInfo.UploadsOnUnlock"/>).
+    /// </summary>
+    /// <remarks>
+    /// Self-description, like <see cref="UsesItemManifest"/>: carried onto each
+    /// <see cref="CategorySettingsRow"/>, where the sync card reads it rather than naming collections.
+    /// </remarks>
+    // `=> false` gives the member a default body, so a collector that does not declare it answers
+    // false. TypeScript interfaces cannot carry a body; this is closer to a base class's getter.
+    bool UploadsOnUnlock => false;
 
     /// <summary>
     /// Reads the facts from the game, or explains why it could not.

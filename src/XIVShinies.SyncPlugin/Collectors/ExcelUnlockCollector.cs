@@ -103,6 +103,11 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     public bool ReadsStorage => info.ReadsStorage;
 
     /// <inheritdoc/>
+    // From the category's own declaration rather than from this class: sheet-backed collections share
+    // it, and not every one of them is announced by the game.
+    public bool UploadsOnUnlock => info.UploadsOnUnlock;
+
+    /// <inheritdoc/>
     // Each collector recognizes only its own sheet, so routing an unlock needs no lookup table and
     // no branch on category names. `Is<TRow>()` compares the row type the game reported against the
     // one this collector was built for.
@@ -120,7 +125,7 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
             return CollectResult.Skipped(skipReason);
 
         // Wraps the sheet fetch alone: a throw from the loop below is a different failure and must
-        // not be relabelled. See CollectSkipReasons.SheetUnavailable for why this is a catch.
+        // not be relabeled. See CollectSkipReasons.SheetUnavailable for why this is a catch.
         ExcelSheet<TRow> sheet;
         try
         {

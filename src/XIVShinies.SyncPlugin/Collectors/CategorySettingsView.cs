@@ -90,6 +90,18 @@ public sealed record CategorySettingsRow
     public bool ReadsStorage { get; init; }
 
     /// <summary>
+    /// Whether this row's collector uploads each new entry within seconds (see
+    /// <see cref="ICollector.UploadsOnUnlock"/>).
+    /// </summary>
+    /// <remarks>
+    /// Carried on the row so the sync card can decide whether it may promise uploads within seconds
+    /// from the rows alone, without holding collectors or naming any. Defaulted rather than required,
+    /// unlike <see cref="UsesItemManifest"/>, because false is the safe answer for a row built by hand:
+    /// it only withholds a promise.
+    /// </remarks>
+    public bool UploadsOnUnlock { get; init; }
+
+    /// <summary>
     /// False when the server will not accept this category — it is switched off for everyone, the
     /// server has paused syncing entirely, or the collection needs the server to name it and the
     /// server has not (see <see cref="NotOfferedByServer"/>). The checkbox stays visible but
@@ -110,7 +122,7 @@ public sealed record CategorySettingsRow
     /// </para>
     /// <para>
     /// Defaulted rather than required, like <see cref="IsNew"/> and unlike its neighbor
-    /// <see cref="ServerEnabled"/>: a test or another surface assembling rows by hand is asking
+    /// <see cref="ServerEnabled"/>: a test or any other caller assembling rows by hand is asking
     /// about one collection, and a pause is not a fact about any collection. The default is the
     /// quiet answer rather than the safe one — it produces the per-category wording — which costs
     /// nothing while <see cref="Build"/> is the only producer that draws.
@@ -120,13 +132,12 @@ public sealed record CategorySettingsRow
 
     /// <summary>
     /// True when this row's collection needs the server to name it (see
-    /// <see cref="ICollector.RequiresServerSupport"/>) and the server's category map does not — or
-    /// no config has arrived to say either way. The row then reads
-    /// <see cref="ServerOffCopy.NotOffered"/>.
+    /// <see cref="ICollector.RequiresServerSupport"/>) and the server's category map does not, or no
+    /// config has arrived to say either way. <see cref="ServerOffText"/> words the two apart.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// It separates "the server has not offered this yet" from "the server switched this off": a
+    /// It separates "the server has not offered this" from "the server switched this off": a
     /// map that never mentions a collection has made no decision about it, so
     /// <see cref="ServerOffText"/> draws a different sentence for it. Always false for an ordinary
     /// collection, which a missing key leaves enabled.
@@ -170,21 +181,26 @@ public sealed record CategorySettingsRow
     /// </para>
     /// <para>
     /// A collection the server has never named (<see cref="NotOfferedByServer"/>) comes next, and
-    /// says it is not offered yet rather than switched off — the same reasoning one level down: the
+    /// says it is not offered rather than switched off — the same reasoning one level down: the
     /// server made no decision about it, so neither the generic "switched off" line nor a note can
-    /// be the true sentence. Once the server names the collection, even as off, it is an ordinary
-    /// switched-off collection and the note or the generic line takes over.
+    /// be the true sentence. Before any config has arrived (<see cref="ServerStateKnown"/> false)
+    /// nothing is known either way, so it says it is waiting for the answer instead. Once the
+    /// server names the collection, even as off, it is an ordinary switched-off collection and the
+    /// note or the generic line takes over.
     /// </para>
     /// </remarks>
-    // A chain of ternaries, read top to bottom like an if / else-if ladder: the first condition
-    // that holds picks the sentence. `??` takes the left side unless it is null, as in TypeScript.
-    public string? ServerOffText => ServerEnabled
+    /// <param name="host">The configured website's address.</param>
+    // A method rather than a property, because a property cannot take parameters and the generic
+    // lines name an address (see ServerOffCopy) that a row does not hold. The chain of ternaries
+    // reads top to bottom like an if / else-if ladder: the first condition that holds picks the
+    // sentence. `??` takes the left side unless it is null, as in TypeScript.
+    public string? ServerOffText(string host) => ServerEnabled
         ? null
         : ServerGloballyOff
-            ? ServerOffCopy.Paused
+            ? ServerOffCopy.Paused(host)
             : NotOfferedByServer
-                ? ServerOffCopy.NotOffered
-                : ServerNote ?? ServerOffCopy.Feature;
+                ? (ServerStateKnown ? ServerOffCopy.NotOffered(host) : ServerOffCopy.AwaitingAnswer(host))
+                : ServerNote ?? ServerOffCopy.Feature(host);
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.
@@ -230,7 +246,8 @@ public sealed record CategorySettingsRow
     /// something new for you" about something that is not. While the server's answer is still
     /// unknown an ordinary collection's badge shows, because a user whose config poll is failing
     /// should still learn a collection exists. A collection that needs the server to name it stays
-    /// quiet until then: without that answer it is not offered, so there is nothing new to use yet.
+    /// quiet until then: without that answer there is nothing to use, and it stays unseen, so it
+    /// announces itself once the server offers it.
     /// </remarks>
     public bool IsEffectivelyNew => IsNew && ServerEnabled;
 
@@ -412,7 +429,7 @@ public static class CategorySettingsView
     /// for the answer (<see cref="CategorySettingsRow.ShowingItRetiresTheBadge"/>): there the
     /// record is what the badge is spent from — see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>
     /// for why spending demands more than drawing. Neither surface counts a row the server has
-    /// switched off — greyed and unusable is not an introduction.
+    /// switched off — grayed and unusable is not an introduction.
     /// </remarks>
     /// <param name="row">The row that was just drawn.</param>
     /// <param name="showNewChips">Whether the drawing surface announces new collections.</param>
@@ -508,8 +525,9 @@ public static class CategorySettingsView
             var serverPaused = remoteConfig is { Enabled: false };
             var serverEnabled = CollectorGate.ServerPermits(collector, remoteConfig);
 
-            // Whether the reason is that the server never named the collection, which the row words
-            // differently from a decision to switch it off. `?.` yields null instead of calling
+            // Whether the reason is that the server has not named the collection, which the row
+            // words differently from a decision to switch it off (see
+            // CategorySettingsRow.NotOfferedByServer). `?.` yields null instead of calling
             // NamesCategory when there is no config, and `!= true` treats that null the same as
             // "not named": with no config, nothing has been named.
             var notOfferedByServer = collector.RequiresServerSupport
@@ -534,6 +552,9 @@ public static class CategorySettingsView
 
                 // The same: whether this collection reads storage is the collector's own answer.
                 ReadsStorage = collector.ReadsStorage,
+
+                // The same verbatim carry: the collector says whether the game announces it.
+                UploadsOnUnlock = collector.UploadsOnUnlock,
 
                 ServerEnabled = serverEnabled,
 

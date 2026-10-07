@@ -46,7 +46,7 @@ public static class OccultGate
 
     /// <summary>
     /// True when the server has answered and its answer rules the tracker out — what the settings
-    /// toggle draws greyed and chipped "Off".
+    /// toggle draws grayed and chipped "Off".
     /// </summary>
     /// <remarks>
     /// <para>
@@ -81,15 +81,23 @@ public static class OccultGate
     /// What the tracker's "Off" chip says, or null while the server still permits the tracker.
     /// </summary>
     /// <remarks>
-    /// Two different facts wear the same chip, and only one of them is about the tracker: a paused
-    /// server is not sending anything at all, while a switched-off tracker is one feature the
-    /// server declined. Saying the second during the first sends the user looking for a decision
-    /// about the tracker that nobody made. Kept beside the gate, and pure, so the wording cannot
-    /// drift from the state it describes.
+    /// Three different facts wear the same chip, and only one of them is a decision about the
+    /// tracker: a paused server is not sending anything at all, a config with no
+    /// <c>occultTracker</c> block comes from a server that does not offer the tracker, and a
+    /// switched-off tracker is one feature the server declined. Saying the last during either of
+    /// the others sends the user looking for a decision about the tracker that nobody made. Kept
+    /// beside the gate, and pure, so the wording cannot drift from the state it describes.
     /// </remarks>
-    public static string? ServerOffText(ConfigResponse? remoteConfig) =>
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
+    /// <param name="host">The configured website's address, which the sentences name.</param>
+    // `=>` makes the expression after it the whole method body, like an arrow function. Each
+    // `a ? b : c` picks b when a is true, else c; chained, they read top to bottom like an
+    // if / else-if ladder, the first true condition deciding. `is { Enabled: false }` matches a
+    // config that is present and paused, and `?.` reads the block only when the config is there,
+    // giving null otherwise, as in TypeScript.
+    public static string? ServerOffText(ConfigResponse? remoteConfig, string host) =>
         !ServerHasSwitchedOff(remoteConfig) ? null
-            : remoteConfig is { Enabled: false }
-                ? ServerOffCopy.Paused
-                : ServerOffCopy.Feature;
+            : remoteConfig is { Enabled: false } ? ServerOffCopy.Paused(host)
+            : remoteConfig?.OccultTracker is null ? ServerOffCopy.NotOffered(host)
+            : ServerOffCopy.Feature(host);
 }

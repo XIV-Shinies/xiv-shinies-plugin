@@ -25,7 +25,7 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// </para>
 /// <para>
 /// The same pattern as <see cref="CompletenessDeclarationTests"/>, reading the registry through the
-/// same <see cref="CollectorRegistryReflection"/>.
+/// same <see cref="CategoryInfoReflection"/>.
 /// <see cref="CompletenessDeclarationTests.Every_registered_category_is_reachable_by_reflection"/>
 /// checks that the reflection reaches every registered category.
 /// </para>
@@ -80,7 +80,7 @@ public class SelfDescriptionDeclarationTests
     [Fact]
     public void Exactly_the_expected_categories_require_server_support()
     {
-        var actual = CollectorRegistryReflection.Categories()
+        var actual = CategoryInfoReflection.All()
             .Where(info => info.RequiresServerSupport)
             .Select(info => info.Key)
             .ToHashSet();
@@ -91,7 +91,7 @@ public class SelfDescriptionDeclarationTests
     [Fact]
     public void Exactly_the_expected_categories_are_single_records()
     {
-        var actual = CollectorRegistryReflection.Categories()
+        var actual = CategoryInfoReflection.All()
             .Where(info => info.IsSingleRecord)
             .Select(info => info.Key)
             .ToHashSet();
@@ -102,7 +102,7 @@ public class SelfDescriptionDeclarationTests
     [Fact]
     public void Exactly_the_expected_categories_read_storage()
     {
-        var actual = CollectorRegistryReflection.Categories()
+        var actual = CategoryInfoReflection.All()
             .Where(info => info.ReadsStorage)
             .Select(info => info.Key)
             .ToHashSet();
@@ -113,7 +113,7 @@ public class SelfDescriptionDeclarationTests
     [Fact]
     public void Exactly_the_expected_categories_use_the_item_manifest()
     {
-        var actual = CollectorRegistryReflection.Categories()
+        var actual = CategoryInfoReflection.All()
             .Where(info => info.UsesItemManifest)
             .Select(info => info.Key)
             .ToHashSet();

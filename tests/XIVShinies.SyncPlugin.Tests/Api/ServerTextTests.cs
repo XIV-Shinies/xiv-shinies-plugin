@@ -4,7 +4,7 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
 // ServerText is the door every string that came from the server passes through before the plugin
-// keeps, renders, or logs it. Most of its behaviour is pinned where it is used — through
+// keeps, renders, or logs it. Most of its behavior is pinned where it is used — through
 // ConfigResponse.CategoryNote, the settings view's group labels, and the upload log's complaints.
 // Two things are pinned against the type itself instead: the shape of a marked cut, which is a rule
 // about this type rather than about any one caller, and what the fold does to a character with no

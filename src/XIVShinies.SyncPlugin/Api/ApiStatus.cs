@@ -58,7 +58,12 @@ public enum ApiStatus
     /// <summary>500 — the server failed mid-apply. Writes are idempotent, so a later retry is safe.</summary>
     ServerError,
 
-    /// <summary>503 — the global kill switch is off. Back off for the advertised window.</summary>
+    /// <summary>
+    /// 503 — the server is not taking this upload for now: a switch is off (<c>sync_disabled</c>,
+    /// globally or for the user, category or feature), the live tracker is unavailable
+    /// (<c>tracker_unavailable</c>), the endpoint is briefly unable to answer, or a proxy or
+    /// maintenance page answered for the server. Back off for the advertised window.
+    /// </summary>
     SyncDisabled,
 
     /// <summary>No HTTP response at all (DNS failure, timeout, connection reset).</summary>

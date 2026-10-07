@@ -147,6 +147,33 @@ public class SyncSchedulerTests
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(4)));
     }
 
+    // What the sync card asks before offering "Sync now": true from the server's instruction until the
+    // moment it expires, and never before one arrives.
+    [Fact]
+    public void The_scheduler_reports_a_wait_until_it_expires()
+    {
+        var scheduler = NewScheduler();
+        Assert.False(scheduler.IsBackingOff(T0));
+
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(5));
+
+        Assert.True(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(4)));
+        Assert.False(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(5)));
+    }
+
+    // Asking is read-only: it must not end the wait the way handing out due work does.
+    [Fact]
+    public void Asking_about_a_wait_does_not_end_it()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(5));
+
+        Assert.False(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(6)));
+        Assert.True(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(4)));
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(4)));
+    }
+
     // Backoff defers work; it never throws it away. A 429 during a login sync must not cost the user
     // that sync entirely.
     [Fact]

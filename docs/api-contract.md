@@ -40,7 +40,8 @@ Two principles govern every upload:
 - All endpoints live under `/api/plugin/v1/`. Every response body is JSON. Every
   authenticated success carries `Cache-Control: no-store` (per-token private data, and a
   cached kill switch would be a stale kill switch).
-- Using the wrong method (POST to `/me` or `/config`, GET to `/sync`) returns **405**.
+- Using the wrong method (POST to `/me` or `/config`, GET to `/sync`, `/occult/instance-state`
+  or `/crucible/observations`) returns **405**.
 
 ## Authentication
 
@@ -119,6 +120,11 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   "categoryNotes": {
     "orchestrionRolls": "In testing — it will switch on once it is ready."
   },
+  "crucibleRuns": {            // the Crucible run sharing's switches (see its endpoint below)
+    "enabled": false,          // its kill switch (global/per-user/category/flag folded in)
+    "heartbeatSeconds": 60,    // idle upload cadence while inside a board
+    "note": "In testing — …"   // optional: present only when the flag alone switched it off
+  },
   "enabled": true,             // global kill switch
   "intervals": {
     "fullSyncMinutes": 30,     // full-sweep upload cadence
@@ -147,9 +153,11 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   an absent key means "the server has never heard of it", which the client reads as enabled.
   **`glamour` and `appearance` are the exception:** they are worth reading and sending only to a
   server that knows them, so for these two an absent key — or no `/config` yet — reads as
-  **off**, and the plugin neither collects nor sends them; its settings show "Not offered by the
-  server yet." A server that implements them sends either as `false` with a `categoryNotes`
-  sentence while the feature is closed to that user, which the plugin shows instead.
+  **off**, and the plugin neither collects nor sends them. The plugin's settings show "Not
+  offered by <host>." (the configured website's address) once a `/config` leaves them unnamed,
+  and "Waiting for <host> to say whether it offers this." before any `/config` has arrived. A
+  server that implements them sends either as `false` with a `categoryNotes` sentence while the
+  feature is closed to that user, which the plugin shows instead.
 - **Category notes.** `categoryNotes` is optional, keyed like `categories`, and explains why a
   category is off. It is absent entirely when nothing needs explaining, never an empty map.
   **Presence is the whole signal** — the client prints the sentence verbatim and never parses
@@ -208,6 +216,11 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
   in-memory reads, nothing to cache-skip. A config without the field asks about nothing
   (the category is skipped, not sent empty); the `questSequences` category rides the
   standard `categories` kill-switch map.
+- **`crucibleRuns`** (optional). The Crucible run sharing's switches. A config without the
+  block means the server has no Crucible endpoint. `enabled` folds the global, per-user and
+  category switches and the feature flag into one value, and the endpoint enforces it too.
+  `note` follows the `categoryNotes` rules: present only when the flag alone switched the
+  feature off, never on a kill switch.
 
 Statuses: **200**, **401**, **405** (non-GET).
 
@@ -678,6 +691,205 @@ with its own per-token budget of 240/hour, 503 `sync_disabled`), plus
 **503 `{"error": "tracker_unavailable"}`** when the territory's server-side curation is
 absent — back off, server-side problem.
 
+### POST /api/plugin/v1/crucible/observations
+
+The Crucible run companion's feed: **snapshots**, each of what one Crucible window (or the
+character's own HP) showed at one moment. The server turns them into the companion's run
+events; the client never names an event, so the event model can change without a plugin
+release. Like the occult tracker it is small, frequent and duty-scoped, and it needs its own
+consent toggle (off by default, and outside "Turn on new collections automatically"). A server
+whose `/config` carries no `crucibleRuns` block does not have this endpoint; the client must
+stay silent then. The server's schema is **strict**: a key it does not name fails the whole
+upload with 400 `invalid_payload`, and so does a named key that is missing.
+
+**What the client may read, and must never read.** Only what the game shows the player, and
+only while the character is out of combat: board progress, the player's own familiars, the
+player's own bag and tokens, treasure, loot and shop offers, the results screen, and the local
+character's own HP. Never the battle log or chat, the object table, statuses, damage, or
+anything about an enemy (its name, stats, weaknesses or state). A client skips the board
+window's enemy rows by their record type, and the results screen's beaten counts are score
+figures, not enemy data.
+
+#### Request
+
+`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). A six-kind
+upload with fifteen familiars is about 6 KB; the cap is 64 KB.
+
+```jsonc
+{
+  "characterContentIdHash": "…64 lowercase hex chars…",
+  "characterName": "Some Name", // same binding identity as /sync
+  "homeWorld": "Excalibur",
+  "pluginVersion": "1.0.0",
+  "trigger": "change",          // "enter" | "change" | "heartbeat" | "leave"
+  "territoryTypeId": 1339,      // the territory the upload concerns (see below)
+  "observations": [             // at most one entry per kind, oldest first
+    {"kind": "board", "observedAtUtc": "2026-09-28T12:00:00Z", "closed": false,
+     "view": 2, "currentNodeIndex": 4,
+     "pieces": [{"nodeIndex": 4, "progress": 0}]},
+    {"kind": "team", "observedAtUtc": "…", "closed": true, "mode": 2, "itemId": null,
+     "familiars": [{"petId": 10, "place": 0, "hp": {"current": 640, "max": 667},
+                    "rank": 5, "rankSynced": true, "feedItemIds": [], "resting": false}]},
+    {"kind": "bag", "observedAtUtc": "…", "tokens": 764,
+     "itemIds": [78, 130, 138], "gearIds": [2, 45]},
+    {"kind": "offer", "observedAtUtc": "…", "closed": false, "source": "shop",
+     "tokens": 764, "tokensEarned": null,
+     "offers": [{"itemId": 162, "price": 25, "discounted": true, "bought": false}]},
+    {"kind": "results", "observedAtUtc": "…", "degree": 0, "rankIndex": 4,
+     "score": {"base": 7625, "performancePct": 100, "performancePoints": 5000,
+               "enemies": 4, "enemyPoints": 1000, "elites": 1, "elitePoints": 625,
+               "bosses": 1, "bossPoints": 1000, "remainingHp": 462,
+               "bonusPoints": 250, "total": 7875},
+     "bonuses": [{"bonusId": 7, "points": 250}],
+     "familiars": [{"petId": 8, "rankBefore": 7, "rankAfter": 8,
+                    "expBefore": 65, "expAfter": 62}]},
+    {"kind": "self", "observedAtUtc": "…", "hp": {"current": 1180, "max": 1300}}
+  ]
+}
+```
+
+| Kind | Window | Fields |
+| --- | --- | --- |
+| `board` | `XBMStageDetailList` | `view` 0 (the entrance, before entering), 1 (the whole board), 2 (scoped to the piece being played); `pieces[]` each `nodeIndex` with `progress` 0 not reached, 1 cleared, 2 the branch not taken; `currentNodeIndex` in view 2, else null; `closed`. |
+| `team` | `XBMPetParty` | `mode` 0 roster pick, 1 browse, 2 lineup, 3 feed, 4 campsite, 5 Blessed Horn; `itemId` (the feed or horn) in modes 3 and 5, else null; `familiars[]` each `petId` (the `XBMPet` row), `place` 0–2 or 3 for none, `hp`, `rank` as drawn with `rankSynced`, `feedItemIds` (up to five), `resting`; `closed`. Mode 0 lists only the counted picks, in pick order. |
+| `bag` | `XBMContentsMainHUD` | `tokens`; `itemIds` (one per filled item slot, so an item in two slots appears twice); `gearIds`. No `closed`: the HUD stays open. |
+| `offer` | `XBMContentsTreasure`, `XBMContentsBooty`, `XBMContentsItemShop` | `source` `treasure`, `loot` or `shop`; `tokens`; `tokensEarned` on loot, else null; `offers[]` each `itemId`, plus `price`, `discounted` and `bought` on the shop only; `closed`. |
+| `results` | `XBMResult` | `degree` 0–3, or null; `rankIndex` 0 (Apprentice) to 8 (Legendary), or null; `score` as the numbers on screen, where `remainingHp` is the HP the run ended on; `bonuses[]` each `bonusId` (an `XBMScoreBonus` row id, or null) with `points`; `familiars[]` each `petId`, `rankBefore`, `rankAfter`, `expBefore`, `expAfter`. |
+| `self` | the local player | `hp`. |
+
+- **Null or absent.** `currentNodeIndex`, `itemId`, `tokensEarned`, `degree`, `rankIndex` and
+  `bonusId` are always present, as `null` where they do not apply or did not resolve. The three
+  shop fields are absent from a treasure or loot offer, and `closed` from a `bag`, `results` or
+  `self`, not null. Every list is present, empty where it holds nothing (`observations: []` on a
+  heartbeat or a leave, `feedItemIds: []`).
+- **`closed`** marks a window's last snapshot before it closed: a `board`, `team` or `offer`
+  snapshot goes up on each refresh that changed it, and once more with `closed: true` when the
+  window closes, whether or not its content changed.
+- **Snapshots are facts at a time, never deltas.** Every comparison between snapshots is the
+  server's.
+- **Text the game draws is resolved by the client, never sent raw.** The Degree, the rank and
+  each bonus name are drawn in the game client's language; the client resolves them to `degree`,
+  `rankIndex` and `bonusId` from the game's own sheets, and sends `null`, never a guess, when a
+  string does not resolve.
+- **Unknown ids.** An unknown `petId`, item, gear or bonus id is ignored; a `nodeIndex` the board
+  lacks fails the whole upload with 400. A view 0 `board` goes up under the entrance, which names
+  no board, so the server identifies the board by its piece count, which differs on each of the
+  five boards: the snapshot must list every piece, and a `pieces` list whose length and
+  `nodeIndex` values fit no board fails the same way.
+- **`territoryTypeId`** is the territory the upload concerns, not where the character stands when
+  it is sent: the board the character is in, the entrance for the roster pick and pre-entry board,
+  on `leave` the board just left, and on `heartbeat` the territory the baseline carried.
+- **Outside a board** the client sends nothing except `leave` and, from the entrance (148), its
+  roster pick (`team` mode 0) and pre-entry board (`board` view 0), which open before the duty and
+  go up as `change`.
+- **Refused outright (400 `invalid_payload`, before the character is resolved):**
+  - observations under a `territoryTypeId` that is neither a board (1339–1343) nor the entrance
+    (148);
+  - an entrance window (`team` mode 0, `board` view 0) under any `territoryTypeId` but 148, and
+    any other observation under 148;
+  - a `heartbeat` or `leave` whose `observations` is not empty;
+  - a non-null `currentNodeIndex` outside view 2, a non-null `team.itemId` outside modes 3 and
+    5, or a non-null `offer.tokensEarned` outside `loot`.
+- **`enter`** (zoning into a board) carries a baseline: `bag` and `self`, plus every window open
+  at that moment. The same baseline goes up as a `change` when the client starts or reloads
+  inside a board. A kind not yet read when the `enter` goes is left out and follows as a
+  `change`: no upload has to carry any particular kind, and a diff starts at a kind's first
+  reading, whichever upload carries it.
+- **`change`** normally carries only the kinds whose content changed since the client last read
+  them. A kind can still repeat unchanged: the comparison starts over with each visit, each login
+  and each plugin start, and a reading no request has carried 30 minutes after it was read is
+  dropped, so the same content read again goes up. A reading already in a retried request is not
+  dropped for its age, so a retry can deliver one older than 30 minutes. Content in an upload
+  refused with a 400 is not sent again until it changes or the comparison starts over. A
+  window's `closed` snapshot and a fresh snapshot of the same kind go in two uploads, the
+  `closed` one first.
+- **`heartbeat`** carries `observations: []` and fires only after `crucibleRuns.heartbeatSeconds`
+  with no other upload. It reads nothing, so it may go out while the character is in combat.
+- **`leave`** (zoning out) carries `observations: []`.
+- **Order and retry.** `observedAtUtc` never decreases within an upload (equal stamps are normal,
+  since the wire is second-exact). The server checks that order, and refuses a stamp for its
+  time only when it is more than five minutes ahead of the server's clock, so a client clock
+  running fast still uploads; a stamp may be old. Across uploads the server orders each kind by
+  `observedAtUtc`, so a retried upload may arrive late and still land in place, as long as its
+  piece's outcome has not been written (see below). Among snapshots that share a stamp, the server
+  reads the `board` first, so it starts from the run's position on that `board` when it works out
+  which piece the rest of a baseline belongs to. A 429 or 503 is retried after its
+  `Retry-After`, and a network failure after a backoff, each with the same content; a 400 or 403
+  is not retried unchanged.
+
+#### Response
+
+```jsonc
+200 {"ok": true, "outcome": "applied", "runId": "…uuid…", "events": 3, "skipped": 0}
+200 {"ok": true, "outcome": "held", "runId": "…uuid or null…"} // not applied to a run (see below)
+200 {"ok": true, "outcome": "board_mismatch", "runId": "…uuid…", "boardId": 2}
+200 {"ok": true, "outcome": "left", "runId": "…uuid or null…"}
+```
+
+In-duty snapshots belong to the character's active run, which the player starts on the website.
+On `applied`, `events` is how many run events the server wrote for the upload, which can include
+an earlier piece's outcome (see below). `skipped` is how many events the server did not write for
+the upload because the player had already logged them on the website; the player's own entry wins.
+An undo sticks: a run event the server derived and the player undid is not derived again from a
+later snapshot of the same piece and kind.
+
+**What the server makes of the snapshots.** The server's rules for turning snapshots into run
+events are its own; these are the ones that shape what a client sends:
+
+- The move onto a fight piece and that fight's lineup are written when the lineup window (`team`
+  mode 2) closes, so that window's `closed` snapshot is the one that sets the lineup. If the
+  window closes again on the same piece with a different lineup (other familiars placed, another
+  order, or different HP) before the fight's outcome is written, the lineup is amended once; any
+  later change is the player's to make on the website.
+- A piece's outcome (its fight, treasure, shop or campsite) is written when the first snapshot of
+  the next piece arrives, or when a `results` snapshot or a `leave` from the active run's board
+  arrives. Until then it waits for the `bag` and `team` readings that complete it.
+- What the player takes from a treasure or sells at a shop is read from the `bag`: the server
+  compares the last `bag` reading before the piece's window opened with the piece's last `bag`
+  reading. When they match, or no `bag` arrives after the window opens (a client sends none while
+  the bag is unchanged), the server writes nothing taken or sold. What the player buys at a shop
+  comes from the `bought` flags on its `closed` shop `offer` snapshot instead.
+- A reading that arrives after its piece's outcome was written is not applied, and any correction
+  to that piece is the player's to make on the website, so a client sends a retried upload before
+  any upload with newer readings.
+- When more than one piece ahead could hold it, an `offer` snapshot, or a `team` snapshot in
+  lineup, feed or campsite mode (2, 3 or 4), stamped before any `board` that shows where the run
+  stands, waits for the next `board` to say which piece it belongs to.
+- The finish that `results` brings is written only once the run stands on the board's last piece
+  and that piece's fight is written.
+- A snapshot identical to one the server already has, stamp included, is applied only once, so
+  retrying an upload whose response was lost changes nothing.
+
+For an upload whose `territoryTypeId` is a board, `held` means there is no active run yet: the
+server keeps the latest snapshot of each kind for 30 minutes past its `observedAtUtc`, so a
+reading that arrives older than that is not kept. The server applies what it keeps once a run on
+that board starts. `board_mismatch` means the website run is on a different board: nothing is
+written to it, and the snapshots are kept as for `held`, because starting a run on this board
+abandons the run on the other one. A `results` snapshot that is not applied to a run is not kept,
+and drops every kept snapshot, so a later run never receives an earlier attempt's snapshots. A
+`leave` drops every kept snapshot too, and never ends a run, since the player may have suspended
+the board to resume it later. A `leave` from the active run's board also writes any outcome still
+waiting (see above). A run is never created from observations.
+
+The client logs `held` and `board_mismatch` and shows the player nothing for either.
+
+The entrance's roster pick and pre-entry board are kept apart from in-duty snapshots and are never
+applied to a run, because a run's roster is fixed when it starts. They only prefill the website's
+setup for the run the player is about to start, and lapse 30 minutes after their `observedAtUtc`,
+or sooner when an unapplied `results` snapshot or a `leave` drops every kept snapshot. An
+entrance upload answers `held` whether or not the character has an active run, with that run's
+id as `runId` when it has one.
+
+Status codes mirror `/sync` (400 `invalid_payload`, 401, the 403 family with echoed identity, 405,
+413, 429 with its own per-token budget of 240/hour), plus **503 `sync_disabled`** when the global,
+per-user, category or flag switch is off, and **503 `busy`** with `Retry-After` when the server
+could not take the upload in time.
+
+**Liveness.** Every upload answered `applied`, a heartbeat included, refreshes the run's "Plugin
+connected" mark on the website, and a `leave` clears it. After a few minutes with no `applied`
+upload (four by default) the mark turns to "Plugin disconnected"; a `board_mismatch` or `held`
+upload does not touch it.
+
 ## Character binding
 
 The plugin identifies a character by a **client-side SHA-256 of its ContentId** — the raw
@@ -708,11 +920,16 @@ Resolution:
 favorite (someone's non-claimed follow) is invisible — `/me` never lists it and the binder
 never matches it. `/me` lists pending claims too, with `verified: false`.
 
-**403 recovery.** Every 403 on `POST /sync` and `POST /occult/instance-state` has the same
-shape, `{"error": "<code>", "name": "<payload characterName>", "world": "<payload homeWorld>"}`,
-and `<code>` is one of four. None heals on retry; each needs the user to act. The plugin halts
-both upload paths on any of them and names the fix, whichever path was refused, so a player with
-only the live tracker switched on is told too.
+**403 recovery.** Every 403 on `POST /sync`, `POST /occult/instance-state` and
+`POST /crucible/observations` has the same shape:
+
+```jsonc
+{"error": "<code>", "name": "<payload characterName>", "world": "<payload homeWorld>"}
+```
+
+`<code>` is one of the four in the table below. None heals on retry; each needs the user to act.
+A client halts every upload path on any of them and names the fix, whichever path was refused,
+so a player who uses only one feature is told too.
 
 | `error` | Meaning | What the plugin tells the player |
 | --- | --- | --- |

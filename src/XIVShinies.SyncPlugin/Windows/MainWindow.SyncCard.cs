@@ -80,6 +80,10 @@ internal sealed partial class MainWindow
             syncManager.HasCharacter,
             syncManager.LastStatus is not null);
 
+        // Read once, so the status line, the wait line, the button and the sentences below all
+        // describe the same wait.
+        var backingOff = syncManager.IsBackingOff;
+
         if (status == SyncStatusKind.SwitchedOffByUser)
         {
             // Red: everything below this line is inert while the switch is off, and a quiet gray
@@ -91,12 +95,13 @@ internal sealed partial class MainWindow
             // The master toggle above still reads ON, which is correct: it reports the user's own
             // setting, and that setting has not changed. This line is what makes the difference
             // between "you switched it off" and "we switched it off" legible.
-            DrawWarning(ServerOffCopy.Paused);
+            DrawWarning(ServerOffCopy.Paused(BackendHost()));
         }
         else if (status == SyncStatusKind.BlockedPendingUserAction)
         {
             // Names the fix for the status that raised this halt (SyncManager.HaltStatus), which can
             // differ from the last upload's outcome; HaltCopy decides among the kinds of fix.
+            // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
             DrawWarning($"Syncing has stopped. {HaltSentence()}");
         }
         else if (status == SyncStatusKind.NothingSwitchedOnByUser)
@@ -106,19 +111,20 @@ internal sealed partial class MainWindow
             // because the Collections card is a header the user can collapse — and collapsed, an
             // idle sync card would look like a fault with no explanation anywhere.
             //
-            // Scoped to collections. The live tracker is gated separately and has no collection
-            // term in OccultGate.CanTrack, so it can be uploading world state while every
-            // collection here is off — and this card is the surface a user trusts to say what is
-            // being sent.
+            // Scoped to collections. The live tracker and the Crucible run sharing are gated
+            // separately and have no collection term in their gates, so either can be uploading
+            // while every collection here is off — and this card is the surface a user trusts to
+            // say what is being sent.
             ImGui.TextUnformatted(
-                "No collections are switched on, so none of your progress is being uploaded.");
+                "No collections are switched on, so none of your collection progress is being " +
+                "uploaded.");
         }
         else if (status == SyncStatusKind.NothingPermittedByServer)
         {
             // Warned rather than stated, unlike the line above: this one is not the user's doing and
             // there is nothing for them to change, so it belongs with the other states the server
             // imposed. The rows each wear their own "Off" chip, but they are a fold away.
-            DrawWarning(ServerOffCopy.Feature);
+            DrawWarning(ServerOffCopy.EveryCollection(BackendHost()));
         }
         else if (status == SyncStatusKind.WaitingForCharacter)
         {
@@ -136,12 +142,16 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.LastUploadOutcome && syncManager.LastStatus is { } lastStatus)
         {
-            DrawLastStatus(lastStatus);
+            DrawLastStatus(lastStatus, backingOff);
         }
         else
         {
-            ImGui.TextUnformatted("Nothing has been uploaded yet this session.");
+            ImGui.TextUnformatted("No collections have been uploaded yet this session.");
         }
+
+        // Whether the wait needs a line of its own is SyncStatusView.NeedsWaitLine's rule.
+        if (SyncStatusView.NeedsWaitLine(status, syncManager.LastStatus, backingOff))
+            ImGui.TextUnformatted(SyncStatusView.WaitLine(BackendHost()));
 
         // "When?" is half of what a status line is for: without it, a deliberately quiet stretch
         // (item acquisitions fire no event) is indistinguishable from a hang. Muted, unlike the
@@ -160,13 +170,16 @@ internal sealed partial class MainWindow
         var showSyncing = DateTime.UtcNow < syncFeedbackUntil || syncManager.UploadInFlight;
         var syncButtonPos = ImGui.GetCursorPos();
 
-        // Read off the same status the card is stating, so the control and the sentence above it
-        // cannot drift apart. PrimaryButton owns its own disabled look, so the face goes flat
-        // rather than merely dimming — see Widgets.PrimaryButton for why that matters.
+        // Read off the same status the card is stating, plus whether the server has asked the
+        // plugin to wait, so no sentence invites a press the button refuses (see
+        // SyncStatusView.SyncNowOffered and SyncNowEnabled). PrimaryButton owns its own disabled
+        // look, so the face goes flat rather than merely dimming — see Widgets.PrimaryButton for why
+        // that matters.
+        var syncNowOffered = SyncStatusView.SyncNowOffered(status, backingOff);
         if (PrimaryButton(
                 showSyncing ? "###syncNow" : "Sync now###syncNow",
                 new Vector2(syncWidth, 0f),
-                enabled: !SyncStatusView.ManualSyncWouldDoNothing(status))
+                enabled: SyncStatusView.SyncNowEnabled(status, backingOff))
             && !showSyncing)
         {
             syncManager.RequestManualSync();
@@ -189,22 +202,14 @@ internal sealed partial class MainWindow
         var pipelineRunning = SyncStatusView.CadenceHolds(status);
 
         // Sets the expectation for every collection at once, so no category's own description has
-        // to explain the sync mechanism. Phrased by mechanism, not by category name: an acquisition
-        // the game announces uploads within seconds, while anything it stays silent about (item
-        // possession, Triple Triad cards) waits for the scheduled sweep. The cadence is the live
-        // value — the server tunes it — never a hardcoded number.
-        //
-        // "Most" is load-bearing. Which acquisitions announce themselves is the game's choice, not
-        // ours, and it is not guessable from the outside: Triple Triad cards are registered for the
-        // unlock signal exactly as mounts and orchestrion rolls are, and the game simply never
-        // raises it for them — a card reaches the site on the sweep or on Sync now. Promising every
-        // unlock in seconds would be a promise this plugin cannot keep for a collection it ships.
+        // to explain the sync mechanism. Phrased by mechanism, not by category name; which
+        // collections may be promised "within seconds", and when a press is invited, is
+        // SyncStatusView.CadenceSentence's rule.
         if (pipelineRunning)
         {
             DrawWrapped(
-                "Most new unlocks upload within seconds. Everything else syncs automatically every " +
-                $"{TimeText.Interval(syncManager.FullSyncInterval)} — press Sync now to update " +
-                "immediately.",
+                SyncStatusView.CadenceSentence(
+                    rows, syncManager.FullSyncInterval, syncNowOffered, backingOff),
                 ImGuiCol.Text);
         }
 
@@ -231,7 +236,7 @@ internal sealed partial class MainWindow
             // it draws whatever notes it is handed and never asks which collection or which container
             // produced one. The rows are this frame's, built once at the top of DrawSettings and
             // shared with the consent card below.
-            var readStatus = ReadStatusView.Build(rows, syncManager.LastSourceNotes);
+            var readStatus = ReadStatusView.Build(rows, syncManager.LastSourceNotes, BackendHost());
 
             // Whether any note drawn below is Missing — something contributing nothing at all right
             // now, whether a collection the game will not answer for or a storage container that has
@@ -241,18 +246,15 @@ internal sealed partial class MainWindow
             var hasMissingNote = DrawReadStatusGroup("Collections", readStatus.Collections);
             hasMissingNote |= DrawReadStatusGroup("Containers", readStatus.Containers);
 
-            // Every Missing line names its own action — open the Saddlebag, open the Achievements
-            // window — but none of them can say what happens next, because acting in game changes
-            // nothing until the plugin reads again. This is the shared other half: the sync that
-            // actually picks the change up. Hidden once nothing is Missing, since a permanently
-            // Cached container has nothing left the user can do about it.
+            // A Missing line that names an action (open the Saddlebag, open the Achievements window)
+            // cannot say what happens next, because acting in game changes nothing until the plugin
+            // reads again. This is the shared other half: the sync that actually picks the change
+            // up. Hidden once nothing is Missing, since a permanently Cached container has nothing
+            // left the user can do about it.
             if (hasMissingNote)
             {
                 ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
-                DrawWrapped(
-                    "Anything above that has not been read yet names the action that fixes it — do " +
-                    "it in game, then press Sync now.",
-                    ImGuiCol.Text);
+                DrawWrapped(SyncStatusView.MissingFollowUp(syncNowOffered), ImGuiCol.Text);
             }
         }
     }
@@ -429,7 +431,8 @@ internal sealed partial class MainWindow
     /// <summary>
     /// The sentence for the current halt (see <see cref="HaltCopy"/>), built from the loaded
     /// character, the configured host and the server settings. Shared by the sync card and the
-    /// live tracker's card, so both say the same thing about one halt.
+    /// live tracker's and Crucible run sharing's cards, so every card says the same thing about one
+    /// halt.
     /// </summary>
     private string HaltSentence()
     {
@@ -446,7 +449,9 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>Renders the last upload's outcome. Switches on a status, never on a category.</summary>
-    private void DrawLastStatus(ApiStatus status)
+    /// <param name="status">The last upload's outcome.</param>
+    /// <param name="backingOff">Whether a server-requested wait is still in force.</param>
+    private void DrawLastStatus(ApiStatus status, bool backingOff)
     {
         switch (status)
         {
@@ -462,7 +467,7 @@ internal sealed partial class MainWindow
                 break;
 
             case ApiStatus.InvalidToken:
-                DrawWarning("Your token was rejected. Generate a new one.");
+                DrawWarning($"Your token was rejected. Generate a new one on {BackendHost()}.");
                 break;
 
             // The three self-healing outcomes below need no action from the user, so they carry no
@@ -470,7 +475,7 @@ internal sealed partial class MainWindow
             // contrast. Only red says "you have to do something".
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
-                ImGui.TextUnformatted("Waiting before the next upload, as the server asked.");
+                ImGui.TextUnformatted(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()));
                 break;
 
             case ApiStatus.NetworkError:

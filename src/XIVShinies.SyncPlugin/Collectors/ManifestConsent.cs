@@ -136,7 +136,7 @@ public static class ManifestConsent
     /// seeded true and then shown nothing — no collectors at all, or every category switched off by the
     /// server — would render ticked while nothing whatsoever is on, which is the one reading a consent
     /// control must never give. Rows the server has switched off are skipped: they are not the user's to
-    /// answer for, and their own controls are drawn greyed out.
+    /// answer for, and their own controls are drawn grayed out.
     /// </remarks>
     /// <param name="rows">The category rows on screen, group state included.</param>
     public static bool AllConsentGiven(IReadOnlyList<CategorySettingsRow> rows)
@@ -208,6 +208,18 @@ public static class ManifestConsent
 
         return false;
     }
+
+    /// <summary>
+    /// Whether the server has switched off every collection one by one, without pausing syncing.
+    /// </summary>
+    /// <remarks>
+    /// The state in which every collection's box is grayed for a reason no pause sentence explains, so
+    /// a consent surface owes the user a sentence of its own. An empty list is nobody's refusal.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    // `&&` stops at the first false, as in TypeScript.
+    public static bool ServerPermitsNoCollection(IReadOnlyList<CategorySettingsRow> rows) =>
+        rows.Count > 0 && !AnyServerEnabled(rows) && !ServerHasPausedEverything(rows);
 
     /// <summary>
     /// Whether any collection at all will actually be uploaded as things stand — both halves, the

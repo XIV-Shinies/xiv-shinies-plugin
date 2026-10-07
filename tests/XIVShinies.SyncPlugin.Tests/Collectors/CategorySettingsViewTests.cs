@@ -14,6 +14,10 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 // not survive the trip.
 public class CategorySettingsViewTests
 {
+    // The website address the copy names. `const` fixes the value when the code compiles.
+    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     // A category this plugin has never heard of, deliberately.
     private const string UnknownCategory = "facewear";
 
@@ -54,6 +58,9 @@ public class CategorySettingsViewTests
         // Set per-test, so the view's carry-through of the storage flag can be checked both ways;
         // every other test leaves the default of a collection that reads no storage.
         public bool ReadsStorage { get; init; }
+
+        // Set per-test, so the view's carry-through can be checked both ways.
+        public bool UploadsOnUnlock { get; init; }
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
@@ -152,6 +159,64 @@ public class CategorySettingsViewTests
                 new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
 
         Assert.Equal("Glamour", row.Section);
+    }
+
+    // Whether a collection uploads as soon as it unlocks is the collector's own self-description,
+    // carried through untouched, so the sync card can decide what to promise without naming one. A
+    // `[Theory]` runs once per `[InlineData]` row, like Jest's `it.each`.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_collectors_unlock_upload_flag_reaches_its_row(bool uploadsOnUnlock)
+    {
+        var collector = new FakeCollector(UnknownCategory, "Facewear", "what facewear sends")
+        {
+            UploadsOnUnlock = uploadsOnUnlock,
+        };
+
+        var row = Assert.Single(
+            CategorySettingsView.Build(new[] {collector}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.Equal(uploadsOnUnlock, row.UploadsOnUnlock);
+    }
+
+    /// <summary>
+    /// A collector that says nothing about unlock uploads, so it takes the interface's default.
+    /// </summary>
+    private sealed class SilentCollector : ICollector
+    {
+        public string CategoryKey => UnknownCategory;
+
+        public string DisplayName => "Facewear";
+
+        public string Section => "Fakes";
+
+        public string WhatGetsSent => "what facewear sends";
+
+        public string? Details => null;
+
+        public bool UsesItemManifest => false;
+
+        // These three have no default on the interface, so even a collector that is silent about
+        // unlock uploads has to answer them.
+        public bool RequiresServerSupport => false;
+
+        public bool IsSingleRecord => false;
+
+        public bool ReadsStorage => false;
+
+        public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
+    }
+
+    // A collector that never declares the flag answers false.
+    [Fact]
+    public void A_collector_that_does_not_declare_the_flag_reaches_its_row_as_false()
+    {
+        var row = Assert.Single(
+            CategorySettingsView.Build(
+                new ICollector[] {new SilentCollector()}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.False(row.UploadsOnUnlock);
     }
 
     // The extensibility gate, end to end: an unknown collector declaring an unheard-of section
@@ -382,7 +447,7 @@ public class CategorySettingsViewTests
 
     // A collection the server has switched off cannot be used, so it does not announce itself yet.
     // This is what a beta gate looks like from the plugin's side: the server sends the category
-    // disabled for everyone outside the test group, and they see a quiet greyed row rather than a
+    // disabled for everyone outside the test group, and they see a quiet grayed row rather than a
     // badge pointing at something they cannot turn on.
     [Fact]
     public void A_collection_the_server_switched_off_does_not_announce_itself()
@@ -767,7 +832,7 @@ public class CategorySettingsViewTests
 
         Assert.Equal(
             "In testing — it will switch on for everyone once it is ready.",
-            Assert.Single(rows).ServerOffText);
+            Assert.Single(rows).ServerOffText(Host));
     }
 
     // The kill switch is the louder signal and carries no note: the collection is off for
@@ -782,9 +847,10 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
 
-        // Pinned by identity with the constant, so a reword moves both surfaces that draw it.
+        // Pinned against ServerOffCopy.Feature itself, so a reword moves every surface that draws
+        // it.
         Assert.Equal(
-            ServerOffCopy.Feature, Assert.Single(rows).ServerOffText);
+            ServerOffCopy.Feature(Host), Assert.Single(rows).ServerOffText(Host));
     }
 
     // The note is carried on the row in its own right, not only folded into the sentence.
@@ -801,7 +867,7 @@ public class CategorySettingsViewTests
         Assert.Equal("In testing.", Assert.Single(rows).ServerNote);
     }
 
-    // A note against a live category is legal and has nowhere to go — there is no greyed row to
+    // A note against a live category is legal and has nowhere to go — there is no grayed row to
     // explain. Dropped by the same rule rather than special-cased, so the server may send one
     // without the panel growing a branch for it.
     [Fact]
@@ -817,7 +883,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
 
-        Assert.Null(Assert.Single(rows).ServerOffText);
+        Assert.Null(Assert.Single(rows).ServerOffText(Host));
     }
 
     // Nothing to say about a category that is simply on.
@@ -827,7 +893,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig());
 
-        Assert.Null(Assert.Single(rows).ServerOffText);
+        Assert.Null(Assert.Single(rows).ServerOffText(Host));
     }
 
     // A config that has not been fetched forbids nothing, so there is no off-state to explain.
@@ -839,7 +905,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), remoteConfig: null);
 
-        Assert.Null(Assert.Single(rows).ServerOffText);
+        Assert.Null(Assert.Single(rows).ServerOffText(Host));
     }
 
     // --- Which mark a row wears -----------------------------------------------------------------
@@ -954,7 +1020,7 @@ public class CategorySettingsViewTests
             CategorySettingsView.ShowingRetiresTheBadge(UnseenRowWithNoConfig(), showNewChips: false));
     }
 
-    // Greyed and unusable is not an introduction, on either surface.
+    // Grayed and unusable is not an introduction, on either surface.
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -1055,7 +1121,7 @@ public class CategorySettingsViewTests
         var row = Assert.Single(CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
-        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
     }
 
     // A collection must not spend its one-time introduction during an outage: the user would see
@@ -1103,7 +1169,7 @@ public class CategorySettingsViewTests
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
         Assert.False(row.ServerGloballyOff);
-        Assert.Equal("In testing.", row.ServerOffText);
+        Assert.Equal("In testing.", row.ServerOffText(Host));
     }
 
     // The group checkboxes are the other half of the collections surface, and they follow their
@@ -1135,7 +1201,7 @@ public class CategorySettingsViewTests
         var row = Assert.Single(CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
-        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
     }
 
     // An unfetched config forbids nothing, and that must survive the global switch being read:
@@ -1148,7 +1214,7 @@ public class CategorySettingsViewTests
 
         Assert.True(row.ServerEnabled);
         Assert.False(row.ServerGloballyOff);
-        Assert.Null(row.ServerOffText);
+        Assert.Null(row.ServerOffText(Host));
     }
 
     // --- A collection that needs the server to name it ------------------------------------------
@@ -1167,8 +1233,9 @@ public class CategorySettingsViewTests
         Assert.False(row.ServerEnabled);
         Assert.True(row.NotOfferedByServer);
 
-        // Pinned by identity with the constant, so a reword moves every surface that draws it.
-        Assert.Equal(ServerOffCopy.NotOffered, row.ServerOffText);
+        // Pinned against ServerOffCopy.NotOffered itself, so a reword moves every surface that
+        // draws it.
+        Assert.Equal(ServerOffCopy.NotOffered(Host), row.ServerOffText(Host));
     }
 
     // Once the server names the collection, it is an ordinary switched-off collection: the server
@@ -1185,7 +1252,7 @@ public class CategorySettingsViewTests
 
         Assert.False(row.ServerEnabled);
         Assert.False(row.NotOfferedByServer);
-        Assert.Equal("In testing.", row.ServerOffText);
+        Assert.Equal("In testing.", row.ServerOffText(Host));
     }
 
     // The permitted case: named and switched on, the stricter rule asks nothing more.
@@ -1200,12 +1267,15 @@ public class CategorySettingsViewTests
 
         Assert.True(row.ServerEnabled);
         Assert.False(row.NotOfferedByServer);
-        Assert.Null(row.ServerOffText);
+        Assert.Null(row.ServerOffText(Host));
     }
 
     // Before /config arrives nothing says the server knows the collection, so the row waits with
-    // it — matching the gate, which holds the same collection back from the upload. Unlike an
-    // ordinary row drawn before the config, it wears no "New" badge: there is nothing to use yet.
+    // it, matching the gate, which holds the same collection back from the upload. Unlike an
+    // ordinary row drawn before the config, it wears no "New" badge and, drawn disabled, is not
+    // recorded as seen on either surface, so it announces itself once the server offers it. Its
+    // line says it is waiting rather than claiming the server does not offer it: nothing is known
+    // either way.
     [Fact]
     public void A_collection_needing_server_support_waits_for_the_config()
     {
@@ -1218,6 +1288,9 @@ public class CategorySettingsViewTests
         Assert.True(row.NotOfferedByServer);
         Assert.False(row.IsEffectivelyOn);
         Assert.False(row.IsEffectivelyNew);
+        Assert.False(CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips: false));
+        Assert.False(CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips: true));
+        Assert.Equal(ServerOffCopy.AwaitingAnswer(Host), row.ServerOffText(Host));
     }
 
     // A pause still outranks everything said about one collection, including that it was never
@@ -1231,7 +1304,7 @@ public class CategorySettingsViewTests
             RemoteConfig(enabled: false)));
 
         Assert.True(row.NotOfferedByServer);
-        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
     }
 
     // The stricter rule does not reach an ordinary collection: one the server never names is

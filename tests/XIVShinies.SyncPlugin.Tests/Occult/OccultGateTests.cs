@@ -14,6 +14,12 @@ public class OccultGateTests
     // characters (see TokenFormat).
     private const string UsableToken = "xvs_" + "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
 
+    // The website address the chip's sentences name. A made-up one, so a test can tell an address
+    // that was passed in from one written into the copy. `const` fixes the value when the code
+    // compiles. An attribute's arguments must be fixed then too, so the [InlineData] rows below spell
+    // each sentence out rather than calling ServerOffCopy.
+    private const string Host = "shinies.example";
+
     /// <summary>Settings for a user who has fully opted in.</summary>
     private static PluginSettings OptedIn() => new()
     {
@@ -103,7 +109,7 @@ public class OccultGateTests
 
     // --- What the settings toggle draws ------------------------------------------------------
 
-    // ServerHasSwitchedOff decides whether the toggle draws greyed and chipped "Off". It has to
+    // ServerHasSwitchedOff decides whether the toggle draws grayed and chipped "Off". It has to
     // agree with CanTrack about what the server allows, or the control describes something other
     // than what happens — so the three arms are pinned separately from the gate's own tests.
 
@@ -125,7 +131,7 @@ public class OccultGateTests
     }
 
     // The arm most likely to regress: before the first /config answers, the server has forbidden
-    // nothing, so the toggle keeps showing the user's own choice rather than greying out.
+    // nothing, so the toggle keeps showing the user's own choice rather than graying out.
     [Fact]
     public void A_config_that_has_not_arrived_is_not_reported_off()
     {
@@ -169,35 +175,45 @@ public class OccultGateTests
     // choice would still satisfy either switch tested alone.
     [Theory]
     [InlineData(true, true, null)]
-    [InlineData(true, false, ServerOffCopy.Feature)]
-    [InlineData(false, true, ServerOffCopy.Paused)]
-    [InlineData(false, false, ServerOffCopy.Paused)]
+    [InlineData(true, false, "Temporarily switched off by " + Host + ".")]
+    [InlineData(false, true, Host + " has paused syncing for everyone. Your own choices are unchanged.")]
+    [InlineData(false, false, Host + " has paused syncing for everyone. Your own choices are unchanged.")]
     public void The_chip_names_the_pause_before_the_feature(
         bool globallyEnabled, bool trackerEnabled, string? expected)
     {
         var config = ConfigWithTracker(
             globallyEnabled: globallyEnabled, trackerEnabled: trackerEnabled);
 
-        Assert.Equal(expected, OccultGate.ServerOffText(config));
+        Assert.Equal(expected, OccultGate.ServerOffText(config, Host));
 
         // The chip's presence and its sentence are one decision: text exactly when switched off.
-        Assert.Equal(OccultGate.ServerHasSwitchedOff(config), OccultGate.ServerOffText(config) is not null);
+        Assert.Equal(
+            OccultGate.ServerHasSwitchedOff(config), OccultGate.ServerOffText(config, Host) is not null);
     }
 
-    // A server that never advertised the tracker cannot serve it, so the feature's own sentence
-    // applies even though there is no switch to read.
+    // A server whose /config carries no tracker block cannot serve it, but nothing was switched off
+    // either: the chip says the website does not offer it.
     [Fact]
-    public void A_config_with_no_tracker_block_says_the_tracker_is_off()
+    public void A_config_with_no_tracker_block_says_the_server_does_not_offer_it()
     {
         var config = ConfigWithTracker() with { OccultTracker = null };
 
-        Assert.Equal(ServerOffCopy.Feature, OccultGate.ServerOffText(config));
+        Assert.Equal(ServerOffCopy.NotOffered(Host), OccultGate.ServerOffText(config, Host));
+    }
+
+    // A pause outranks a missing block: it stops every upload, whatever the server offers.
+    [Fact]
+    public void A_paused_server_with_no_tracker_block_shows_the_pause()
+    {
+        var config = ConfigWithTracker(globallyEnabled: false) with { OccultTracker = null };
+
+        Assert.Equal(ServerOffCopy.Paused(Host), OccultGate.ServerOffText(config, Host));
     }
 
     [Fact]
     public void A_permitted_tracker_has_nothing_to_say()
     {
-        Assert.Null(OccultGate.ServerOffText(ConfigWithTracker()));
-        Assert.Null(OccultGate.ServerOffText(null));
+        Assert.Null(OccultGate.ServerOffText(ConfigWithTracker(), Host));
+        Assert.Null(OccultGate.ServerOffText(null, Host));
     }
 }

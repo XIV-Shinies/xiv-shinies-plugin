@@ -14,9 +14,7 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>.
 /// </para>
 /// <para>
-/// The flag is reachable from a unit test because <see cref="CategoryInfo"/> is Dalamud-free; the
-/// registry is read through <see cref="CollectorRegistryReflection"/>, which explains why that
-/// loads no game assembly. This class also guards that reflection for every test that shares it.
+/// The flag is reachable from a unit test through <see cref="CategoryInfoReflection"/>.
 /// </para>
 /// </remarks>
 public class CompletenessDeclarationTests
@@ -38,12 +36,8 @@ public class CompletenessDeclarationTests
         CategoryKeys.TripleTriadCards,
     };
 
-    /// <summary>
-    /// Every category the registry declares, so every collection is covered without anyone
-    /// remembering to extend a hand-written list.
-    /// </summary>
-    private static IReadOnlyList<CategoryInfo> AllCategories() =>
-        CollectorRegistryReflection.Categories();
+    /// <summary>Every category the registry declares (see <see cref="CategoryInfoReflection"/>).</summary>
+    private static IReadOnlyList<CategoryInfo> AllCategories() => CategoryInfoReflection.All();
 
     /// <summary>
     /// Asserts the whole declaring set at once.

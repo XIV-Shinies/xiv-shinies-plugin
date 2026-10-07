@@ -74,9 +74,14 @@ public static class ReadStatusView
     /// keyed by <see cref="SourceKeys"/>. Empty before any pass has looked at them, which simply means
     /// no container lines.
     /// </param>
+    /// <param name="host">
+    /// The configured website's address. Lines that name the website use it, and a collector's own
+    /// notes have their <see cref="HostPlaceholder.Token"/> filled with it.
+    /// </param>
     public static ReadStatus Build(
         IReadOnlyList<CategorySettingsRow> rows,
-        IReadOnlyDictionary<string, ItemSourceStatus> sourceNotes)
+        IReadOnlyDictionary<string, ItemSourceStatus> sourceNotes,
+        string host)
     {
         var collections = new List<SourceNote>(rows.Count);
         var containers = new List<SourceNote>(sourceNotes.Count);
@@ -110,7 +115,7 @@ public static class ReadStatusView
             {
                 // `is not { } note` reads as "is null": skip a container this copy set has no line for,
                 // rather than printing a raw wire string such as "unscanned" at the user.
-                if (SourceNoteText.Describe(sourceKey, status) is not { } note)
+                if (SourceNoteText.Describe(sourceKey, status, host) is not { } note)
                     continue;
 
                 containers.Add(note);
@@ -124,8 +129,8 @@ public static class ReadStatusView
                 continue;
 
             // `is { } note` reads as "is not null": a row with nothing to add to the panel is dropped
-            // rather than drawn — see DescribeCollection for the one case where that happens.
-            if (DescribeCollection(row, containers.Count > 0) is { } note)
+            // rather than drawn — see DescribeCollection for the two cases where that happens.
+            if (DescribeCollection(row, containers.Count > 0, host) is { } note)
                 collections.Add(note);
         }
 
@@ -177,16 +182,17 @@ public static class ReadStatusView
     /// and the phrase comes from what the collector itself reported.
     /// </para>
     /// <para>
-    /// The null case is the manifest-driven rule. A manifest-driven collection's facts ARE the item
-    /// counts read out of the containers, so when it has no skip reason its own line says nothing the
-    /// container group below does not already say in more detail — and a line that only repeats its
-    /// neighbors teaches the reader to skim past both. It is dropped only while there is at least one
-    /// container line to stand in for it. With none — no pass has reported yet, or every status it did
-    /// report was one this copy set has no line for — dropping this line as well would leave the panel
-    /// silent about a collection the user has switched on. A <i>skipped</i> manifest-driven collection
-    /// is a third case: why it was missed (the server's config has not arrived, the inventory is
-    /// unreadable, no consent group beneath it is switched on) exists nowhere else in the panel, so that
-    /// line is always owed. Keyed on the collector's own
+    /// Null for a deliberate skip (see <see cref="CollectSkipReasons.IsDeliberate"/>), and under the
+    /// manifest-driven rule. A manifest-driven collection's facts ARE the item counts read out of the
+    /// containers, so when it has no skip reason its own line says nothing the container group below
+    /// does not already say in more detail — and a line that only repeats its neighbors teaches the
+    /// reader to skim past both. It is dropped only while there is at least one container line to
+    /// stand in for it. With none — no pass has reported yet, or every status it did report was one
+    /// this copy set has no line for — dropping this line as well would leave the panel silent about
+    /// a collection the user has switched on. A manifest-driven collection <i>missed</i> for any other
+    /// reason is never dropped: why (the server's config has not arrived, the inventory is
+    /// unreadable, no consent group beneath it is switched on) exists nowhere else in the panel, so
+    /// that line is always owed. Keyed on the collector's own
     /// <see cref="CategorySettingsRow.UsesItemManifest"/> flag, never on a category name — any
     /// manifest-driven collection inherits the rule for free.
     /// </para>
@@ -205,7 +211,9 @@ public static class ReadStatusView
     /// rather than the raw statuses: a status <see cref="SourceNoteText.Describe"/> has no copy for is
     /// dropped from the panel, so it cannot stand in for anything the reader can actually see.
     /// </param>
-    private static SourceNote? DescribeCollection(CategorySettingsRow row, bool hasContainerLines)
+    /// <param name="host">The configured website's address (see <see cref="Build"/>).</param>
+    private static SourceNote? DescribeCollection(
+        CategorySettingsRow row, bool hasContainerLines, string host)
     {
         // No skip reason means the pass read this collection. Nested beneath that: whether it
         // read all of it, or only part.
@@ -222,7 +230,7 @@ public static class ReadStatusView
                 return new SourceNote
                 {
                     Label = row.DisplayName,
-                    Text = $"{row.DisplayName}: {partialNote}",
+                    Text = $"{row.DisplayName}: {HostPlaceholder.Fill(partialNote, host)}",
                     Tone = SourceTone.Missing,
                 };
             }
@@ -237,12 +245,18 @@ public static class ReadStatusView
                 {
                     Label = row.DisplayName,
                     Tone = SourceTone.Live,
-                    Detail = row.CollectedDetail,
+                    // `is { } detail` matches a detail that is present and names it, so only a real
+                    // detail is filled; with none, the chip has no hover.
+                    Detail = row.CollectedDetail is { } detail ? HostPlaceholder.Fill(detail, host) : null,
                 };
         }
 
+        // A deliberate skip is a decision, not a miss (see IsDeliberate), so it gets no line.
+        if (CollectSkipReasons.IsDeliberate(reason))
+            return null;
+
         // A reason with advice: the collection was missed AND the user can do something about it.
-        if (CollectSkipReasons.Describe(reason) is { } hint)
+        if (CollectSkipReasons.Describe(reason, host) is { } hint)
         {
             return new SourceNote
             {

@@ -6,6 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Utility;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -18,10 +19,15 @@ internal sealed partial class MainWindow
 {
     private void DrawSettings()
     {
+        // One snapshot for the whole screen; see DrawOccultConsentRow's remoteConfig parameter for
+        // why it is passed rather than re-read. `var` lets the compiler infer the type, like an
+        // unannotated `let` in TypeScript.
+        var remoteConfig = syncManager.RemoteConfig;
+
         // The three surfaces that need the category rows — the read-status panel inside the sync card,
         // the "New" chip on the Collections header, and the consent card itself — are all drawn
         // from THIS list (see BuildCategoryRows).
-        var rows = BuildCategoryRows();
+        var rows = BuildCategoryRows(remoteConfig);
 
         DrawSettingsHeader();
 
@@ -32,9 +38,12 @@ internal sealed partial class MainWindow
         BrandSeparator();
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Whether anything in the list still counts as "New" — a whole collection or a manifest group
-        // inside one (see AnythingIsNew).
-        var hasNewCollection = AnythingIsNew(rows);
+        // Whether anything under the header still counts as "New": a whole collection or a manifest
+        // group inside one (see AnythingIsNew), or the Crucible run sharing's card, which sits under
+        // the same header (see CrucibleBadge).
+        var hasNewCollection = AnythingIsNew(rows)
+            || CrucibleBadge.IsNew(
+                configuration.Settings.CrucibleSharingSeen, remoteConfig, crucibleBadgedThisSession);
 
         // Captured immediately before the header so the "New" chip below can be placed on the
         // header's own row: CollapsingHeader always spans the full available width regardless of
@@ -70,9 +79,12 @@ internal sealed partial class MainWindow
             ImGui.Spacing();
             DrawCategoryRows(rows, showNewChips: true);
 
-            // The live tracker's consent card, below the collections card it is not part of.
+            // The Crucible run sharing's and the live tracker's consent cards, below the collections
+            // card they are not part of.
             ImGui.Spacing();
-            DrawOccultConsentRow(syncManager.RemoteConfig);
+            DrawCrucibleConsentRow(remoteConfig, showNewChip: true);
+            ImGui.Spacing();
+            DrawOccultConsentRow(remoteConfig);
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
@@ -96,12 +108,17 @@ internal sealed partial class MainWindow
         if (ImGui.CollapsingHeader("Privacy"))
         {
             ImGui.Spacing();
-            // Names the server the data is actually sent to — see MainWindow.BackendHost.
+            // Names the server the data is actually sent to — see MainWindow.BackendHost. "You choose"
+            // is said only while the server leaves something to choose (see
+            // ConsentCopy.UserHasAChoice); `a ? b : c` picks b when a is true, else c, as in
+            // TypeScript.
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
                 $"Your character's name and home world are sent so {BackendHost()} can match the " +
                 "character you already claimed and verified. Nothing is uploaded unless syncing " +
-                "is switched on, and you choose which collections to include.");
+                (ConsentCopy.UserHasAChoice(rows, remoteConfig)
+                    ? "is switched on, and you choose what to include."
+                    : "is switched on."));
         }
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
@@ -198,11 +215,12 @@ internal sealed partial class MainWindow
 
             // Normal text color: this sentence is what tells the user the log is a memory-only
             // record rather than a permanent one, so it is an explanation they need to read. It
-            // also says which live tracker uploads appear, since its routine ones never do.
+            // also says which live tracker and Crucible sharing uploads appear, since their routine
+            // ones never do.
             DrawWrapped(
-                "What this plugin sent recently. The live Occult tracker appears only when an upload " +
-                "is refused. Kept in memory only — the log clears on logout and when the plugin " +
-                "unloads.",
+                "What this plugin sent recently. The live Occult tracker and the Crucible run sharing " +
+                "appear only when an upload is refused. Kept in memory only: the log clears on " +
+                "logout and when the plugin unloads.",
                 ImGuiCol.Text);
             ImGui.Spacing();
 
@@ -218,7 +236,7 @@ internal sealed partial class MainWindow
             }
 
             ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
-            uploadLogTable.Draw(history, innerRight);
+            uploadLogTable.Draw(history, innerRight, BackendHost());
         }
     }
 

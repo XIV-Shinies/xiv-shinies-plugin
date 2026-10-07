@@ -59,10 +59,10 @@ internal sealed class OccultManager : IDisposable
     private readonly PluginSettings settings;
 
     /// <summary>
-    /// The /sync orchestrator, which owns what both upload paths share: the character identity
+    /// The /sync orchestrator, which owns what every upload path shares: the character identity
     /// (captured once, hash-side), the latest <c>/config</c>, and the user-action halt with the
     /// session and press counts that scope it. The tracker reads all of them and raises the halt
-    /// through <see cref="SyncManager.HaltFromLiveTracker"/>.
+    /// through <see cref="SyncManager.HaltFromLiveUpload"/>.
     /// </summary>
     private readonly SyncManager syncManager;
 
@@ -92,7 +92,7 @@ internal sealed class OccultManager : IDisposable
     private readonly RepeatedFailures uploadFailures = new();
 
     /// <summary>
-    /// Cancelled on unload, so an upload in flight when the plugin is torn down stops rather
+    /// Canceled on unload, so an upload in flight when the plugin is torn down stops rather
     /// than completing against disposed state.
     /// </summary>
     private readonly CancellationTokenSource lifetime = new();
@@ -220,10 +220,10 @@ internal sealed class OccultManager : IDisposable
         var config = syncManager.RemoteConfig;
 
         // The tracker's consent gate (see OccultGate for the full ladder), plus the user-action
-        // halt shared with /sync: when either upload path or the config poll has been refused for
+        // halt shared with /sync: when any upload path or the config poll has been refused for
         // something only the user can fix (bad token, a character the server would not match),
         // this path goes quiet too rather than earning its own copy of the same refusal every
-        // minute — and both resume together on "Sync now".
+        // minute, and all resume together on "Sync now".
         var enabled = OccultGate.CanTrack(settings, config)
             && !syncManager.BlockedPendingUserAction;
 
@@ -359,7 +359,7 @@ internal sealed class OccultManager : IDisposable
 
         // The session and the "Sync now" press count this upload belongs to, captured here on the
         // framework thread, so a refusal that lands after a logout or after the player's fix is
-        // dropped (see SyncManager.HaltFromLiveTracker).
+        // dropped (see SyncManager.HaltFromLiveUpload).
         var generation = syncManager.SessionGeneration;
         var haltEpoch = syncManager.HaltEpoch;
 
@@ -454,10 +454,11 @@ internal sealed class OccultManager : IDisposable
                     log.Debug($"Occult {trigger} upload skipped: not configured.");
                     break;
 
-                // The same halt a refused sync raises: it names the fix on the sync card and this
-                // tracker's card, and the gate in Tick stops this path until the player acts.
+                // The same halt a refused sync raises: it names the fix on the sync card and on every
+                // sharing card it stops, and the gate in Tick stops this path until the player acts.
                 case OccultOutcomeKind.Halt:
-                    syncManager.HaltFromLiveTracker(
+                    syncManager.HaltFromLiveUpload(
+                        UploadLogSource.LiveTracker,
                         response.Status, response.HttpStatusCode, startedFor, haltEpochAtSend);
                     break;
 

@@ -51,8 +51,8 @@ public sealed class ApiClient : IDisposable
     // is the single most common misuse of HttpClient in .NET.
     private readonly HttpClient http;
 
-    // Cancelled when the plugin unloads. Every request runs under this, so a request still in
-    // flight at unload is cancelled cleanly instead of failing against a disposed HttpClient.
+    // Canceled when the plugin unloads. Every request runs under this, so a request still in
+    // flight at unload is canceled cleanly instead of failing against a disposed HttpClient.
     private readonly CancellationTokenSource lifetime = new();
 
     // A copy of the token, taken before the source can ever be disposed (see SyncManager's
@@ -119,6 +119,14 @@ public sealed class ApiClient : IDisposable
         PostJsonAsync<OccultInstanceStateRequest, OccultInstanceStateResponse>(
             "occult/instance-state", request, cancellationToken);
 
+    /// <summary>
+    /// Uploads Crucible run snapshots via <c>POST /crucible/observations</c>.
+    /// </summary>
+    public Task<ApiResponse<CrucibleObservationsResponse>> PostCrucibleObservationsAsync(
+        CrucibleObservationsRequest request, CancellationToken cancellationToken = default) =>
+        PostJsonAsync<CrucibleObservationsRequest, CrucibleObservationsResponse>(
+            "crucible/observations", request, cancellationToken);
+
     /// <summary>Serializes a request body and POSTs it, funneling into <see cref="SendAsync"/>.</summary>
     // Generic over the request type (rather than taking `object`) so the serializer works from
     // the compile-time type — the standard, predictable path.
@@ -152,7 +160,7 @@ public sealed class ApiClient : IDisposable
     /// <summary>
     /// Cancels any request still in flight, then releases the underlying <see cref="HttpClient"/>.
     /// </summary>
-    // Cancelling before disposing matters: tearing down the handler under a live request would
+    // Canceling before disposing matters: tearing down the handler under a live request would
     // otherwise surface as an ObjectDisposedException inside the awaiting continuation.
     public void Dispose()
     {
@@ -202,7 +210,7 @@ public sealed class ApiClient : IDisposable
             // the endpoint (e.g. "https://host/foo" must still hit "https://host/api/plugin/v1/me").
             var url = $"{baseUri!.GetLeftPart(UriPartial.Authority)}/{ApiPrefix}/{path}";
 
-            // A request cancelled either by the caller OR by plugin unload. `using var` on a local
+            // A request canceled either by the caller OR by plugin unload. `using var` on a local
             // guarantees Dispose runs when the variable leaves scope — the same job as a `finally`
             // block, and the reason we never leak request/response objects.
             using var linked =
@@ -264,8 +272,8 @@ public sealed class ApiClient : IDisposable
         }
         // A `when` filter narrows which exceptions this catch handles. Catch the BASE
         // OperationCanceledException, not just TaskCanceledException: an HttpClient timeout and a
-        // cancelled body read are both documented to throw the base type. When the caller's own
-        // token is not cancelled, the cause was our timeout or plugin unload — a network error.
+        // canceled body read are both documented to throw the base type. When the caller's own
+        // token is not canceled, the cause was our timeout or plugin unload: a network error.
         // A genuine caller cancellation fails the filter and propagates, as it should.
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

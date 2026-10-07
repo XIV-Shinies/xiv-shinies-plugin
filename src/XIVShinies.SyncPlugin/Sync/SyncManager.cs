@@ -117,7 +117,7 @@ internal sealed class SyncManager : IDisposable
     private volatile bool firstConfigAnswerSeen;
 
     /// <summary>
-    /// Cancelled on unload, so an upload in flight when the plugin is torn down stops rather than
+    /// Canceled on unload, so an upload in flight when the plugin is torn down stops rather than
     /// completing against disposed state.
     /// </summary>
     private readonly CancellationTokenSource lifetime = new();
@@ -128,7 +128,7 @@ internal sealed class SyncManager : IDisposable
     /// <remarks>
     /// Reading <c>lifetime.Token</c> after the source is disposed throws. Background work started
     /// before <see cref="Dispose"/> may still be running when that happens, so the token is captured
-    /// once here. A token whose source was cancelled and then disposed is still safe to observe.
+    /// once here. A token whose source was canceled and then disposed is still safe to observe.
     /// </remarks>
     private readonly CancellationToken lifetimeToken;
 
@@ -249,17 +249,17 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Written at every place a halt is raised (the upload, the config poll, and the live tracker
-    /// through <see cref="HaltFromLiveTracker"/>), always before the flag, so a reader that sees the
-    /// flag set also sees the status that set it. An int for the same reason as
+    /// Written at every place a halt is raised (the upload, the config poll, and the live tracker and
+    /// Crucible sharing through <see cref="HaltFromLiveUpload"/>), always before the flag, so a reader
+    /// that sees the flag set also sees the status that set it. An int for the same reason as
     /// <see cref="lastStatusCode"/>: <c>volatile</c> cannot hold a nullable enum.
     /// </para>
     /// <para>
     /// Two things read it, through <see cref="HaltStatus"/>: the window, to name the fix for
     /// exactly this halt, and the frame tick, which asks <see cref="SyncTickPlan.PollSurvivesHalt"/>
     /// whether the config poll survives it. <c>LastStatus</c> cannot stand in for it, because only
-    /// the /sync upload writes it, so a halt raised by the poll or the live tracker would leave it
-    /// describing an earlier upload, often a success, or nothing at all.
+    /// the /sync upload writes it, so a halt raised by the poll, the live tracker or the Crucible
+    /// sharing would leave it describing an earlier upload, often a success, or nothing at all.
     /// </para>
     /// </remarks>
     private volatile int haltStatusCode = -1;
@@ -268,7 +268,7 @@ internal sealed class SyncManager : IDisposable
     /// How many times "Sync now" has been pressed this plugin session: see <see cref="HaltEpoch"/>.
     /// </summary>
     /// <remarks>
-    /// Volatile for reads from the tracker's upload task; its one writer uses
+    /// Volatile for reads from the live upload paths; its one writer uses
     /// <c>Interlocked.Increment</c>, which a <c>ref</c> to a volatile field is safe to pass to.
     /// </remarks>
     private volatile int haltEpoch;
@@ -488,6 +488,13 @@ internal sealed class SyncManager : IDisposable
     /// <remarks>A volatile bool read, so safe from the draw call; at worst one frame stale.</remarks>
     public bool UploadInFlight => uploadInFlight;
 
+    /// <summary>
+    /// True while the server has asked the plugin to wait before its next upload, so a "Sync now"
+    /// press would upload nothing until the wait ends.
+    /// </summary>
+    /// <remarks>The scheduler takes its lock to answer, so this is safe from the draw call.</remarks>
+    public bool IsBackingOff => scheduler.IsBackingOff(timeProvider.GetUtcNow());
+
     /// <summary>The recent uploads, newest first, for the settings window's upload log.</summary>
     public IReadOnlyList<UploadLogEntry> UploadHistory => uploadLog.Entries;
 
@@ -609,56 +616,58 @@ internal sealed class SyncManager : IDisposable
     public bool HasCharacter => identity is not null;
 
     /// <summary>
-    /// The identified character, or null when nobody usable is loaded. The occult tracker reads
-    /// this so both upload paths attribute work to one identity, captured in one place; the window
-    /// reads it to name the character in a refusal sentence, on the sync card and the live
-    /// tracker's card.
+    /// The identified character, or null when nobody usable is loaded. The live tracker and the
+    /// Crucible sharing read this so every upload path attributes work to one identity, captured in
+    /// one place; the window reads it to name the character in a refusal sentence, on the sync card
+    /// and on the live tracker's and Crucible run sharing's cards.
     /// </summary>
     /// <remarks>
-    /// A reference read, so atomic. The occult manager reads it on the framework thread; the window
-    /// reads it from the draw call, where it is at worst one frame stale.
+    /// A reference read, so atomic. The live paths read it on the framework thread; the window reads
+    /// it from the draw call, where it is at worst one frame stale.
     /// </remarks>
     internal CharacterIdentity? Identity => identity;
 
     /// <summary>
-    /// Which login session is current. The live tracker captures it when it sends an upload and
-    /// hands it back with a refusal, so a refusal that lands after a logout is recognized as the
-    /// previous character's (see <see cref="sessionGeneration"/>).
+    /// Which login session is current. The live tracker and the Crucible sharing capture it when they
+    /// send an upload and hand it back with a refusal, so a refusal that lands after a logout is
+    /// recognized as the previous character's (see <see cref="sessionGeneration"/>).
     /// </summary>
     internal int SessionGeneration => sessionGeneration;
 
     /// <summary>
     /// How many times "Sync now" has been pressed this plugin session, whether or not a halt was
-    /// set. The live tracker captures it when it sends an upload and hands it back with a refusal,
-    /// so a refusal sent before the player's fix and answered after it does not halt them again.
+    /// set. The live tracker and the Crucible sharing capture it when they send an upload and hand it
+    /// back with a refusal, so a refusal sent before the player's fix and answered after it does not
+    /// halt them again.
     /// </summary>
     internal int HaltEpoch => haltEpoch;
 
     /// <summary>
-    /// Raises the same halt a refused sync raises, for a live tracker upload the server refused in
-    /// a way only the player can fix, and records it in the upload log.
+    /// Raises the same halt a refused sync raises, for a live tracker or Crucible sharing upload the
+    /// server refused in a way only the player can fix, and records it in the upload log.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// One halt serves both upload paths. The tracker's refusals are the same refusals (the same
-    /// character or the same token), so the same sentence names the fix, and "Sync now" or a relog
-    /// lifts both at once. Without it, a player with only the tracker switched on never uploads to
-    /// <c>/sync</c>, and nothing would tell them why sharing stopped.
+    /// One halt serves every upload path. Their refusals are the same refusals (the same character
+    /// or the same token), so the same sentence names the fix, and "Sync now" or a relog lifts all
+    /// of them at once. Without it, a player with only the tracker or the Crucible sharing switched
+    /// on never uploads to <c>/sync</c>, and nothing would tell them why sharing stopped.
     /// </para>
     /// <para>
-    /// Called from the tracker's upload task, with the session and press counts captured when the
+    /// Called from the path's upload task, with the session and press counts captured when the
     /// upload was sent. A refusal from a session that has ended, or sent before the last "Sync
     /// now", is dropped. The checks run on the upload task, so a logout or a "Sync now" press that
     /// lands between them and the writes below can still let one stale refusal raise the halt; the
     /// next press or relog clears it, and the log row repeats the session check below.
     /// </para>
     /// </remarks>
+    /// <param name="source">The upload path the server refused.</param>
     /// <param name="status">The refusal's status; anything that is not a user-action halt is ignored.</param>
     /// <param name="httpStatusCode">The literal HTTP status, for the upload log's diagnostic.</param>
     /// <param name="startedFor">The <see cref="SessionGeneration"/> the upload was sent for.</param>
     /// <param name="haltEpochAtSend">The <see cref="HaltEpoch"/> when the upload was sent.</param>
-    internal void HaltFromLiveTracker(
-        ApiStatus status, int? httpStatusCode, int startedFor, int haltEpochAtSend)
+    internal void HaltFromLiveUpload(
+        UploadLogSource source, ApiStatus status, int? httpStatusCode, int startedFor, int haltEpochAtSend)
     {
         if (!RetryPolicy.RequiresUserAction(status)
             || startedFor != sessionGeneration
@@ -670,14 +679,14 @@ internal sealed class SyncManager : IDisposable
         // The status first, then the flag: see haltStatusCode.
         haltStatusCode = (int)status;
         blockedPendingUserAction = true;
-        log.Warning($"Live tracker halted: {status}. The user must resolve this.");
+        log.Warning($"{source} upload halted: {status}. The user must resolve this.");
 
         // The log row repeats the session check, so a logout that lands between the first check
         // and here leaves no row in the next character's log.
         if (startedFor == sessionGeneration)
         {
             uploadLog.Record(
-                UploadLogEntry.LiveTrackerHalt(timeProvider.GetUtcNow(), status, httpStatusCode));
+                UploadLogEntry.LiveHalt(source, timeProvider.GetUtcNow(), status, httpStatusCode));
         }
     }
 
@@ -688,9 +697,9 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     public void RequestManualSync()
     {
-        // A new press count first, so a live tracker refusal already in flight (sent before the
-        // player's fix) is recognized as stale when it lands. Interlocked.Increment is an atomic
-        // `count++`, safe whichever thread the press arrives on.
+        // A new press count first, so a live tracker or Crucible sharing refusal already in flight
+        // (sent before the player's fix) is recognized as stale when it lands. Interlocked.Increment
+        // is an atomic `count++`, safe whichever thread the press arrives on.
         Interlocked.Increment(ref haltEpoch);
 
         // Volatile, so this write is safe from any thread — and it should clear immediately, on
@@ -705,7 +714,7 @@ internal sealed class SyncManager : IDisposable
         // marshal too, so the rearm always lands before the sweep it exists to unblock.
         _ = framework.RunOnFrameworkThread(() =>
         {
-            // A marshal queued just before teardown still runs; starting work against a cancelled
+            // A marshal queued just before teardown still runs; starting work against a canceled
             // lifetime would only be discarded a moment later.
             if (lifetimeToken.IsCancellationRequested)
                 return;
@@ -794,8 +803,8 @@ internal sealed class SyncManager : IDisposable
         _ = framework.RunOnFrameworkThread(() =>
         {
             // The marshal can land after teardown has begun: Dispose unsubscribes the event handlers,
-            // but a delegate already queued still runs. Starting a fresh request against a cancelled
-            // lifetime would only be cancelled a moment later. The wait is lowered on the way out, so
+            // but a delegate already queued still runs. Starting a fresh request against a canceled
+            // lifetime would only be canceled a moment later. The wait is lowered on the way out, so
             // it cannot be left standing by a poll that will now never run.
             if (lifetimeToken.IsCancellationRequested)
             {
@@ -1016,7 +1025,7 @@ internal sealed class SyncManager : IDisposable
         // Hold sweeps until the first config poll of this load has ANSWERED, one way or the
         // other. Without this, the first sweep dispatches on the same tick the fetch starts and
         // collects with no item manifest — skipping the items category and leaving a scary
-        // "waiting for XIV Shinies" hint on the settings screen until the next sweep, minutes
+        // "waiting for {host}" hint on the settings screen until the next sweep, minutes
         // later. Success populates the manifest; failure lets syncing proceed anyway (the skip
         // hint then describes a server we genuinely could not reach). The scheduler keeps the
         // queued trigger, so the held sweep dispatches on the first tick after the answer —
@@ -1246,7 +1255,7 @@ internal sealed class SyncManager : IDisposable
         // UploadAsync is written so that nothing can escape it.
         //
         // No cancellation token is passed to Task.Run on purpose. Handing it one that is ALREADY
-        // cancelled makes Task.Run skip the delegate entirely — so UploadAsync's `finally` would
+        // canceled makes Task.Run skip the delegate entirely, so UploadAsync's `finally` would
         // never run, `uploadInFlight` would stay true, and syncing would be dead for the rest of the
         // session. Cancellation is instead observed inside UploadAsync, where the flag is cleared.
         //
@@ -1556,7 +1565,7 @@ internal sealed class SyncManager : IDisposable
         nextConfigPollAt = now + ConfigPollInterval;
         configPollInFlight = true;
 
-        // Untokened for the same reason as the upload above: an already-cancelled token would make
+        // Untokened for the same reason as the upload above: an already-canceled token would make
         // Task.Run skip the delegate, stranding configPollInFlight at true.
         var startedFor = sessionGeneration;
         _ = Task.Run(() => PollConfigAsync(startedFor));
@@ -1619,7 +1628,7 @@ internal sealed class SyncManager : IDisposable
                 _ = framework.RunOnFrameworkThread(() =>
                 {
                     // The marshal can land after teardown has begun — Dispose unsubscribes the
-                    // event handlers, but a queued delegate still runs. A cancelled lifetime means
+                    // event handlers, but a queued delegate still runs. A canceled lifetime means
                     // the plugin is going away, and a settings write during teardown is not worth
                     // racing Dispose for; the migration simply runs on the next load's first poll.
                     if (lifetimeToken.IsCancellationRequested)

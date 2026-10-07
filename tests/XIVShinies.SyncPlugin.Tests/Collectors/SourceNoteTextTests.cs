@@ -19,6 +19,10 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 // an invariant at the bottom of this file: every Missing note carries a Text.
 public class SourceNoteTextTests
 {
+    // The website address the copy names. `const` fixes the value when the code compiles.
+    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     private static ItemSourceStatus Status(string state, int? count = null, int? total = null) =>
         new() { State = state, Count = count, Total = total };
 
@@ -30,7 +34,7 @@ public class SourceNoteTextTests
     [Fact]
     public void An_unreadable_mannequin_source_is_a_chip_with_the_workaround_in_hover()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Mannequins, Status(SourceStates.Unreadable));
+        var note = SourceNoteText.Describe(SourceKeys.Mannequins, Status(SourceStates.Unreadable), Host);
 
         Assert.Equal("Mannequins", note!.Label);
         Assert.Equal(SourceTone.Unreadable, note.Tone);
@@ -38,7 +42,7 @@ public class SourceNoteTextTests
         Assert.Equal(
             "Gear displayed on housing mannequins can't be read — the game never stores a " +
             "mannequin's contents anywhere the plugin can see. To register a piece: retrieve " +
-            "it to your bags, sync, then put it back. XIV Shinies keeps proof it saw the piece.",
+            "it to your bags, sync, then put it back. " + Host + " keeps proof it saw the piece.",
             note.Detail);
     }
 
@@ -49,7 +53,7 @@ public class SourceNoteTextTests
     [Fact]
     public void A_live_inventory_is_a_chip_naming_the_containers_it_covers()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Inventory, Status(SourceStates.Live));
+        var note = SourceNoteText.Describe(SourceKeys.Inventory, Status(SourceStates.Live), Host);
 
         Assert.Equal("Inventory", note!.Label);
         Assert.Equal(SourceTone.Live, note.Tone);
@@ -67,7 +71,7 @@ public class SourceNoteTextTests
     [Fact]
     public void Live_currencies_are_a_chip_naming_what_they_cover_and_the_content_bound_gap()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Currencies, Status(SourceStates.Live));
+        var note = SourceNoteText.Describe(SourceKeys.Currencies, Status(SourceStates.Live), Host);
 
         Assert.Equal("Currencies", note!.Label);
         Assert.Equal(SourceTone.Live, note.Tone);
@@ -84,7 +88,7 @@ public class SourceNoteTextTests
     [Fact]
     public void A_cached_saddlebag_is_a_chip_with_the_refresh_hint_in_its_detail()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Saddlebag, Status(SourceStates.Cached));
+        var note = SourceNoteText.Describe(SourceKeys.Saddlebag, Status(SourceStates.Cached), Host);
 
         Assert.Equal("Saddlebag", note!.Label);
         Assert.Equal(SourceTone.Cached, note.Tone);
@@ -100,7 +104,7 @@ public class SourceNoteTextTests
     [Fact]
     public void An_unscanned_saddlebag_is_a_line_naming_the_action_that_includes_it()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Saddlebag, Status(SourceStates.Unscanned));
+        var note = SourceNoteText.Describe(SourceKeys.Saddlebag, Status(SourceStates.Unscanned), Host);
 
         Assert.Equal("Saddlebag", note!.Label);
         Assert.Equal(SourceTone.Missing, note.Tone);
@@ -118,7 +122,7 @@ public class SourceNoteTextTests
     public void Cached_retainers_with_some_missing_are_a_line_with_the_fraction_targeting_the_rest()
     {
         var note = SourceNoteText.Describe(
-            SourceKeys.Retainers, Status(SourceStates.Cached, count: 3, total: 5));
+            SourceKeys.Retainers, Status(SourceStates.Cached, count: 3, total: 5), Host);
 
         Assert.Equal("Retainers", note!.Label);
         Assert.Equal(SourceTone.Missing, note.Tone);
@@ -134,7 +138,7 @@ public class SourceNoteTextTests
     public void Cached_retainers_all_scanned_are_a_chip_carrying_the_fraction_in_its_label()
     {
         var note = SourceNoteText.Describe(
-            SourceKeys.Retainers, Status(SourceStates.Cached, count: 3, total: 3));
+            SourceKeys.Retainers, Status(SourceStates.Cached, count: 3, total: 3), Host);
 
         Assert.Equal("Retainers 3/3", note!.Label);
         Assert.Equal(SourceTone.Cached, note.Tone);
@@ -152,7 +156,7 @@ public class SourceNoteTextTests
     public void Cached_retainers_never_report_more_read_than_the_character_has()
     {
         var note = SourceNoteText.Describe(
-            SourceKeys.Retainers, Status(SourceStates.Cached, count: 4, total: 3));
+            SourceKeys.Retainers, Status(SourceStates.Cached, count: 4, total: 3), Host);
 
         Assert.Equal("Retainers 3/3", note!.Label);
         Assert.Equal(SourceTone.Cached, note.Tone);
@@ -164,7 +168,7 @@ public class SourceNoteTextTests
     [Fact]
     public void Cached_retainers_without_a_total_carry_the_scanned_count_alone_in_the_label()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Retainers, Status(SourceStates.Cached, count: 3));
+        var note = SourceNoteText.Describe(SourceKeys.Retainers, Status(SourceStates.Cached, count: 3), Host);
 
         Assert.Equal("Retainers 3", note!.Label);
         Assert.Equal(SourceTone.Cached, note.Tone);
@@ -178,7 +182,7 @@ public class SourceNoteTextTests
     [Fact]
     public void Cached_retainers_without_a_count_omit_the_number_from_the_label()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Retainers, Status(SourceStates.Cached));
+        var note = SourceNoteText.Describe(SourceKeys.Retainers, Status(SourceStates.Cached), Host);
 
         Assert.Equal("Retainers", note!.Label);
         Assert.Equal(SourceTone.Cached, note.Tone);
@@ -192,7 +196,7 @@ public class SourceNoteTextTests
     [Fact]
     public void Unscanned_retainers_are_a_line_naming_the_action_that_includes_them()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Retainers, Status(SourceStates.Unscanned));
+        var note = SourceNoteText.Describe(SourceKeys.Retainers, Status(SourceStates.Unscanned), Host);
 
         Assert.Equal("Retainers", note!.Label);
         Assert.Equal(SourceTone.Missing, note.Tone);
@@ -207,7 +211,7 @@ public class SourceNoteTextTests
     [Fact]
     public void A_loaded_armoire_is_a_healthy_chip()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Armoire, Status(SourceStates.Loaded));
+        var note = SourceNoteText.Describe(SourceKeys.Armoire, Status(SourceStates.Loaded), Host);
 
         Assert.Equal("Armoire", note!.Label);
         Assert.Equal(SourceTone.Live, note.Tone);
@@ -218,7 +222,7 @@ public class SourceNoteTextTests
     [Fact]
     public void An_unscanned_armoire_is_a_line_naming_the_action_that_includes_it()
     {
-        var note = SourceNoteText.Describe(SourceKeys.Armoire, Status(SourceStates.Unscanned));
+        var note = SourceNoteText.Describe(SourceKeys.Armoire, Status(SourceStates.Unscanned), Host);
 
         Assert.Equal("Armoire", note!.Label);
         Assert.Equal(SourceTone.Missing, note.Tone);
@@ -228,7 +232,7 @@ public class SourceNoteTextTests
     [Fact]
     public void A_cached_glamour_dresser_is_a_chip_with_the_refresh_hint_in_its_detail()
     {
-        var note = SourceNoteText.Describe(SourceKeys.GlamourDresser, Status(SourceStates.Cached));
+        var note = SourceNoteText.Describe(SourceKeys.GlamourDresser, Status(SourceStates.Cached), Host);
 
         Assert.Equal("Glamour Dresser", note!.Label);
         Assert.Equal(SourceTone.Cached, note.Tone);
@@ -239,7 +243,7 @@ public class SourceNoteTextTests
     [Fact]
     public void An_unscanned_glamour_dresser_is_a_line_naming_the_action_that_includes_it()
     {
-        var note = SourceNoteText.Describe(SourceKeys.GlamourDresser, Status(SourceStates.Unscanned));
+        var note = SourceNoteText.Describe(SourceKeys.GlamourDresser, Status(SourceStates.Unscanned), Host);
 
         Assert.Equal("Glamour Dresser", note!.Label);
         Assert.Equal(SourceTone.Missing, note.Tone);
@@ -252,7 +256,7 @@ public class SourceNoteTextTests
     [Fact]
     public void An_unknown_source_key_returns_null()
     {
-        Assert.Null(SourceNoteText.Describe("facewearCabinet", Status(SourceStates.Live)));
+        Assert.Null(SourceNoteText.Describe("facewearCabinet", Status(SourceStates.Live), Host));
     }
 
     // A known source in a state this helper has no note for (for example an inventory that somehow
@@ -260,13 +264,13 @@ public class SourceNoteTextTests
     [Fact]
     public void A_known_source_in_an_unexpected_state_returns_null()
     {
-        Assert.Null(SourceNoteText.Describe(SourceKeys.Inventory, Status(SourceStates.Unscanned)));
+        Assert.Null(SourceNoteText.Describe(SourceKeys.Inventory, Status(SourceStates.Unscanned), Host));
     }
 
     [Fact]
     public void A_completely_unknown_state_returns_null()
     {
-        Assert.Null(SourceNoteText.Describe(SourceKeys.Saddlebag, Status("teleported")));
+        Assert.Null(SourceNoteText.Describe(SourceKeys.Saddlebag, Status("teleported"), Host));
     }
 
     // THE INVARIANT the window's rendering rule leans on: a Missing note renders as a full line whose
@@ -285,7 +289,7 @@ public class SourceNoteTextTests
                 // every count shape the collector can produce; other sources ignore the numbers.
                 foreach (var (count, total) in new (int?, int?)[] { (null, null), (3, 5), (3, 3), (3, null) })
                 {
-                    var note = SourceNoteText.Describe(sourceKey, Status(state, count, total));
+                    var note = SourceNoteText.Describe(sourceKey, Status(state, count, total), Host);
 
                     if (note is { Tone: SourceTone.Missing })
                         Assert.False(string.IsNullOrEmpty(note.Text));
@@ -296,7 +300,7 @@ public class SourceNoteTextTests
 
     // The chip-form twin of the invariant above: an Unreadable note draws as a muted chip whose
     // ONLY content beyond its label is the hover Detail — no Text, no alarm color — so a Detail-less
-    // Unreadable note would be a bare grey chip that explains nothing. Swept the same way, so a
+    // Unreadable note would be a bare gray chip that explains nothing. Swept the same way, so a
     // future unreadable source cannot forget its explanation without failing here.
     [Fact]
     public void Every_unreadable_note_carries_the_hover_detail_that_explains_it()
@@ -307,7 +311,7 @@ public class SourceNoteTextTests
             {
                 foreach (var (count, total) in new (int?, int?)[] { (null, null), (3, 5), (3, 3), (3, null) })
                 {
-                    var note = SourceNoteText.Describe(sourceKey, Status(state, count, total));
+                    var note = SourceNoteText.Describe(sourceKey, Status(state, count, total), Host);
 
                     if (note is { Tone: SourceTone.Unreadable })
                         Assert.False(string.IsNullOrEmpty(note.Detail));

@@ -17,8 +17,10 @@ namespace XIVShinies.SyncPlugin;
 /// thin persistence shell.
 /// </para>
 /// <para>
-/// Every default is "off". A fresh install must upload nothing until the user has been shown what
-/// gets sent and has explicitly opted in — a Dalamud compliance rule, not a preference.
+/// A fresh install must upload nothing until the user has been shown what gets sent and has
+/// explicitly opted in, a Dalamud compliance rule rather than a preference. Every default is "off"
+/// but one, the live tracker's toggle (see <see cref="ShareOccultInstanceState"/> for why it may
+/// start on).
 /// </para>
 /// </remarks>
 [Serializable]
@@ -51,6 +53,33 @@ public class PluginSettings
     public bool ShareOccultInstanceState { get; set; } = true;
 
     /// <summary>
+    /// True while the user shares their Crucible runs with the website's run companion: what the
+    /// Crucible's windows show out of combat and their character's own HP, plus a regular check-in,
+    /// which reads nothing, while they are on a board.
+    /// </summary>
+    /// <remarks>
+    /// Defaults OFF, and <see cref="AutoEnableNewFeatures"/> never turns it on: it describes the
+    /// player's own play as it happens, so it waits for the user to tick it themselves. An existing
+    /// install, whose saved settings carry no value for it, starts with it off too.
+    /// </remarks>
+    public bool ShareCrucibleRuns { get; set; }
+
+    /// <summary>
+    /// True once the user has seen the Crucible run sharing's card while the server permitted it, or
+    /// clicked its checkbox; until then the settings screen badges the card "New" whenever the server
+    /// permits the sharing.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="SeenCategoryKeys"/>: that set is what
+    /// <see cref="AutoEnableUnseenCategories"/> reads, and the sharing is never switched on by it.
+    /// A fresh install starts false, and its wizard records the card when the user sees it there
+    /// (see <c>CrucibleBadge.ShowingRetires</c>); a card the wizard drew grayed or off screen still
+    /// announces itself in the settings. An existing install, whose saved settings carry no value
+    /// here, starts false too, which is what lets its card announce itself.
+    /// </remarks>
+    public bool CrucibleSharingSeen { get; set; }
+
+    /// <summary>
     /// True when the user chose to have collections added by later updates start switched on,
     /// rather than being asked each time.
     /// </summary>
@@ -67,7 +96,7 @@ public class PluginSettings
     /// </para>
     /// <para>
     /// Defaults OFF, unlike <see cref="ShareOccultInstanceState"/>. That toggle defaults on for a
-    /// defence that does not carry here: it is one named thing, disclosed in full on the same
+    /// defense that does not carry here: it is one named thing, disclosed in full on the same
     /// screen, and what it shares is world state. This is open-ended — an answer about collections
     /// that do not exist yet, whose disclosure the user cannot have read — and it governs uploads
     /// of their own collection data. A ticked-by-default box would collect that answer from

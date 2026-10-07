@@ -4,15 +4,15 @@ namespace XIVShinies.SyncPlugin.Windows;
 
 /// <summary>
 /// The sentence that tells a player how to end a halt: syncing stopped until they fix something.
-/// Drawn on the sync card and, while the halt is the only thing stopping the live tracker, on the
-/// tracker's card.
+/// Drawn on the sync card and, while the halt is the only thing stopping either one, on the live
+/// tracker's card and the Crucible run sharing's card.
 /// </summary>
 /// <remarks>
 /// A halt has three kinds of cause, each with its own fix: a character refusal (the four
 /// sentences in <see cref="CharacterRefusalCopy"/>), an unusable server setting on this machine
 /// (worded by <see cref="BackendUrl.DescribeUnusableSetting"/>), or a rejected token, the only
-/// other status that raises a halt. One class decides among them, so the two cards that show a
-/// halt always say the same thing about it.
+/// other status that raises a halt. One class decides among them, so every card that shows a halt
+/// says the same thing about it.
 /// </remarks>
 public static class HaltCopy
 {

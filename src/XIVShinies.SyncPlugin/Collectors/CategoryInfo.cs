@@ -135,7 +135,8 @@ public sealed record CategoryInfo
     /// will discard it is a real cost, or one whose record would be a disclosure for nothing on a
     /// server that does not store it. Until the server names it, such a collection is neither read
     /// nor sent (see <see cref="CollectorGate.ServerPermits"/>), and the settings window draws it as
-    /// not offered (see <see cref="CategorySettingsRow.NotOfferedByServer"/>).
+    /// unavailable, saying it is not offered or, before any config, that it is waiting for the
+    /// answer (see <see cref="CategorySettingsRow.NotOfferedByServer"/>).
     /// </para>
     /// </remarks>
     public bool RequiresServerSupport { get; init; }
@@ -184,4 +185,25 @@ public sealed record CategoryInfo
     /// </para>
     /// </remarks>
     public bool ReadsStorage { get; init; }
+
+    /// <summary>
+    /// True when the game announces each new entry of this collection the moment it is earned, so the
+    /// plugin uploads it within seconds rather than on the scheduled sweep.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Self-description in the same sense as <see cref="UsesItemManifest"/>: the sync card reads it
+    /// to decide whether it may promise uploads within seconds, without naming any collection.
+    /// </para>
+    /// <para>
+    /// Being registered for the game's unlock signal is not enough. Triple Triad cards are, exactly
+    /// as mounts are, and the game never raises the signal for them, so a card reaches the site on
+    /// the sweep. Defaults to <c>false</c>, which only withholds a promise.
+    /// </para>
+    /// <para>
+    /// Only a collector that routes unlocks (<see cref="IUnlockAware"/>) passes this through to its
+    /// rows; set on any other collection's info, it never reaches the sync card.
+    /// </para>
+    /// </remarks>
+    public bool UploadsOnUnlock { get; init; }
 }

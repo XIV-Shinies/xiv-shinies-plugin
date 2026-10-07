@@ -74,9 +74,15 @@ public enum UploadLogSource
 
     /// <summary>
     /// The live Occult tracker's <c>POST /occult/instance-state</c>, logged only when a refusal
-    /// halts it (see <see cref="UploadLogEntry.LiveTrackerHalt"/>).
+    /// halts it (see <see cref="UploadLogEntry.LiveHalt"/>).
     /// </summary>
     LiveTracker,
+
+    /// <summary>
+    /// The Crucible run sharing's <c>POST /crucible/observations</c>, logged only when a refusal
+    /// halts it (see <see cref="UploadLogEntry.LiveHalt"/>).
+    /// </summary>
+    CrucibleRuns,
 }
 
 /// <summary>
@@ -86,24 +92,30 @@ public enum UploadLogSource
 /// <remarks>
 /// A transparency surface: a sync row is built from the same snapshot the payload was built from,
 /// at the moment the payload was assembled — never reconstructed after the fact. A live tracker
-/// row records a halting refusal instead (see <see cref="LiveTrackerHalt"/>). Rows carry category
-/// <b>keys</b>, not names: the window maps keys to whatever the registered collectors call
-/// themselves, so this type stays free of category-name knowledge.
+/// or Crucible sharing row records a halting refusal instead (see <see cref="LiveHalt"/>). Rows
+/// carry category <b>keys</b>, not names: the window maps keys to whatever the registered
+/// collectors call themselves, so this type stays free of category-name knowledge.
 /// </remarks>
 public sealed record UploadLogEntry
 {
     /// <summary>
-    /// When a sync row's payload was assembled, or when a live tracker row's refusal arrived (UTC;
-    /// the window renders it in local time).
+    /// When a sync row's payload was assembled, or when a live tracker or Crucible sharing row's
+    /// refusal arrived (UTC; the window renders it in local time).
     /// </summary>
     public required DateTimeOffset At { get; init; }
 
-    /// <summary>Which upload path the row is about: a collection sync, or the live tracker.</summary>
+    /// <summary>
+    /// Which upload path the row is about: a collection sync, the live tracker, or the Crucible
+    /// sharing.
+    /// </summary>
     public UploadLogSource Source { get; init; } = UploadLogSource.Sync;
 
-    /// <summary>What prompted a sync upload; null on a live tracker row, which has no trigger.</summary>
+    /// <summary>
+    /// What prompted a sync upload; null on a live tracker or Crucible sharing row, which has no
+    /// trigger.
+    /// </summary>
     // `required` with a nullable type: the caller must still set it, so a sync row cannot leave it
-    // out by accident, but a live tracker row may set it to null.
+    // out by accident, but a live tracker or Crucible sharing row may set it to null.
     public required SyncTrigger? Trigger { get; init; }
 
     /// <summary>
@@ -130,10 +142,8 @@ public sealed record UploadLogEntry
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A category the user switched off is skipped, but nothing failed — they chose not to send
-    /// it, and the consent list already shows that choice. Listing it as unread would report a
-    /// deliberate decision as a fault, and every user who leaves a collection unticked would carry
-    /// a permanent complaint in their log.
+    /// A category skipped by a decision, such as one the user switched off, is not a failure, so it
+    /// is not listed (see <see cref="CollectSkipReasons.IsDeliberate"/>).
     /// </para>
     /// <para>
     /// Filtered on the REASON, never on a category, so nothing here knows which collections exist.
@@ -148,7 +158,7 @@ public sealed record UploadLogEntry
             var keys = new List<string>(Skipped.Count);
             foreach (var (key, reason) in Skipped)
             {
-                if (!string.Equals(reason, CollectSkipReasons.Disabled, StringComparison.Ordinal))
+                if (!CollectSkipReasons.IsDeliberate(reason))
                     keys.Add(key);
             }
 
@@ -255,23 +265,26 @@ public sealed record UploadLogEntry
     }
 
     /// <summary>
-    /// The row for a live tracker upload the server refused in a way only the player can fix (a
-    /// character refusal or a rejected token), which halts syncing as a /sync refusal does.
+    /// The row for a live tracker or Crucible sharing upload the server refused in a way only the
+    /// player can fix (a character refusal or a rejected token), which halts syncing as a /sync
+    /// refusal does.
     /// </summary>
     /// <remarks>
-    /// The tracker's ordinary uploads get no row: they are frequent, carry world state rather than
-    /// the player's collection, and succeed or back off on their own. The halt is the exception,
-    /// because a player with only the tracker switched on has no sync row to explain why sharing
-    /// stopped. It carries no categories, so the change signal never uses it as a baseline.
+    /// Those paths' ordinary uploads get no row: they are frequent, are not the player's
+    /// collection, and succeed or back off on their own. The halt is the exception, because a
+    /// player with only one of them switched on has no sync row to explain why sharing stopped. It
+    /// carries no categories, so the change signal never uses it as a baseline.
     /// </remarks>
+    /// <param name="source">The upload path the server refused.</param>
     /// <param name="at">When the refusal arrived.</param>
     /// <param name="status">The refusal's status.</param>
     /// <param name="httpStatusCode">The literal HTTP status, for the pasted diagnostic.</param>
-    public static UploadLogEntry LiveTrackerHalt(DateTimeOffset at, ApiStatus status, int? httpStatusCode) =>
+    public static UploadLogEntry LiveHalt(
+        UploadLogSource source, DateTimeOffset at, ApiStatus status, int? httpStatusCode) =>
         new()
         {
             At = at,
-            Source = UploadLogSource.LiveTracker,
+            Source = source,
             Trigger = null,
             Status = status,
             Categories = Array.Empty<UploadLogCategory>(),
@@ -417,9 +430,10 @@ public sealed class UploadLog
     private volatile IReadOnlyList<UploadLogEntry> entries = Array.Empty<UploadLogEntry>();
 
     // Guards the WRITERS against each other (readers need no lock — see above). Record runs on
-    // both upload tasks (the sync upload and the live tracker's), and Clear on the draw thread and
-    // at logout; without this, two writers landing together would each build from the same old
-    // list and one change would be lost (a Clear undone, or an entry dropped).
+    // every upload task (the sync upload's, the live tracker's and the Crucible sharing's), and
+    // Clear on the draw thread and at logout; without this, two writers landing together would each
+    // build from the same old list and one change would be lost (a Clear undone, or an entry
+    // dropped).
     private readonly object writeLock = new();
 
     /// <summary>The recorded uploads, newest first. The returned list is never mutated.</summary>
@@ -560,12 +574,33 @@ public static class UploadLogDiff
 /// <summary>Turns an upload log entry's enums into the words the window prints.</summary>
 public static class UploadLogText
 {
-    /// <summary>What a live tracker row's Sent column says: the tracker sends one kind of thing.</summary>
-    public const string LiveTrackerSent = "Occult instance state";
+    /// <summary>
+    /// What a live tracker or Crucible sharing row's Sent column says: each path sends one kind of
+    /// thing. Null for a sync row, which lists its categories instead.
+    /// </summary>
+    /// <param name="source">The row's upload path.</param>
+    public static string? LiveSentText(UploadLogSource source) => source switch
+    {
+        UploadLogSource.LiveTracker => "Occult instance state",
+        UploadLogSource.CrucibleRuns => "Crucible run snapshots",
+        _ => null,
+    };
 
     /// <summary>
-    /// The Trigger column for a row: "live tracker" for the tracker's rows, the sync trigger for a
-    /// sync row, and plain "sync" for a sync row that carries none.
+    /// The endpoint a live tracker or Crucible sharing row uploaded to, in the contract's wire terms,
+    /// for the pasted log. Null for a sync row.
+    /// </summary>
+    /// <param name="source">The row's upload path.</param>
+    public static string? LiveEndpoint(UploadLogSource source) => source switch
+    {
+        UploadLogSource.LiveTracker => "occult/instance-state",
+        UploadLogSource.CrucibleRuns => "crucible/observations",
+        _ => null,
+    };
+
+    /// <summary>
+    /// The Trigger column for a row: the path's name for a live tracker or Crucible sharing row,
+    /// the sync trigger for a sync row, and plain "sync" for a sync row that carries none.
     /// </summary>
     /// <remarks>
     /// Decided by <see cref="UploadLogEntry.Source"/> first, as <see cref="ClipboardText"/> is, so
@@ -574,6 +609,7 @@ public static class UploadLogText
     public static string TriggerText(UploadLogEntry entry) => entry.Source switch
     {
         UploadLogSource.LiveTracker => "live tracker",
+        UploadLogSource.CrucibleRuns => "Crucible sharing",
         _ => entry.Trigger is { } trigger ? TriggerText(trigger) : "sync",
     };
 
@@ -591,7 +627,9 @@ public static class UploadLogText
     /// The outcome, one short phrase. "Refused" means the user must fix something; "deferred"
     /// means the plugin will simply try again later; "failed" covers everything else.
     /// </summary>
-    public static string StatusText(ApiStatus status) => status switch
+    /// <param name="status">The upload's outcome.</param>
+    /// <param name="host">The configured website's address, named where the website is the subject.</param>
+    public static string StatusText(ApiStatus status, string host) => status switch
     {
         ApiStatus.Ok => "accepted",
         ApiStatus.CharacterNotClaimed => "refused — character not claimed",
@@ -600,10 +638,11 @@ public static class UploadLogText
         ApiStatus.CharacterBoundElsewhere => "refused — character linked elsewhere",
         ApiStatus.InvalidToken => "refused — token rejected",
         ApiStatus.RateLimited => "deferred — rate limited",
-        // The same state ServerOffCopy.Paused names, in the shape this column needs: an outcome
-        // phrase, not the two-sentence reassurance the settings card gives.
-        ApiStatus.SyncDisabled => "deferred — syncing paused by the server",
-        ApiStatus.NetworkError => "failed — could not reach the server",
+        // Every 503 maps here, whatever sent it (see ApiStatus.SyncDisabled), so the phrase names no
+        // cause. A pause is named on the settings card, which reads it from /config.
+        // `$"...{host}..."` is an interpolated string, like a template literal.
+        ApiStatus.SyncDisabled => $"deferred — {host} is not taking uploads",
+        ApiStatus.NetworkError => $"failed — could not reach {host}",
         _ => "failed",
     };
 
@@ -615,9 +654,11 @@ public static class UploadLogText
     /// asked for, and the attempt number when a retry was needed. Qualifiers appear only when
     /// they carry information, so the common first-try success stays one clean word.
     /// </summary>
-    public static string OutcomeText(UploadLogEntry entry)
+    /// <param name="entry">The logged upload.</param>
+    /// <param name="host">The configured website's address (see <see cref="StatusText"/>).</param>
+    public static string OutcomeText(UploadLogEntry entry, string host)
     {
-        var text = StatusText(entry.Status);
+        var text = StatusText(entry.Status, host);
 
         if (entry.RetryAfter is { } wait)
             text += $" — retry in {(int)wait.TotalSeconds}s";
@@ -882,17 +923,18 @@ public static class UploadLogText
 
             text.Append(entry.At.UtcDateTime.ToString(
                 "yyyy-MM-dd HH:mm:ss'Z'", CultureInfo.InvariantCulture));
-            // A live tracker row names its source; a sync row names its trigger, or its source when
-            // it carries none. Source first, as TriggerText decides it.
-            text.Append(" | ").Append(entry.Source == UploadLogSource.LiveTracker
+            // A live tracker or Crucible sharing row names its source; a sync row names its
+            // trigger, or its source when it carries none. Source first, as TriggerText decides it.
+            text.Append(" | ").Append(entry.Source != UploadLogSource.Sync
                 ? entry.Source.ToString()
                 : entry.Trigger?.ToString() ?? entry.Source.ToString());
             text.Append(" | ").Append(entry.Status);
 
-            // The tracker row names the endpoint it uploaded to, in the same wire terms.
+            // A live tracker or Crucible sharing row names the endpoint it uploaded to, in the same
+            // wire terms.
             text.Append(" | sent:");
-            if (entry.Source == UploadLogSource.LiveTracker)
-                text.Append(" occult/instance-state");
+            if (UploadLogText.LiveEndpoint(entry.Source) is { } endpoint)
+                text.Append(' ').Append(endpoint);
 
             foreach (var category in entry.Categories)
             {

@@ -87,7 +87,7 @@ src/XIVShinies.SyncPlugin/            the plugin
   Glamour/                            glamour snapshot builder and wire shape (pure)
   Appearance/                         appearance snapshot builder and customize byte names (pure)
   Occult/                             live Occult Crescent tracker, knowledge-level observer
-  Beastmaster/                        Master's Bestiary reading for tamed beasts
+  Beastmaster/                        Master's Bestiary reading for tamed beasts; Crucible/ run sharing
   Onboarding/                         first-run wizard steps, token checks
   Diagnostics/                        log-once failure memory, Debug-only unlock-slot audit
   Windows/                            ImGui windows (WindowSystem)

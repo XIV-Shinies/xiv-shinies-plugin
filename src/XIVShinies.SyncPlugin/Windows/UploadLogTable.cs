@@ -42,7 +42,8 @@ internal sealed class UploadLogTable
     /// <summary>Draws the table.</summary>
     /// <param name="history">The uploads to render, newest first.</param>
     /// <param name="innerRight">The enclosing card's inner right edge, where the table stops.</param>
-    public void Draw(IReadOnlyList<UploadLogEntry> history, float innerRight)
+    /// <param name="host">The configured website's address, which some outcomes name.</param>
+    public void Draw(IReadOnlyList<UploadLogEntry> history, float innerRight, string host)
     {
         // The metadata columns adapt to the room available: on a roomy table, When and Trigger
         // each render on one line; on a narrow one, the date stacks over the time and the
@@ -162,7 +163,7 @@ internal sealed class UploadLogTable
                 : UploadLogText.IsDeferral(entry.Status)
                     ? textColor
                     : Widgets.ErrorColor;
-            Widgets.DrawWrapped(UploadLogText.OutcomeText(entry), statusColor, null);
+            Widgets.DrawWrapped(UploadLogText.OutcomeText(entry, host), statusColor, null);
 
             if (entry.Detail is { } detail)
                 Widgets.DrawWrapped(detail, ImGuiCol.Text, null);
@@ -175,10 +176,11 @@ internal sealed class UploadLogTable
             // Brand.Gold and draws. Only the separator between categories is muted.
             ImGui.TableNextColumn();
 
-            // A live tracker row sent one thing, the instance state, and has no categories to list.
-            if (entry.Source == UploadLogSource.LiveTracker)
+            // A live tracker or Crucible sharing row sent one kind of thing and has no categories to
+            // list.
+            if (UploadLogText.LiveSentText(entry.Source) is { } liveSent)
             {
-                Widgets.DrawWrapped(UploadLogText.LiveTrackerSent, ImGuiCol.Text, null);
+                Widgets.DrawWrapped(liveSent, ImGuiCol.Text, null);
                 continue;
             }
 

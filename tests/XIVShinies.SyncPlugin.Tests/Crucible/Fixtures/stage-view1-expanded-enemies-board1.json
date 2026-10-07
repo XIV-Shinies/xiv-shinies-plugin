@@ -1,0 +1,547 @@
+{
+ "window": "XBMStageDetailList",
+ "event": "PostRefresh",
+ "valueCount": 40058,
+ "values": [
+  {
+   "i": 1,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 2,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 3,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 5,
+   "type": "UInt",
+   "value": 15
+  },
+  {
+   "i": 6,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 7,
+   "type": "UInt",
+   "value": 12
+  },
+  {
+   "i": 8,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 9,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 11,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 12,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 15,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 16,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 46,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 47,
+   "type": "UInt",
+   "value": 12
+  },
+  {
+   "i": 86,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 87,
+   "type": "UInt",
+   "value": 12
+  },
+  {
+   "i": 126,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 127,
+   "type": "UInt",
+   "value": 12
+  },
+  {
+   "i": 166,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 167,
+   "type": "UInt",
+   "value": 11
+  },
+  {
+   "i": 168,
+   "type": "UInt",
+   "value": 8
+  },
+  {
+   "i": 169,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 171,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 172,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 175,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 176,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 206,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 207,
+   "type": "UInt",
+   "value": 10
+  },
+  {
+   "i": 208,
+   "type": "UInt",
+   "value": 7
+  },
+  {
+   "i": 209,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 211,
+   "type": "UInt",
+   "value": 4
+  },
+  {
+   "i": 212,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 215,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 216,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 246,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 247,
+   "type": "UInt",
+   "value": 9
+  },
+  {
+   "i": 248,
+   "type": "UInt",
+   "value": 7
+  },
+  {
+   "i": 249,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 251,
+   "type": "UInt",
+   "value": 5
+  },
+  {
+   "i": 252,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 255,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 256,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 286,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 287,
+   "type": "UInt",
+   "value": 8
+  },
+  {
+   "i": 288,
+   "type": "UInt",
+   "value": 6
+  },
+  {
+   "i": 289,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 291,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 292,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 295,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 296,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 326,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 327,
+   "type": "UInt",
+   "value": 7
+  },
+  {
+   "i": 328,
+   "type": "UInt",
+   "value": 5
+  },
+  {
+   "i": 329,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 331,
+   "type": "UInt",
+   "value": 5
+  },
+  {
+   "i": 332,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 335,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 336,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 366,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 367,
+   "type": "UInt",
+   "value": 6
+  },
+  {
+   "i": 368,
+   "type": "UInt",
+   "value": 4
+  },
+  {
+   "i": 369,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 371,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 372,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 375,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 376,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 406,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 407,
+   "type": "UInt",
+   "value": 5
+  },
+  {
+   "i": 408,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 409,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 411,
+   "type": "UInt",
+   "value": 5
+  },
+  {
+   "i": 412,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 415,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 416,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 446,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 447,
+   "type": "UInt",
+   "value": 4
+  },
+  {
+   "i": 448,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 449,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 451,
+   "type": "UInt",
+   "value": 4
+  },
+  {
+   "i": 452,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 455,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 456,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 486,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 487,
+   "type": "UInt",
+   "value": 3
+  },
+  {
+   "i": 488,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 489,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 491,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 492,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 495,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 496,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 526,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 527,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 528,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 529,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 531,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 532,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 535,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 536,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 566,
+   "type": "UInt",
+   "value": 2
+  },
+  {
+   "i": 567,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 568,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 569,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 571,
+   "type": "UInt",
+   "value": 0
+  },
+  {
+   "i": 572,
+   "type": "UInt",
+   "value": 1
+  },
+  {
+   "i": 575,
+   "type": "Bool",
+   "value": true
+  },
+  {
+   "i": 576,
+   "type": "Bool",
+   "value": false
+  },
+  {
+   "i": 40032,
+   "type": "Int",
+   "value": 0
+  },
+  {
+   "i": 40047,
+   "type": "ManagedString",
+   "value": "Standard"
+  }
+ ]
+}

@@ -37,12 +37,15 @@ public static class SourceNoteText
 {
     /// <summary>Describes one source's scan status, or returns null when there is nothing to say.</summary>
     /// <param name="sourceKey">One of the <see cref="SourceKeys"/> wire keys naming the storage source.</param>
-    /// <param name="status">That source's scan status from the most recent item pass.</param>
+    /// <param name="status">
+    /// That source's scan status from the most recent pass that read the storage containers.
+    /// </param>
+    /// <param name="host">The configured website's address, named where a note says who keeps proof.</param>
     // A tuple switch reads the (source, state) pair like a small table: each arm is one recognized
-    // combination the item collector actually produces, and the final `_ => null` covers every
-    // unknown key and every unexpected state at once. This mirrors CollectSkipReasons.Describe's
+    // combination the storage-reading collectors actually produce, and the final `_ => null` covers
+    // every unknown key and every unexpected state at once. This mirrors CollectSkipReasons.Describe's
     // single-switch shape.
-    public static SourceNote? Describe(string sourceKey, ItemSourceStatus status) =>
+    public static SourceNote? Describe(string sourceKey, ItemSourceStatus status, string host) =>
         (sourceKey, status.State) switch
         {
             // Read this pass — nothing for the user to do, so this is a chip. The detail names
@@ -153,6 +156,7 @@ public static class SourceNoteText
             // something unfixable — so this is a muted chip whose hover carries the explanation and
             // the optional retrieve-once workaround. "Keeps proof" is deliberate: a sighting proves
             // the piece permanently, but a count drops again once the piece leaves the bags.
+            // `$"{host}..."` is an interpolated string, like a TypeScript template literal.
             (SourceKeys.Mannequins, SourceStates.Unreadable) =>
                 new SourceNote
                 {
@@ -161,7 +165,7 @@ public static class SourceNoteText
                     Detail = "Gear displayed on housing mannequins can't be read — the game " +
                         "never stores a mannequin's contents anywhere the plugin can see. To " +
                         "register a piece: retrieve it to your bags, sync, then put it back. " +
-                        "XIV Shinies keeps proof it saw the piece.",
+                        $"{host} keeps proof it saw the piece.",
                 },
 
             // Unknown source key, or a known source in a state with no note above: say nothing.

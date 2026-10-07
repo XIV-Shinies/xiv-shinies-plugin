@@ -11,7 +11,10 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </summary>
 public static class CollectSkipReasons
 {
-    /// <summary>The user or the server switched this category off.</summary>
+    /// <summary>
+    /// The user or the server switched this category off, or it needs the server to name it and
+    /// the server has not.
+    /// </summary>
     public const string Disabled = "disabled";
 
     /// <summary>The collector threw. Its facts are omitted; the rest of the snapshot proceeds.</summary>
@@ -50,6 +53,13 @@ public static class CollectSkipReasons
     /// there is genuinely nothing to check.
     /// </summary>
     public const string NoRemoteConfig = "no_remote_config";
+
+    /// <summary>
+    /// The server answered <c>/config</c> without this collection's manifest field at all, so it
+    /// does not ask for the collection. Distinct from <see cref="NoRemoteConfig"/>, which is a wait
+    /// that ends when <c>/config</c> arrives; this one is the server's whole answer.
+    /// </summary>
+    public const string ManifestNotOffered = "manifest_not_offered";
 
     /// <summary>The inventory is not readable — usually because no character is logged in.</summary>
     public const string InventoryUnavailable = "inventory_unavailable";
@@ -158,10 +168,15 @@ public static class CollectSkipReasons
     /// there is simply no action to offer alongside it.
     /// </para>
     /// </remarks>
-    public static string? Describe(string reason) => reason switch
+    /// <param name="reason">The skip reason.</param>
+    /// <param name="host">The configured website's address, named by a hint that waits on it.</param>
+    // A `switch` expression: each `value => result` arm is tested top to bottom, and `_` is the
+    // default. It returns a value, like a lookup in a TypeScript object map with a fallback.
+    // `$"...{x}..."` is an interpolated string, like a template literal.
+    public static string? Describe(string reason, string host) => reason switch
     {
         AchievementListNotLoaded =>
-            "not read yet — open your Achievements window in game once, then press Sync now.",
+            "not read yet — open your Achievements window in game once.",
 
         NotInOccultInstance =>
             "not read yet — enter the Occult Crescent once; it syncs during your visit.",
@@ -169,7 +184,7 @@ public static class CollectSkipReasons
         // The hint names no category on purpose: every manifest-driven collection — item counts
         // and quest sequences alike — reports this same reason.
         NoRemoteConfig =>
-            "not read yet — waiting for XIV Shinies to say what to look for.",
+            $"not read yet — waiting for {host} to say what to look for.",
 
         InventoryUnavailable =>
             "not read yet — log in to a character so your inventory can be read.",
@@ -194,12 +209,27 @@ public static class CollectSkipReasons
             "not read this pass — your character was transformed; return to normal, then press " +
             "Sync now.",
 
-        // "disabled" needs no explanation: the checkbox beside it already says so. "collector_error",
-        // "sheet_unavailable", "unexpected_layout", "over_cap" and "storage_unreadable" are bugs,
-        // misreads, version mismatches or transient game states the user cannot do anything about in
-        // game.
+        // "disabled" and "manifest_not_offered" are decisions, not misses (see IsDeliberate), so no
+        // line is drawn for them at all. "collector_error", "sheet_unavailable",
+        // "unexpected_layout", "over_cap" and "storage_unreadable" are bugs, misreads, version
+        // mismatches or transient game states the user cannot do anything about in game.
         _ => null,
     };
+
+    /// <summary>
+    /// True when the category was skipped by a decision rather than a failure: the user or the
+    /// server switched it off, the server has not named a collection that needs it to, or the
+    /// server answered without asking for it.
+    /// </summary>
+    /// <remarks>
+    /// Nothing went wrong in any of these cases, so neither the settings panel nor the upload log
+    /// reports the category as unread; a "could not read" beside a decision would read as a fault,
+    /// and would stay there for good. Keyed on the reason, never a category, like
+    /// <see cref="Describe"/>.
+    /// </remarks>
+    /// <param name="reason">The skip reason.</param>
+    // `is A or B` is true when the value equals either one.
+    public static bool IsDeliberate(string reason) => reason is Disabled or ManifestNotOffered;
 }
 
 /// <summary>
@@ -276,7 +306,8 @@ public sealed record CollectResult
     /// <see cref="SkipReason"/>. Self-description like everything else on this record — the
     /// runner files it under the collector's own key, the orchestrator remembers the latest one
     /// per category, and the panel prints whatever it is handed, so no consumer ever knows which
-    /// collection is partially read.
+    /// collection is partially read. Where it names the website, it writes
+    /// <see cref="HostPlaceholder.Token"/>, which the panel fills in.
     /// </remarks>
     public string? PartialNote { get; private init; }
 
@@ -289,7 +320,8 @@ public sealed record CollectResult
     /// <remarks>
     /// Only meaningful on a collected result, and only rendered while the category draws as the
     /// healthy chip: a skip reason or a partial note replaces the chip with its own line. The
-    /// same self-description route as <see cref="PartialNote"/> — no consumer interprets it.
+    /// same self-description route as <see cref="PartialNote"/> — no consumer interprets it. Where
+    /// it names the website, it uses the same <see cref="HostPlaceholder.Token"/>.
     /// </remarks>
     public string? CollectedDetail { get; private init; }
 

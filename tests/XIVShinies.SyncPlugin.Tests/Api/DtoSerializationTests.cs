@@ -735,6 +735,58 @@ public class DtoSerializationTests
     }
 
     [Fact]
+    public void ConfigResponse_deserializes_the_crucible_runs_block()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123",
+             "crucibleRuns":{"enabled":false,"heartbeatSeconds":90,"note":"In testing"}}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.NotNull(config.CrucibleRuns);
+        Assert.False(config.CrucibleRuns!.Enabled);
+        Assert.Equal(90, config.CrucibleRuns.HeartbeatSeconds);
+        Assert.Equal("In testing", config.CrucibleRuns.Note);
+    }
+
+    // A server without the Crucible endpoint never sends the block, which reads as null.
+    [Fact]
+    public void ConfigResponse_without_a_crucible_runs_block_leaves_it_null()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.Null(config.CrucibleRuns);
+    }
+
+    // The switch is required; the cadence and the note are not, so a block without them still
+    // parses rather than failing the whole config.
+    [Fact]
+    public void A_crucible_runs_block_with_only_its_switch_still_parses()
+    {
+        const string json = """
+            {"categories":{},"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc123",
+             "crucibleRuns":{"enabled":true}}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.True(config.CrucibleRuns!.Enabled);
+        Assert.Equal(60, config.CrucibleRuns.HeartbeatSeconds);
+        Assert.Null(config.CrucibleRuns.Note);
+    }
+
+    [Fact]
     public void ConfigResponse_deserializes_the_quest_sequence_manifest()
     {
         const string json = """

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Windows;
@@ -138,4 +140,133 @@ public static class SyncStatusView
             or SyncStatusKind.PausedByServer
             or SyncStatusKind.NothingSwitchedOnByUser
             or SyncStatusKind.NothingPermittedByServer;
+
+    /// <summary>
+    /// Whether the card's sentences invite a "Sync now" press: the cadence sentence and the line
+    /// beneath the read-status panel.
+    /// </summary>
+    /// <remarks>
+    /// Beyond the states where a press would upload nothing at all, a press while the server has asked
+    /// the plugin to wait uploads nothing until the wait ends, so "update immediately" would be false.
+    /// A halt is the exception: the press itself is what lifts it, wait or no wait. Neither sentence
+    /// draws during a halt, so that answer reaches the button, through <see cref="SyncNowEnabled"/>.
+    /// </remarks>
+    /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
+    /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
+    public static bool SyncNowOffered(SyncStatusKind kind, bool backingOff) =>
+        !ManualSyncWouldDoNothing(kind)
+        && (!backingOff || kind == SyncStatusKind.BlockedPendingUserAction);
+
+    /// <summary>Whether the "Sync now" button is enabled.</summary>
+    /// <remarks>
+    /// Wherever the sentences invite a press, and in one state more: waiting for a character during a
+    /// server-requested wait. There a press restarts finding the character after it gave up, which
+    /// the wait does not hold back, so the button stays live although no sentence promises an upload.
+    /// </remarks>
+    /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
+    /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
+    public static bool SyncNowEnabled(SyncStatusKind kind, bool backingOff) =>
+        SyncNowOffered(kind, backingOff)
+        || (backingOff && kind == SyncStatusKind.WaitingForCharacter);
+
+    /// <summary>What the card says while the website has asked the plugin to wait.</summary>
+    /// <param name="host">The configured website's address.</param>
+    // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
+    public static string WaitLine(string host) => $"Waiting before the next upload, as {host} asked.";
+
+    /// <summary>
+    /// Whether the card should add <see cref="WaitLine"/> beneath its status line: a wait is in force
+    /// and nothing else on the card already says so.
+    /// </summary>
+    /// <remarks>
+    /// The status line states the wait itself when it is the outcome of the refused upload. A wait
+    /// outlives that outcome, though: it survives a relog, which clears the last outcome, and the card
+    /// would otherwise say nothing about why uploads are held back. The states where a press would do
+    /// nothing anyway, and a halt, have their own sentence and need no second one.
+    /// </remarks>
+    /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
+    /// <param name="lastStatus">The last upload's outcome, or null when none happened this session.</param>
+    /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
+    // `ApiStatus?` may be null, like `ApiStatus | null`. `is A or B` is true when the value is
+    // either one.
+    public static bool NeedsWaitLine(SyncStatusKind kind, ApiStatus? lastStatus, bool backingOff)
+    {
+        if (!backingOff || ManualSyncWouldDoNothing(kind) || kind == SyncStatusKind.BlockedPendingUserAction)
+            return false;
+
+        var statusLineSaysIt = kind == SyncStatusKind.LastUploadOutcome
+            && lastStatus is ApiStatus.RateLimited or ApiStatus.SyncDisabled;
+        return !statusLineSaysIt;
+    }
+
+    /// <summary>
+    /// The sentence that sets the user's expectation of when their collections reach the site.
+    /// </summary>
+    /// <remarks>
+    /// It promises uploads within seconds only while a switched-on collection is one the game
+    /// announces (see <see cref="CategorySettingsRow.UploadsOnUnlock"/>) and was not skipped on the
+    /// last pass, and never during a server-requested wait, which holds those uploads back too. It
+    /// invites a "Sync now" press only while one is on offer. The cadence is the scheduler's live
+    /// interval, which the server tunes.
+    /// </remarks>
+    /// <param name="rows">This frame's category rows.</param>
+    /// <param name="fullSyncInterval">How often the scheduled sweep runs.</param>
+    /// <param name="syncNowOffered">
+    /// Whether the card offers "Sync now" (see <see cref="SyncNowOffered"/>).
+    /// </param>
+    /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
+    public static string CadenceSentence(
+        IReadOnlyList<CategorySettingsRow> rows,
+        TimeSpan fullSyncInterval,
+        bool syncNowOffered,
+        bool backingOff)
+    {
+        var interval = TimeText.Interval(fullSyncInterval);
+
+        // `a ? b : c` picks b when a is true, else c, as in TypeScript. "Most" is load-bearing: only
+        // some collections are announced by the game, and the rest wait for the sweep.
+        var schedule = !backingOff && AnyAnnouncedCollectionOn(rows)
+            ? $"Most new unlocks upload within seconds. Everything else syncs automatically every {interval}"
+            : $"Your collections sync automatically every {interval}";
+
+        return syncNowOffered ? $"{schedule} — press Sync now to update immediately." : $"{schedule}.";
+    }
+
+    /// <summary>
+    /// The line beneath the read-status panel's unread sources: what picks up a fix made in game.
+    /// </summary>
+    /// <param name="syncNowOffered">
+    /// Whether the card offers "Sync now" (see <see cref="SyncNowOffered"/>).
+    /// </param>
+    public static string MissingFollowUp(bool syncNowOffered) =>
+        "Where a line above names an action, do it in game, " +
+        (syncNowOffered ? "then press Sync now." : "and the next sync picks it up.");
+
+    /// <summary>
+    /// The status line for an upload the server answered with "wait" (a 429 or 503), which stays the
+    /// last outcome after the wait itself has ended.
+    /// </summary>
+    /// <param name="backingOff">Whether the website's wait is still in force.</param>
+    /// <param name="host">The configured website's address.</param>
+    public static string DeferredUploadLine(bool backingOff, string host) =>
+        backingOff
+            ? WaitLine(host)
+            : $"The last upload was held back at {host}'s request. The next sync uploads as usual.";
+
+    /// <summary>
+    /// True when a collection the game announces is switched on, permitted by the server, and was not
+    /// skipped on the last pass (before the first pass, no row has a skip reason): a collection the game
+    /// will not answer for yet sends nothing on an unlock.
+    /// </summary>
+    private static bool AnyAnnouncedCollectionOn(IReadOnlyList<CategorySettingsRow> rows)
+    {
+        // `foreach` walks every item in turn, like `for (const row of rows)`.
+        foreach (var row in rows)
+        {
+            if (row.UploadsOnUnlock && row.IsEffectivelyOn && row.SkipReason is null)
+                return true;
+        }
+
+        return false;
+    }
 }
