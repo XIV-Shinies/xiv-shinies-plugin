@@ -18,6 +18,11 @@ namespace XIVShinies.SyncPlugin.Tests.Windows;
 /// </remarks>
 public class SyncStatusViewTests
 {
+    // The website address the card's sentences name. `const` fixes the value when the code compiles,
+    // which is also what lets it appear inside an [InlineData] row. A made-up address, so a test can
+    // tell one that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     private static CategorySettingsRow Row(
         bool userEnabled = true,
         bool serverEnabled = true,
@@ -373,13 +378,14 @@ public class SyncStatusViewTests
     // --- The deferred upload's status line -----------------------------------------------------------
 
     // While the wait holds, the line says so; once it has ended, the same outcome no longer means
-    // waiting, so the line says what happens next instead.
+    // waiting, so the line says what happens next instead. Both name the website by the address
+    // passed in.
     [Theory]
-    [InlineData(true, SyncStatusView.WaitLine)]
+    [InlineData(true, "Waiting before the next upload, as " + Host + " asked.")]
     [InlineData(
-        false, "The last upload was held back at the server's request. The next sync uploads as usual.")]
+        false, "The last upload was held back at " + Host + "'s request. The next sync uploads as usual.")]
     public void A_deferred_upload_says_whether_the_wait_still_holds(bool backingOff, string expected)
     {
-        Assert.Equal(expected, SyncStatusView.DeferredUploadLine(backingOff));
+        Assert.Equal(expected, SyncStatusView.DeferredUploadLine(backingOff, Host));
     }
 }

@@ -14,6 +14,10 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 // not survive the trip.
 public class CategorySettingsViewTests
 {
+    // The website address the copy names. `const` fixes the value when the code compiles.
+    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     // A category this plugin has never heard of, deliberately.
     private const string UnknownCategory = "facewear";
 
@@ -780,7 +784,7 @@ public class CategorySettingsViewTests
 
         Assert.Equal(
             "In testing — it will switch on for everyone once it is ready.",
-            Assert.Single(rows).ServerOffText);
+            Assert.Single(rows).ServerOffText(Host));
     }
 
     // The kill switch is the louder signal and carries no note: the collection is off for
@@ -795,9 +799,9 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
 
-        // Pinned by identity with the constant, so a reword moves both surfaces that draw it.
+        // Pinned against ServerOffCopy.Feature itself, so a reword moves both surfaces that draw it.
         Assert.Equal(
-            ServerOffCopy.Feature, Assert.Single(rows).ServerOffText);
+            ServerOffCopy.Feature(Host), Assert.Single(rows).ServerOffText(Host));
     }
 
     // The note is carried on the row in its own right, not only folded into the sentence.
@@ -830,7 +834,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
 
-        Assert.Null(Assert.Single(rows).ServerOffText);
+        Assert.Null(Assert.Single(rows).ServerOffText(Host));
     }
 
     // Nothing to say about a category that is simply on.
@@ -840,7 +844,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig());
 
-        Assert.Null(Assert.Single(rows).ServerOffText);
+        Assert.Null(Assert.Single(rows).ServerOffText(Host));
     }
 
     // A config that has not been fetched forbids nothing, so there is no off-state to explain.
@@ -852,7 +856,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), remoteConfig: null);
 
-        Assert.Null(Assert.Single(rows).ServerOffText);
+        Assert.Null(Assert.Single(rows).ServerOffText(Host));
     }
 
     // --- Which mark a row wears -----------------------------------------------------------------
@@ -1068,7 +1072,7 @@ public class CategorySettingsViewTests
         var row = Assert.Single(CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
-        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
     }
 
     // A collection must not spend its one-time introduction during an outage: the user would see
@@ -1116,7 +1120,7 @@ public class CategorySettingsViewTests
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
         Assert.False(row.ServerGloballyOff);
-        Assert.Equal("In testing.", row.ServerOffText);
+        Assert.Equal("In testing.", row.ServerOffText(Host));
     }
 
     // The group checkboxes are the other half of the collections surface, and they follow their
@@ -1148,7 +1152,7 @@ public class CategorySettingsViewTests
         var row = Assert.Single(CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config));
 
-        Assert.Equal(ServerOffCopy.Paused, row.ServerOffText);
+        Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
     }
 
     // An unfetched config forbids nothing, and that must survive the global switch being read:
@@ -1161,6 +1165,6 @@ public class CategorySettingsViewTests
 
         Assert.True(row.ServerEnabled);
         Assert.False(row.ServerGloballyOff);
-        Assert.Null(row.ServerOffText);
+        Assert.Null(row.ServerOffText(Host));
     }
 }

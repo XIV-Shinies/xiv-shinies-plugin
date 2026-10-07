@@ -48,7 +48,7 @@ switch on (the live Occult tracker starts on; everything else starts off):
   unused roll items sitting in your bags
 - Collected **Triple Triad card** IDs, and the IDs of the game's own **Triple Triad NPCs** you
   have defeated — computer opponents, never other players
-- **Possession counts** for the specific relic-stage items the server asks about — checked
+- **Possession counts** for the specific relic-stage items XIV Shinies asks about — checked
   across your inventory, armoire, glamour dresser, saddlebag, and retainers
 - **Phantom job levels and experience**, read while you are inside the Occult Crescent, and
   your **knowledge level** when you open the review window yourself

@@ -236,7 +236,7 @@ internal sealed partial class MainWindow
             }
 
             ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
-            uploadLogTable.Draw(history, innerRight);
+            uploadLogTable.Draw(history, innerRight, BackendHost());
         }
     }
 

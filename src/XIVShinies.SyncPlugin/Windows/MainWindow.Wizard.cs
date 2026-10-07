@@ -97,14 +97,17 @@ internal sealed partial class MainWindow
             foreach (var row in section.Rows)
             {
                 // `trailingChip:` and `muted:` below name the parameter each value fills, like keys
-                // in an options object; `a ? b : c` picks b when a is true, else c.
+                // in an options object; `a ? b : c` picks b when a is true, else c. The collector's
+                // copy carries a placeholder for the website, filled with the configured address
+                // here (see HostPlaceholder); `is { } details` matches details that are present and
+                // names them, so only real details are filled.
                 var off = !row.ServerEnabled;
                 DrawIcon(FontAwesomeIcon.Gem, off ? Brand.DisabledForeground : Brand.Gold);
                 ImGui.SameLine();
                 DrawWrappedWithTrailingHint(
-                    $"{row.DisplayName} — {row.WhatGetsSent}",
-                    row.Details,
-                    trailingChip: off ? OffChip(row.ServerOffText) : null,
+                    $"{row.DisplayName} — {HostPlaceholder.Fill(row.WhatGetsSent, BackendHost())}",
+                    row.Details is { } details ? HostPlaceholder.Fill(details, BackendHost()) : null,
+                    trailingChip: off ? OffChip(row.ServerOffText(BackendHost())) : null,
                     muted: off);
             }
 
@@ -163,11 +166,11 @@ internal sealed partial class MainWindow
     {
         // Null while the server permits the tracker; `is null` and `is not null` test for that, like
         // `=== null` and `!== null`.
-        var offText = OccultGate.ServerOffText(remoteConfig);
+        var offText = OccultGate.ServerOffText(remoteConfig, BackendHost());
         DrawIcon(FontAwesomeIcon.BroadcastTower, offText is null ? Brand.Gold : Brand.DisabledForeground);
         ImGui.SameLine();
         DrawWrappedWithTrailingHint(
-            $"Live Occult instance state — {OccultWhatGetsSent}",
+            $"Live Occult instance state — {OccultWhatGetsSent()}",
             OccultTrackerDetails,
             trailingChip: offText is null ? null : OffChip(offText),
             muted: offText is not null);
@@ -182,11 +185,11 @@ internal sealed partial class MainWindow
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     private void DrawCrucibleDisclosureLine(ConfigResponse? remoteConfig)
     {
-        var offText = CrucibleGate.ServerOffText(remoteConfig);
+        var offText = CrucibleGate.ServerOffText(remoteConfig, BackendHost());
         DrawIcon(FontAwesomeIcon.BroadcastTower, offText is null ? Brand.Gold : Brand.DisabledForeground);
         ImGui.SameLine();
         DrawWrappedWithTrailingHint(
-            $"Crucible runs — {CrucibleWhatGetsSent}",
+            $"Crucible runs — {CrucibleWhatGetsSent()}",
             CrucibleRunsDetails,
             trailingChip: offText is null ? null : OffChip(offText),
             muted: offText is not null);
@@ -242,7 +245,8 @@ internal sealed partial class MainWindow
             opening.AnythingSwitchedOn,
             trackerOffered: !OccultGate.ServerHasSwitchedOff(remoteConfig),
             trackerOn: opening.TrackerOn,
-            userHasAChoice: ConsentCopy.UserHasAChoice(wizardRows, remoteConfig)));
+            userHasAChoice: ConsentCopy.UserHasAChoice(wizardRows, remoteConfig),
+            host: BackendHost()));
 
         Widgets.SectionGap();
 
@@ -258,13 +262,13 @@ internal sealed partial class MainWindow
         // once the pause lifts.
         if (ManifestConsent.ServerHasPausedEverything(wizardRows))
         {
-            DrawWarning(ServerOffCopy.Paused);
+            DrawWarning(ServerOffCopy.Paused(BackendHost()));
             Widgets.SectionGap();
         }
         else if (ManifestConsent.ServerPermitsNoCollection(wizardRows))
         {
             // The same gap without a pause: every collection switched off one by one.
-            DrawWarning(ServerOffCopy.EveryCollection);
+            DrawWarning(ServerOffCopy.EveryCollection(BackendHost()));
             Widgets.SectionGap();
         }
 

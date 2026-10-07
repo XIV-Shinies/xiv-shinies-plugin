@@ -15,6 +15,12 @@ public class CrucibleGateTests
     // (see TokenFormat).
     private const string UsableToken = "xvs_" + "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
 
+    // The website address the chip's sentences name. A made-up one, so a test can tell an address
+    // that was passed in from one written into the copy. `const` fixes the value when the code
+    // compiles. An attribute's arguments must be fixed then too, so the [InlineData] rows below spell
+    // each sentence out rather than calling ServerOffCopy.
+    private const string Host = "shinies.example";
+
     /// <summary>Settings for a user who has opted in to everything, Crucible sharing included.</summary>
     // `=> new() { ... }` builds a PluginSettings and sets these properties on it, like an object
     // literal; every property it leaves out keeps its default.
@@ -182,17 +188,17 @@ public class CrucibleGateTests
     // The chip names a pause before the feature's own switch.
     [Theory]
     [InlineData(true, true, null)]
-    [InlineData(true, false, ServerOffCopy.Feature)]
-    [InlineData(false, true, ServerOffCopy.Paused)]
-    [InlineData(false, false, ServerOffCopy.Paused)]
+    [InlineData(true, false, "Temporarily switched off by " + Host + ".")]
+    [InlineData(false, true, Host + " has paused syncing for everyone. Your own choices are unchanged.")]
+    [InlineData(false, false, Host + " has paused syncing for everyone. Your own choices are unchanged.")]
     public void The_chip_names_the_pause_before_the_feature(
         bool globallyEnabled, bool sharingEnabled, string? expected)
     {
         var config = ConfigWithCrucible(sharingEnabled: sharingEnabled, globallyEnabled: globallyEnabled);
 
-        Assert.Equal(expected, CrucibleGate.ServerOffText(config));
+        Assert.Equal(expected, CrucibleGate.ServerOffText(config, Host));
         Assert.Equal(
-            CrucibleGate.ServerHasSwitchedOff(config), CrucibleGate.ServerOffText(config) is not null);
+            CrucibleGate.ServerHasSwitchedOff(config), CrucibleGate.ServerOffText(config, Host) is not null);
     }
 
     // The server's own note replaces the generic line, folded to a single line.
@@ -201,7 +207,7 @@ public class CrucibleGateTests
     {
         var config = ConfigWithCrucible(sharingEnabled: false, note: "In testing.\nSoon.");
 
-        Assert.Equal("In testing. Soon.", CrucibleGate.ServerOffText(config));
+        Assert.Equal("In testing. Soon.", CrucibleGate.ServerOffText(config, Host));
     }
 
     // A pause outranks a note as well.
@@ -210,31 +216,48 @@ public class CrucibleGateTests
     {
         var config = ConfigWithCrucible(sharingEnabled: false, globallyEnabled: false, note: "In testing.");
 
-        Assert.Equal(ServerOffCopy.Paused, CrucibleGate.ServerOffText(config));
+        Assert.Equal(ServerOffCopy.Paused(Host), CrucibleGate.ServerOffText(config, Host));
     }
 
-    // With no block, or with a blank note, the chip shows the feature's generic line.
+    // A switched-off block with a blank note shows the feature's generic line.
     [Fact]
-    public void No_block_or_a_blank_note_shows_the_generic_line()
+    public void A_blank_note_shows_the_generic_line()
     {
-        var noBlock = ConfigWithCrucible() with { CrucibleRuns = null };
         var blankNote = ConfigWithCrucible(sharingEnabled: false, note: "  ");
 
-        Assert.Equal(ServerOffCopy.Feature, CrucibleGate.ServerOffText(noBlock));
-        Assert.Equal(ServerOffCopy.Feature, CrucibleGate.ServerOffText(blankNote));
+        Assert.Equal(ServerOffCopy.Feature(Host), CrucibleGate.ServerOffText(blankNote, Host));
+    }
+
+    // A server whose /config carries no block does not offer the sharing, so nothing was switched
+    // off: the chip says so rather than describing a decision that was never made.
+    [Fact]
+    public void No_block_says_the_server_does_not_offer_the_sharing()
+    {
+        var noBlock = ConfigWithCrucible() with { CrucibleRuns = null };
+
+        Assert.Equal(ServerOffCopy.NotOffered(Host), CrucibleGate.ServerOffText(noBlock, Host));
+    }
+
+    // A pause outranks a missing block too: it stops every upload, whatever the server offers.
+    [Fact]
+    public void A_paused_server_with_no_block_shows_the_pause()
+    {
+        var config = ConfigWithCrucible(globallyEnabled: false) with { CrucibleRuns = null };
+
+        Assert.Equal(ServerOffCopy.Paused(Host), CrucibleGate.ServerOffText(config, Host));
     }
 
     // A note beside a switch that is on is ignored: there is nothing switched off to explain.
     [Fact]
     public void A_note_on_enabled_sharing_shows_nothing()
     {
-        Assert.Null(CrucibleGate.ServerOffText(ConfigWithCrucible(note: "In testing.")));
+        Assert.Null(CrucibleGate.ServerOffText(ConfigWithCrucible(note: "In testing."), Host));
     }
 
     [Fact]
     public void A_permitted_sharing_has_nothing_to_say()
     {
-        Assert.Null(CrucibleGate.ServerOffText(ConfigWithCrucible()));
-        Assert.Null(CrucibleGate.ServerOffText(null));
+        Assert.Null(CrucibleGate.ServerOffText(ConfigWithCrucible(), Host));
+        Assert.Null(CrucibleGate.ServerOffText(null, Host));
     }
 }

@@ -95,12 +95,13 @@ internal sealed partial class MainWindow
             // The master toggle above still reads ON, which is correct: it reports the user's own
             // setting, and that setting has not changed. This line is what makes the difference
             // between "you switched it off" and "we switched it off" legible.
-            DrawWarning(ServerOffCopy.Paused);
+            DrawWarning(ServerOffCopy.Paused(BackendHost()));
         }
         else if (status == SyncStatusKind.BlockedPendingUserAction)
         {
             // Names the fix for the status that raised this halt (SyncManager.HaltStatus), which can
             // differ from the last upload's outcome; HaltCopy decides among the kinds of fix.
+            // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
             DrawWarning($"Syncing has stopped. {HaltSentence()}");
         }
         else if (status == SyncStatusKind.NothingSwitchedOnByUser)
@@ -123,7 +124,7 @@ internal sealed partial class MainWindow
             // Warned rather than stated, unlike the line above: this one is not the user's doing and
             // there is nothing for them to change, so it belongs with the other states the server
             // imposed. The rows each wear their own "Off" chip, but they are a fold away.
-            DrawWarning(ServerOffCopy.EveryCollection);
+            DrawWarning(ServerOffCopy.EveryCollection(BackendHost()));
         }
         else if (status == SyncStatusKind.WaitingForCharacter)
         {
@@ -150,7 +151,7 @@ internal sealed partial class MainWindow
 
         // Whether the wait needs a line of its own is SyncStatusView.NeedsWaitLine's rule.
         if (SyncStatusView.NeedsWaitLine(status, syncManager.LastStatus, backingOff))
-            ImGui.TextUnformatted(SyncStatusView.WaitLine);
+            ImGui.TextUnformatted(SyncStatusView.WaitLine(BackendHost()));
 
         // "When?" is half of what a status line is for: without it, a deliberately quiet stretch
         // (item acquisitions fire no event) is indistinguishable from a hang. Muted, unlike the
@@ -234,7 +235,7 @@ internal sealed partial class MainWindow
             // it draws whatever notes it is handed and never asks which collection or which container
             // produced one. The rows are this frame's, built once at the top of DrawSettings and
             // shared with the consent card below.
-            var readStatus = ReadStatusView.Build(rows, syncManager.LastSourceNotes);
+            var readStatus = ReadStatusView.Build(rows, syncManager.LastSourceNotes, BackendHost());
 
             // Whether any note drawn below is Missing — something contributing nothing at all right
             // now, whether a collection the game will not answer for or a storage container that has
@@ -465,7 +466,7 @@ internal sealed partial class MainWindow
                 break;
 
             case ApiStatus.InvalidToken:
-                DrawWarning("Your token was rejected. Generate a new one.");
+                DrawWarning($"Your token was rejected. Generate a new one on {BackendHost()}.");
                 break;
 
             // The three self-healing outcomes below need no action from the user, so they carry no
@@ -473,7 +474,7 @@ internal sealed partial class MainWindow
             // contrast. Only red says "you have to do something".
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
-                ImGui.TextUnformatted(SyncStatusView.DeferredUploadLine(backingOff));
+                ImGui.TextUnformatted(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()));
                 break;
 
             case ApiStatus.NetworkError:

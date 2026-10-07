@@ -65,10 +65,11 @@ public static class CollectorRegistry
         // The game calls the quest log the Journal, and XIV Shinies has a Journal feature of its
         // own, so this copy says "in game" instead: the word would read as a fact about the site
         // rather than about a multi-part quest the user is part-way through — a relic chain,
-        // typically.
+        // typically. HostPlaceholder.Token stands for the configured website's address, filled in
+        // where the line is drawn (see HostPlaceholder).
         WhatGetsSent =
-            "For the specific quests XIV Shinies asks about, how far through that quest you have " +
-            "got in game.",
+            "For the specific quests " + HostPlaceholder.Token + " asks about, how far through that " +
+            "quest you have got in game.",
 
         // What the step position is NOT: the game also tracks objective text and map locations
         // against an active quest, and a reader has no way to know those stay behind unless it is
@@ -210,13 +211,13 @@ public static class CollectorRegistry
         // `itemSources` beside the counts: a per-location scan state, and for retainers both how
         // many were readable and how many the account holds. That headcount is a fact about the
         // account rather than a count of any manifest item — and it travels even when no retainer
-        // was scanned — so "counts of the items XIV Shinies asks about" does not cover it, and a
+        // was scanned — so "counts of the items the website asks about" does not cover it, and a
         // reader would have no way to infer it. Naming the locations themselves stays in the hover:
         // that is elaboration, whereas the fact they travel at all is disclosure.
         WhatGetsSent =
-            "Counts of the specific items XIV Shinies asks about, including your currency balances " +
-            "(gil included) when it asks about those, plus which of your storage locations could be " +
-            "read and how many retainers you have.",
+            "Counts of the specific items " + HostPlaceholder.Token + " asks about, including your " +
+            "currency balances (gil included) when it asks about those, plus which of your storage " +
+            "locations could be read and how many retainers you have.",
 
         // Where the plugin looked, and that "none of this item" is itself a reported fact rather
         // than silence. Both make the count trustworthy; neither adds a kind of data to it.
@@ -227,7 +228,7 @@ public static class CollectorRegistry
         Details =
             "Counts are checked across your inventory, Armoire, Glamour Dresser, Saddlebag, and " +
             "retainers. Having none of an item is reported too. When these items are offered in " +
-            "groups below, you choose which groups to share and nothing outside them is looked at.",
+            "groups, you choose which groups to share and nothing outside them is looked at.",
 
         // The only collection whose scope comes from the server's item manifest rather than being
         // fixed at compile time, so it is the one that gets per-group consent rows in settings.

@@ -54,6 +54,9 @@ internal sealed partial class MainWindow
             CloseCardHeader();
 
             // Names the configured server, matching where the button above actually goes.
+            // `$"...{x}..."` is an interpolated string, like a TypeScript template literal: each
+            // `{x}` is replaced by x's value. Only the piece marked `$` fills anything in; the
+            // plain pieces joined to it with `+` are taken as written.
             DrawWrapped(
                 $"Create a plugin token in your profile settings on {BackendHost()}, then paste " +
                 "it below. The token is shown once and can be revoked at any time.",
@@ -140,7 +143,7 @@ internal sealed partial class MainWindow
         // broken wizard, so the wait says what it is waiting for.
         if (onboarding.AwaitingConfig)
         {
-            ImGui.TextUnformatted("Token accepted. Asking XIV Shinies what it collects...");
+            ImGui.TextUnformatted($"Token accepted. Asking {BackendHost()} what it collects...");
             return;
         }
 

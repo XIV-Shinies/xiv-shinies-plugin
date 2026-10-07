@@ -60,7 +60,8 @@ public interface ICollector
     /// Shown next to the opt-in toggle. Dalamud requires that users be told what is collected before
     /// they consent to it, so this is a compliance surface, not decoration: it must describe the real
     /// payload, and it must be updated whenever <see cref="Collect"/> starts sending something new.
-    /// Write it for someone who has never read this code.
+    /// Write it for someone who has never read this code. Name the website the data goes to as
+    /// <see cref="HostPlaceholder.Token"/>; the surface that draws the line fills in its address.
     /// </remarks>
     string WhatGetsSent { get; }
 
@@ -72,6 +73,7 @@ public interface ICollector
     /// Self-description like the two above. <see cref="WhatGetsSent"/> still has to name every kind
     /// of data that leaves the machine on its own — this carries the scope and reassurance detail
     /// that would otherwise crowd the consent list, never a disclosure the visible line omitted.
+    /// Where it names the website, it writes <see cref="HostPlaceholder.Token"/> the same way.
     /// </remarks>
     string? Details { get; }
 
