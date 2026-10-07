@@ -656,9 +656,12 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   since the wire is second-exact). The server checks that order, and refuses a stamp for its
   time only when it is more than five minutes ahead of the server's clock, so a client clock
   running fast still uploads; a stamp may be old. Across uploads the server orders each kind by
-  `observedAtUtc`, so a retried upload may arrive late and still land in place. A 429 or 503 is
-  retried after its `Retry-After`, and a network failure after a backoff, each with the same
-  content; a 400 or 403 is not retried unchanged.
+  `observedAtUtc`, so a retried upload may arrive late and still land in place, as long as its
+  piece's outcome has not been written (see below). Among snapshots that share a stamp, the server
+  reads the `board` first, so it starts from the run's position on that `board` when it works out
+  which piece the rest of a baseline belongs to. A 429 or 503 is retried after its
+  `Retry-After`, and a network failure after a backoff, each with the same content; a 400 or 403
+  is not retried unchanged.
 
 #### Response
 
@@ -670,10 +673,38 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 ```
 
 In-duty snapshots belong to the character's active run, which the player starts on the website.
-On `applied`, `events` is how many run events the snapshots produced, and `skipped` how many
-snapshots produced nothing because the player had already logged that piece themselves on the
-website (the player's own entry wins). An undo sticks: a run event the server derived and the
-player undid is not derived again from a later snapshot of the same piece and kind.
+On `applied`, `events` is how many run events the server wrote for the upload, which can include
+an earlier piece's outcome (see below). `skipped` is how many events the server did not write for
+the upload because the player had already logged them on the website; the player's own entry wins.
+An undo sticks: a run event the server derived and the player undid is not derived again from a
+later snapshot of the same piece and kind.
+
+**What the server makes of the snapshots.** The server's rules for turning snapshots into run
+events are its own; these are the ones that shape what a client sends:
+
+- The move onto a fight piece and that fight's lineup are written when the lineup window (`team`
+  mode 2) closes, so that window's `closed` snapshot is the one that sets the lineup. If the
+  window closes again on the same piece with a different lineup (other familiars placed, another
+  order, or different HP) before the fight's outcome is written, the lineup is amended once; any
+  later change is the player's to make on the website.
+- A piece's outcome (its fight, treasure, shop or campsite) is written when the first snapshot of
+  the next piece arrives, or when a `results` snapshot or a `leave` from the active run's board
+  arrives. Until then it waits for the `bag` and `team` readings that complete it.
+- What the player takes from a treasure or sells at a shop is read from the `bag`: the server
+  compares the last `bag` reading before the piece's window opened with the piece's last `bag`
+  reading. When they match, or no `bag` arrives after the window opens (a client sends none while
+  the bag is unchanged), the server writes nothing taken or sold. What the player buys at a shop
+  comes from the `bought` flags on its `closed` shop `offer` snapshot instead.
+- A reading that arrives after its piece's outcome was written is not applied, and any correction
+  to that piece is the player's to make on the website, so a client sends a retried upload before
+  any upload with newer readings.
+- When more than one piece ahead could hold it, an `offer` snapshot, or a `team` snapshot in
+  lineup, feed or campsite mode (2, 3 or 4), stamped before any `board` that shows where the run
+  stands, waits for the next `board` to say which piece it belongs to.
+- The finish that `results` brings is written only once the run stands on the board's last piece
+  and that piece's fight is written.
+- A snapshot identical to one the server already has, stamp included, is applied only once, so
+  retrying an upload whose response was lost changes nothing.
 
 For an upload whose `territoryTypeId` is a board, `held` means there is no active run yet: the
 server keeps the latest snapshot of each kind for 30 minutes past its `observedAtUtc`, so a
@@ -682,8 +713,11 @@ that board starts. `board_mismatch` means the website run is on a different boar
 written to it, and the snapshots are kept as for `held`, because starting a run on this board
 abandons the run on the other one. A `results` snapshot that is not applied to a run is not kept,
 and drops every kept snapshot, so a later run never receives an earlier attempt's snapshots. A
-`leave` drops them too, and never ends a run, since the player may have suspended the board to
-resume it later. A run is never created from observations.
+`leave` drops every kept snapshot too, and never ends a run, since the player may have suspended
+the board to resume it later. A `leave` from the active run's board also writes any outcome still
+waiting (see above). A run is never created from observations.
+
+The client logs `held` and `board_mismatch` and shows the player nothing for either.
 
 The entrance's roster pick and pre-entry board are kept apart from in-duty snapshots and are never
 applied to a run, because a run's roster is fixed when it starts. They only prefill the website's
@@ -694,7 +728,8 @@ id as `runId` when it has one.
 
 Status codes mirror `/sync` (400 `invalid_payload`, 401, the 403 family with echoed identity, 405,
 413, 429 with its own per-token budget of 240/hour), plus **503 `sync_disabled`** when the global,
-per-user, category or flag switch is off.
+per-user, category or flag switch is off, and **503 `busy`** with `Retry-After` when the server
+could not take the upload in time.
 
 **Liveness.** Every upload answered `applied`, a heartbeat included, refreshes the run's "Plugin
 connected" mark on the website, and a `leave` clears it. After a few minutes with no `applied`
