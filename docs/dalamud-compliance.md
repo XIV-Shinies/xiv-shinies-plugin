@@ -109,8 +109,9 @@ response fields) and a field-by-field contract conformance audit.
   `PluginSettings.AutoEnableUnseenCategories` acts on it at load and only there — for an onboarded
   install that ticked the box, only on collections this install has never shown, never on one
   whose scope depends on separately-answered consent groups, and never over a collection the user
-  has been shown and switched off. Anything it switches on is wearing its "New" chip when the user
-  next opens the window, or waiting to once the server permits the collection.
+  has been shown and switched off. The box's copy says the tick covers a new collection whatever it
+  sends. Anything it switches on is wearing its "New" chip, beside that collection's disclosure and
+  switch, when the user next opens the window, or waiting to once the server permits the collection.
 - **A collection the server has switched off is not introduced yet.** It raises no "New" chip and
   is not recorded as shown on any surface, so its introduction waits for the day it can actually
   be used, and nothing is collected for it meanwhile. The server may supply one sentence about it
