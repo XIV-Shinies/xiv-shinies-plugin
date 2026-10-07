@@ -138,11 +138,14 @@ public sealed record CategorySettingsRow
     /// decision about it that nobody made.
     /// </para>
     /// </remarks>
-    public string? ServerOffText => ServerEnabled
+    /// <param name="host">The configured website's address.</param>
+    // A method rather than a property, because a property cannot take parameters and the generic
+    // lines name an address (see ServerOffCopy) that a row does not hold.
+    public string? ServerOffText(string host) => ServerEnabled
         ? null
         : ServerGloballyOff
-            ? ServerOffCopy.Paused
-            : ServerNote ?? ServerOffCopy.Feature;
+            ? ServerOffCopy.Paused(host)
+            : ServerNote ?? ServerOffCopy.Feature(host);
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not.

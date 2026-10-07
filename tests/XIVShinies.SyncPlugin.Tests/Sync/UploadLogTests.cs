@@ -13,6 +13,11 @@ namespace XIVShinies.SyncPlugin.Tests.Sync;
 // so its summarization is pinned here rather than eyeballed in game.
 public class UploadLogTests
 {
+    // The website address the copy names. `const` fixes the value when the code compiles, which
+    // also lets it appear inside an [InlineData] row. A made-up address, so a test can tell one
+    // that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     private static CollectionSnapshot SnapshotWith(
         Dictionary<string, JsonNode>? collections = null,
         Dictionary<string, string>? skipped = null) => new()
@@ -121,10 +126,10 @@ public class UploadLogTests
         Assert.Equal(CollectSkipReasons.Disabled, entry.Skipped["orchestrionRolls"]);
     }
 
-    // Filtered on the reason, never the category — so a category switched off is silent whichever
-    // one it is, and every other reason still reports.
+    // Filtered on the reason, never the category — so a category switched off, or one the server
+    // does not ask for, is silent whichever one it is, and every other reason still reports.
     [Fact]
-    public void Every_reason_other_than_disabled_is_reported_as_unread()
+    public void Every_reason_but_a_deliberate_skip_is_reported_as_unread()
     {
         var entry = SomeEntry() with
         {
@@ -134,6 +139,7 @@ public class UploadLogTests
                 ["quests"] = CollectSkipReasons.CollectorError,
                 ["mounts"] = CollectSkipReasons.SheetUnavailable,
                 ["facewear"] = CollectSkipReasons.Disabled,
+                ["questSequences"] = CollectSkipReasons.ManifestNotOffered,
             },
         };
 
@@ -336,12 +342,12 @@ public class UploadLogTests
     [InlineData(ApiStatus.CharacterBoundElsewhere, "refused — character linked elsewhere")]
     [InlineData(ApiStatus.InvalidToken, "refused — token rejected")]
     [InlineData(ApiStatus.RateLimited, "deferred — rate limited")]
-    [InlineData(ApiStatus.SyncDisabled, "deferred — syncing paused by the server")]
-    [InlineData(ApiStatus.NetworkError, "failed — could not reach the server")]
+    [InlineData(ApiStatus.SyncDisabled, "deferred — " + Host + " is not taking uploads")]
+    [InlineData(ApiStatus.NetworkError, "failed — could not reach " + Host)]
     [InlineData(ApiStatus.ServerError, "failed")]
     public void Statuses_read_as_outcomes(ApiStatus status, string expected)
     {
-        Assert.Equal(expected, UploadLogText.StatusText(status));
+        Assert.Equal(expected, UploadLogText.StatusText(status, Host));
     }
 
     // Every status, not a hand-picked few: exactly the character refusals read as a refusal about
@@ -355,7 +361,8 @@ public class UploadLogTests
         {
             Assert.Equal(
                 ApiStatusMap.IsCharacterRefusal(status),
-                UploadLogText.StatusText(status).StartsWith("refused — character", StringComparison.Ordinal));
+                UploadLogText.StatusText(status, Host)
+                    .StartsWith("refused — character", StringComparison.Ordinal));
         }
     }
 
@@ -931,7 +938,7 @@ public class UploadLogTests
     [Fact]
     public void Outcome_text_is_just_the_status_when_there_are_no_qualifiers()
     {
-        Assert.Equal("accepted", UploadLogText.OutcomeText(SomeEntry()));
+        Assert.Equal("accepted", UploadLogText.OutcomeText(SomeEntry(), Host));
     }
 
     [Fact]
@@ -946,7 +953,22 @@ public class UploadLogTests
 
         Assert.Equal(
             "deferred — rate limited — retry in 90s (attempt 2)",
-            UploadLogText.OutcomeText(entry));
+            UploadLogText.OutcomeText(entry, Host));
+    }
+
+    // An outcome that names the website names it by the address passed in, qualifiers and all.
+    [Fact]
+    public void Outcome_text_names_the_website_it_is_handed()
+    {
+        var entry = SomeEntry() with
+        {
+            Status = ApiStatus.SyncDisabled,
+            RetryAfter = TimeSpan.FromSeconds(90),
+        };
+
+        Assert.Equal(
+            "deferred — " + Host + " is not taking uploads — retry in 90s",
+            UploadLogText.OutcomeText(entry, Host));
     }
 
     [Fact]
@@ -1018,7 +1040,7 @@ public class UploadLogTests
         Assert.Empty(entry.Skipped);
         Assert.Equal("live tracker", UploadLogText.TriggerText(entry));
         Assert.Equal("Occult instance state", UploadLogText.LiveSentText(entry.Source));
-        Assert.Equal("refused — character not verified", UploadLogText.OutcomeText(entry));
+        Assert.Equal("refused — character not verified", UploadLogText.OutcomeText(entry, Host));
     }
 
     // The Crucible run sharing halts the same way, and its row names the sharing rather than the

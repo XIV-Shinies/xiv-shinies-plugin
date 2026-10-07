@@ -30,6 +30,7 @@ public static class ConsentCopy
     /// <param name="userHasAChoice">
     /// Whether the server leaves anything to choose (see <see cref="UserHasAChoice"/>).
     /// </param>
+    /// <param name="host">The configured website's address, named when nothing is left to choose.</param>
     /// <remarks>
     /// "Start switched off" is only said while nothing is chosen on, and the tracker's "starts on"
     /// only while the server offers it and it is chosen on; otherwise the sentence would contradict
@@ -37,11 +38,12 @@ public static class ConsentCopy
     /// nothing to choose, as during a pause, it says so instead of inviting a choice.
     /// </remarks>
     public static string WizardIntro(
-        bool anythingSwitchedOn, bool trackerOffered, bool trackerOn, bool userHasAChoice)
+        bool anythingSwitchedOn, bool trackerOffered, bool trackerOn, bool userHasAChoice, string host)
     {
         if (!userHasAChoice)
         {
-            return "Nothing about your progress is sent: the server has everything below switched " +
+            // `$"...{host}..."` is an interpolated string, like a TypeScript template literal.
+            return $"Nothing about your progress is sent: {host} has everything below switched " +
                 "off for now. Once it allows them, you can choose what to upload in the settings.";
         }
 

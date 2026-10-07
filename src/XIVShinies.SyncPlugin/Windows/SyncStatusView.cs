@@ -169,9 +169,10 @@ public static class SyncStatusView
         SyncNowOffered(kind, backingOff)
         || (backingOff && kind == SyncStatusKind.WaitingForCharacter);
 
-    /// <summary>What the card says while the server has asked the plugin to wait.</summary>
-    // `const` fixes the value when the code compiles.
-    public const string WaitLine = "Waiting before the next upload, as the server asked.";
+    /// <summary>What the card says while the website has asked the plugin to wait.</summary>
+    /// <param name="host">The configured website's address.</param>
+    // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
+    public static string WaitLine(string host) => $"Waiting before the next upload, as {host} asked.";
 
     /// <summary>
     /// Whether the card should add <see cref="WaitLine"/> beneath its status line: a wait is in force
@@ -222,9 +223,8 @@ public static class SyncStatusView
     {
         var interval = TimeText.Interval(fullSyncInterval);
 
-        // `$"...{x}..."` is an interpolated string, like a template literal. `a ? b : c` picks b when
-        // a is true, else c, as in TypeScript. "Most" is load-bearing: only some collections are
-        // announced by the game, and the rest wait for the sweep.
+        // `a ? b : c` picks b when a is true, else c, as in TypeScript. "Most" is load-bearing: only
+        // some collections are announced by the game, and the rest wait for the sweep.
         var schedule = !backingOff && AnyAnnouncedCollectionOn(rows)
             ? $"Most new unlocks upload within seconds. Everything else syncs automatically every {interval}"
             : $"Your collections sync automatically every {interval}";
@@ -246,11 +246,12 @@ public static class SyncStatusView
     /// The status line for an upload the server answered with "wait" (a 429 or 503), which stays the
     /// last outcome after the wait itself has ended.
     /// </summary>
-    /// <param name="backingOff">Whether the server's wait is still in force.</param>
-    public static string DeferredUploadLine(bool backingOff) =>
+    /// <param name="backingOff">Whether the website's wait is still in force.</param>
+    /// <param name="host">The configured website's address.</param>
+    public static string DeferredUploadLine(bool backingOff, string host) =>
         backingOff
-            ? WaitLine
-            : "The last upload was held back at the server's request. The next sync uploads as usual.";
+            ? WaitLine(host)
+            : $"The last upload was held back at {host}'s request. The next sync uploads as usual.";
 
     /// <summary>
     /// True when a collection the game announces is switched on, permitted by the server, and was not

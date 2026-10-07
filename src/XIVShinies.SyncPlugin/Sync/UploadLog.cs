@@ -129,10 +129,8 @@ public sealed record UploadLogEntry
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A category the user switched off is skipped, but nothing failed — they chose not to send
-    /// it, and the consent list already shows that choice. Listing it as unread would report a
-    /// deliberate decision as a fault, and every user who leaves a collection unticked would carry
-    /// a permanent complaint in their log.
+    /// A category skipped by a decision, such as one the user switched off, is not a failure, so it
+    /// is not listed (see <see cref="CollectSkipReasons.IsDeliberate"/>).
     /// </para>
     /// <para>
     /// Filtered on the REASON, never on a category, so nothing here knows which collections exist.
@@ -147,7 +145,7 @@ public sealed record UploadLogEntry
             var keys = new List<string>(Skipped.Count);
             foreach (var (key, reason) in Skipped)
             {
-                if (!string.Equals(reason, CollectSkipReasons.Disabled, StringComparison.Ordinal))
+                if (!CollectSkipReasons.IsDeliberate(reason))
                     keys.Add(key);
             }
 
@@ -611,7 +609,9 @@ public static class UploadLogText
     /// The outcome, one short phrase. "Refused" means the user must fix something; "deferred"
     /// means the plugin will simply try again later; "failed" covers everything else.
     /// </summary>
-    public static string StatusText(ApiStatus status) => status switch
+    /// <param name="status">The upload's outcome.</param>
+    /// <param name="host">The configured website's address, named where the website is the subject.</param>
+    public static string StatusText(ApiStatus status, string host) => status switch
     {
         ApiStatus.Ok => "accepted",
         ApiStatus.CharacterNotClaimed => "refused — character not claimed",
@@ -620,10 +620,11 @@ public static class UploadLogText
         ApiStatus.CharacterBoundElsewhere => "refused — character linked elsewhere",
         ApiStatus.InvalidToken => "refused — token rejected",
         ApiStatus.RateLimited => "deferred — rate limited",
-        // The same state ServerOffCopy.Paused names, in the shape this column needs: an outcome
-        // phrase, not the two-sentence reassurance the settings card gives.
-        ApiStatus.SyncDisabled => "deferred — syncing paused by the server",
-        ApiStatus.NetworkError => "failed — could not reach the server",
+        // Every 503 maps here, whatever sent it (see ApiStatus.SyncDisabled), so the phrase names no
+        // cause. A pause is named on the settings card, which reads it from /config.
+        // `$"...{host}..."` is an interpolated string, like a template literal.
+        ApiStatus.SyncDisabled => $"deferred — {host} is not taking uploads",
+        ApiStatus.NetworkError => $"failed — could not reach {host}",
         _ => "failed",
     };
 
@@ -635,9 +636,11 @@ public static class UploadLogText
     /// asked for, and the attempt number when a retry was needed. Qualifiers appear only when
     /// they carry information, so the common first-try success stays one clean word.
     /// </summary>
-    public static string OutcomeText(UploadLogEntry entry)
+    /// <param name="entry">The logged upload.</param>
+    /// <param name="host">The configured website's address (see <see cref="StatusText"/>).</param>
+    public static string OutcomeText(UploadLogEntry entry, string host)
     {
-        var text = StatusText(entry.Status);
+        var text = StatusText(entry.Status, host);
 
         if (entry.RetryAfter is { } wait)
             text += $" — retry in {(int)wait.TotalSeconds}s";

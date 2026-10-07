@@ -67,22 +67,30 @@ public static class CrucibleGate
     /// </summary>
     /// <remarks>
     /// A paused server is named first: it stops every upload, so naming this feature's switch
-    /// instead would send the user looking for a decision about the sharing that nobody made. Past
-    /// that, the server's own note explains the switch when it sent one (see
-    /// <see cref="CrucibleRunsConfig.Note"/>), bounded and folded to a single line so a long or
-    /// multi-line note cannot break the chip; otherwise the generic line does.
+    /// instead would send the user looking for a decision about the sharing that nobody made. A
+    /// config with no <c>crucibleRuns</c> block comes next: that server does not offer the sharing,
+    /// so there is no switch to describe. Past that, the server's own note explains the
+    /// switch when it sent one (see <see cref="CrucibleRunsConfig.Note"/>), bounded and folded to a
+    /// single line so a long or multi-line note cannot break the chip; otherwise the generic line
+    /// does.
     /// </remarks>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
-    public static string? ServerOffText(ConfigResponse? remoteConfig)
+    /// <param name="host">The configured website's address, which the generic sentences name.</param>
+    public static string? ServerOffText(ConfigResponse? remoteConfig, string host)
     {
         if (!ServerHasSwitchedOff(remoteConfig))
             return null;
 
         if (remoteConfig is { Enabled: false })
-            return ServerOffCopy.Paused;
+            return ServerOffCopy.Paused(host);
 
+        if (remoteConfig?.CrucibleRuns is null)
+            return ServerOffCopy.NotOffered(host);
+
+        // The check above returned for a missing config or block, so both are present here, and the
+        // compiler knows it, as TypeScript narrows a value after a null check; no `?.` is needed.
         // `??` uses the right-hand value when the left is null, as in TypeScript: a missing or
         // blank note falls back to the generic line.
-        return ServerText.SingleLine(remoteConfig?.CrucibleRuns?.Note) ?? ServerOffCopy.Feature;
+        return ServerText.SingleLine(remoteConfig.CrucibleRuns.Note) ?? ServerOffCopy.Feature(host);
     }
 }

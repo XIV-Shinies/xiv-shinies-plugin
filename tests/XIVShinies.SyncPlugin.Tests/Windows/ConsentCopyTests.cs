@@ -11,7 +11,10 @@ namespace XIVShinies.SyncPlugin.Tests.Windows;
 // test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
 public class ConsentCopyTests
 {
-    // `const string` fixes each value when the code compiles.
+    // The website address the copy names. `const` fixes the value when the code compiles.
+    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     private const string Choose = "Choose what to upload. ";
 
     private const string AllStartOff =
@@ -52,7 +55,8 @@ public class ConsentCopyTests
                 anythingSwitchedOn: anythingSwitchedOn,
                 trackerOffered: trackerOffered,
                 trackerOn: trackerOn,
-                userHasAChoice: true));
+                userHasAChoice: true,
+                host: Host));
     }
 
     // With nothing the server permits, as during a pause, the sentence says so instead of inviting a
@@ -61,10 +65,14 @@ public class ConsentCopyTests
     public void With_nothing_to_choose_the_sentence_says_so()
     {
         Assert.Equal(
-            "Nothing about your progress is sent: the server has everything below switched off for " +
-            "now. Once it allows them, you can choose what to upload in the settings.",
+            "Nothing about your progress is sent: " + Host + " has everything below switched off " +
+            "for now. Once it allows them, you can choose what to upload in the settings.",
             ConsentCopy.WizardIntro(
-                anythingSwitchedOn: false, trackerOffered: false, trackerOn: true, userHasAChoice: false));
+                anythingSwitchedOn: false,
+                trackerOffered: false,
+                trackerOn: true,
+                userHasAChoice: false,
+                host: Host));
     }
 
     // --- What counts as switched on -----------------------------------------------------------------

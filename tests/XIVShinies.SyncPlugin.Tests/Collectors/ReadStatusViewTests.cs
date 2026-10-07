@@ -17,6 +17,10 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 // entire visible text, notes needing an in-game action are full lines carried in Text.
 public class ReadStatusViewTests
 {
+    // The website address the copy names. `const` fixes the value when the code compiles.
+    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    private const string Host = "shinies.example";
+
     // A category this plugin has never heard of — the extensibility gate below rides on it.
     private const string UnknownCategory = "facewear";
 
@@ -66,13 +70,15 @@ public class ReadStatusViewTests
             [SourceKeys.Mannequins] = Status(SourceStates.Unreadable),
         };
 
-        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources);
+        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources, Host);
 
         var note = Assert.Single(status.Containers);
         Assert.Equal("Mannequins", note.Label);
         Assert.Equal(SourceTone.Unreadable, note.Tone);
         Assert.Null(note.Text);
-        Assert.NotNull(note.Detail);
+
+        // The hover names the website by the address Build was handed.
+        Assert.Contains(Host, note.Detail);
     }
 
     // Container notes keep the order the item pass reported them in — the collector reports the
@@ -88,7 +94,7 @@ public class ReadStatusViewTests
             [SourceKeys.Mannequins] = Status(SourceStates.Unreadable),
         };
 
-        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources);
+        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources, Host);
 
         Assert.Equal(
             new[] { "Inventory", "Saddlebag", "Mannequins" },
@@ -102,7 +108,7 @@ public class ReadStatusViewTests
     {
         var row = Row(UnknownCategory) with { CollectedDetail = "Optional hover copy." };
 
-        var status = ReadStatusView.Build(new[] { row }, NoSources());
+        var status = ReadStatusView.Build(new[] { row }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal(SourceTone.Live, note.Tone);
@@ -120,7 +126,7 @@ public class ReadStatusViewTests
             CollectedDetail = "Optional hover copy.",
         };
 
-        var status = ReadStatusView.Build(new[] { row }, NoSources());
+        var status = ReadStatusView.Build(new[] { row }, NoSources(), Host);
 
         Assert.Null(Assert.Single(status.Collections).Detail);
     }
@@ -133,11 +139,34 @@ public class ReadStatusViewTests
     {
         var row = Row(UnknownCategory) with { PartialNote = "half read — visit the place." };
 
-        var status = ReadStatusView.Build(new[] { row }, NoSources());
+        var status = ReadStatusView.Build(new[] { row }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal(SourceTone.Missing, note.Tone);
         Assert.Equal("facewear display: half read — visit the place.", note.Text);
+    }
+
+    // A collector writes the website as a placeholder, because it cannot know the configured address;
+    // the panel fills it in on both of the notes a collector authors.
+    [Fact]
+    public void A_collectors_notes_name_the_configured_website()
+    {
+        var partial = Row(UnknownCategory) with
+        {
+            PartialNote = "half read — " + HostPlaceholder.Token + " needs the rest.",
+        };
+        var whole = Row("mounts") with
+        {
+            CollectedDetail = "Read in full, so " + HostPlaceholder.Token + " has it all.",
+        };
+
+        var status = ReadStatusView.Build(new[] { partial, whole }, NoSources(), Host);
+
+        Assert.Contains(
+            status.Collections,
+            note => note.Text == "facewear display: half read — " + Host + " needs the rest.");
+        Assert.Contains(
+            status.Collections, note => note.Detail == "Read in full, so " + Host + " has it all.");
     }
 
     // The suppression takes the hover copy with it — no chip means nowhere to hover — unlike a
@@ -147,7 +176,7 @@ public class ReadStatusViewTests
     {
         var row = ManifestRow() with { CollectedDetail = "Optional hover copy." };
 
-        var status = ReadStatusView.Build(new[] { row }, OneSource());
+        var status = ReadStatusView.Build(new[] { row }, OneSource(), Host);
 
         Assert.Empty(status.Collections);
     }
@@ -159,7 +188,7 @@ public class ReadStatusViewTests
     {
         var row = ManifestRow() with { PartialNote = "half read — visit the place." };
 
-        var status = ReadStatusView.Build(new[] { row }, OneSource());
+        var status = ReadStatusView.Build(new[] { row }, OneSource(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("items display: half read — visit the place.", note.Text);
@@ -173,7 +202,7 @@ public class ReadStatusViewTests
         var row = Row(UnknownCategory, skipReason: "collector_error")
             with { PartialNote = "half read — visit the place." };
 
-        var status = ReadStatusView.Build(new[] { row }, NoSources());
+        var status = ReadStatusView.Build(new[] { row }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("facewear display: could not be read.", note.Text);
@@ -185,7 +214,7 @@ public class ReadStatusViewTests
     [Fact]
     public void An_enabled_collection_that_was_read_is_a_chip_labeled_with_its_name()
     {
-        var status = ReadStatusView.Build(new[] { Row("mounts") }, NoSources());
+        var status = ReadStatusView.Build(new[] { Row("mounts") }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("mounts display", note.Label);
@@ -203,11 +232,12 @@ public class ReadStatusViewTests
     {
         var rows = new[] { Row("achievements", skipReason: CollectSkipReasons.AchievementListNotLoaded) };
 
-        var note = Assert.Single(ReadStatusView.Build(rows, NoSources()).Collections);
+        var note = Assert.Single(ReadStatusView.Build(rows, NoSources(), Host).Collections);
 
         Assert.Equal("achievements display", note.Label);
         Assert.Equal(
-            "achievements display: " + CollectSkipReasons.Describe(CollectSkipReasons.AchievementListNotLoaded),
+            "achievements display: "
+                + CollectSkipReasons.Describe(CollectSkipReasons.AchievementListNotLoaded, Host),
             note.Text);
         Assert.Equal(SourceTone.Missing, note.Tone);
     }
@@ -220,10 +250,20 @@ public class ReadStatusViewTests
     {
         var rows = new[] { Row("mounts", skipReason: CollectSkipReasons.CollectorError) };
 
-        var note = Assert.Single(ReadStatusView.Build(rows, NoSources()).Collections);
+        var note = Assert.Single(ReadStatusView.Build(rows, NoSources(), Host).Collections);
 
         Assert.Equal("mounts display: could not be read.", note.Text);
         Assert.Equal(SourceTone.Missing, note.Tone);
+    }
+
+    // A collection the server answered without asking for was skipped by the server's decision,
+    // not missed, so the panel draws no line for it, as for one the server switched off.
+    [Fact]
+    public void A_collection_the_server_does_not_ask_for_draws_no_line()
+    {
+        var rows = new[] { Row(UnknownCategory, skipReason: CollectSkipReasons.ManifestNotOffered) };
+
+        Assert.Empty(ReadStatusView.Build(rows, NoSources(), Host).Collections);
     }
 
     // A collection the user switched off has no status worth reporting: they chose not to sync it, so
@@ -231,7 +271,7 @@ public class ReadStatusViewTests
     [Fact]
     public void A_collection_the_user_switched_off_gets_no_note_at_all()
     {
-        var status = ReadStatusView.Build(new[] { Row("mounts", userEnabled: false) }, NoSources());
+        var status = ReadStatusView.Build(new[] { Row("mounts", userEnabled: false) }, NoSources(), Host);
 
         Assert.Empty(status.Collections);
     }
@@ -241,7 +281,7 @@ public class ReadStatusViewTests
     [Fact]
     public void A_collection_the_server_switched_off_gets_no_note_at_all()
     {
-        var status = ReadStatusView.Build(new[] { Row("mounts", serverEnabled: false) }, NoSources());
+        var status = ReadStatusView.Build(new[] { Row("mounts", serverEnabled: false) }, NoSources(), Host);
 
         Assert.Empty(status.Collections);
     }
@@ -254,7 +294,7 @@ public class ReadStatusViewTests
     public void A_manifest_driven_collection_that_was_read_gets_no_note_of_its_own()
     {
         var status = ReadStatusView.Build(
-            new[] { Row("items", usesItemManifest: true) }, OneSource());
+            new[] { Row("items", usesItemManifest: true) }, OneSource(), Host);
 
         Assert.Empty(status.Collections);
     }
@@ -268,7 +308,7 @@ public class ReadStatusViewTests
     public void A_manifest_driven_collection_keeps_its_note_when_no_container_note_stands_in_for_it()
     {
         var status = ReadStatusView.Build(
-            new[] { Row("items", usesItemManifest: true) }, NoSources());
+            new[] { Row("items", usesItemManifest: true) }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("items display", note.Label);
@@ -286,7 +326,7 @@ public class ReadStatusViewTests
             ["facewearCabinet"] = Status(SourceStates.Live),
         };
 
-        var status = ReadStatusView.Build(new[] { Row("items", usesItemManifest: true) }, sources);
+        var status = ReadStatusView.Build(new[] { Row("items", usesItemManifest: true) }, sources, Host);
 
         Assert.Empty(status.Containers);
         Assert.Equal("items display", Assert.Single(status.Collections).Label);
@@ -305,10 +345,10 @@ public class ReadStatusViewTests
 
         // With a container note present — the state that would suppress a HEALTHY manifest-driven
         // collection. A skipped one is owed its note regardless, because no container note explains why.
-        var note = Assert.Single(ReadStatusView.Build(rows, OneSource()).Collections);
+        var note = Assert.Single(ReadStatusView.Build(rows, OneSource(), Host).Collections);
 
         Assert.Equal(
-            "items display: " + CollectSkipReasons.Describe(CollectSkipReasons.NoRemoteConfig),
+            "items display: " + CollectSkipReasons.Describe(CollectSkipReasons.NoRemoteConfig, Host),
             note.Text);
         Assert.Equal(SourceTone.Missing, note.Tone);
     }
@@ -319,7 +359,8 @@ public class ReadStatusViewTests
     [Fact]
     public void A_collection_that_is_not_manifest_driven_keeps_its_chip()
     {
-        var status = ReadStatusView.Build(new[] { Row("mounts", usesItemManifest: false) }, NoSources());
+        var status = ReadStatusView.Build(
+            new[] { Row("mounts", usesItemManifest: false) }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("mounts display", note.Label);
@@ -335,11 +376,11 @@ public class ReadStatusViewTests
             [SourceKeys.Inventory] = Status(SourceStates.Live),
         };
 
-        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources);
+        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources, Host);
 
         var note = Assert.Single(status.Containers);
         Assert.Equal(
-            SourceNoteText.Describe(SourceKeys.Inventory, Status(SourceStates.Live)),
+            SourceNoteText.Describe(SourceKeys.Inventory, Status(SourceStates.Live), Host),
             note);
     }
 
@@ -354,7 +395,7 @@ public class ReadStatusViewTests
             [SourceKeys.Inventory] = Status(SourceStates.Live),
         };
 
-        var note = Assert.Single(ReadStatusView.Build(new[] { ManifestRow() }, sources).Containers);
+        var note = Assert.Single(ReadStatusView.Build(new[] { ManifestRow() }, sources, Host).Containers);
 
         Assert.Equal("Inventory", note.Label);
     }
@@ -369,7 +410,7 @@ public class ReadStatusViewTests
             [SourceKeys.Inventory] = Status(SourceStates.Live),
         };
 
-        var status = ReadStatusView.Build(new[] { Row("mounts"), ManifestRow() }, sources);
+        var status = ReadStatusView.Build(new[] { Row("mounts"), ManifestRow() }, sources, Host);
 
         Assert.Equal(new[] { "mounts display" }, status.Collections.Select(note => note.Label));
         Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
@@ -381,7 +422,7 @@ public class ReadStatusViewTests
     [Fact]
     public void Collection_notes_are_ordered_by_label()
     {
-        var status = ReadStatusView.Build(new[] { Row("b"), Row("a") }, NoSources());
+        var status = ReadStatusView.Build(new[] { Row("b"), Row("a") }, NoSources(), Host);
 
         Assert.Equal(
             new[] { "a display", "b display" },
@@ -391,7 +432,7 @@ public class ReadStatusViewTests
     [Fact]
     public void No_rows_and_no_sources_produce_no_notes_in_either_group()
     {
-        var status = ReadStatusView.Build(new List<CategorySettingsRow>(), NoSources());
+        var status = ReadStatusView.Build(new List<CategorySettingsRow>(), NoSources(), Host);
 
         Assert.Empty(status.Collections);
         Assert.Empty(status.Containers);
@@ -402,7 +443,7 @@ public class ReadStatusViewTests
     [Fact]
     public void A_collection_for_an_unknown_category_still_gets_a_note()
     {
-        var status = ReadStatusView.Build(new[] { Row(UnknownCategory) }, NoSources());
+        var status = ReadStatusView.Build(new[] { Row(UnknownCategory) }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("facewear display", note.Label);
@@ -416,7 +457,7 @@ public class ReadStatusViewTests
     public void A_manifest_driven_collection_for_an_unknown_category_is_also_suppressed_when_read()
     {
         var status = ReadStatusView.Build(
-            new[] { Row(UnknownCategory, usesItemManifest: true) }, OneSource());
+            new[] { Row(UnknownCategory, usesItemManifest: true) }, OneSource(), Host);
 
         Assert.Empty(status.Collections);
     }
@@ -427,7 +468,7 @@ public class ReadStatusViewTests
     [Fact]
     public void Container_notes_are_dropped_when_no_manifest_driven_collection_is_on()
     {
-        var status = ReadStatusView.Build(new[] { Row("mounts") }, OneSource());
+        var status = ReadStatusView.Build(new[] { Row("mounts") }, OneSource(), Host);
 
         Assert.Empty(status.Containers);
         Assert.Equal(new[] { "mounts display" }, status.Collections.Select(note => note.Label));
@@ -439,7 +480,7 @@ public class ReadStatusViewTests
     public void Container_notes_are_dropped_when_the_user_switches_the_manifest_collection_off()
     {
         var status = ReadStatusView.Build(
-            new[] { Row("items", userEnabled: false, usesItemManifest: true) }, OneSource());
+            new[] { Row("items", userEnabled: false, usesItemManifest: true) }, OneSource(), Host);
 
         Assert.Empty(status.Containers);
     }
@@ -449,7 +490,7 @@ public class ReadStatusViewTests
     public void Container_notes_are_dropped_when_the_server_switches_the_manifest_collection_off()
     {
         var status = ReadStatusView.Build(
-            new[] { Row("items", serverEnabled: false, usesItemManifest: true) }, OneSource());
+            new[] { Row("items", serverEnabled: false, usesItemManifest: true) }, OneSource(), Host);
 
         Assert.Empty(status.Containers);
     }
@@ -460,7 +501,7 @@ public class ReadStatusViewTests
     public void Container_notes_return_once_a_manifest_driven_collection_is_on()
     {
         var status = ReadStatusView.Build(
-            new[] { Row("mounts"), ManifestRow() }, OneSource());
+            new[] { Row("mounts"), ManifestRow() }, OneSource(), Host);
 
         Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
     }
@@ -473,7 +514,7 @@ public class ReadStatusViewTests
     {
         var status = ReadStatusView.Build(
             new[] { Row("items", usesItemManifest: true, skipReason: CollectSkipReasons.NoItemGroupsEnabled) },
-            NoSources());
+            NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal(
@@ -489,7 +530,7 @@ public class ReadStatusViewTests
     [Fact]
     public void Collection_notes_are_ordered_regardless_of_case()
     {
-        var status = ReadStatusView.Build(new[] { Row("ZEBRA"), Row("apple") }, NoSources());
+        var status = ReadStatusView.Build(new[] { Row("ZEBRA"), Row("apple") }, NoSources(), Host);
 
         Assert.Equal(
             new[] { "apple display", "ZEBRA display" },
@@ -516,7 +557,7 @@ public class ReadStatusViewTests
             },
         };
 
-        var texts = ReadStatusView.Build(rows, NoSources())
+        var texts = ReadStatusView.Build(rows, NoSources(), Host)
             .Collections.Select(note => note.Text).ToArray();
 
         Assert.Equal(texts.OrderBy(text => text, StringComparer.Ordinal).ToArray(), texts);

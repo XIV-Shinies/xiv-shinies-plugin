@@ -90,11 +90,12 @@ public sealed unsafe class QuestSequenceCollector : ICollector
         if (context.RemoteConfig is null)
             return CollectResult.Skipped(CollectSkipReasons.NoRemoteConfig);
 
-        // A server that does not send the field (an older server is a supported peer) has equally
-        // never said what to look for — and would strip the category from the payload anyway.
-        // Distinct from an EMPTY manifest below, which is a real answer.
+        // A server that answers without the field (an older server is a supported peer) does not
+        // ask for this collection, and would strip the category from the payload anyway. That is
+        // its whole answer rather than a wait, so it gets its own reason. Distinct from an EMPTY
+        // manifest below, which asks about nothing yet still answers.
         if (context.RemoteConfig.QuestSequenceManifest is null)
-            return CollectResult.Skipped(CollectSkipReasons.NoRemoteConfig);
+            return CollectResult.Skipped(CollectSkipReasons.ManifestNotOffered);
 
         var questManager = QuestManager.Instance();
         if (questManager is null)

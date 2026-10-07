@@ -81,9 +81,7 @@ public sealed class TamedBeastCollector : ICollector
 
             // Only once the whole bestiary has been read is there a reassuring thing to say; before
             // that the partial note below is carrying the message instead.
-            collectedDetail: complete
-                ? "Your whole bestiary has been read, so XIV Shinies knows which beasts you are missing."
-                : null,
+            collectedDetail: complete ? WholeBestiaryRead : null,
 
             // Names the one in-game action that finishes the read, the way a skip hint does. Until
             // the bestiary has been opened this collection has nothing to report at all, and a
@@ -92,6 +90,16 @@ public sealed class TamedBeastCollector : ICollector
                 ? null
                 : DescribeProgress(seen, total));
     }
+
+    /// <summary>The hover copy for a bestiary read in full.</summary>
+    /// <remarks>
+    /// <see cref="HostPlaceholder.Token"/> stands for the configured website's address, filled in where
+    /// the note is drawn. Internal so a test can check the placeholder is one the fill knows.
+    /// </remarks>
+    // A `const` built from another `const` with `+` is still fixed when the code compiles.
+    internal const string WholeBestiaryRead =
+        "Your whole bestiary has been read, so " + HostPlaceholder.Token +
+        " knows which beasts you are missing.";
 
     /// <summary>How to say what is still unread, in the read-status panel's voice.</summary>
     /// <remarks>

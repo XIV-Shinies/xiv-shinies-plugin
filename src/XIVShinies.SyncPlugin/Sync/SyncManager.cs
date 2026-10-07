@@ -1025,7 +1025,7 @@ internal sealed class SyncManager : IDisposable
         // Hold sweeps until the first config poll of this load has ANSWERED, one way or the
         // other. Without this, the first sweep dispatches on the same tick the fetch starts and
         // collects with no item manifest — skipping the items category and leaving a scary
-        // "waiting for XIV Shinies" hint on the settings screen until the next sweep, minutes
+        // "waiting for {host}" hint on the settings screen until the next sweep, minutes
         // later. Success populates the manifest; failure lets syncing proceed anyway (the skip
         // hint then describes a server we genuinely could not reach). The scheduler keeps the
         // queued trigger, so the held sweep dispatches on the first tick after the answer —
