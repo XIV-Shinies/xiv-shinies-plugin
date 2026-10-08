@@ -12,16 +12,16 @@ using XIVShinies.SyncPlugin.Diagnostics;
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
-/// Listens for the Crucible's windows being drawn and closed for the player, reads each one drawn, and
-/// reports the readings and the closes.
+/// Listens for the Crucible's windows being drawn and closed for the player, reads each one drawn and
+/// each closing, and reports the readings and the closes.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Purely passive. A window is read only when the game draws it for the player, or when the caller asks
-/// for one the player already has open; nothing here opens, navigates or clicks one. Nothing is read
-/// while the sharing is off, and nothing during a fight. A close is reported without reading the
-/// window: its closing snapshot is made from the last reading that could go up (see
-/// <see cref="CrucibleFeed"/>).
+/// Purely passive. A window is read only when the game draws it for the player, when it closes, or when
+/// the caller asks for one the player already has open; nothing here opens, navigates or clicks one.
+/// Nothing is read while the sharing is off, and nothing during a fight. A window's values are still
+/// whole as it closes, so it is read once more then and that reading goes with the close (see
+/// <see cref="CrucibleFeed.Close"/>).
 /// Of each window, only what its reader names is ever looked at; the board window's enemy rows are
 /// skipped by their type.
 /// </para>
@@ -44,7 +44,9 @@ internal sealed unsafe class CrucibleObserver : IDisposable
     // `Action<A, B>` is one that takes two values and returns nothing, like `(a: A, b: B) => void`.
     private readonly Func<bool> isSharing;
     private readonly Action<string, CrucibleSnapshot> onRead;
-    private readonly Action<string> onClosed;
+
+    // `CrucibleSnapshot?` is a snapshot maker that may be null, like `CrucibleSnapshot | null`.
+    private readonly Action<string, CrucibleSnapshot?> onClosed;
     private readonly CrucibleNames names;
     private readonly IPluginLog log;
 
@@ -55,10 +57,13 @@ internal sealed unsafe class CrucibleObserver : IDisposable
     /// </remarks>
     private readonly RepeatedFailures readFailures = new();
 
-    /// <summary>Wires the listeners. Reads nothing until the sharing is on and a window is drawn.</summary>
+    /// <summary>Wires the listeners, and reads nothing yet.</summary>
     /// <param name="isSharing">Answers whether the sharing may read right now.</param>
     /// <param name="onRead">Takes each reading, with the name of the window it came from.</param>
-    /// <param name="onClosed">Takes the name of each window that closed.</param>
+    /// <param name="onClosed">
+    /// Takes the name of each window that closed, with the window as read at the close, or null when
+    /// it could not be read then.
+    /// </param>
     /// <param name="names">Resolves the results screen's drawn names to ids.</param>
     // The other parameters are the Dalamud services this reads through, and the log.
     public CrucibleObserver(
@@ -67,7 +72,7 @@ internal sealed unsafe class CrucibleObserver : IDisposable
         ICondition condition,
         Func<bool> isSharing,
         Action<string, CrucibleSnapshot> onRead,
-        Action<string> onClosed,
+        Action<string, CrucibleSnapshot?> onClosed,
         CrucibleNames names,
         IPluginLog log)
     {
@@ -152,10 +157,41 @@ internal sealed unsafe class CrucibleObserver : IDisposable
 
     private void OnClosing(AddonEvent type, AddonArgs args)
     {
+        // A gate that cannot be asked counts as closed, so nothing is read or sent.
+        bool sharing;
         try
         {
-            if (isSharing())
-                onClosed(args.AddonName);
+            sharing = isSharing();
+        }
+        catch (Exception ex)
+        {
+            Report(ex, args.AddonName);
+            return;
+        }
+
+        if (!sharing)
+            return;
+
+        // The window as it stands while closing (see CrucibleFeed.Close). A read that fails, or a close
+        // during a fight, leaves it null, and the close still goes in.
+        CrucibleSnapshot? atClose = null;
+        try
+        {
+            if (!InCombat)
+                atClose = ReadSnapshot(args.AddonName, (AtkUnitBase*)args.Addon.Address);
+
+            // Which close event this is, at debug level: a window closing through two events is read at
+            // each, and only the first one's reading can go up (see CrucibleFeed.Close).
+            log.Debug($"Crucible window {args.AddonName} closing ({type}).");
+        }
+        catch (Exception ex)
+        {
+            Report(ex, args.AddonName);
+        }
+
+        try
+        {
+            onClosed(args.AddonName, atClose);
         }
         catch (Exception ex)
         {
@@ -164,19 +200,27 @@ internal sealed unsafe class CrucibleObserver : IDisposable
     }
 
     /// <summary>
-    /// Reads a window's values through its reader and reports the reading; a window holding no values,
-    /// or values that are not a layout its reader knows, reports nothing.
+    /// Reads a window and reports the reading, if there is one (see <see cref="ReadSnapshot"/>).
     /// </summary>
     private void Take(string windowName, AtkUnitBase* window)
     {
+        // `x is { } snapshot` matches when x is not null and names it `snapshot`.
+        if (ReadSnapshot(windowName, window) is { } snapshot)
+            onRead(windowName, snapshot);
+    }
+
+    /// <summary>
+    /// Reads a window's values through its reader; a window holding no values, or values that are not a
+    /// layout its reader knows, gives null.
+    /// </summary>
+    private CrucibleSnapshot? ReadSnapshot(string windowName, AtkUnitBase* window)
+    {
         // `->` reaches a member through a pointer, as `.` does through a reference.
         if (window == null || window->AtkValues == null || window->AtkValuesCount == 0)
-            return;
+            return null;
 
         var values = new AtkValueList(window->AtkValues, window->AtkValuesCount);
-        // `x is { } snapshot` matches when x is not null and names it `snapshot`.
-        if (CrucibleWindows.Read(windowName, values, names) is { } snapshot)
-            onRead(windowName, snapshot);
+        return CrucibleWindows.Read(windowName, values, names);
     }
 
     /// <summary>Logs a read failure: in full the first time, a line when it repeats.</summary>

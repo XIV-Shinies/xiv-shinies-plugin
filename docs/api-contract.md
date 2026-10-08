@@ -610,7 +610,11 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   heartbeat or a leave, `feedItemIds: []`).
 - **`closed`** marks a window's last snapshot before it closed: a `board`, `team` or `offer`
   snapshot goes up on each refresh that changed it, and once more with `closed: true` when the
-  window closes, whether or not its content changed.
+  window closes, whether or not its content changed. The closing snapshot is the window as read
+  while it closes, which can differ from its last refresh (a window's contents can change without
+  one); when the window cannot be read then (during a fight, or a failed read), or that read cannot
+  go up from where the window was open, it repeats the window's last refresh that could go up from
+  where it was open.
 - **Snapshots are facts at a time, never deltas.** Every comparison between snapshots is the
   server's.
 - **Text the game draws is resolved by the client, never sent raw.** The Degree, the rank and

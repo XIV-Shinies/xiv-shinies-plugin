@@ -57,8 +57,9 @@ response fields) and a field-by-field contract conformance audit.
   they have it on screen. It listens for that one window by name and reads nothing else. The
   **Crucible run sharing** listens by name for the Crucible's own windows (the board, the team,
   the run HUD, the treasure, loot and shop offers, and the results screen) and reads them only
-  while the game shows them to the player and the character is out of combat. The board window
-  lists the current fight's enemies as rows of their own; the reader reads only each row's record
+  while the game shows them to the player, and the board, team and offer windows once more as each
+  closes, while the sharing is on and the character is out of combat. The board window lists the
+  current fight's enemies as rows of their own; the reader reads only each row's record
   type, to skip it, and nothing else in it. The team window holds the player's own familiars
   alone. The character's own HP comes from the game's static pointer to the local character
   (`Control.GetLocalPlayer`), which takes no index and is not the object table. The chat and
