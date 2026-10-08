@@ -192,7 +192,8 @@ public class CrucibleFeedTests
         Assert.Null(scheduler.Poll(At(30)));
     }
 
-    // The closing snapshot is the last reading, stamped with the moment the window closed.
+    // With no read at the close, the closing snapshot is the last reading, stamped with the moment the
+    // window closed.
     [Fact]
     public void A_closing_snapshot_is_stamped_when_its_window_closes()
     {
@@ -205,6 +206,149 @@ public class CrucibleFeedTests
 
         var closing = Assert.Single(SendNext(scheduler, 7).Observations);
         Assert.Equal("2026-10-05T12:00:05Z", closing.ObservedAtUtc);
+    }
+
+    // A window's contents can change without a redraw, so the window read again as it closes is its
+    // final state, and that reading is what goes up. The two readings here differ in mode only so the
+    // test can tell which one was sent.
+    [Fact]
+    public void A_closing_snapshot_carries_the_window_as_read_at_the_close()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Board, At(0));
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.Lineup), Board, At(0));
+        SendNext(scheduler, 2);
+
+        var outcome = feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Browse));
+
+        Assert.Equal(CrucibleCloseOutcome.ReadAtClose, outcome);
+        var observations = SendNext(scheduler, 7).Observations;
+        var closing = Assert.IsType<CrucibleTeamObservation>(Assert.Single(observations));
+        Assert.True(closing.Closed);
+
+        // `(int)` turns the named mode into the number the snapshot carries.
+        Assert.Equal((int)CrucibleTeamMode.Browse, closing.Mode);
+        Assert.Equal("2026-10-05T12:00:05Z", closing.ObservedAtUtc);
+    }
+
+    // A read at the close that matches the last reading says so, which tells a window that changed
+    // since its last admitted reading apart from one that did not.
+    [Fact]
+    public void A_read_at_the_close_matching_the_last_reading_is_reported_unchanged()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Board, At(0));
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.Lineup), Board, At(0));
+        SendNext(scheduler, 2);
+
+        var outcome = feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Lineup));
+
+        Assert.Equal(CrucibleCloseOutcome.ReadAtCloseUnchanged, outcome);
+    }
+
+    // With no read at the close, the last reading's own content goes up.
+    [Fact]
+    public void A_window_not_read_at_its_close_sends_its_last_reading()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Board, At(0));
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.Lineup), Board, At(0));
+        SendNext(scheduler, 2);
+
+        var outcome = feed.Close(CrucibleWindows.Team, At(5));
+
+        Assert.Equal(CrucibleCloseOutcome.LastReading, outcome);
+        var closing = Assert.IsType<CrucibleTeamObservation>(
+            Assert.Single(SendNext(scheduler, 7).Observations));
+        Assert.Equal((int)CrucibleTeamMode.Lineup, closing.Mode);
+    }
+
+    // A read at the close that the window's own territory refuses (a lineup where a roster pick was
+    // open at the entrance) gives way to the last reading, so the opening still gets its close.
+    [Fact]
+    public void A_read_at_the_close_refused_where_the_window_was_open_falls_back_to_the_last_reading()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Entrance, At(0));
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.RosterPick), Entrance, At(0));
+        SendNext(scheduler, 2);
+
+        var outcome = feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Lineup));
+
+        Assert.Equal(CrucibleCloseOutcome.LastReadingAtCloseRefused, outcome);
+        var closing = SendNext(scheduler, 7);
+        Assert.Equal(Entrance, closing.TerritoryTypeId);
+        var team = Assert.IsType<CrucibleTeamObservation>(Assert.Single(closing.Observations));
+        Assert.True(team.Closed);
+        Assert.Equal((int)CrucibleTeamMode.RosterPick, team.Mode);
+    }
+
+    // A window's second close event finds no opening and says so.
+    [Fact]
+    public void A_second_close_event_reports_no_opening()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Board, At(0));
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.Lineup), Board, At(0));
+        SendNext(scheduler, 2);
+        feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Lineup));
+
+        Assert.Equal(
+            CrucibleCloseOutcome.NoOpening,
+            feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Lineup)));
+    }
+
+    // A reading at the close is still one closing snapshot per opening.
+    [Fact]
+    public void A_window_read_at_its_close_still_sends_one_closing_snapshot_per_opening()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Board, At(0));
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.Lineup), Board, At(0));
+        SendNext(scheduler, 2);
+
+        feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Browse));
+        feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Browse));
+        SendNext(scheduler, 7);
+
+        Assert.Null(scheduler.Poll(At(30)));
+    }
+
+    // The reading at the close is filed where the window was open, as the last reading would be:
+    // a board's window closing just after the character zones out still goes up under the board.
+    [Fact]
+    public void A_window_read_at_its_close_after_leaving_goes_up_under_its_board()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Entrance, At(0));
+        feed.Follow(Board, At(0));
+        SendNext(scheduler, 2);
+        feed.Read(CrucibleWindows.Team, Team(CrucibleTeamMode.Lineup), Board, At(5));
+        SendNext(scheduler, 7);
+
+        feed.Follow(Entrance, At(10));
+        feed.Close(CrucibleWindows.Team, At(10.1), Team(CrucibleTeamMode.Browse));
+
+        var closing = SendNext(scheduler, 10.1);
+        Assert.Equal(Board, closing.TerritoryTypeId);
+        Assert.Equal(
+            (int)CrucibleTeamMode.Browse,
+            Assert.IsType<CrucibleTeamObservation>(Assert.Single(closing.Observations)).Mode);
+    }
+
+    // A window with no admitted reading since it opened sends nothing at its close, whatever was read
+    // then: the reading taken while open is what marks an opening, so a window closing through two
+    // events cannot send twice.
+    [Fact]
+    public void A_window_closing_without_an_earlier_reading_sends_nothing_even_when_read_at_the_close()
+    {
+        var (feed, scheduler) = NewFeed();
+        feed.Follow(Board, At(0));
+        SendNext(scheduler, 2);
+
+        feed.Close(CrucibleWindows.Team, At(5), Team(CrucibleTeamMode.Lineup));
+
+        Assert.Null(scheduler.Poll(At(30)));
     }
 
     // The run HUD stays open and has no closing snapshot, so closing it sends nothing. In the lambda

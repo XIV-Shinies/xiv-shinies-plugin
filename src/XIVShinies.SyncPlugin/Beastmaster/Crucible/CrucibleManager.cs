@@ -398,12 +398,21 @@ internal sealed class CrucibleManager : IDisposable
         feed.Read(windowName, snapshot, (uint)clientState.TerritoryType, now);
     }
 
-    /// <summary>Feeds in a window's close.</summary>
-    private void OnWindowClosed(string windowName)
+    /// <summary>
+    /// Feeds in a window's close, with the window as read at the close, or null when it could not be
+    /// read then.
+    /// </summary>
+    private void OnWindowClosed(string windowName, CrucibleSnapshot? atClose)
     {
         var now = timeProvider.GetUtcNow();
         Follow(now);
-        feed.Close(windowName, now);
+        var outcome = feed.Close(windowName, now, atClose);
+
+        // Which reading a close sent, and whether the window changed since its last admitted reading,
+        // at debug level only. A close that finds no remembered reading, as a window's second close
+        // event does, logs nothing.
+        if (outcome != CrucibleCloseOutcome.NoOpening)
+            log.Debug($"Crucible window {windowName} closed: {outcome}.");
     }
 
     /// <summary>Goes quiet when the gate closes, discarding whatever was waiting to go.</summary>

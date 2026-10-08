@@ -119,9 +119,10 @@ as a whole — can be toggled at any time from the settings window (`/shinies`).
 Sharing your Crucible runs is its own switch: it starts off, the offer below never turns it on,
 and it is marked **New** in the settings until you have seen it.
 
-Setup also offers to start collections added by later updates already switched on, so that if you
-always opt in you are not asked every time. It is off unless you tick it, and either way a new
-collection is marked **New** in the settings until you have seen it.
+Setup also offers to start collections added by later updates already switched on, whatever they
+send, so that if you always opt in you are not asked every time. It is off unless you tick it, and
+either way a new collection is marked **New** in the settings until you have seen it — there you
+can read what it sends and switch it on or off.
 
 ![The first-run wizard: what it sends, and your privacy, before anything uploads](images/screenshots/wizard-1-welcome.png)
 

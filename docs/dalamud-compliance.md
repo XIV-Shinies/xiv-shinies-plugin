@@ -59,10 +59,10 @@ response fields) and a field-by-field contract conformance audit.
   - **Bestiary watcher:** the Master's Bestiary window, by name, while the player has it open: its
     beast numbers, held flags, tile captions and held-of-total tally. No chat or log-message
     channel is subscribed to anywhere in the plugin.
-  - **Crucible run sharing:** the Crucible's own windows, by name, only while the game shows them
-    and the character is out of combat. The board lists the fight's enemies as rows, read only
-    for their record type, to skip them. The team window holds the player's own familiars alone,
-    and the character's HP comes from `Control.GetLocalPlayer()`, not the object table.
+  - **Crucible run sharing:** the Crucible's own windows, by name, while shown (the board, team
+    and offer windows also as each closes), with the sharing on and the character out of combat.
+    Board enemy rows are read only for their record type, to skip them. The team window holds the
+    player's own familiars alone; the HP is the character's own, via `Control.GetLocalPlayer()`.
 - **What each upload carries.** Each category sits behind its own opt-in, and its consent line
   names what it sends.
   - **Every upload:** the hashed ContentId, the character's name and home world (to match the
@@ -116,11 +116,11 @@ response fields) and a field-by-field contract conformance audit.
   - **Crucible run sharing:** defaults OFF and only the user turns it on, since it shares their
     play as it happens. Its gate (`CrucibleGate`) also needs the server's `crucibleRuns` switch,
     and nothing about the player's play is read while the gate is closed.
-  - **`AutoEnableNewFeatures`:** defaults OFF and is the only way a collection is switched on
-    without its own tick; ticking it consents to each later collection and all it sends.
-    `PluginSettings.AutoEnableUnseenCategories` applies it at load once onboarded, only to unseen,
-    unanswered collections with no separately answered groups
-    (`ManifestConsent.FixedScopeCategoryKeys`).
+  - **`AutoEnableNewFeatures`:** defaults OFF, the only way a collection starts without its own
+    tick; its copy says a tick covers each later collection whatever it sends.
+    `PluginSettings.AutoEnableUnseenCategories` applies it at load to unseen, unanswered
+    collections without separate groups (`ManifestConsent.FixedScopeCategoryKeys`), each then
+    marked New beside its disclosure.
 - **A collection the server has switched off, or one that needs the server to name it and has not
   been named, is not introduced yet.** It raises no "New" chip, is not recorded as shown, and
   nothing is collected for it. The server may send one sentence explaining why (`categoryNotes`);

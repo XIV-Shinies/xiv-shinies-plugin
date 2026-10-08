@@ -5,8 +5,8 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
-/// Makes a snapshot of one window reading, at a given moment and closed or not. The same reading makes
-/// an open snapshot when its window is read and a closed one when the window closes.
+/// Makes a snapshot of one window reading, at a given moment and closed or not. A reading makes an
+/// open snapshot when its window is read, and a closed one when the window closes.
 /// </summary>
 /// <param name="at">The moment the snapshot stands for.</param>
 /// <param name="closed">Whether it is the window's closing snapshot.</param>

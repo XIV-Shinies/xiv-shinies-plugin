@@ -382,12 +382,16 @@ internal sealed partial class MainWindow
             ImGui.Indent(checkboxColumn);
 
             // Scoped to exactly what the tick reaches: every collection with a fixed scope, and no
-            // sharing feature.
+            // sharing feature. The tick answers for collections whose disclosure the user has not
+            // read yet, so the copy says the tick covers whatever they send, and names where that
+            // disclosure is read afterwards: the collection's own settings row, which wears its
+            // "New" chip until seen.
             DrawWrapped(
-                "Tick this and a new collection a later update adds starts switched on, instead of " +
-                "waiting for you to find it. Collections whose groups you choose separately, and " +
-                "kinds of sharing like the Crucible runs and the live tracker above, are never " +
-                "switched on by this box.",
+                "Tick this and a new collection a later update adds starts switched on, whatever it " +
+                "sends, instead of waiting for you to find it. It is marked New in the settings, " +
+                "where you can read what it sends and switch it off. Collections whose groups you " +
+                "choose separately, and kinds of sharing like the Crucible runs and the live " +
+                "tracker above, are never switched on by this box.",
                 ImGuiCol.Text);
             ImGui.Unindent(checkboxColumn);
         }

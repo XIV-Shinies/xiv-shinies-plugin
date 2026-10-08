@@ -709,7 +709,8 @@ public sealed class CrucibleUploadScheduler
     /// moments with the same content give the same text.
     /// </summary>
     // `with` copies the snapshot as its own kind, so the copy keeps every field that kind carries;
-    // serializing it as the base type adds the `kind` key.
-    private static string ContentOf(CrucibleObservation observation) =>
+    // serializing it as the base type adds the `kind` key. `internal` so the feed can compare a
+    // window's closing reading with its last one the same way.
+    internal static string ContentOf(CrucibleObservation observation) =>
         JsonSerializer.Serialize(observation with { ObservedAtUtc = string.Empty }, ApiJson.Options);
 }
