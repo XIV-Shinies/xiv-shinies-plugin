@@ -282,16 +282,20 @@ public static class CollectorRegistry
         // limited job together, the display name is the collection, and the hover text calls the
         // window by its in-game title. A player who wants to know whether their Beastmaster
         // progress syncs is looking for that word, and this is the line they read without hovering.
-        WhatGetsSent = "The ID numbers of the beasts you have tamed as Beastmaster.",
+        WhatGetsSent = "The ID numbers of the beasts you have tamed as Beastmaster, and each one's rank.",
 
-        // The one action the player has to take. The bestiary is only readable while it is on
-        // screen, so a player who never opens it sees nothing arrive and would read that as a
-        // broken sync rather than as the single step it is. It is elaboration rather than a kind of
-        // data, so it belongs in the hover instead of the visible line.
+        // The actions that record this collection. The ranks are readable only once the player has
+        // talked to the Crucible's NPC, and the bestiary only while it is on screen, so a player
+        // who does neither sees nothing arrive and would read that as a broken sync rather than as
+        // the steps they are. It is elaboration rather than a kind of data, so it belongs in the
+        // hover instead of the visible line.
         Details =
-            "This reads your Master's Bestiary whenever you open it, so page through it once with " +
-            "no filter applied and every beast you have tamed is recorded. Nothing is read while " +
-            "the window is closed, and other players are never involved.",
+            "Talking to the NPC at the Crucible of the Unbroken's entrance records your beasts and " +
+            "each one's rank. Paging through your Master's Bestiary once with no filter applied " +
+            "confirms the whole set and adds any beast the NPC's record could not: one still at " +
+            "rank 1 with no experience, or every beast for a while after a game update. Nothing " +
+            "else about you is read for this beyond the zone you are in, and other players are " +
+            "never involved.",
 
         // The entitlement to claim completeness at all. A collection whose domain is always
         // readable passes this straight through to the CollectResult; this one's becomes readable

@@ -42,6 +42,63 @@ public class TamedBeastProgressTests
         Assert.Contains("not read yet", TamedBeastCollector.DescribeProgress(seen: 9, total: null));
     }
 
+    // Nothing read names both ways to record the beasts: the NPC, which a player meets anyway on
+    // the way into a run, and the bestiary.
+    [Fact]
+    public void Nothing_read_yet_names_the_crucible_npc_too()
+    {
+        Assert.Contains("Crucible", TamedBeastCollector.DescribeProgress(seen: 0, total: null));
+    }
+
+    // Beasts recorded at the NPC are on their way already, so "not read yet" would be false. The
+    // bestiary is what confirms the set.
+    [Fact]
+    public void Beasts_recorded_at_the_npc_are_counted_rather_than_called_unread()
+    {
+        var note = TamedBeastCollector.DescribeProgress(seen: 0, total: null, recordedAtCrucible: 50);
+
+        Assert.DoesNotContain("not read yet", note);
+        Assert.Contains("50 recorded", note);
+        Assert.Contains("Master's Bestiary", note);
+    }
+
+    // Once the window has listed anything, the Crucible's count is left out of the note, even when
+    // the window's tally could not be read.
+    [Fact]
+    public void Once_the_window_has_listed_beasts_the_note_reports_the_window()
+    {
+        var note = TamedBeastCollector.DescribeProgress(seen: 9, total: null, recordedAtCrucible: 5);
+
+        Assert.DoesNotContain("Crucible —", note);
+        Assert.DoesNotContain("recorded at the Crucible", note);
+    }
+
+    // The NPC was talked to but the record set added no beast, so the bestiary is the one step left;
+    // naming the NPC again would send the player in a circle. That holds whether the window has
+    // listed nothing or listed beasts whose tally could not be read.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(9)]
+    public void Ranks_read_with_no_beast_added_asks_only_for_the_bestiary(int seen)
+    {
+        var note = TamedBeastCollector.DescribeProgress(seen: seen, total: null, ranksRead: true);
+
+        Assert.Contains("Master's Bestiary", note);
+        Assert.DoesNotContain("talk to the NPC", note);
+        Assert.DoesNotContain("not read yet", note);
+    }
+
+    // The Crucible's line reads as a sentence completing "Tamed beasts: …" like every other.
+    [Fact]
+    public void The_crucible_line_reads_as_a_sentence()
+    {
+        var note = TamedBeastCollector.DescribeProgress(seen: 0, total: 50, recordedAtCrucible: 12);
+
+        Assert.Contains("Master's Bestiary", note);
+        Assert.EndsWith(".", note);
+        Assert.False(char.IsUpper(note[0]));
+    }
+
     // Part-way through, the count is the encouraging part: it says turning pages is working.
     [Fact]
     public void Part_way_through_it_shows_how_far_along_the_read_is()

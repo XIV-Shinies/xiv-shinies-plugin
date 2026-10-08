@@ -53,10 +53,13 @@ switch on (the live Occult tracker starts on; everything else starts off):
 - **Phantom job levels and experience**, read while you are inside the Occult Crescent, and
   your **knowledge level** when you open the review window yourself
 - Discovered **occult record** IDs
-- Bestiary numbers of the **beasts you have tamed** as a beastmaster, read from your Master's
-  Bestiary when you open it. The bestiary shows part of itself at a time and remembers the last
-  filter you set, so page through it once with no filter applied and the whole set is recorded.
-  Nothing is read while the window is closed, and other players are never involved
+- Bestiary numbers of the **beasts you have tamed** as a beastmaster, and **each one's rank**,
+  recorded when you talk to the NPC at the Crucible of the Unbroken's entrance. Your Master's
+  Bestiary is read when you open it too: it confirms the whole set and adds any beast the NPC's
+  record could not (one still at rank 1 with no experience, or every beast for a while after a
+  game update). It shows part of itself at a time and remembers the last filter you set, so page
+  through it once with no filter applied. Nothing else about you is read for this beyond the zone
+  you are in, and other players are never involved
 - **Live Occult Crescent instance state**, while you are inside one: which critical
   encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
   are on, powering the site's live occult tracker on the right data center. This is world

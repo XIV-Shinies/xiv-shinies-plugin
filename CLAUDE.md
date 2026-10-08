@@ -163,6 +163,29 @@ cannot report, and `mounts` would have to stop declaring completeness.
 Minions need no equivalent audit — their bitmask is sized to the `Companion` sheet's row count and
 indexed by row id, so every row has a bit.
 
+### Re-checking the beast rank record after a game patch
+
+Each beast's rank is read from a record the game loads into the Crucible of the Unbroken NPC's
+conversation when the player talks to them. Its place in memory is not published, so a patch can
+move it, and a small move can still pass every check the reader runs. The record therefore proves a
+pact only on the game versions in `BeastRankRecord.VerifiedGameVersions`. On any other version,
+ranks go up only beside beasts the Master's Bestiary has shown as held, and `/xllog` says so the
+first time per load that an unchecked record passes its checks. Every patch, hotfixes included,
+needs this check before talking to the NPC alone records beasts again:
+
+```
+/shinies dumpranks        # at the Crucible's entrance, after talking to its NPC
+```
+
+Debug build only, same setup as the seeding command above. It writes the game version, whether the
+record passes its checks, and each beast's rank and EXP to `/xllog`. Open the NPC's "View the
+Master's Bestiary", select several beasts, and compare each detail panel's rank and EXP (`67/100`)
+with the dump's line for that number. If every one matches, add the version the dump printed to
+`VerifiedGameVersions` (and, if the dump's beast count differs from `VerifiedBeastCount`, update
+that too) and release. If they disagree, the record has moved: leave the list alone, so the plugin
+keeps to the bestiary, and find the record's new place (`RankRecordOffset`) before adding the
+version.
+
 ## Testing philosophy — pure logic vs. game surfaces
 
 Be honest about this split; do not fake it.

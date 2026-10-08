@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+// LINQ: query methods such as `All` on any collection, like JavaScript's array methods.
+using System.Linq;
 
 namespace XIVShinies.SyncPlugin.Beastmaster;
 
 /// <summary>What a ledger holds at one moment, and whether that adds up to the whole bestiary.</summary>
-/// <param name="Held">How many beasts the ledger has recorded the character as holding.</param>
+/// <param name="Held">How many beasts the bestiary window has shown as held.</param>
 /// <param name="Seen">How many bestiary numbers have been listed to it, held or not.</param>
 /// <param name="CapturedTotal">The window's own count of held beasts, or null when unread.</param>
 /// <param name="BeastTotal">The window's own count of beasts that exist, or null when unread.</param>
@@ -21,8 +23,8 @@ public readonly record struct LedgerReport(
     bool IsComplete);
 
 /// <summary>
-/// The bestiary numbers the character is known to hold this login session, and how much of their
-/// bestiary has been read.
+/// The bestiary numbers the character is known to hold this login session, how much of their
+/// bestiary has been read, and each beast's rank once it has been read.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -35,16 +37,16 @@ public readonly record struct LedgerReport(
 /// <para>
 /// Held in memory and never persisted. What is known belongs to whoever is logged in, so both
 /// session edges empty it — carrying a beast across a character switch would attribute one
-/// character's collection to another. Nothing is lost by that: the bestiary lists every beast in
-/// the game and marks the ones held, so paging through it again rebuilds the whole picture.
+/// character's collection to another. Nothing is lost by that: paging through the bestiary, which
+/// marks every beast held, rebuilds the held set, as talking to the Crucible's NPC does the ranks.
 /// </para>
 /// <para>
-/// Every access is locked. The writers — the bestiary window's callback and the session-edge
-/// clears — run on the game's main thread alongside the collection pass that reads, so the lock is
-/// uncontended and costs nothing. It is there because that single thread is an assumption about
-/// how the game dispatches, not something this class can enforce: should any caller ever arrive
-/// from elsewhere, a set updated in steps can be left half-updated, and a read racing that update
-/// can hand back a set that never existed.
+/// Every access is locked. The writers — the bestiary window's callback, the frame-tick read of the
+/// record set, and the clears — run on the game's main thread alongside the collection pass that
+/// reads, so the lock is uncontended and costs nothing. It is there because that single thread is an
+/// assumption about how the game dispatches, not something this class can enforce: should any caller
+/// ever arrive from elsewhere, a set updated in steps can be left half-updated, and a read racing that
+/// update can hand back a set that never existed.
 /// </para>
 /// </remarks>
 public sealed class TamedBeastLedger
@@ -66,11 +68,20 @@ public sealed class TamedBeastLedger
     // rather than about the window in front of the player.
     private int? domainSize;
 
+    // Each beast's rank, by bestiary number, from the last reading of the game's beast record set.
+    // A separate source from the window's pages, so it is kept apart from the held numbers, which
+    // the completeness test counts and must therefore come from the window alone.
+    private Dictionary<int, int> ranks = new();
+
+    // The beasts that reading shows as raised past a fresh pact, and so held (see
+    // BeastRankReading.Leveled).
+    private HashSet<int> leveled = [];
+
     // The object every read and write below locks on. A private, dedicated instance rather than the
     // set itself or `this`, so no outside code can take the same lock and deadlock against it.
     private readonly object gate = new();
 
-    /// <summary>How many distinct beasts the ledger is holding.</summary>
+    /// <summary>How many distinct beasts the bestiary window has shown as held.</summary>
     public int Count
     {
         get
@@ -145,6 +156,115 @@ public sealed class TamedBeastLedger
             return numbers.Count > heldBefore;
         }
     }
+
+    /// <summary>Takes in a reading of the game's beast record set.</summary>
+    /// <param name="reading">An accepted reading, from <see cref="BeastRankRecord.Assess"/>.</param>
+    /// <remarks>
+    /// A reading is the whole record set at one moment, so it replaces the last one rather than
+    /// adding to it. Numbers past the end of the bestiary are refused, as <see cref="RecordPage"/>
+    /// refuses them.
+    /// </remarks>
+    /// <returns>
+    /// True when a rank or a leveled beast differs from the last reading, so the caller acts only on
+    /// news.
+    /// </returns>
+    public bool RecordRanks(BeastRankReading reading)
+    {
+        lock (gate)
+        {
+            var nextRanks = new Dictionary<int, int>();
+
+            // `var (number, rank)` unpacks each map entry into its key and value, like
+            // `for (const [number, rank] of map)` in JavaScript.
+            foreach (var (number, rank) in reading.Ranks)
+            {
+                if (InDomain(number))
+                    nextRanks[number] = rank;
+            }
+
+            var nextLeveled = new HashSet<int>();
+            foreach (var number in reading.Leveled)
+            {
+                if (InDomain(number))
+                    nextLeveled.Add(number);
+            }
+
+            // Two readings match only with the same beasts at the same ranks and the same leveled
+            // set. `All(pair => ...)` asks whether every entry passes, like `every` on an array; the
+            // lookup inside hands back the other reading's rank through `out`. `SetEquals` compares
+            // two sets regardless of order.
+            var unchanged = nextRanks.Count == ranks.Count
+                && ranks.All(pair => nextRanks.TryGetValue(pair.Key, out var rank) && rank == pair.Value)
+                && nextLeveled.SetEquals(leveled);
+
+            ranks = nextRanks;
+            leveled = nextLeveled;
+            return !unchanged;
+        }
+    }
+
+    /// <summary>Drops the last reading of the record set.</summary>
+    /// <remarks>
+    /// Called when a later look at the record set is refused. A reading the bestiary window has since
+    /// contradicted, or a record set that no longer passes its checks, says nothing that can be
+    /// trusted, so its ranks and leveled beasts stop being reported.
+    /// </remarks>
+    public void ForgetRanks()
+    {
+        lock (gate)
+        {
+            ranks = new();
+            leveled = [];
+        }
+    }
+
+    /// <summary>Each beast's rank from the last reading, by bestiary number.</summary>
+    /// <remarks>A copy, so a later reading cannot change what a collection pass is holding.</remarks>
+    public IReadOnlyDictionary<int, int> Ranks()
+    {
+        lock (gate)
+            return new Dictionary<int, int>(ranks);
+    }
+
+    /// <summary>
+    /// Every beast known to be held, ascending: those the window showed as held, and those the record
+    /// set shows as leveled that the window has not listed as not held.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What an upload reports. <see cref="Snapshot"/> is the window's share alone, which the
+    /// completeness test and the check against a reading of the record set rely on. Sorted for the
+    /// reader rather than for the server, which does not care about order: the upload log and a
+    /// pasted diagnostic are easier to scan in bestiary order.
+    /// </para>
+    /// <para>
+    /// Where the two sources disagree the window wins: a beast it listed without marking held is not
+    /// reported, whatever the record set says, because a pact reported is never taken back. A beast
+    /// the window has not listed at all is the record set's to vouch for.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<int> Pacts()
+    {
+        var pacts = new List<int>();
+        lock (gate)
+        {
+            pacts.AddRange(numbers);
+
+            // Only a beast the window has never listed is added from here.
+            foreach (var number in leveled)
+            {
+                if (!seen.Contains(number))
+                    pacts.Add(number);
+            }
+        }
+
+        pacts.Sort();
+        return pacts;
+    }
+
+    /// <summary>Whether a bestiary number is a real one, as far as the game's data says.</summary>
+    /// <remarks>Called with the lock held.</remarks>
+    private bool InDomain(int number) => number > 0 && (domainSize is null || number <= domainSize);
 
     /// <summary>
     /// Tells the ledger how many beasts the game's own data says the bestiary holds.
@@ -268,6 +388,8 @@ public sealed class TamedBeastLedger
         {
             numbers.Clear();
             seen.Clear();
+            ranks = new();
+            leveled = [];
             capturedTotal = null;
             beastTotal = null;
 
@@ -279,12 +401,7 @@ public sealed class TamedBeastLedger
         }
     }
 
-    /// <summary>Every beast recorded this session, ascending.</summary>
-    /// <remarks>
-    /// Sorted for the reader rather than for the server, which does not care about order: the
-    /// upload log and a pasted diagnostic are easier to scan when the numbers are not in the order
-    /// the player happened to tame them.
-    /// </remarks>
+    /// <summary>The beasts the bestiary window has shown as held this session, ascending.</summary>
     public IReadOnlyList<int> Snapshot()
     {
         List<int> snapshot;

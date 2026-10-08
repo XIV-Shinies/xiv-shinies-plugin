@@ -145,9 +145,10 @@ public sealed class Plugin : IDalamudPlugin
     // addon-lifecycle events and to login/logout, so it must be disposed.
     private readonly KnowledgeObserver knowledgeObserver;
 
-    // Passively learns which beasts the character holds, by reading the bestiary window when the
-    // player opens it. Subscribes to that window's addon events and to login/logout, so it must be
-    // disposed.
+    // Passively learns which beasts the character holds and their ranks, by reading the bestiary
+    // window when the player opens it and the Crucible NPC's conversation once the player has
+    // talked to them. Subscribes to that window's addon events, the frame tick and login/logout, so
+    // it must be disposed.
     private readonly TamedBeastObserver tamedBeastObserver;
 
     // Listens for login/unlock/interval and drives the uploads. Subscribes to game events, so it
@@ -212,7 +213,7 @@ public sealed class Plugin : IDalamudPlugin
             // decided — only whether it stands. It asks about its own collection, so no category is
             // named here.
             tamedBeastObserver = new TamedBeastObserver(
-                ClientState, DataManager, AddonLifecycle,
+                ClientState, DataManager, AddonLifecycle, Framework,
                 key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
                 Log);
 
@@ -260,10 +261,11 @@ public sealed class Plugin : IDalamudPlugin
                 Framework, ClientState, PlayerState, UnlockState, Log,
                 apiClient, Configuration.Settings, Configuration.Save, collectors, version);
 
-            // A beast learned from the bestiary should upload promptly rather than waiting for the
-            // next interval, the way an unlock does. The observer cannot be told about the manager
-            // before the manager exists, so the two are joined here; the event carries the
-            // observer's own category key, so neither side names the collection.
+            // A beast or a rank learned from the bestiary or the Crucible's NPC should upload
+            // promptly rather than waiting for the next interval, the way an unlock does; anything
+            // learned before this line rides the login sync instead. The observer cannot be told
+            // about the manager before the manager exists, so the two are joined here; the event
+            // carries the observer's own category key, so neither side names the collection.
             tamedBeastObserver.BeastsLearned += syncManager.NotifyCategoryChanged;
 
             // The live occult tracker. Built after the SyncManager because it reads the identity
@@ -415,6 +417,8 @@ public sealed class Plugin : IDalamudPlugin
         //                                   (see MainWindow.OverrideVersionForScreenshots)
         //   /shinies dumpslots            — audit the unlock bitmask's coverage of the Mount
         //                                   sheet; the answer goes to /xllog, not the screen
+        //   /shinies dumpranks            — write the beast rank record to /xllog, to check it
+        //                                   against the NPC's bestiary after a game patch
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
         {
@@ -445,6 +449,13 @@ public sealed class Plugin : IDalamudPlugin
             // already there.
             _ = Framework.RunOnFrameworkThread(
                 () => UnlockSlotAudit.Run(ClientState, DataManager, UnlockState, Log));
+            return;
+        }
+
+        if (words.Length > 0 && words[0].Equals("dumpranks", StringComparison.OrdinalIgnoreCase))
+        {
+            // Marshaled for the same reason as dumpslots: it reads game memory.
+            _ = Framework.RunOnFrameworkThread(tamedBeastObserver.AuditRankRecord);
             return;
         }
 #endif
