@@ -4,23 +4,52 @@ using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
+/// <summary>Which reading a window's close sent, if any.</summary>
+// An `enum` is a fixed set of named values, like a TypeScript union of string literals.
+public enum CrucibleCloseOutcome
+{
+    /// <summary>
+    /// No remembered reading was waiting for this close (none was admitted since the window opened, or
+    /// an earlier close event already took it), so nothing went up.
+    /// </summary>
+    NoOpening,
+
+    /// <summary>
+    /// The window as read at the close went up, its content differing from the last reading.
+    /// </summary>
+    ReadAtClose,
+
+    /// <summary>
+    /// The window as read at the close went up, with the same content as the last reading.
+    /// </summary>
+    ReadAtCloseUnchanged,
+
+    /// <summary>The window could not be read at the close, so the last reading went up.</summary>
+    LastReading,
+
+    /// <summary>
+    /// The read at the close was refused where the window was open, so the last reading went up.
+    /// </summary>
+    LastReadingAtCloseRefused,
+}
+
 /// <summary>
 /// Takes what the game shows and hands it to the scheduler: the character's visits to the boards,
-/// each snapshot filed under the territory its window was read in, and the closing snapshot each window
+/// each snapshot filed under the territory its window was open in, and the closing snapshot each window
 /// sends once per opening.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A snapshot belongs to the place its window was read in, not to where the character stands when the
+/// A snapshot belongs to the place its window was open in, not to where the character stands when the
 /// snapshot is handed over. A window that closes just after the character zones out still belongs to
 /// the board it showed, so its closing snapshot is filed under that board, and the scheduler sends it
 /// ahead of the leave; the entrance's roster pick, closing just after zoning in, is filed under the
 /// entrance in the same way.
 /// </para>
 /// <para>
-/// A closing snapshot is the window's last admitted reading (see <see cref="Read"/>), stamped with the
-/// moment it closed: the window's values are not read again at the close, so a close in a fight reads
-/// nothing.
+/// A closing snapshot is the window as read at the close, falling back to its last admitted reading
+/// (see <see cref="Read"/>) when the close could not be read or its territory refuses that read,
+/// stamped with the moment it closed (see <see cref="Close"/>).
 /// </para>
 /// <para>
 /// Only the game's main thread calls it.
@@ -122,17 +151,53 @@ public sealed class CrucibleFeed
     }
 
     /// <summary>
-    /// A window closed: its last admitted reading goes in once more, marked closed, under the
-    /// territory it was read in. A window with no admitted reading since it opened, or one that sends
-    /// no closing snapshot, adds nothing.
+    /// A window closed: its closing snapshot goes in, marked closed, under the territory its last
+    /// admitted reading was taken in. A window with no admitted reading since it opened, or one that
+    /// sends no closing snapshot, adds nothing.
     /// </summary>
+    /// <remarks>
+    /// The snapshot is the window as read at the close, which is its final state: a window's values
+    /// can change without a redraw (a purchase, a pick, loot taken). The last admitted reading stands
+    /// in when the window could not be read at the close, or when that read is one its territory
+    /// refuses, so every close that finds a remembered reading sends a closing snapshot.
+    /// </remarks>
     /// <param name="windowName">The window's internal name.</param>
     /// <param name="now">The moment it closed.</param>
-    public void Close(string windowName, DateTimeOffset now)
+    /// <param name="atClose">
+    /// What makes a snapshot of the window as read at the close, or null when it could not be read
+    /// then. Defaults to null.
+    /// </param>
+    /// <returns>Which reading went up, for the caller's log.</returns>
+    // `CrucibleSnapshot? atClose = null` is an optional parameter that may hold no function, like
+    // `atClose?: CrucibleSnapshot` in TypeScript.
+    public CrucibleCloseOutcome Close(
+        string windowName, DateTimeOffset now, CrucibleSnapshot? atClose = null)
     {
-        // `Remove(name, out var last)` takes the reading out and hands it back in one step.
-        if (lastReadings.Remove(windowName, out var last))
-            Offer(last.Snapshot(now, true), last.Territory, now);
+        // `Remove(name, out var last)` takes the reading out and hands it back in one step (see
+        // lastReadings for why a second close event then finds nothing).
+        if (!lastReadings.Remove(windowName, out var last))
+            return CrucibleCloseOutcome.NoOpening;
+
+        var lastReading = last.Snapshot(now, true);
+        if (atClose is null)
+        {
+            Offer(lastReading, last.Territory, now);
+            return CrucibleCloseOutcome.LastReading;
+        }
+
+        var readAtClose = atClose(now, true);
+        if (!CrucibleTerritories.Admits(readAtClose, last.Territory))
+        {
+            Offer(lastReading, last.Territory, now);
+            return CrucibleCloseOutcome.LastReadingAtCloseRefused;
+        }
+
+        Offer(readAtClose, last.Territory, now);
+
+        // Compared without their moments, the way the scheduler tells a change from a repeat.
+        var unchanged = CrucibleUploadScheduler.ContentOf(readAtClose)
+            == CrucibleUploadScheduler.ContentOf(lastReading);
+        return unchanged ? CrucibleCloseOutcome.ReadAtCloseUnchanged : CrucibleCloseOutcome.ReadAtClose;
     }
 
     /// <summary>
