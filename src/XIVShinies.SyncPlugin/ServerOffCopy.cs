@@ -1,8 +1,8 @@
 namespace XIVShinies.SyncPlugin;
 
 /// <summary>
-/// The sentences the plugin uses to explain something the website has switched off or does not
-/// offer.
+/// The sentences the plugin uses to explain something the website has switched off, does not
+/// offer, or has not yet answered about.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,8 +15,10 @@ namespace XIVShinies.SyncPlugin;
 /// <para>
 /// The distinctions between them are the whole point: one names a decision about a single thing,
 /// one names that decision taken for every collection, one names an outage affecting everything,
-/// and one names a feature the website does not offer. Saying the first during either of the last
-/// two sends the user looking for a decision nobody made.
+/// and one names something the website does not offer: a sharing feature its <c>/config</c> has no
+/// block for, or a collection that needs naming and is not named. Saying the first during either
+/// of the last two sends the user looking for a decision nobody made. One more covers the time
+/// before any <c>/config</c>, when a collection that needs naming has no answer either way.
 /// </para>
 /// <para>
 /// Each names the website by its address, passed in as <c>host</c> (see
@@ -36,14 +38,28 @@ public static class ServerOffCopy
     public static string Feature(string host) => $"Temporarily switched off by {host}.";
 
     /// <summary>
-    /// What a sharing feature says when the website's <c>/config</c> carries no block for it at all.
+    /// What a sharing feature says when the website's <c>/config</c> carries no block for it at all,
+    /// and what a collection that needs the website to name it says when the website has not.
     /// </summary>
     /// <remarks>
-    /// A missing block means the website does not offer the feature, so nothing was switched off and
-    /// nothing is temporary.
+    /// Either way the website has made no decision to switch anything off, so nothing is temporary,
+    /// and the sentence does not borrow <see cref="Feature"/>'s wording, which would promise a
+    /// decision and a return that nobody made.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string NotOffered(string host) => $"Not offered by {host}.";
+
+    /// <summary>
+    /// What a collection that needs the website to name it says before any <c>/config</c> has
+    /// arrived to say whether the website offers it.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is known yet, so the sentence claims neither that the website offers the collection
+    /// nor that it does not; <see cref="NotOffered"/> takes over once the answer leaves it unnamed.
+    /// </remarks>
+    /// <param name="host">The configured website's address.</param>
+    public static string AwaitingAnswer(string host) =>
+        $"Waiting for {host} to say whether it offers this.";
 
     /// <summary>
     /// What a consent surface or the sync card says while the website has switched off every

@@ -82,9 +82,10 @@ internal sealed partial class MainWindow
         // DrawCompletenessNote for why this pre-consent screen may never disclose less than the
         // settings.)
         //
-        // A collection the server has switched off is not an open offer, so its line mutes and
-        // wears the same "Off" chip as on the consent step, its hover saying why. That state is
-        // reachable here by going Back once the server has answered.
+        // A collection the server does not permit (switched off, not offered, or awaiting its
+        // answer) is not an open offer, so its line mutes and wears the same "Off" chip as on the
+        // consent step, its hover saying why. That state is reachable here by going Back once the
+        // server has answered, and before then for a collection that needs the server to name it.
         //
         // One config snapshot for the whole screen, so the lines and the privacy card below decide
         // from the same answer.

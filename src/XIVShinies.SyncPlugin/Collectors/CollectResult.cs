@@ -1,13 +1,20 @@
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Glamour;
 
 namespace XIVShinies.SyncPlugin.Collectors;
 
-/// <summary>Skip reasons the runner itself produces. Collectors may return their own.</summary>
+/// <summary>
+/// The skip reasons the plugin produces, runner and collectors alike, kept together so
+/// <see cref="Describe"/> can turn each into advice.
+/// </summary>
 public static class CollectSkipReasons
 {
-    /// <summary>The user or the server switched this category off.</summary>
+    /// <summary>
+    /// The user or the server switched this category off, or it needs the server to name it and
+    /// the server has not.
+    /// </summary>
     public const string Disabled = "disabled";
 
     /// <summary>The collector threw. Its facts are omitted; the rest of the snapshot proceeds.</summary>
@@ -25,6 +32,22 @@ public static class CollectSkipReasons
     public const string SheetUnavailable = "sheet_unavailable";
 
     /// <summary>
+    /// A read from the game did not have the shape this plugin's layout expects — the appearance
+    /// category's customization bytes at the wrong size, for one, or a glamour dresser reading the
+    /// glamour category cannot interpret (see <see cref="GlamourSnapshot.Build"/>). The game
+    /// and the plugin disagree about the layout, which means one of them was updated without the
+    /// other.
+    /// </summary>
+    /// <remarks>
+    /// A skip rather than a best guess: with the shape wrong, which value means what is unknown, so
+    /// nothing from the read can be trusted. Kept apart from <see cref="CollectorError"/> for the
+    /// same reason as <see cref="SheetUnavailable"/>, so a pasted diagnostic tells a game and plugin
+    /// version mismatch from a plugin bug. <see cref="Describe"/> offers no advice for it, because
+    /// the fix is an updated plugin, not anything done in game.
+    /// </remarks>
+    public const string UnexpectedLayout = "unexpected_layout";
+
+    /// <summary>
     /// The server has not told us what this collection should look for yet — its manifest (item
     /// ids, quest ids) has not been received. Distinct from "the manifest is empty", which means
     /// there is genuinely nothing to check.
@@ -40,6 +63,18 @@ public static class CollectSkipReasons
 
     /// <summary>The inventory is not readable — usually because no character is logged in.</summary>
     public const string InventoryUnavailable = "inventory_unavailable";
+
+    /// <summary>
+    /// A logged-in character's storage could not be read as a whole this pass: a bag, the equipped
+    /// set or an armory chest was not loaded, or a retainer the item finder remembers had no
+    /// inventory behind it.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="InventoryUnavailable"/>, whose hint tells the player to log in,
+    /// because the player here already is. These states pass on their own, so
+    /// <see cref="Describe"/> offers no advice, and the next pass reads the storage again.
+    /// </remarks>
+    public const string StorageUnreadable = "storage_unreadable";
 
     /// <summary>
     /// The server offered consent groups for this collection and the user has none of them switched
@@ -62,6 +97,52 @@ public static class CollectSkipReasons
     /// the settings UI turns this reason into that hint.
     /// </summary>
     public const string NotInOccultInstance = "not_in_occult_instance";
+
+    /// <summary>
+    /// A storage window is open — the Glamour Dresser or the outfit-glamour window opened from it,
+    /// the Armoire, the saddlebag, or a retainer's — so this pass does not read the category. The
+    /// user fixes this by closing the window and pressing Sync now; the settings UI turns this
+    /// reason into that hint.
+    /// </summary>
+    /// <remarks>
+    /// While one is open, the copies the category reads can lag the live containers;
+    /// <see cref="GlamourCollector"/>'s class remarks say why.
+    /// </remarks>
+    public const string StorageWindowOpen = "storage_window_open";
+
+    /// <summary>
+    /// No character is loaded, so there is no local player to read — at the title screen, or
+    /// between logging out and the next login. The user fixes this by logging in; the settings UI
+    /// turns this reason into that hint.
+    /// </summary>
+    /// <remarks>
+    /// For a collection that reads the character itself. <see cref="InventoryUnavailable"/> is the
+    /// reason for a collection that reads containers, and its hint names the inventory.
+    /// </remarks>
+    public const string LocalPlayerUnavailable = "local_player_unavailable";
+
+    /// <summary>
+    /// The character was transformed when this pass ran, so the category was not read. The user
+    /// fixes this by returning to normal and pressing Sync now; the settings UI turns this reason
+    /// into that hint.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AppearanceCollector"/>'s class remarks say why a transformed character is not
+    /// read.
+    /// </remarks>
+    public const string Transformed = "transformed";
+
+    /// <summary>
+    /// A list a snapshot category read this pass is longer than the server accepts, or a held count
+    /// higher than it accepts, so the whole category is withheld rather than cut down or clamped to
+    /// fit.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="GlamourSnapshot"/>'s class remarks say why a value past a ceiling is taken for a
+    /// misread and why the whole category is withheld. <see cref="Describe"/> offers no advice for
+    /// it: a misread is nothing the player can act on.
+    /// </remarks>
+    public const string OverCap = "over_cap";
 
     /// <summary>
     /// Turns a skip reason into advice for the settings window, or null if it is not worth saying.
@@ -112,20 +193,39 @@ public static class CollectSkipReasons
             "not read — none of its groups are switched on. Tick at least one under Collections to " +
             "include it.",
 
+        // Every storage the player opens is named, because "a storage window" would leave the
+        // player guessing which of the windows they have open is the one in the way. The
+        // outfit-glamour window opens from the Glamour Dresser, so that name covers it.
+        StorageWindowOpen =>
+            "not read this pass — close your Glamour Dresser, Armoire, saddlebag or retainer " +
+            "window, then press Sync now.",
+
+        LocalPlayerUnavailable =>
+            "not read yet — log in to a character so it can be read.",
+
+        // Names the button as well as the return to normal: a skip stays on screen until a pass
+        // reads the category, so the hint has to say how to start that pass.
+        Transformed =>
+            "not read this pass — your character was transformed; return to normal, then press " +
+            "Sync now.",
+
         // "disabled" and "manifest_not_offered" are decisions, not misses (see IsDeliberate), so no
-        // line is drawn for them at all. "collector_error" and "sheet_unavailable" are bugs or
-        // transient game states the user cannot do anything about.
+        // line is drawn for them at all. "collector_error", "sheet_unavailable",
+        // "unexpected_layout", "over_cap" and "storage_unreadable" are bugs, misreads, version
+        // mismatches or transient game states the user cannot do anything about in game.
         _ => null,
     };
 
     /// <summary>
     /// True when the category was skipped by a decision rather than a failure: the user or the
-    /// server switched it off, or the server answered without asking for it.
+    /// server switched it off, the server has not named a collection that needs it to, or the
+    /// server answered without asking for it.
     /// </summary>
     /// <remarks>
-    /// Nothing went wrong in either case, so neither the settings panel nor the upload log reports
-    /// the category as unread; a "could not read" beside a decision would read as a fault, and would
-    /// stay there for good. Keyed on the reason, never a category, like <see cref="Describe"/>.
+    /// Nothing went wrong in any of these cases, so neither the settings panel nor the upload log
+    /// reports the category as unread; a "could not read" beside a decision would read as a fault,
+    /// and would stay there for good. Keyed on the reason, never a category, like
+    /// <see cref="Describe"/>.
     /// </remarks>
     /// <param name="reason">The skip reason.</param>
     // `is A or B` is true when the value equals either one.
@@ -384,6 +484,65 @@ public sealed record CollectResult
         IReadOnlyList<ItemPossession> items,
         IReadOnlyDictionary<string, ItemSourceStatus>? sourceNotes) =>
         new() { Facts = SyncFacts.Items(items), SourceNotes = sourceNotes };
+
+    /// <summary>
+    /// Facts for the glamour category, with per-source scan status, counted by distinct piece.
+    /// </summary>
+    /// <param name="facts">
+    /// The glamour snapshot, as built by <see cref="GlamourSnapshot.Build"/>. A container it holds
+    /// as null was not read and stays off the wire.
+    /// </param>
+    /// <param name="sourceNotes">
+    /// How each storage source was read this pass. Source-keyed like the items category's notes,
+    /// because the two categories read the same physical storage.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <see cref="FactCount"/> is set because these facts are a wrapper around several lists (the
+    /// dresser's loose pieces, its outfits, the Armoire and held gear), so counting their shape
+    /// would add up unrelated things into a number that means nothing to a reader. The count is the
+    /// number of distinct pieces the facts mention (see <see cref="GlamourSnapshot.CountPieces"/>):
+    /// an item held in two places counts once.
+    /// </para>
+    /// <para>
+    /// No completeness claim can be made here. The category is a snapshot of current holdings
+    /// rather than an id list, and the completeness vocabulary speaks only about id lists.
+    /// </para>
+    /// </remarks>
+    public static CollectResult Glamour(
+        GlamourFacts facts,
+        IReadOnlyDictionary<string, ItemSourceStatus> sourceNotes) =>
+        new()
+        {
+            Facts = SyncFacts.Glamour(facts),
+            SourceNotes = sourceNotes,
+            FactCount = GlamourSnapshot.CountPieces(facts),
+        };
+
+    /// <summary>
+    /// Facts for the <c>appearance</c> category: one record describing how the local character
+    /// looks.
+    /// </summary>
+    /// <param name="facts">
+    /// The appearance record, as built by
+    /// <see cref="XIVShinies.SyncPlugin.Appearance.AppearanceSnapshot.Build"/>. It is passed
+    /// through unchanged: the builder already wrote the exact keys the wire carries.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// One record about the character, not a collection of things, so there is nothing for a count
+    /// to count. <see cref="FactCount"/> stays null, and the upload log names the category without a
+    /// number because the category describes itself as one record
+    /// (<see cref="CategoryInfo.IsSingleRecord"/>).
+    /// </para>
+    /// <para>
+    /// No completeness claim can be made here. The facts are a record rather than an id list, and
+    /// the completeness vocabulary speaks only about id lists.
+    /// </para>
+    /// </remarks>
+    // An expression-bodied member (`=>`): the method's whole body is the one expression after the
+    // arrow, like a TypeScript arrow function that returns its expression without braces.
+    public static CollectResult Appearance(JsonObject facts) => new() { Facts = facts };
 
     /// <summary>
     /// Facts for the <c>tamedBeasts</c> category: the beasts the character has forged a pact with.

@@ -90,6 +90,11 @@ public class PluginSettings
     /// not have to keep ticking boxes.
     /// </para>
     /// <para>
+    /// It reaches a collection whatever that collection sends. The one exclusion is a collection
+    /// whose groups the user answers separately;
+    /// <see cref="Collectors.ManifestConsent.FixedScopeCategoryKeys"/> says why.
+    /// </para>
+    /// <para>
     /// Defaults OFF, unlike <see cref="ShareOccultInstanceState"/>. That toggle defaults on for a
     /// defense that does not carry here: it is one named thing, disclosed in full on the same
     /// screen, and what it shares is world state. This is open-ended — an answer about collections
@@ -473,14 +478,17 @@ public class PluginSettings
     }
 
     /// <summary>
-    /// Switches on every collection this install has never been shown, for a user who asked not to
-    /// be asked again.
+    /// Switches on every given collection this install has never been shown, for a user who asked
+    /// not to be asked again.
     /// </summary>
-    /// <param name="categoryKeys">Every category registered in this build.</param>
+    /// <param name="categoryKeys">
+    /// The collections this answer may reach, from
+    /// <see cref="Collectors.ManifestConsent.FixedScopeCategoryKeys"/>.
+    /// </param>
     /// <returns>The keys switched on, in the order given — empty when nothing changed.</returns>
     /// <remarks>
     /// <para>
-    /// This is the one place a collection is switched on without the user ticking its own box.
+    /// This is the one place a collection is switched on without the user acting on the consent list.
     /// What licenses it: <see cref="AutoEnableNewFeatures"/> is an explicit, visible, disclosed
     /// standing answer to exactly this question, ticked on a consent surface that says collections
     /// added later start switched on. A user who did not tick it gets nothing here, and neither

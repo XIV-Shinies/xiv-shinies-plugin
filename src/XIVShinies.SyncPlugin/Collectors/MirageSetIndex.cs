@@ -16,8 +16,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <para>
 /// Both steps are pure — <see cref="Build"/> takes plain (set ID, piece array) rows and
 /// <see cref="StoredPieces"/> takes a piece array plus a <see cref="ushort"/> of bits — so both are
-/// unit-tested, while reading the game sheet and the dresser cache that supply them is left to the
-/// collector.
+/// unit-tested. Reading the game sheet that supplies the rows is left to
+/// <see cref="StorageSheets.MirageSets"/>, and reading the dresser copy that supplies the bits to
+/// the collectors.
 /// </para>
 /// </remarks>
 public static class MirageSetIndex

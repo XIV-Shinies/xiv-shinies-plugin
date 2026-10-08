@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Glamour;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
@@ -195,5 +196,136 @@ public class CollectResultTests
         var facts = result.Facts!.AsObject();
         Assert.False(facts.ContainsKey("0"));
         Assert.Equal(3, facts["70562"]!.GetValue<int>());
+    }
+
+    // Glamour facts in which items repeat across containers: 10 is both a loose dresser piece and in
+    // the Armoire, and 21 is both inside an outfit and held. The outfit's own id (500) is not a
+    // piece, and a held piece's copies are not separate pieces. So the distinct pieces are 10, 11,
+    // 20, 21, 30 and 40: six, where a count of the facts' shape would say something else entirely.
+    private static GlamourFacts SampleGlamourFacts() => new()
+    {
+        Dresser = new[]
+        {
+            new DresserPiece { Id = 10 },
+            new DresserPiece { Id = 11, Hq = true, Stains = new[] { 0, 5 } },
+        },
+        OutfitGlamours = new[] { new OutfitGlamour { OutfitId = 500, PieceIds = new uint[] { 20, 21 } } },
+        Armoire = new uint[] { 10, 30 },
+        Held = new[]
+        {
+            new HeldPiece { Id = 21, Place = HeldPlaces.Bags, Count = 1 },
+            new HeldPiece { Id = 40, Place = HeldPlaces.Bags, Count = 3 },
+        },
+    };
+
+    // The factory is the one place the glamour facts are turned into wire JSON for a collector, so
+    // its output is pinned as the literal text the server receives: every key, in order, with
+    // nothing added and nothing reshaped. A raw string literal ("""...""") holds the JSON verbatim,
+    // with no escaping of its quotes.
+    [Fact]
+    public void Glamour_serializes_its_facts_to_the_contract_json()
+    {
+        var result = CollectResult.Glamour(
+            SampleGlamourFacts(), new Dictionary<string, ItemSourceStatus>());
+
+        Assert.True(result.WasCollected);
+        Assert.Null(result.SkipReason);
+        Assert.Equal(
+            """{"version":1,"dresser":[{"id":10},{"id":11,"hq":true,"stains":[0,5]}],"outfitGlamours":[{"outfitId":500,"pieceIds":[20,21]}],"armoire":[10,30],"held":[{"id":21,"place":"bags","count":1},{"id":40,"place":"bags","count":3}]}""",
+            result.Facts!.ToJsonString(ApiJson.Options));
+    }
+
+    // Glamour reads the same storage the items category reports on, so its notes describe those
+    // sources and must reach the runner untouched.
+    [Fact]
+    public void Glamour_carries_its_source_notes_alongside_the_facts()
+    {
+        var notes = new Dictionary<string, ItemSourceStatus>
+        {
+            [SourceKeys.Inventory] = new ItemSourceStatus { State = SourceStates.Live },
+            [SourceKeys.Retainers] =
+                new ItemSourceStatus { State = SourceStates.Cached, Count = 2, Total = 3 },
+        };
+
+        var result = CollectResult.Glamour(SampleGlamourFacts(), notes);
+
+        Assert.Same(notes, result.SourceNotes);
+    }
+
+    // The facts are a wrapper around several lists, so the log is told the number that means
+    // something to a reader: how many distinct pieces they mention.
+    [Fact]
+    public void Glamour_counts_distinct_pieces_for_the_upload_log()
+    {
+        var facts = SampleGlamourFacts();
+
+        var result = CollectResult.Glamour(facts, new Dictionary<string, ItemSourceStatus>());
+
+        Assert.Equal(GlamourSnapshot.CountPieces(facts), result.FactCount);
+        Assert.Equal(6, result.FactCount);
+    }
+
+    // Glamour is a snapshot of current holdings, not an id list, so the completeness vocabulary does
+    // not apply to it and the factory offers no way to claim it.
+    [Fact]
+    public void Glamour_never_claims_a_complete_enumeration()
+    {
+        var result = CollectResult.Glamour(SampleGlamourFacts(), new Dictionary<string, ItemSourceStatus>());
+
+        Assert.False(result.CompleteEnumeration);
+    }
+
+    // A small stand-in for an appearance record. The factory never looks inside the object, so the
+    // shape only needs to be recognizable when it comes back out.
+    private static JsonObject SampleAppearanceFacts() => new()
+    {
+        ["version"] = 1,
+        ["weaponHidden"] = true,
+    };
+
+    // A read appearance is a collected fact like any other: it travels, and it is not a skip.
+    [Fact]
+    public void Appearance_is_a_collected_fact()
+    {
+        var result = CollectResult.Appearance(SampleAppearanceFacts());
+
+        Assert.True(result.WasCollected);
+        Assert.Null(result.SkipReason);
+    }
+
+    // The builder already wrote the exact wire keys, so the factory must hand the very same object
+    // on: nothing added, nothing reshaped, nothing copied.
+    [Fact]
+    public void Appearance_passes_its_facts_through_unchanged()
+    {
+        var facts = SampleAppearanceFacts();
+
+        var result = CollectResult.Appearance(facts);
+
+        Assert.Same(facts, result.Facts);
+    }
+
+    // One record about the character is not an id list, so the completeness vocabulary does not
+    // apply and the factory offers no way to claim it.
+    [Fact]
+    public void Appearance_never_claims_a_complete_enumeration()
+    {
+        Assert.False(CollectResult.Appearance(SampleAppearanceFacts()).CompleteEnumeration);
+    }
+
+    // The upload log names a single-record category without a number because the category
+    // declares itself one record. The factory therefore supplies no count of its own.
+    [Fact]
+    public void Appearance_supplies_no_count_for_the_upload_log()
+    {
+        Assert.Null(CollectResult.Appearance(SampleAppearanceFacts()).FactCount);
+    }
+
+    // The "nothing read" mark says the pass read none of what the category is about, which is
+    // false of a record that arrived, so the factory never sets it.
+    [Fact]
+    public void Appearance_is_never_marked_as_nothing_read()
+    {
+        Assert.False(CollectResult.Appearance(SampleAppearanceFacts()).NothingReadThisPass);
     }
 }

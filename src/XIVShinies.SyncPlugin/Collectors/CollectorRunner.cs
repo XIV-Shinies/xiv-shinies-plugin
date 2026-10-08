@@ -118,6 +118,20 @@ public sealed record CollectionSnapshot
     public IReadOnlySet<string> ManifestDrivenKeys { get; init; } = new HashSet<string>();
 
     /// <summary>
+    /// The categories whose collectors declare <see cref="ICollector.IsSingleRecord"/> — their facts
+    /// are one record about the character rather than a collection of things.
+    /// </summary>
+    /// <remarks>
+    /// The upload log copies this onto each category it summarizes, where it names such a category
+    /// without a count — <see cref="CategoryInfo.IsSingleRecord"/> holds the reasoning. Carried as
+    /// collector self-description, like <see cref="ManifestDrivenKeys"/>, so no consumer ever
+    /// compares keys against a hardcoded name.
+    /// </remarks>
+    // Not `required`, like the fields above: an empty set is the honest default for a test
+    // snapshot that has no single-record categories.
+    public IReadOnlySet<string> SingleRecordKeys { get; init; } = new HashSet<string>();
+
+    /// <summary>
     /// The categories whose facts this pass read as a <b>complete</b> enumeration — each
     /// category's own declaration, recorded from <see cref="CollectResult.CompleteEnumeration"/>.
     /// </summary>
@@ -175,6 +189,7 @@ public static class CollectorRunner
         var durations = new Dictionary<string, TimeSpan>();
         var sourceNotes = new Dictionary<string, ItemSourceStatus>();
         var manifestDrivenKeys = new HashSet<string>();
+        var singleRecordKeys = new HashSet<string>();
         var completeKeys = new HashSet<string>();
 
         // Built once and shared: every collector sees the same view of the world for this pass.
@@ -192,13 +207,17 @@ public static class CollectorRunner
         {
             var key = collector.CategoryKey;
 
-            // Self-description, recorded before any gating: whether a category is manifest-driven
-            // is a fact about its collector, not about whether this pass collected it.
+            // Self-description, recorded before any gating: whether a category is manifest-driven,
+            // or one record rather than a collection, is a fact about its collector, not about
+            // whether this pass collected it.
             if (collector.UsesItemManifest)
                 manifestDrivenKeys.Add(key);
 
+            if (collector.IsSingleRecord)
+                singleRecordKeys.Add(key);
+
             // Ask before reading: a disabled category must cost nothing, not even a game lookup.
-            if (!CollectorGate.IsEnabled(key, settings, remoteConfig))
+            if (!CollectorGate.IsEnabled(collector, settings, remoteConfig))
             {
                 skipped[key] = CollectSkipReasons.Disabled;
                 continue;
@@ -293,6 +312,7 @@ public static class CollectorRunner
             Durations = durations,
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,
+            SingleRecordKeys = singleRecordKeys,
             CompleteKeys = completeKeys,
             TruncatedManifests = context.TruncatedManifests,
         };

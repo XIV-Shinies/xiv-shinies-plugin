@@ -88,6 +88,15 @@ public sealed unsafe class TripleTriadNpcCollector : ICollector
     public bool UsesItemManifest => info.UsesItemManifest;
 
     /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
+    /// <inheritdoc/>
     // This collector needs nothing from the context; every tracked opponent in the sheet is a
     // candidate, with no server manifest narrowing the scope.
     public CollectResult Collect(CollectContext context)

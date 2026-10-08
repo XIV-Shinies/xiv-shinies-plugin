@@ -95,6 +95,15 @@ public sealed unsafe class OccultProgressionCollector : ICollector
     /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
 
+    /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
     // This collector needs nothing from the context: the director's state is self-contained,
     // scoped by no server manifest.
     /// <inheritdoc/>

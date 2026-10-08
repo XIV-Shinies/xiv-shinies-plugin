@@ -150,6 +150,21 @@ public class ItemTallyTests
         Assert.Equal(new ItemTally(11, 22, 33), total);
     }
 
+    // ForQuality routes one quantity into exactly one bucket. Collectable is checked first, because a
+    // collectable item is its own quality, distinct from ordinary high quality.
+    [Theory]
+    [InlineData(false, false, 4u, 0u, 0u)]
+    [InlineData(true, false, 0u, 4u, 0u)]
+    [InlineData(false, true, 0u, 0u, 4u)]
+    [InlineData(true, true, 0u, 0u, 4u)]
+    public void A_quantity_lands_in_exactly_one_quality_bucket(
+        bool isHighQuality, bool isCollectable, uint nq, uint hq, uint collectable)
+    {
+        Assert.Equal(
+            new ItemTally(nq, hq, collectable),
+            ItemTally.ForQuality(4, isHighQuality, isCollectable));
+    }
+
     [Fact]
     public void A_cached_only_item_reports_cached_counts_with_fresh_false()
     {

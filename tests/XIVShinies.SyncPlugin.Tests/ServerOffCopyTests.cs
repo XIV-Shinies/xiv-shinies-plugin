@@ -2,9 +2,9 @@ using Xunit;
 
 namespace XIVShinies.SyncPlugin.Tests;
 
-// The sentences for something the website has switched off or does not offer. Each is pinned whole,
-// with the address it was handed: a keyword check would still pass if two were swapped. Each
-// `[Fact]` is one test, like `it(...)` in Jest.
+// The sentences for something the website has switched off, does not offer, or has not yet answered
+// about. Each is pinned whole, with the address it was handed: a keyword check would still pass if
+// two were swapped. Each `[Fact]` is one test, like `it(...)` in Jest.
 public class ServerOffCopyTests
 {
     // A made-up address, so a test can tell one that was passed in from one written into the copy.
@@ -21,6 +21,15 @@ public class ServerOffCopyTests
     public void A_feature_the_website_never_offered_says_so()
     {
         Assert.Equal("Not offered by shinies.example.", ServerOffCopy.NotOffered(Host));
+    }
+
+    // Before any /config the answer is unknown, so the sentence claims neither way.
+    [Fact]
+    public void A_collection_awaiting_the_websites_answer_says_it_is_waiting()
+    {
+        Assert.Equal(
+            "Waiting for shinies.example to say whether it offers this.",
+            ServerOffCopy.AwaitingAnswer(Host));
     }
 
     [Fact]

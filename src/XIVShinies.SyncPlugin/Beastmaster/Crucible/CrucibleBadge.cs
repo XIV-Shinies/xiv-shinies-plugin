@@ -15,12 +15,12 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// the rest of that viewing (the window keeps a per-session flag for it).
 /// </para>
 /// <para>
-/// It differs in two ways. A collection exists whatever the server says, so it announces itself, and
-/// the wizard records it, before the first <c>/config</c> arrives. The sharing exists only on a
-/// server that advertises it, so short of a click the card does neither until the server has answered
-/// and permits it, rather than showing "New" and then turning "Off", or being recorded before the
-/// server has offered it. And because the card sits alone at the foot of a long list,
-/// it counts as seen only once its checkbox has actually been on screen, rather than whenever the
+/// It differs in two ways. An ordinary collection exists whatever the server says, so it announces
+/// itself, and the wizard records it, before the first <c>/config</c> arrives. The sharing exists
+/// only on a server that advertises it, so short of a click the card does neither until the server
+/// has answered and permits it, rather than showing "New" and then turning "Off", or being recorded
+/// before the server has offered it. And because the card sits alone at the foot of a long list, it
+/// counts as seen only once its checkbox has actually been on screen, rather than whenever the
 /// list is drawn.
 /// </para>
 /// </remarks>

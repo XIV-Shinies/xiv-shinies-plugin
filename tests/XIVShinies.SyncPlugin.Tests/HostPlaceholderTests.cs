@@ -30,7 +30,10 @@ public class HostPlaceholderTests
 
     // A collection's disclosure is drawn after Fill, so any brace left over afterwards is a placeholder
     // misspelled (say "{Host}") that would reach the player as written; and none calls the website
-    // "server". Every collection is checked, including one added later, through the registry itself.
+    // "server" or by its brand name, either of which would be wrong for a user who points the plugin
+    // at another backend. Every collection is checked, including one added later, through the
+    // registry itself.
+    //
     // `foreach` walks every item in turn, like `for (const info of ...)` in TypeScript;
     // `new[] { a, b }` is an array of the two, like `[a, b]`; `?? ""` uses an empty string when there
     // are no details; `StringComparison.OrdinalIgnoreCase` matches whatever the letter case.
@@ -46,6 +49,7 @@ public class HostPlaceholderTests
                 Assert.DoesNotContain("{", filled);
                 Assert.DoesNotContain("}", filled);
                 Assert.DoesNotContain("server", filled, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("XIV Shinies", filled, StringComparison.OrdinalIgnoreCase);
             }
         }
     }

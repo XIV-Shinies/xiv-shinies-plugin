@@ -11,8 +11,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 
 /// <summary>
 /// One category's contribution to an upload: its wire key, how many facts went out, a short
-/// content fingerprint, whether its scope comes from the server's item manifest, and — for a
-/// manifest-driven category — how many of its entries the character holds a copy of.
+/// content fingerprint, whether its scope comes from the server's item manifest, how many manifest
+/// entries the character holds a copy of (for a manifest-driven category), and whether its facts
+/// are one record rather than a collection.
 /// </summary>
 /// <remarks>
 /// The fingerprint exists because the count alone cannot see an exchange: swapping one fact for
@@ -43,15 +44,27 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// manifest-driven one whose facts were not the possession shape — with nothing honest to
 /// compare, no flag is shown.
 /// </para>
+/// <para>
+/// <paramref name="IsSingleRecord"/> mirrors the collector's own
+/// <see cref="Collectors.ICollector.IsSingleRecord"/> flag (see
+/// <see cref="Collectors.CategoryInfo.IsSingleRecord"/> for why such a category is named without a
+/// count). Such a category carries a <paramref name="Count"/> of 1 — one record — so the content
+/// diff still compares it like any other, with the fingerprint carrying the change signal since the
+/// count never moves; the window and the pasted log print it without the number. A single-record
+/// category that read nothing this pass keeps a null count, like any other.
+/// </para>
 /// </remarks>
 // A "positional record": the parameter list declares init-only properties and a constructor in
-// one line — the C# shorthand for a tiny immutable data shape.
+// one line — the C# shorthand for a tiny immutable data shape. Every parameter after Count has a
+// default, so a call site names only the ones it needs (`IsSingleRecord: true`), the way an
+// options object with defaults works in TypeScript.
 public sealed record UploadLogCategory(
     string Key,
     int? Count,
     string Fingerprint = "",
     bool UsesItemManifest = false,
-    int? OwnedCount = null);
+    int? OwnedCount = null,
+    bool IsSingleRecord = false);
 
 /// <summary>Which upload path an upload log row is about.</summary>
 public enum UploadLogSource
@@ -211,23 +224,28 @@ public sealed record UploadLogEntry
         foreach (var (key, facts) in snapshot.Collections)
         {
             var manifestDriven = snapshot.ManifestDrivenKeys.Contains(key);
+            var singleRecord = snapshot.SingleRecordKeys.Contains(key);
 
-            // No count at all where the collector read none of what it is about; otherwise the
+            // No count at all where the collector read none of what it is about. Otherwise a
+            // single-record category is exactly one record, whatever its shape. Otherwise the
             // collector's own count wins where it gave one, since it knows which part of its facts
             // is the thing being counted and the shape count below cannot (see
             // CollectResult.FactCount). Most categories give none, and are counted from shape.
             var count = snapshot.NothingReadKeys.Contains(key)
                 ? (int?)null
-                : snapshot.FactCounts.TryGetValue(key, out var reported)
-                    ? reported
-                    : CountFacts(facts);
+                : singleRecord
+                    ? 1
+                    : snapshot.FactCounts.TryGetValue(key, out var reported)
+                        ? reported
+                        : CountFacts(facts);
 
             categories.Add(new UploadLogCategory(
                 key,
                 count,
                 Fingerprint(facts),
                 manifestDriven,
-                manifestDriven ? CountOwned(facts) : null));
+                manifestDriven ? CountOwned(facts) : null,
+                singleRecord));
         }
 
         return new UploadLogEntry
@@ -838,9 +856,17 @@ public static class UploadLogText
         // word belongs to the categories that never went out at all, both in this window's
         // "Could not read:" line and in the settings panel's "not read yet" hints. This category
         // was sent — the plugin simply saw none of the collection it is about.
-        var label = category.Count is { } count
-            ? $"{displayName} {count:N0}"
-            : $"{displayName} (none seen)";
+        //
+        // A single-record category is named alone (see CategoryInfo.IsSingleRecord). Checked after
+        // the null count, so a single record that read nothing still says so.
+        //
+        // `is not { } count` is true when Count is null; when it is false, `count` holds the
+        // unwrapped number, which is why only the later branches may use it.
+        var label = category.Count is not { } count
+            ? $"{displayName} (none seen)"
+            : category.IsSingleRecord
+                ? displayName
+                : $"{displayName} {count:N0}";
         if (changed)
             label += " (changed)";
 
@@ -917,9 +943,13 @@ public static class UploadLogText
                 // A word rather than an empty slot or a zero: the paste is a diagnostic, and "the
                 // category went out carrying no reading" is exactly the fact a reader needs.
                 // Underscored to sit alongside the skip reason codes further down the same line.
-                text.Append(category.Count is { } sentCount
-                    ? sentCount.ToString(CultureInfo.InvariantCulture)
-                    : "none_seen");
+                // A single-record category prints the word "record" in place of its count of one
+                // (see CategoryInfo.IsSingleRecord).
+                text.Append(category.Count is not { } sentCount
+                    ? "none_seen"
+                    : category.IsSingleRecord
+                        ? "record"
+                        : sentCount.ToString(CultureInfo.InvariantCulture));
 
                 // A manifest category's "changed:" flag compares this owned-entry count, not the
                 // fact count — printing it makes the flag (and its absence) verifiable from the

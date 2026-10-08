@@ -215,10 +215,11 @@ internal sealed partial class MainWindow
 
         // A snapshot of everything this sync reads: each collection the user has switched on (was it
         // readable this pass, or is the game withholding it?), and the physical storage containers
-        // the item counts come from (inventory, saddlebag, armoire, and so on). This lives in the
-        // sync card rather than beneath any one category's row, because it describes the pipeline as
-        // a whole — and because storage containers are not category-scoped: a future collection that
-        // also reads items would draw from this exact same set of containers.
+        // the storage-reading collections draw on (inventory, saddlebag, armoire, and so on). This
+        // lives in the sync card rather than beneath any one category's row, because it describes the
+        // pipeline as a whole — and because storage containers are not category-scoped: every
+        // collection that reads storage draws on this same set of containers (ReadStatusView.Build
+        // decides when their lines show).
         //
         // Gated on a pass having actually run for this character (see SyncManager.HasCollected).
         // Before then, no collection has a skip reason yet, so every enabled one would falsely
@@ -290,8 +291,8 @@ internal sealed partial class MainWindow
     /// <returns>True when at least one note carries the <see cref="SourceTone.Missing"/> tone.</returns>
     private bool DrawReadStatusGroup(string label, IReadOnlyList<SourceNote> notes)
     {
-        // A group with nothing in it (no collection switched on; no item pass yet) skips its heading
-        // too — an empty labeled section would only ask the reader what is supposed to be there.
+        // A group with nothing in it (no collection switched on; no storage pass yet) skips its
+        // heading too — an empty labeled section would only ask the reader what is supposed to be there.
         if (notes.Count == 0)
             return false;
 

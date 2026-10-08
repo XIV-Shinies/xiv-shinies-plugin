@@ -37,11 +37,13 @@ public static class SourceNoteText
 {
     /// <summary>Describes one source's scan status, or returns null when there is nothing to say.</summary>
     /// <param name="sourceKey">One of the <see cref="SourceKeys"/> wire keys naming the storage source.</param>
-    /// <param name="status">That source's scan status from the most recent item pass.</param>
+    /// <param name="status">
+    /// That source's scan status from the most recent pass that read the storage containers.
+    /// </param>
     /// <param name="host">The configured website's address, named where a note says who keeps proof.</param>
     // A tuple switch reads the (source, state) pair like a small table: each arm is one recognized
-    // combination the item collector actually produces, and the final `_ => null` covers every
-    // unknown key and every unexpected state at once. This mirrors CollectSkipReasons.Describe's
+    // combination the storage-reading collectors actually produce, and the final `_ => null` covers
+    // every unknown key and every unexpected state at once. This mirrors CollectSkipReasons.Describe's
     // single-switch shape.
     public static SourceNote? Describe(string sourceKey, ItemSourceStatus status, string host) =>
         (sourceKey, status.State) switch
@@ -77,14 +79,17 @@ public static class SourceNoteText
             // Cached is this source's healthy resting state: the game never exposes a live read of
             // the saddlebag, so nothing is wrong here and the note is a chip. The refresh action is
             // optional, so it lives in the hover detail — which also names the premium half, since
-            // both halves travel under this one key.
+            // both halves travel under this one key. A character without a chocobo companion has no
+            // saddlebag and reports it cached and empty (see SaddlebagNote); the state cannot tell
+            // that apart from a real read, so the detail covers it too.
             (SourceKeys.Saddlebag, SourceStates.Cached) =>
                 new SourceNote
                 {
                     Label = "Saddlebag",
                     Tone = SourceTone.Cached,
                     Detail = "Read from cache, including the premium saddlebag — open it once in " +
-                        "game to refresh as needed.",
+                        "game to refresh as needed. Without a chocobo companion there is no " +
+                        "saddlebag, so it reads as empty.",
                 },
 
             // Never opened, so it contributes nothing yet. The one action that includes it must stay

@@ -78,9 +78,20 @@ src/XIVShinies.SyncPlugin/            the plugin
   XIVShinies.SyncPlugin.csproj        <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   XIVShinies.SyncPlugin.json          plugin manifest (Name, Punchline, Tags, RepoUrl)
   Plugin.cs                           IDalamudPlugin entry point, /shinies command
-  Configuration.cs                    IPluginConfiguration (persisted settings)
+  Configuration.cs                    IPluginConfiguration (the persisted shell)
+  PluginSettings.cs                   the settings and their rules (Dalamud-free, unit-tested)
   PluginMeta.cs                       pure constants/helpers (unit-tested)
+  Api/                                HTTP client, request/response DTOs, backend URL rules
+  Collectors/                         one ICollector per collection, plus registry, runner, gates
+  Sync/                               scheduling, payload assembly and caps, upload log
+  Glamour/                            glamour snapshot builder and wire shape (pure)
+  Appearance/                         appearance snapshot builder and customize byte names (pure)
+  Occult/                             live Occult Crescent tracker, knowledge-level observer
+  Beastmaster/                        Master's Bestiary reading for tamed beasts; Crucible/ run sharing
+  Onboarding/                         first-run wizard steps, token checks
+  Diagnostics/                        log-once failure memory, Debug-only unlock-slot audit
   Windows/                            ImGui windows (WindowSystem)
+  images/                             icon.png, the hand-made plugin icon
 tests/XIVShinies.SyncPlugin.Tests/    xUnit — pure logic only
 ```
 
@@ -207,13 +218,15 @@ nit (sources: dalamud.dev `plugin-publishing/restrictions`, `plugin-development/
 - **Local player only.** The rule: your plugin must not "collect account IDs of player
   characters beyond your own **in any form, regardless of the intended use**". It is
   ban-enforced. In practice: never read the object table or party list; only the local
-  player (`IPlayerState` / `ClientState.LocalContentId`).
+  player (`IPlayerState` / `ClientState.LocalContentId`, and `Control.GetLocalPlayer()` for the
+  character itself).
 - **Hash player identifiers client-side.** Dalamud's wording is a recommendation —
   "whenever feasible, plugins **should** hash information about the local player (such as
   the player's Content ID or name) on the client side" — but this project treats it as a
   hard requirement: SHA-256 the ContentId before it leaves the process, the raw ulong never
   travels and never lands in logs, config, or request bodies, and the digest stays
-  deterministic across sessions (fixed byte representation).
+  deterministic across sessions (fixed byte representation). The player's own retainer ids
+  get the same treatment (`RetainerIdHash`).
 - **Network (documented rules):** HTTPS only, with the server's certificate "issued from a
   trusted certificate authority such as Let's Encrypt"; connect by **DNS hostname, never a raw
   IP** (no loopback exemption is stated — use `localhost`, not `127.0.0.1`); minimize the data
@@ -235,12 +248,12 @@ nit (sources: dalamud.dev `plugin-publishing/restrictions`, `plugin-development/
 
 ## Monotonic-write awareness
 
-The server treats every upload as monotonic: collections only grow, absence never clears a
-flag, partial uploads are always safe. The plugin must reflect this — send what was
+The server treats every upload as monotonic (one category excepted, below): collections only
+grow, absence never clears a flag, partial uploads are always safe. The plugin must reflect this — send what was
 readable, omit what wasn't (e.g. omit `achievements` when the list isn't loaded rather than
 sending an empty array), and never treat an absent category as "cleared".
 
-The **one** way an absent id gains meaning is a completeness declaration: a collection whose
+In an **id list**, the **one** way an absent id gains meaning is a completeness declaration: a collection whose
 `CategoryInfo` sets `EnumeratesCompleteDomain = true` has its collector pass that through to the
 `CollectResult` (usually `.Ids`; a collection whose domain only becomes readable on the player's
 action additionally requires the pass to have earned it — see `tamedBeasts`), and the server may
@@ -257,6 +270,18 @@ default) is always safe. `TripleTriadNpcCollector` is the worked example of decl
 The declaration lives on `CategoryInfo`, which is Dalamud-free, so `CompletenessDeclarationTests`
 can pin the exact set of declaring categories: it fails both when a category stops declaring and
 when a new one starts. A collection that declares completeness has to be added to that set.
+
+The `glamour` category is the exception by design. Its payload is the character's **current
+holdings**, not a list that only grows, so for a place read as current, a missing piece is
+evidence it has left; each source's state travels in `itemSources`, built by `StorageSources`, the
+same class whose predicates gate the reads, and which retainers were read travels in the facts'
+own `retainers` list. That is why `GlamourCollector` omits a container it did not read rather
+than sending `[]`, why a list or held count over its cap withholds the whole category rather than
+being truncated or clamped, and why, whenever it cannot be sure what it reads is current, it skips
+the whole pass rather than send a partial picture. `GlamourCollector` (its
+class remarks and `Collect`) and the `glamour` bullet in `docs/api-contract.md` list the
+conditions. It makes no completeness declaration — `CollectResult.Glamour` takes none — and is
+never part of an `unlock` upload.
 
 ## Extensibility contract
 

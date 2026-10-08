@@ -69,6 +69,15 @@ public sealed unsafe class OccultRecordsCollector : ICollector
     /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
 
+    /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
     // This collector needs nothing from the context: the seen-set is self-contained game data,
     // scoped by no server manifest.
     /// <inheritdoc/>

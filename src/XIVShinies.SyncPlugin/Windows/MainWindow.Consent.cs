@@ -151,9 +151,10 @@ internal sealed partial class MainWindow
         // flowed description's wrapped lines come home to.
         var labelColumn = ImGui.GetCursorPosX() + checkboxColumn;
 
-        // The server switched this category off for everyone. Show it, disabled, with the
-        // user's own preference intact underneath — flipping it back on later restores what
-        // they chose.
+        // The server is not accepting this category: it is switched off for everyone, syncing is
+        // paused, or the server has not named it yet (see CategorySettingsRow.ServerEnabled). Show
+        // it, disabled, with the user's own preference intact underneath — once the server allows
+        // it again, what they chose applies.
         using (ImRaii.Disabled(!row.ServerEnabled))
         {
             // Everything after `##` is hidden from the label but forms part of the widget's
@@ -380,7 +381,7 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
 
-            // Scoped to exactly what the tick reaches: collections with a fixed scope, and no
+            // Scoped to exactly what the tick reaches: every collection with a fixed scope, and no
             // sharing feature. The tick answers for collections whose disclosure the user has not
             // read yet, so the copy says the tick covers whatever they send, and names where that
             // disclosure is read afterwards: the collection's own settings row, which wears its

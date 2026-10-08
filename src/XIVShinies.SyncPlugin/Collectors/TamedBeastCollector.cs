@@ -57,6 +57,15 @@ public sealed class TamedBeastCollector : ICollector
     /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
 
+    /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
     // Nothing from the context: what the window said is self-contained, scoped by no server
     // manifest.
     /// <inheritdoc/>

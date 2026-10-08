@@ -110,13 +110,17 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>
     /// The local character's condition flags. The Crucible run sharing reads only "in combat", and
-    /// reads nothing while it is set.
+    /// reads nothing while it is set; the glamour collection checks whether a summoning bell is in
+    /// use, so it is not read while a retainer's windows are open.
     /// </summary>
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     /// <summary>
     /// Finds a game window by name. The Crucible run sharing uses it to read a Crucible window the
-    /// player already has open, such as the run HUD on entering a board.
+    /// player already has open, such as the run HUD on entering a board; the glamour collection uses
+    /// it to check whether a storage window (the Glamour Dresser and its outfit-glamour window, the
+    /// Armoire, the saddlebag) is open, so it can wait for it to close (see
+    /// <see cref="GlamourCollector"/>).
     /// </summary>
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
@@ -217,8 +221,11 @@ public sealed class Plugin : IDalamudPlugin
                 Log);
 
             // Build the fact sources. Nothing reads the game until something explicitly runs them.
+            // The window and condition services are only asked questions during a pass; nothing
+            // subscribes to them, so they add nothing to tear down.
             collectors = CollectorRegistry.Create(
-                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver);
+                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver,
+                GameGui, Condition);
 
             // Establishes which collections count as already-seen, so the settings screen can badge
             // a genuinely new one. It runs here rather than with the migrations above because it
@@ -441,8 +448,8 @@ public sealed class Plugin : IDalamudPlugin
             // it invokes them where the command arrived, which is the game's main thread for chat
             // and the console's draw for the console — so the read is on the right thread by
             // circumstance, not by contract, and a bad read of game memory raises a
-            // corrupted-state exception no catch can rescue. RunOnFrameworkThread is a no-op when
-            // already there.
+            // corrupted-state exception no catch can rescue. When already on that thread,
+            // RunOnFrameworkThread runs the call in place.
             _ = Framework.RunOnFrameworkThread(
                 () => UnlockSlotAudit.Run(ClientState, DataManager, UnlockState, Log));
             return;

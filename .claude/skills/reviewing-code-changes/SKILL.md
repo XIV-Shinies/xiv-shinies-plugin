@@ -312,7 +312,8 @@ a style preference:
 
 | Surface | Budget | What to do when it's over |
 |---|---|---|
-| `docs/dalamud-compliance.md` table row | **1200 characters** | Keep the rule, its enforcement, and the file refs in the row. Move case-by-case reasoning to a bullet in "Project conventions that go beyond the letter of the rules" below the table, and point at it from the row. |
+| `docs/dalamud-compliance.md` table row | **1200 characters** | Keep the rule, its enforcement, and the file refs in the row. Move case-by-case reasoning to a bullet in "Project conventions that go beyond the letter of the rules" below the table, and point at it from the row. The bullet has its own budget (next row). |
+| A `docs/dalamud-compliance.md` bullet below the table | **800 characters**, its sub-list included; a bullet whose sub-list has one item per surface or per category is exempt from the total, but **each item stays under 400** | Keep what a Dalamud reviewer needs: what is read or sent, and the gate that holds it. Cut how the code does it; that belongs in code comments or `docs/api-contract.md`, and the bullet can name the class that holds it. A growing bullet is the usual sign that a code comment is being copied into the doc. |
 | A source line this change ADDED | **110 characters** | Rewrap. (The repo has no `max_line_length`; its own distribution is p95=100, p99=105, so 110 is the tail, not a new rule. Judge added lines only — the file's existing lines are not this change's business.) |
 | A single XML `<remarks>` block | ~15 lines | Split into `<para>`s, or move the argument to the one canonical home and cross-reference. |
 
@@ -324,14 +325,24 @@ tenth one:
 perl -ne 'chomp; print length($_)."  ".substr($_,0,60)."\n" if /^\| \*\*/' \
   docs/dalamud-compliance.md | sort -rn | head
 
+# Compliance bullets: each sub-list item (indented), then its bullet's total, sub-list included.
+# A bullet over 800, unless its sub-list is one item per surface or category, or any item over
+# 400, is a finding. Lengths count indentation and line breaks, so they run a few percent high.
+perl -ne 'sub out { print length($_[0])."  ".substr($_[0],0,56)."\n" if length $_[0] }
+  if (/^- /) { out($item); out($top); $top=$_; $item="" }
+  elsif (/^  - /) { out($item); $top.=$_; $item=$_ }
+  elsif (/^ {2,}\S/ && length $top) { $top.=$_; $item.=$_ if length $item }
+  else { out($item); out($top); $top=""; $item="" }
+  END { out($item); out($top) }' docs/dalamud-compliance.md
+
 # Over-long lines among the ones this change ADDED (the leading + is stripped before measuring).
 git diff HEAD -U0 -- '*.cs' | grep '^+[^+]' | cut -c2- \
   | perl -ne 'chomp; print length($_).": ".$_."\n" if length($_) > 110'
 ```
 
-`perl` rather than `awk`: skill arguments are substituted into `$1` and `$2` before this file is
-read, so an awk snippet using positional variables arrives corrupted whenever the skill is invoked
-with arguments. Perl's `$_` is untouched.
+`perl` rather than `awk`: before this file is read, skill arguments replace every `$` followed by a
+digit (and any `$name` an `arguments:` frontmatter declares), so an awk snippet using positional
+variables arrives corrupted whenever the skill is invoked with arguments. Perl's `$_` is untouched.
 
 #### The grep is a hint, never the check
 

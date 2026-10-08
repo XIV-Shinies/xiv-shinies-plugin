@@ -116,6 +116,77 @@ public sealed record CategoryInfo
     public bool EnumeratesCompleteDomain { get; init; }
 
     /// <summary>
+    /// True when this collection may be collected only once the server's <c>/config</c> names it in
+    /// its category map and switches it on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Self-description in the same sense as <see cref="UsesItemManifest"/>: the gate asks the
+    /// collector "do you need the server to know you?" instead of keeping a list of collections
+    /// that do, so the stricter rule reaches a collection by its own declaration and nothing
+    /// downstream learns its name.
+    /// </para>
+    /// <para>
+    /// <c>false</c> (the default) keeps the ordinary rule that a category the server's map does not
+    /// name reads as <b>enabled</b>: the server strips payload keys it does not recognize, so a
+    /// collection the server does not know costs only a few discarded bytes. <c>true</c> turns that
+    /// around, so an absent key reads as <b>off</b>. It is for a collection only worth uploading to a
+    /// server that knows it — one whose snapshot is large enough that sending it to a server that
+    /// will discard it is a real cost, or one whose record would be a disclosure for nothing on a
+    /// server that does not store it. Until the server names it, such a collection is neither read
+    /// nor sent (see <see cref="CollectorGate.ServerPermits"/>), and the settings window draws it as
+    /// unavailable, saying it is not offered or, before any config, that it is waiting for the
+    /// answer (see <see cref="CategorySettingsRow.NotOfferedByServer"/>).
+    /// </para>
+    /// </remarks>
+    public bool RequiresServerSupport { get; init; }
+
+    /// <summary>
+    /// True when this collection's facts are <b>one record</b> about the character rather than a
+    /// collection of things, so the upload log names it without a count.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The upload log prints a count beside each category it sent, and for a collection of things
+    /// that count is the answer to "how many?". A single record has no such answer: counted from its
+    /// shape it would read as the number of fields in the record, a figure that moves with the
+    /// payload's layout rather than with anything the player did, and even a fixed count of one
+    /// would read as "one of something". So the log prints the name alone, and the record's
+    /// fingerprint carries its "(changed)" signal.
+    /// </para>
+    /// <para>
+    /// Self-description like <see cref="UsesItemManifest"/>: the log reads this flag rather than a
+    /// list of single-record categories. Defaults to <c>false</c>, matching every collection of
+    /// things.
+    /// </para>
+    /// </remarks>
+    public bool IsSingleRecord { get; init; }
+
+    /// <summary>
+    /// True when this collection's facts come from the character's storage containers (inventory,
+    /// saddlebag, retainers, Armoire, Glamour Dresser) and its pass reports those containers' scan
+    /// state, so the settings panel shows the container lines while it is on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The settings window's "Reading from:" panel has a container group — one line per storage
+    /// location, saying whether it could be read and, when it could not, which window to open. It
+    /// shows only while a collection that reads storage is switched on (see
+    /// <see cref="ReadStatusView.Build"/>).
+    /// </para>
+    /// <para>
+    /// Separate from <see cref="UsesItemManifest"/> because the two answer different questions. A
+    /// collection can read storage without its scope coming from the server's item manifest, and it
+    /// depends on the container guidance just as much. Self-description like the flags above: the
+    /// panel asks the row "do you read storage?" instead of comparing keys, so a new storage-reading
+    /// collection brings the container lines with it by setting this on its own
+    /// <see cref="CategoryInfo"/>. Defaults to <c>false</c>, matching every collection that reads no
+    /// storage.
+    /// </para>
+    /// </remarks>
+    public bool ReadsStorage { get; init; }
+
+    /// <summary>
     /// True when the game announces each new entry of this collection the moment it is earned, so the
     /// plugin uploads it within seconds rather than on the scheduled sweep.
     /// </summary>

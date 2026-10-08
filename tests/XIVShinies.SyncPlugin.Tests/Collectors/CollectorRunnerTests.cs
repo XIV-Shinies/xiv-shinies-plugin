@@ -45,6 +45,17 @@ public class CollectorRunnerTests
         // pick a category's change signal); fixed-scope is the default, tests opt in per fake.
         public bool UsesItemManifest { get; init; }
 
+        // The runner hands this to the gate, which holds back a collection that needs the server
+        // to name it; ordinary is the default, tests opt in per fake.
+        public bool RequiresServerSupport { get; init; }
+
+        // The runner copies this self-description into the snapshot (the upload log names such a
+        // category without a count); a collection of things is the default, tests opt in per fake.
+        public bool IsSingleRecord { get; init; }
+
+        // The settings panel's concern, never the runner's; the interface requires it.
+        public bool ReadsStorage { get; init; }
+
         public int CollectCallCount { get; private set; }
 
         public CollectContext? LastContext { get; private set; }
@@ -113,6 +124,67 @@ public class CollectorRunnerTests
             new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), RemoteConfig());
 
         Assert.DoesNotContain(UnknownCategory, snapshot.ManifestDrivenKeys);
+    }
+
+    // Whether a category's facts are one record is a fact about its collector, not about this pass,
+    // so it is recorded before the gate — even a collection the user has not opted into is marked.
+    [Fact]
+    public void A_single_record_collectors_key_is_marked_even_when_it_is_not_collected()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Ids(new[] { 42u }))
+        {
+            IsSingleRecord = true,
+        };
+
+        var snapshot = CollectorRunner.Run(new[] { collector }, OptedIn(), RemoteConfig());
+
+        Assert.Contains(UnknownCategory, snapshot.SingleRecordKeys);
+
+        // Marked without being read: the gate still refused it.
+        Assert.Equal(0, collector.CollectCallCount);
+    }
+
+    [Fact]
+    public void A_collection_of_things_is_not_marked_single_record()
+    {
+        var snapshot = CollectorRunner.Run(
+            new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.DoesNotContain(UnknownCategory, snapshot.SingleRecordKeys);
+    }
+
+    // A collection that needs the server to name it is held back while the server's map leaves it
+    // out, even though the user opted in — and it costs nothing, not even a game lookup.
+    [Fact]
+    public void A_collector_needing_server_support_is_skipped_until_the_server_names_it()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Ids(new[] { 42u }))
+        {
+            RequiresServerSupport = true,
+        };
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.False(snapshot.Collections.ContainsKey(UnknownCategory));
+        Assert.Equal(CollectSkipReasons.Disabled, snapshot.Skipped[UnknownCategory]);
+        Assert.Equal(0, collector.CollectCallCount);
+    }
+
+    [Fact]
+    public void A_collector_needing_server_support_runs_once_the_server_names_it()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Ids(new[] { 42u }))
+        {
+            RequiresServerSupport = true,
+        };
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector },
+            OptedIn(UnknownCategory),
+            RemoteConfig(categories: new Dictionary<string, bool> { [UnknownCategory] = true }));
+
+        Assert.True(snapshot.Collections.ContainsKey(UnknownCategory));
     }
 
     // A collector that enumerated its entire domain says so through its result, and the runner

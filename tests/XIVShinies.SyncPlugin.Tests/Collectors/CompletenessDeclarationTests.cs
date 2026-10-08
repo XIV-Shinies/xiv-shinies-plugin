@@ -77,16 +77,20 @@ public class CompletenessDeclarationTests
     /// one withholds stays attached to the category rather than living only in the set above.
     /// </summary>
     /// <remarks>
-    /// <c>tripleTriadNpcs</c> withholds for the reason recorded beside its
-    /// <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>. The other three never reach
-    /// a factory that takes the claim at all, which is why they cannot declare — see
-    /// <see cref="CollectResult.CompleteEnumeration"/>.
+    /// <c>tripleTriadNpcs</c> withholds for the reason documented beside its
+    /// <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>. The others never reach a
+    /// factory that takes the claim at all, which is why they cannot declare — see
+    /// <see cref="CollectResult.CompleteEnumeration"/>. <c>glamour</c> is a snapshot of current
+    /// holdings and <c>appearance</c> is one record about the character; neither is an id list,
+    /// which is the only shape the claim speaks about.
     /// </remarks>
     [Theory]
     [InlineData(CategoryKeys.TripleTriadNpcs)]
     [InlineData(CategoryKeys.Items)]
     [InlineData(CategoryKeys.QuestSequences)]
     [InlineData(CategoryKeys.OccultProgression)]
+    [InlineData(CategoryKeys.Glamour)]
+    [InlineData(CategoryKeys.Appearance)]
     public void A_category_that_cannot_see_its_whole_domain_withholds_the_claim(string categoryKey)
     {
         var info = AllCategories().Single(candidate => candidate.Key == categoryKey);

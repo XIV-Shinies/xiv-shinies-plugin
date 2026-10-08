@@ -33,6 +33,13 @@ public class CollectorSelectionTests
         // fixed-scope default every real non-items collector does.
         public bool UsesItemManifest => false;
 
+        // Selection never reads these either; the interface requires them.
+        public bool RequiresServerSupport { get; init; }
+
+        public bool IsSingleRecord { get; init; }
+
+        public bool ReadsStorage { get; init; }
+
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
 

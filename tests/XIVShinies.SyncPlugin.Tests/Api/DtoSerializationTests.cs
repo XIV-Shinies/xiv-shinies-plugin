@@ -273,6 +273,45 @@ public class DtoSerializationTests
         Assert.True(config.IsCategoryEnabled("facewear")); // never mentioned by the server
     }
 
+    // The stricter sibling, for a collection only worth uploading to a server that knows it: only
+    // an explicit `true` counts, so a key the map leaves out reads as off rather than on.
+    [Fact]
+    public void Only_a_category_the_map_switches_on_is_explicitly_enabled()
+    {
+        const string body = """
+        {"categories": {"quests": true, "minions": false},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.True(config.IsCategoryExplicitlyEnabled("quests"));
+        Assert.False(config.IsCategoryExplicitlyEnabled("minions"));
+        Assert.False(config.IsCategoryExplicitlyEnabled("facewear")); // never mentioned
+    }
+
+    // Whether the server has made any decision about a category at all: a key the map carries is
+    // named whichever way it is switched, and only an absent key is not. This is what tells "not
+    // offered yet" apart from "switched off".
+    [Fact]
+    public void A_category_the_map_carries_is_named_whichever_way_it_is_switched()
+    {
+        const string body = """
+        {"categories": {"quests": true, "minions": false},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.True(config.NamesCategory("quests"));
+        Assert.True(config.NamesCategory("minions"));
+        Assert.False(config.NamesCategory("facewear")); // never mentioned
+    }
+
     // --- Category notes ------------------------------------------------------------------------
 
     // The server explains a switched-off category in its own words, keyed like the switches. The
@@ -895,5 +934,23 @@ public class DtoSerializationTests
         var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
 
         Assert.True(config.IsCategoryEnabled("quests"));
+    }
+
+    // The same explicit null, asked the stricter questions: a map that names nothing switches
+    // nothing on and has decided nothing, so both must answer "no" for every category rather than
+    // throwing.
+    [Fact]
+    public void A_null_categories_map_names_no_category()
+    {
+        const string json = """
+            {"categories":null,"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.False(config.IsCategoryExplicitlyEnabled("quests"));
+        Assert.False(config.NamesCategory("quests"));
     }
 }

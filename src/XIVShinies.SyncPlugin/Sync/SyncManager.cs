@@ -546,7 +546,7 @@ internal sealed class SyncManager : IDisposable
         var collectable = new List<ICollector>(collectors.Count);
         foreach (var collector in collectors)
         {
-            if (CollectorGate.IsEnabled(collector.CategoryKey, settings, config))
+            if (CollectorGate.IsEnabled(collector, settings, config))
                 collectable.Add(collector);
         }
 
