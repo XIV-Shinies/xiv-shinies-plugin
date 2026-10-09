@@ -397,31 +397,48 @@ public sealed record CollectResult
     /// </param>
     /// <param name="collectedDetail">See <see cref="CollectedDetail"/>; null when none.</param>
     /// <param name="partialNote">See <see cref="PartialNote"/>; null when nothing partial to say.</param>
+    /// <param name="ranks">
+    /// Each beast's rank by bestiary number; empty or null when none has been read.
+    /// </param>
     /// <remarks>
     /// <para>
-    /// Non-positive numbers are dropped for the same reason <see cref="Ids"/> drops zeroes: the
-    /// server requires positive integers, and one invalid entry rejects the whole upload rather
-    /// than this one category.
+    /// Non-positive numbers are dropped for the same reason <see cref="Ids"/> drops zeroes: one
+    /// invalid entry rejects the whole upload rather than this one category. A rank outside
+    /// <see cref="TamedBeast.MinRank"/>–<see cref="TamedBeast.MaxRank"/> is dropped for the same
+    /// reason, and the beast still goes up without it. A rank for a beast the list does not name is
+    /// not sent: the list is what says a beast is held, so a rank alone would claim a pact.
     /// </para>
     /// <para>
     /// An empty list is reported as nothing read this pass rather than as a count of zero. Zero is
-    /// a claim, and for a collection that cannot shrink it reads as a loss; "nothing seen yet" is
-    /// what actually happened. Decided here rather than by the caller so the two can never
-    /// disagree — and the emptiness floor on the completeness claim applies here exactly as it
-    /// does to <see cref="Ids"/>.
+    /// a claim, and for a collection that cannot shrink it reads as a loss. Decided here rather than
+    /// by the caller so the two can never disagree — and the emptiness floor on the completeness
+    /// claim applies here exactly as it does to <see cref="Ids"/>.
     /// </para>
     /// </remarks>
     public static CollectResult TamedBeasts(
         IReadOnlyList<int> numbers,
         bool completeEnumeration = false,
         string? collectedDetail = null,
-        string? partialNote = null)
+        string? partialNote = null,
+        IReadOnlyDictionary<int, int>? ranks = null)
     {
         var beasts = new List<TamedBeast>(numbers.Count);
         foreach (var number in numbers)
         {
-            if (number > 0)
-                beasts.Add(new TamedBeast { Number = (uint)number });
+            if (number <= 0)
+                continue;
+
+            // `TryGetValue` answers whether the key is present and hands back its value through
+            // `out`, a second return value, much like a Map lookup that also says whether it hit.
+            int? rank = null;
+            if (ranks is not null
+                && ranks.TryGetValue(number, out var read)
+                && read is >= TamedBeast.MinRank and <= TamedBeast.MaxRank)
+            {
+                rank = read;
+            }
+
+            beasts.Add(new TamedBeast { Number = (uint)number, Rank = rank });
         }
 
         return new()

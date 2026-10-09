@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -10,7 +11,7 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
 // The tamedBeasts category carries objects rather than bare ids, because a pact is more than its
 // existence — the contract also accepts a rank and a battlehorn slot per beast. These pin the shape
-// that leaves the plugin.
+// that leaves the plugin: the number always, the rank once it has been read, the battlehorn never.
 public class TamedBeastFactsTests
 {
     private static JsonArray ArrayOf(CollectResult result) => result.Facts!.AsArray();
@@ -24,13 +25,49 @@ public class TamedBeastFactsTests
         Assert.Equal(30u, entry["number"]!.GetValue<uint>());
     }
 
-    // Whether a beast is held is all the plugin can read; a beast's rank and battlehorn slot are
-    // not among the slots the bestiary window's records carry. A stray key here would be a claim it
-    // cannot support.
+    // With no rank read, a beast carries its number alone. A stray key here would be a claim the
+    // plugin cannot support.
     [Fact]
-    public void A_beast_carries_no_key_the_plugin_cannot_read()
+    public void A_beast_with_no_rank_read_carries_only_its_number()
     {
         var result = CollectResult.TamedBeasts(new[] { 30 });
+
+        var entry = ArrayOf(result).Single()!.AsObject();
+        Assert.Equal(new[] { "number" }, entry.Select(pair => pair.Key).ToArray());
+    }
+
+    // `new Dictionary<int, int> { [30] = 9 }` builds a map with one entry, like `new Map([[30, 9]])`.
+    [Fact]
+    public void A_read_rank_travels_beside_its_beast()
+    {
+        var result = CollectResult.TamedBeasts(new[] { 2, 30 }, ranks: new Dictionary<int, int> { [30] = 9 });
+
+        var entries = ArrayOf(result).Select(node => node!.AsObject()).ToArray();
+        Assert.Equal(new[] { "number" }, entries[0].Select(pair => pair.Key).ToArray());
+        Assert.Equal(9, entries[1]["rank"]!.GetValue<int>());
+    }
+
+    // The list is what says a beast is held. A rank for a beast it does not name would claim a pact
+    // nothing has shown, so it is not sent.
+    [Fact]
+    public void A_rank_for_a_beast_not_listed_is_not_sent()
+    {
+        var result = CollectResult.TamedBeasts(new[] { 30 }, ranks: new Dictionary<int, int> { [31] = 4 });
+
+        var entry = ArrayOf(result).Single()!.AsObject();
+        Assert.Equal(30u, entry["number"]!.GetValue<uint>());
+        Assert.Null(entry["rank"]);
+    }
+
+    // The contract accepts 1–25. A rank outside it would reject the whole upload, so it is dropped
+    // and the beast goes up without one.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(26)]
+    [InlineData(-1)]
+    public void A_rank_outside_the_contracts_range_is_dropped(int rank)
+    {
+        var result = CollectResult.TamedBeasts(new[] { 30 }, ranks: new Dictionary<int, int> { [30] = rank });
 
         var entry = ArrayOf(result).Single()!.AsObject();
         Assert.Equal(new[] { "number" }, entry.Select(pair => pair.Key).ToArray());
@@ -117,5 +154,25 @@ public class TamedBeastFactsTests
         var json = JsonSerializer.Serialize(new[] { new TamedBeast { Number = 30 } }, ApiJson.Options);
 
         Assert.Equal("[{\"number\":30}]", json);
+    }
+
+    [Fact]
+    public void A_rank_reaches_the_wire_under_the_contracts_key()
+    {
+        var json = JsonSerializer.Serialize(
+            new[] { new TamedBeast { Number = 30, Rank = 9 } }, ApiJson.Options);
+
+        Assert.Equal("[{\"number\":30,\"rank\":9}]", json);
+    }
+
+    // Both ends of the contract's range reach the wire.
+    [Theory]
+    [InlineData(TamedBeast.MinRank)]
+    [InlineData(TamedBeast.MaxRank)]
+    public void The_ends_of_the_contracts_range_reach_the_wire(int rank)
+    {
+        var result = CollectResult.TamedBeasts(new[] { 30 }, ranks: new Dictionary<int, int> { [30] = rank });
+
+        Assert.Equal(rank, ArrayOf(result).Single()!["rank"]!.GetValue<int>());
     }
 }

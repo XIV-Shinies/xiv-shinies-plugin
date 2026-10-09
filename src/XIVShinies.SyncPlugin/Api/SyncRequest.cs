@@ -234,10 +234,9 @@ public static class SyncFacts
 /// <summary>A beast the character has forged a pact with, and what is known about that pact.</summary>
 /// <remarks>
 /// An object rather than a bare id because the contract describes a pact as more than its
-/// existence: a beast also carries a rank and a battlehorn slot. Those are absent while the
-/// plugin has no way to read them, and absent is exactly how the contract expects an unreadable
-/// fact to arrive — so the object shape is what lets them appear later without the category
-/// changing shape underneath the server.
+/// existence: a beast also carries a rank and a battlehorn slot. A field the plugin has not read is
+/// left off, which is exactly how the contract expects an unreadable fact to arrive. No source the
+/// plugin reads carries the battlehorn slot, so it is never sent.
 /// </remarks>
 public sealed record TamedBeast
 {
@@ -246,6 +245,21 @@ public sealed record TamedBeast
     /// catalog is keyed on.
     /// </summary>
     public required uint Number { get; init; }
+
+    /// <summary>The lowest rank the contract accepts.</summary>
+    public const int MinRank = 1;
+
+    /// <summary>The highest rank the contract accepts.</summary>
+    public const int MaxRank = 25;
+
+    /// <summary>
+    /// The beast's rank, <see cref="MinRank"/>–<see cref="MaxRank"/>, or null when unread.
+    /// </summary>
+    /// <remarks>
+    /// <c>int?</c> is a nullable int, like <c>number | null</c> in TypeScript. The shared serializer
+    /// leaves a null field off the wire entirely rather than writing <c>"rank": null</c>.
+    /// </remarks>
+    public int? Rank { get; init; }
 }
 
 /// <summary>How many of a manifest item the character possesses.</summary>

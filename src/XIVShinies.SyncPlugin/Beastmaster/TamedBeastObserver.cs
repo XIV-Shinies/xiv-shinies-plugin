@@ -4,16 +4,23 @@ using System.Collections.Generic;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Plugin.Services;
+// EventFramework, the game's registry of running NPC conversations and other scripted events.
+using FFXIVClientStructs.FFXIV.Client.Game.Event;
 // AtkUnitBase, the game's base window type, whose values back what the window displays.
 using FFXIVClientStructs.FFXIV.Component.GUI;
+// `using X = ...` gives a type a local name, like `import { Framework as GameFramework }`: the game's
+// own Framework, which reports the running game's version, would otherwise clash with Dalamud's
+// IFramework in reading.
+using GameFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Diagnostics;
 
 namespace XIVShinies.SyncPlugin.Beastmaster;
 
 /// <summary>
-/// Learns which beasts the character holds by reading the Master's Bestiary when the player opens
-/// it.
+/// Learns which beasts the character holds, and each one's rank, from the Master's Bestiary when
+/// the player opens it and from the record set the Crucible's NPC loads.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,25 +28,47 @@ namespace XIVShinies.SyncPlugin.Beastmaster;
 /// character's own bestiary — every beast held, not merely the ones taken while something was
 /// watching. It shows part of itself at a time, so a full picture is built from however many pages
 /// the player looks at. See <see cref="BestiaryPage"/> for what a page holds and
-/// <see cref="TamedBeastLedger"/> for how pages add up to a complete answer.
+/// <see cref="TamedBeastLedger"/> for how pages add up to a complete answer. Its beast list carries
+/// no ranks and its detail panel shows only the selected beast's, so
+/// <see cref="OnFrameworkUpdate"/> reads every rank from the NPC's record set.
 /// </para>
 /// <para>
-/// Purely passive. The window is read only when the player opens it themselves; nothing here opens
-/// it, navigates it, or makes the client talk to the game's servers, and no window but this one is
+/// Purely passive. The window is read only when the player opens it themselves, and the record set
+/// holds nothing until the player has talked to the NPC; nothing here opens a window, starts a
+/// conversation, or makes the client talk to the game's servers, and no window but this one is
 /// watched. Nothing is captured at all while the collection is switched off, what is captured is
 /// cleared at both edges of a login session, and the gate deciding whether any of it leaves the
 /// process sits downstream of all that.
 /// </para>
 /// </remarks>
-// `unsafe` because the bestiary window's backing values are reached through a raw pointer into the
-// game's own memory — C#'s references and bounds checks do not apply, so the reader guards every
-// access by hand.
+// `unsafe` because the bestiary window's values and the NPC's event handler are reached through raw
+// pointers into the game's own memory — C#'s references and bounds checks do not apply, so the
+// reader guards every access by hand.
 public sealed unsafe class TamedBeastObserver : IDisposable
 {
     /// <summary>The Master's Bestiary window's internal addon name.</summary>
     private const string BestiaryAddonName = "XBMMonsterNotebook";
 
+    /// <summary>The event id of the Crucible of the Unbroken NPC's conversation.</summary>
+    // `0x` writes a number in hexadecimal, as in JavaScript.
+    private const uint CrucibleTalkEventId = 0xB03D0;
+
+    /// <summary>How far into that conversation's event handler the beast record set begins.</summary>
+    /// <remarks>
+    /// <see cref="BeastRankRecord.VerifiedGameVersions"/> lists the game versions it was checked on.
+    /// </remarks>
+    private const int RankRecordOffset = 0x468;
+
+    /// <summary>How often the handler is looked for while the character is at the entrance.</summary>
+    // `static readonly` rather than `const`: a TimeSpan is built when the program runs, and `const`
+    // only holds values fixed when the code compiles.
+    private static readonly TimeSpan RankReadInterval = TimeSpan.FromSeconds(1);
+
     private readonly TamedBeastLedger ledger = new();
+
+    // Faults met while reading the record set, reported in full once each, as readFailures does for
+    // the window.
+    private readonly RepeatedFailures rankFailures = new();
 
     /// <summary>Which read failures have already been reported in full.</summary>
     /// <remarks>
@@ -51,11 +80,29 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     private readonly IClientState clientState;
     private readonly IDataManager dataManager;
     private readonly IAddonLifecycle addonLifecycle;
+    private readonly IFramework framework;
     private readonly Func<string, bool> isCategoryEnabled;
     private readonly IPluginLog log;
 
-    // The bestiary's size, read from the game's data the first time the window is opened rather
-    // than in the constructor: a character who never plays beastmaster never pays for it.
+    // See the constructor's timeProvider parameter.
+    private readonly TimeProvider timeProvider;
+
+    // When the handler is next looked for. The default is the earliest possible moment, so the first
+    // frame at the entrance looks at once.
+    private DateTimeOffset nextRankReadAt;
+
+    // Whether a refused reading of the record set has been reported since the last accepted one: the
+    // same refusal would otherwise repeat every second the player stands at the entrance.
+    private bool rankRefusalReported;
+
+    // The running game's version, read once, and whether the note about an unchecked version has been
+    // written. Null until read.
+    private string? gameVersion;
+    private bool unverifiedLayoutReported;
+
+    // The bestiary's size, read from the game's data the first time the window opens or the NPC's
+    // handler is found, rather than in the constructor: a character who never plays beastmaster
+    // never pays for it.
     private int? beastCount;
     private bool beastCountReadFailed;
 
@@ -64,24 +111,37 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     // ledger is cleared.
     private BestiaryReadSummary? lastLoggedRead;
 
-    /// <summary>Wires the listener. Records nothing until the player opens their bestiary.</summary>
+    /// <summary>
+    /// Wires the listeners. Records nothing until the player opens their bestiary or talks to the
+    /// Crucible's NPC.
+    /// </summary>
     /// <param name="isCategoryEnabled">
     /// Answers whether the user has this collection switched on, given its category key. Passed in
     /// rather than reached for, so that this class holds no opinion about where consent lives and
     /// names no collection but its own.
     /// </param>
+    /// <param name="timeProvider">
+    /// The clock the record set's reads run on; the system clock when omitted.
+    /// </param>
+    // `TimeProvider? timeProvider = null` is an optional parameter, like `timeProvider?: TimeProvider`.
     public TamedBeastObserver(
         IClientState clientState,
         IDataManager dataManager,
         IAddonLifecycle addonLifecycle,
+        IFramework framework,
         Func<string, bool> isCategoryEnabled,
-        IPluginLog log)
+        IPluginLog log,
+        TimeProvider? timeProvider = null)
     {
         this.clientState = clientState;
         this.dataManager = dataManager;
         this.addonLifecycle = addonLifecycle;
+        this.framework = framework;
         this.isCategoryEnabled = isCategoryEnabled;
         this.log = log;
+
+        // `??` uses the right-hand value when the left is null, as in JavaScript.
+        this.timeProvider = timeProvider ?? TimeProvider.System;
 
         // PostSetup fires once when the window opens, before its list has loaded; PostRefresh fires
         // as the window is redrawn while it stays open, which is how the loaded list and each turned
@@ -94,11 +154,17 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         // the next character to upload as their own.
         clientState.Login += OnLogin;
         clientState.Logout += OnLogout;
+
+        // Called once per game frame, on the framework thread (see OnFrameworkUpdate). Subscribed
+        // last: a constructor that fails part-way never returns an object to dispose, so a frame
+        // handler subscribed before the failing line would run for the rest of the session.
+        framework.Update += OnFrameworkUpdate;
     }
 
     /// <summary>
-    /// Raised when a read finds a beast this session did not already know about, carrying the
-    /// category key whose upload it should prompt.
+    /// Raised when a read finds a beast this session did not already know about, or a reading of the
+    /// record set that differs from the last one, carrying the category key whose upload it should
+    /// prompt.
     /// </summary>
     /// <remarks>
     /// The key travels with the event so that whatever schedules the upload never has to name this
@@ -106,8 +172,21 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     /// </remarks>
     public event Action<string>? BeastsLearned;
 
-    /// <summary>The bestiary numbers the character is known to hold, ascending.</summary>
-    public IReadOnlyList<int> Snapshot() => ledger.Snapshot();
+    /// <summary>
+    /// The bestiary numbers the character is known to hold, ascending, from the window and the
+    /// record set together.
+    /// </summary>
+    public IReadOnlyList<int> Pacts() => ledger.Pacts();
+
+    /// <summary>
+    /// Each beast's rank from the current reading of the record set, by bestiary number: empty until
+    /// one is accepted, and again after a refused one, a session edge, or a check that finds the
+    /// collection switched off.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> Ranks() => ledger.Ranks();
+
+    /// <summary>How many beasts the bestiary window has shown as held this session.</summary>
+    public int HeldCount => ledger.Count;
 
     /// <summary>
     /// Whether the whole bestiary has been accounted for, so an absent number means the character
@@ -121,6 +200,7 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     /// <summary>Unregisters everything the constructor wired.</summary>
     public void Dispose()
     {
+        framework.Update -= OnFrameworkUpdate;
         addonLifecycle.UnregisterListener(AddonEvent.PostSetup, BestiaryAddonName, OnBestiaryAddon);
         addonLifecycle.UnregisterListener(AddonEvent.PostRefresh, BestiaryAddonName, OnBestiaryAddon);
         clientState.Login -= OnLogin;
@@ -243,6 +323,227 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         if (isNews)
             BeastsLearned?.Invoke(CategoryKeys.TamedBeasts);
     }
+
+    /// <summary>
+    /// Looks for the beast record set while the character is at the Crucible of the Unbroken's
+    /// entrance.
+    /// </summary>
+    /// <remarks>
+    /// The NPC's conversation handler exists only in that zone, and leaving it removes the handler,
+    /// so a record set read here always belongs to the character standing there. Anywhere else this
+    /// returns at once; there, while the collection is switched on, it walks the game's handler
+    /// registry once a second, on the framework thread, which the game's own state is only safe to read from.
+    /// </remarks>
+    // The parameter is the framework itself, which this handler has no use for; `_` names it as
+    // deliberately unused.
+    private void OnFrameworkUpdate(IFramework _)
+    {
+        // `(uint)` converts the territory id to the type the constant is declared with.
+        if (!clientState.IsLoggedIn || (uint)clientState.TerritoryType != CrucibleTerritories.Entrance)
+            return;
+
+        var now = timeProvider.GetUtcNow();
+
+        // A clock that jumped backwards would otherwise hold the reads off until it caught up.
+        if (nextRankReadAt > now + RankReadInterval)
+            nextRankReadAt = now;
+
+        if (now < nextRankReadAt)
+            return;
+        nextRankReadAt = now + RankReadInterval;
+
+        var isNews = false;
+
+        try
+        {
+            // Nothing is captured while the collection is switched off, as the window's handler
+            // also guarantees.
+            if (!isCategoryEnabled(CategoryKeys.TamedBeasts))
+            {
+                ForgetCaptured();
+                return;
+            }
+
+            isNews = ReadRanks();
+        }
+        catch (Exception ex)
+        {
+            // A frame callback that throws would escape into Dalamud's frame dispatch, so no read
+            // failure is allowed out of here.
+            if (rankFailures.IsFirstSighting(ex))
+                log.Error(ex, "Could not read the beasts' ranks.");
+            else
+                log.Debug(ex, "Could not read the beasts' ranks again.");
+        }
+
+        // Outside the catch for the same reason as in OnBestiaryAddon.
+        if (isNews)
+            BeastsLearned?.Invoke(CategoryKeys.TamedBeasts);
+    }
+
+    /// <summary>Reads the record set from the NPC's conversation handler, if it has been filled.</summary>
+    /// <returns>True when an accepted reading changed a rank or a leveled beast.</returns>
+    private bool ReadRanks()
+    {
+        if (!TryCopyRankRecord(out var bytes, out var size))
+            return false;
+
+        var layoutVerified = BeastRankRecord.IsLayoutVerified(GameVersion(), size);
+        var assessment = BeastRankRecord.Assess(bytes, size, ledger.Snapshot(), layoutVerified);
+
+        // `switch` picks one branch by value, like a JavaScript switch statement.
+        switch (assessment.Verdict)
+        {
+            case RankRecordVerdict.NotFilled:
+                return false;
+
+            case RankRecordVerdict.Refused:
+                // See TamedBeastLedger.ForgetRanks for why an earlier reading goes too.
+                ledger.ForgetRanks();
+                if (!rankRefusalReported)
+                {
+                    rankRefusalReported = true;
+                    log.Warning(
+                        "The beasts' ranks were found but did not pass their checks, so none is sent " +
+                        "until a reading passes; this is written once until then. Talking to the " +
+                        "Crucible's NPC again refreshes them; if ranks still do not arrive after " +
+                        "that, a game update may have moved them.");
+                }
+
+                return false;
+
+            default:
+                if (!layoutVerified && !unverifiedLayoutReported)
+                {
+                    unverifiedLayoutReported = true;
+                    log.Information(
+                        $"The beasts' rank record has not been checked on game version {GameVersion()}, " +
+                        "so ranks are sent only for beasts the Master's Bestiary has shown as held.");
+                }
+
+                // A refusal after this one is news again and is reported.
+                rankRefusalReported = false;
+
+                // `!` tells the compiler the reading is present, which an Accepted verdict guarantees.
+                var reading = assessment.Reading!;
+                var changed = ledger.RecordRanks(reading);
+                if (changed)
+                {
+                    log.Debug(
+                        $"Beast ranks read: {reading.Ranks.Count} ranked, {reading.Leveled.Count} leveled.");
+                }
+
+                return changed;
+        }
+    }
+
+    /// <summary>
+    /// Copies the record set's bytes out of the NPC's conversation handler, when the handler exists.
+    /// </summary>
+    /// <param name="bytes">The record set's bytes, starting at the marker.</param>
+    /// <param name="size">The bestiary's size, which sets how many bytes were copied.</param>
+    /// <returns>False when there is no handler, no bestiary size, or the memory could not be read.</returns>
+    // `out` parameters are extra return values the method must assign before it returns.
+    private bool TryCopyRankRecord(out byte[] bytes, out int size)
+    {
+        bytes = [];
+        size = 0;
+
+        var events = EventFramework.Instance();
+        if (events == null)
+            return false;
+
+        // The registry is a map from each running event's id to its handler. Each entry is a pair:
+        // `Item1` the id, and `Item2` a wrapper around a pointer to the handler, whose `Value` is the
+        // pointer. Only the ids are compared, and only the one matching handler is read. Walking the
+        // map each time, rather than keeping a handler found earlier, means a handler the game has
+        // since removed is never read.
+        //
+        // `nint` is an integer the size of a memory address, so the record set's offset can be added
+        // to the handler's address as plain arithmetic.
+        nint handler = 0;
+        foreach (var pair in events->EventHandlerModule.EventHandlerMap)
+        {
+            if (pair.Item1 == CrucibleTalkEventId)
+            {
+                handler = (nint)pair.Item2.Value;
+                break;
+            }
+        }
+
+        if (handler == 0)
+            return false;
+
+        // The record set's length, and where its EXP figures start, both follow from the bestiary's
+        // size; without it nothing can be checked. `is not > 0` is true for null as well as for 0 or
+        // less, since a null value matches no number pattern.
+        var count = BeastCount();
+        if (count is not > 0)
+            return false;
+
+        // SafeMemory copies the bytes out through a guarded read, so an address that is no longer
+        // valid fails the read rather than crashing the game.
+        if (!Dalamud.SafeMemory.ReadBytes(
+                handler + RankRecordOffset, BeastRankRecord.ByteLength(count.Value), out var copied))
+        {
+            return false;
+        }
+
+        bytes = copied;
+        size = count.Value;
+        return true;
+    }
+
+    /// <summary>The running game's version, read once from the game, or null when unreadable.</summary>
+    private string? GameVersion()
+    {
+        if (gameVersion is null)
+        {
+            var game = GameFramework.Instance();
+            if (game != null)
+                gameVersion = game->GameVersionString;
+        }
+
+        return gameVersion;
+    }
+
+#if DEBUG
+    /// <summary>
+    /// Writes the record set to the log as it reads now, whatever the game version, so a maintainer
+    /// can compare it with the NPC's bestiary after a game patch. Development builds only.
+    /// </summary>
+    /// <remarks>
+    /// CLAUDE.md's "Re-checking the beast rank record after a game patch" says how to use it. Runs on
+    /// the framework thread; the caller marshals there.
+    /// </remarks>
+    public void AuditRankRecord()
+    {
+        if (!TryCopyRankRecord(out var bytes, out var size))
+        {
+            log.Information(
+                "Beast rank record: no NPC conversation handler is registered here, or it could not be " +
+                "read. Talk to the NPC at the Crucible of the Unbroken's entrance first.");
+            return;
+        }
+
+        var version = GameVersion() ?? "unknown";
+        var verified = BeastRankRecord.IsLayoutVerified(version, size);
+        var assessment = BeastRankRecord.Assess(bytes, size, ledger.Snapshot(), layoutVerified: true);
+        var marker = BeastRankRecord.IsFilled(bytes) ? "filled" : "not filled";
+        log.Information(
+            $"Beast rank record on game version {version} ({(verified ? "checked" : "not checked")}), " +
+            $"{size} beasts: {marker}, {assessment.Verdict}.");
+
+        // One line per beast: the bytes as stored, so they can be compared with the bestiary's
+        // detail panel, which shows the rank and the EXP as "67/100".
+        for (var index = 0; index < size; index++)
+        {
+            var rank = bytes[BeastRankRecord.MarkerBytes + index];
+            var exp = bytes[BeastRankRecord.MarkerBytes + size + index];
+            log.Information($"  No. {index + 1}: rank {rank}, EXP {exp}");
+        }
+    }
+#endif
 
     /// <summary>The bestiary's size, read once and kept, or null when the sheet cannot be read.</summary>
     private int? BeastCount()

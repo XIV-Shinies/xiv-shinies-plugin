@@ -391,9 +391,15 @@ Field constraints:
   deployed server wins over this doc, as always.* Entries are objects, not bare ids: `{"number": n}`,
   where `n` is the bestiary number — the `XBMPet` sheet row id (1–50), which is what the
   server's catalog is keyed on. `rank` (1–25) and `battlehorn` (1–3) are accepted alongside
-  `number` and are omitted while the plugin has no way to read them; the object shape is what
-  lets them appear later without the category changing shape. Numbers outside the catalog are
-  dropped with a warning rather than a 400, but `0` fails validation like every id-list
+  `number`. The plugin reads the game's record set of the character's beasts, which the game
+  fills when the player talks to the Crucible of the Unbroken's NPC, and sends `rank` for each
+  listed beast it ranks. A beast enters the list from the bestiary window, or from the record set
+  when it is raised past a fresh pact (rank 2 or above, or rank 1 with some EXP), which only a
+  held beast can be; the second path holds only on a game version where the record set's place
+  was checked, and never for a beast the window listed as not held. A beast whose rank has not
+  been read goes up without one, and a rank never travels without its beast's number.
+  `battlehorn` is never sent: no place the plugin reads carries it. Numbers outside the catalog
+  are dropped with a warning rather than a 400, but `0` fails validation like every id-list
   category. **Completeness is decided per upload here as well as per category**, because the
   bestiary only becomes readable when the player opens it. The plugin learns it from the Master's
   Bestiary window, which shows part of itself at a time and carries its own "held out of total"
