@@ -670,8 +670,9 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   piece's outcome has not been written (see below). Among snapshots that share a stamp, the server
   reads the `board` first, so it starts from the run's position on that `board` when it works out
   which piece the rest of a baseline belongs to. A 429 or 503 is retried after its
-  `Retry-After`, and a network failure after a backoff, each with the same content; a 400 or 403
-  is not retried unchanged.
+  `Retry-After`, and a network failure after a backoff, each with the same content; a 503 `busy`
+  that arrives without its `Retry-After` is retried on the client's own backoff rather than the
+  hour this client otherwise waits after a 503 without one. A 400 or 403 is not retried unchanged.
 
 #### Response
 

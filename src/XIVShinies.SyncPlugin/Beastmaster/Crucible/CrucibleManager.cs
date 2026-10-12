@@ -457,7 +457,11 @@ internal sealed class CrucibleManager : IDisposable
                 .ConfigureAwait(false);
 
             var now = timeProvider.GetUtcNow();
-            var outcome = CrucibleOutcomePolicy.Classify(response.Status, response.RetryAfter, now);
+
+            // `?.` reads through a possibly-null value, like optional chaining: no error body, no code.
+            var errorCode = response.Error?.Error;
+            var outcome = CrucibleOutcomePolicy.Classify(
+                response.Status, response.RetryAfter, now, errorCode);
 
             switch (outcome.Kind)
             {
@@ -470,7 +474,12 @@ internal sealed class CrucibleManager : IDisposable
                 case CrucibleOutcomeKind.Retry:
                     scheduler.MarkRetry(upload, outcome.Until ?? now, now);
                     settled = true;
-                    log.Debug($"Crucible {upload.Trigger} upload will be sent again: {response.Status}.");
+                    // The note is the plugin's own text, chosen by matching the code, so no
+                    // server-supplied text reaches the log. `a ? b : c` picks b when a is true and c
+                    // otherwise, as in TypeScript.
+                    var busyNote = CrucibleOutcomePolicy.IsBusy(errorCode) ? " (busy)" : string.Empty;
+                    log.Debug(
+                        $"Crucible {upload.Trigger} upload will be sent again: {response.Status}{busyNote}.");
                     break;
 
                 case CrucibleOutcomeKind.Drop:

@@ -37,7 +37,8 @@ public enum CrucibleOutcomeKind
 /// <see cref="CrucibleOutcomeKind.Drop"/>'s hold ends; null for the other outcomes.
 /// </param>
 // A `record struct`: a small value with value equality, copied rather than shared like a class. A `?`
-// after a type means the value may be null, like `T | null`.
+// after a type means the value may be null, like `T | null`, and `= null` gives a parameter a default,
+// like `until: T | null = null` in TypeScript: a caller may leave it out, and it is then null.
 public readonly record struct CrucibleOutcome(CrucibleOutcomeKind Kind, DateTimeOffset? Until = null);
 
 /// <summary>Decides what the Crucible run sharing does with each answer to an upload.</summary>
@@ -64,14 +65,39 @@ public static class CrucibleOutcomePolicy
     // program runs, and `const` only takes values fixed when the code compiles.
     public static readonly TimeSpan RejectionHold = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// The error code of a 503 sent when the server could not take the upload in time. The same
+    /// content goes again; it says nothing about any switch being off.
+    /// </summary>
+    public const string BusyErrorCode = "busy";
+
+    /// <summary>Whether an error body's code is <see cref="BusyErrorCode"/>, matched exactly.</summary>
+    /// <param name="errorCode">The error body's code, or null when there was none.</param>
+    // The `=>` body is a single expression whose value the method returns, like an arrow function
+    // without braces. `StringComparison.Ordinal` compares character for character, as `===` does, so
+    // "Busy" is not a match. `string.Equals` is safe on a null code, which simply does not match.
+    public static bool IsBusy(string? errorCode) =>
+        string.Equals(errorCode, BusyErrorCode, StringComparison.Ordinal);
+
     /// <summary>The outcome for one answer.</summary>
     /// <param name="status">The answer's status.</param>
     /// <param name="retryAfter">The server's <c>Retry-After</c>, if it sent one.</param>
     /// <param name="now">The current moment, which a waiting outcome counts from.</param>
-    public static CrucibleOutcome Classify(ApiStatus status, TimeSpan? retryAfter, DateTimeOffset now)
+    /// <param name="errorCode">The error body's code, if it had one. Defaults to null.</param>
+    public static CrucibleOutcome Classify(
+        ApiStatus status, TimeSpan? retryAfter, DateTimeOffset now, string? errorCode = null)
     {
         if (status == ApiStatus.Ok)
             return new CrucibleOutcome(CrucibleOutcomeKind.Accepted);
+
+        // A busy 503 whose Retry-After was lost on the way (a proxy stripping it) goes again on the
+        // scheduler's own doubling wait. Without this it would take the hour a 503 with no wait gets
+        // when a switch is off, holding every Crucible upload that long. `is null` tests for null,
+        // like `=== null`.
+        if (status == ApiStatus.SyncDisabled && retryAfter is null && IsBusy(errorCode))
+        {
+            return new CrucibleOutcome(CrucibleOutcomeKind.Retry, now);
+        }
 
         // A 429 or 503: the server asked for quiet, for as long as it said. `is { } until` matches
         // when there is a value and names it.

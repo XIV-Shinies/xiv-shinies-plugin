@@ -69,15 +69,14 @@ switch on (the live Occult tracker starts on; everything else starts off):
   switched off while you are setting up, the wizard cannot offer you that box — so it starts
   **off** instead, and you can turn it on from the settings whenever you like
 - **Crucible runs**, if you switch the sharing on (it starts off, and nothing turns it on but
-  you): from the familiars you pick at the Crucible of the Unbroken's entrance until you leave a
-  board, what its windows show you between fights (the board, your familiars, your bag and
-  tokens, treasure, loot and shop offers, and your results) and your character's own HP, each
-  with when it was read or its window closed and where it was read (the entrance or a board),
-  filling in your run on the site. While you are on a board it also checks in regularly, during
-  fights too, so the site can tell you are still playing, and it says when you leave. Nothing is
-  read from its windows or your HP during a fight. Enemies are skipped: nothing about them is sent
-  beyond how many your run beat and the points they were worth, as the results screen shows them.
-  Nothing about other players is read or sent
+  you): from the beasts you pick at the Crucible of the Unbroken's entrance until you leave a
+  board, what the Crucible's windows show between fights (the board, your beasts, bag, tokens,
+  treasure, loot, shop offers and results) and your own HP, each stamped with when and where it was
+  read or closed, filling in your run on the site. On a board it also checks in regularly, fights
+  included, and says when you leave. No battle data is collected: nothing is read from the
+  Crucible's windows or your HP during a fight, and anything sent then was read before it began.
+  Enemies are skipped: nothing about them is sent beyond how many your run beat and the points they
+  were worth, as the results screen shows them. Nothing about other players is read or sent
 
 For a collection the plugin can read end to end, the upload also records that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin

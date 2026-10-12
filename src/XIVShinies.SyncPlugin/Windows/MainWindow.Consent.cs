@@ -407,22 +407,21 @@ internal sealed partial class MainWindow
     /// <see cref="OccultWhatGetsSent"/> does.
     /// </remarks>
     private string CrucibleWhatGetsSent() =>
-        "From the familiars you pick at the Crucible of the Unbroken's entrance until you leave a " +
-        "board, shares what its windows show you between fights (the board, your familiars, your " +
-        "bag and tokens, treasure, loot and shop offers, and your results) and your character's own " +
-        "HP, each with when it was read or its window closed and where it was read (the entrance or " +
-        $"a board), to fill in your run on {BackendHost()}. While you are on a board it also checks " +
-        "in regularly, during fights too, so the site can tell you are still playing, and it says " +
-        "when you leave.";
+        "From the beasts you pick at the entrance until you leave a board, shares what the " +
+        "Crucible's windows show between fights (the board, your beasts, bag, tokens, treasure, " +
+        "loot, shop offers and results) and your own HP, each stamped with when and where it was " +
+        $"read or closed, to fill in your run on {BackendHost()}. On a board it also checks in " +
+        "regularly, fights included, and says when you leave.";
 
     /// <summary>
     /// The sharing's hover elaboration: what is NOT read or sent, since the natural worries are
     /// fights, enemies and other players.
     /// </summary>
     private const string CrucibleRunsDetails =
-        "Nothing is read from its windows or your HP during a fight. Enemies are skipped: nothing " +
-        "about them is sent beyond how many your run beat and the points they were worth, as the " +
-        "results screen shows them. Nothing about other players is read or sent.";
+        "No battle data is collected: nothing is read from the Crucible's windows or your HP during a " +
+        "fight, and anything sent then was read before it began. Enemies are skipped: nothing about " +
+        "them is sent beyond how many your run beat and the points they were worth, as the results " +
+        "screen shows them. Nothing about other players is read or sent.";
 
     /// <summary>
     /// The Crucible run sharing's consent card: its toggle, its disclosure copy, and the fix for a

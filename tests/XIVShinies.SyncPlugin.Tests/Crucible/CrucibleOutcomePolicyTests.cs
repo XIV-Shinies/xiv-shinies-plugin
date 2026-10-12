@@ -64,6 +64,69 @@ public class CrucibleOutcomePolicyTests
             CrucibleOutcomePolicy.Classify(status, TimeSpan.FromSeconds(90), Now));
     }
 
+    // A busy 503 that lost its Retry-After asks for no wait of its own, so the scheduler's doubling
+    // wait decides when it goes again (see CrucibleOutcomePolicy.Classify).
+    [Fact]
+    public void A_busy_503_without_a_wait_asks_for_no_wait_of_its_own()
+    {
+        Assert.Equal(
+            new CrucibleOutcome(CrucibleOutcomeKind.Retry, Now),
+            CrucibleOutcomePolicy.Classify(
+                ApiStatus.SyncDisabled, retryAfter: null, Now, CrucibleOutcomePolicy.BusyErrorCode));
+    }
+
+    // A busy 503 that keeps its Retry-After waits for as long as the server asked, like any other.
+    [Fact]
+    public void A_busy_503_with_a_wait_keeps_the_servers_wait()
+    {
+        Assert.Equal(
+            new CrucibleOutcome(CrucibleOutcomeKind.Retry, Now.AddSeconds(3)),
+            CrucibleOutcomePolicy.Classify(
+                ApiStatus.SyncDisabled, TimeSpan.FromSeconds(3), Now, CrucibleOutcomePolicy.BusyErrorCode));
+    }
+
+    // Any other 503 without a wait gets the long wait a switched-off 503 gets. `string?` may be
+    // null, like `string | null`, so a row can pass no code at all.
+    [Theory]
+    [InlineData("sync_disabled")]
+    [InlineData(null)]
+    public void Another_503_without_a_wait_keeps_the_long_wait(string? errorCode)
+    {
+        Assert.Equal(
+            new CrucibleOutcome(CrucibleOutcomeKind.Retry, Now + RetryPolicy.DefaultSyncDisabledBackoff),
+            CrucibleOutcomePolicy.Classify(ApiStatus.SyncDisabled, retryAfter: null, Now, errorCode));
+    }
+
+    // The busy code matters only on a 503: on every other status the outcome is the one the table
+    // names.
+    [Fact]
+    public void The_busy_code_on_another_status_changes_nothing()
+    {
+        foreach (var status in Enum.GetValues<ApiStatus>())
+        {
+            if (status == ApiStatus.SyncDisabled)
+                continue;
+
+            Assert.Equal(
+                Expected[status],
+                CrucibleOutcomePolicy.Classify(
+                    status, retryAfter: null, Now, CrucibleOutcomePolicy.BusyErrorCode));
+        }
+    }
+
+    // Only the exact code is busy: the match is case-sensitive, and no code at all is not busy.
+    [Theory]
+    [InlineData("busy", true)]
+    [InlineData("Busy", false)]
+    [InlineData("BUSY", false)]
+    [InlineData("", false)]
+    [InlineData("sync_disabled", false)]
+    [InlineData(null, false)]
+    public void Only_the_exact_code_is_busy(string? errorCode, bool busy)
+    {
+        Assert.Equal(busy, CrucibleOutcomePolicy.IsBusy(errorCode));
+    }
+
     // A refused payload holds everything back for a minute, in case every upload is being refused.
     [Fact]
     public void A_refused_payload_holds_for_a_minute()

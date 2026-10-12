@@ -10,15 +10,16 @@ public sealed record ErrorResponse
 {
     /// <summary>
     /// A stable machine-readable code: <c>invalid_token</c>, <c>invalid_payload</c>,
-    /// <c>payload_too_large</c>, <c>rate_limited</c>, <c>sync_disabled</c>,
+    /// <c>payload_too_large</c>, <c>rate_limited</c>, <c>sync_disabled</c>, <c>busy</c>,
     /// <c>tracker_unavailable</c>, or one of the four character refusals a 403 carries
     /// (<c>character_not_claimed</c>, <c>character_not_verified</c>, <c>character_ambiguous</c>,
     /// <c>character_bound_elsewhere</c>).
     /// </summary>
     /// <remarks>
     /// Server-supplied, so it is never displayed or logged. On a 403 it is compared exactly against
-    /// the four character-refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>); on any
-    /// other status it is unused.
+    /// the four character-refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), and on a
+    /// Crucible upload that is to be sent again against <c>busy</c> (see
+    /// <c>CrucibleOutcomePolicy.IsBusy</c>); on any other answer it is unused.
     /// </remarks>
     public required string Error { get; init; }
 

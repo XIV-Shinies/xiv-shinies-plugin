@@ -57,6 +57,10 @@ internal sealed class UploadLogTable
         var whenStacked = whenOneLine;
         var triggerOneLine = ImGui.CalcTextSize("Trigger").X;
         var triggerStacked = triggerOneLine;
+
+        // Outcome's widest single word, the website's address among them: a word wider than the
+        // column would be left to ImGui's own wrapping (see TextWrap).
+        var outcomeWord = ImGui.CalcTextSize("Outcome").X;
         foreach (var entry in history)
         {
             // "d"/"t" are the short date and short time in the user's own locale.
@@ -71,6 +75,9 @@ internal sealed class UploadLogTable
             triggerOneLine = Math.Max(triggerOneLine, ImGui.CalcTextSize(trigger).X);
             foreach (var word in trigger.Split(' '))
                 triggerStacked = Math.Max(triggerStacked, ImGui.CalcTextSize(word).X);
+
+            foreach (var word in UploadLogText.OutcomeText(entry, host).Split(' '))
+                outcomeWord = Math.Max(outcomeWord, ImGui.CalcTextSize(word).X);
         }
 
         // Compact when one-line metadata would leave too little room for Outcome and Sent.
@@ -84,9 +91,22 @@ internal sealed class UploadLogTable
 
         // Roomier cells than ImGui's default: CellPadding is the gap between a cell's border and
         // its content, pushed as a style variable scoped to this table.
-        using var cellPadding = ImRaii.PushStyle(
-            ImGuiStyleVar.CellPadding,
-            new Vector2(8f * ImGuiHelpers.GlobalScale, 6f * ImGuiHelpers.GlobalScale));
+        var padding = new Vector2(8f * ImGuiHelpers.GlobalScale, 6f * ImGuiHelpers.GlobalScale);
+
+        // Outcome takes 0.8 of every 3 units of the room the metadata columns leave, Sent the other
+        // 2.2: Outcome's usual content is one short word, and the per-category counts are the dense
+        // part. Outcome is never narrower than its widest word, though, so its width is worked out
+        // here. A column's width excludes the space between columns: with no vertical borders, ImGui
+        // puts the cell padding on each side of every gap and none at the table's outer edges, so
+        // the three gaps take two paddings each.
+        var stretchRoom = tableWidth - whenWidth - triggerWidth - (3 * 2f * padding.X);
+
+        // Two scaled pixels over the widest word: one because BreakForWrap breaks a scaled pixel short
+        // of the edge, and one because ImGui rounds a column's width down to a whole pixel.
+        var outcomeWidth =
+            Math.Max(outcomeWord + (2f * ImGuiHelpers.GlobalScale), stretchRoom * (0.8f / 3f));
+
+        using var cellPadding = ImRaii.PushStyle(ImGuiStyleVar.CellPadding, padding);
 
         // Fixed columns for the short facts, the stretchy remainder for per-category detail, row
         // striping for scanability. The explicit outer width stops the table at the card's inner
@@ -100,14 +120,12 @@ internal sealed class UploadLogTable
         if (!table.Success)
             return;
 
-        // Metadata columns fixed at their measured width (one-line or stacked, chosen above);
-        // Outcome and Sent stretch over whatever remains. Sent gets the lion's share: Outcome's
-        // usual content is one short word, and the long failure phrases can wrap — the
-        // per-category counts are the dense part.
+        // Metadata columns fixed at their measured width (one-line or stacked, chosen above), and
+        // Outcome at the width worked out above; Sent stretches over whatever remains.
         ImGui.TableSetupColumn("When", ImGuiTableColumnFlags.WidthFixed, whenWidth);
         ImGui.TableSetupColumn("Trigger", ImGuiTableColumnFlags.WidthFixed, triggerWidth);
-        ImGui.TableSetupColumn("Outcome", ImGuiTableColumnFlags.WidthStretch, 0.8f);
-        ImGui.TableSetupColumn("Sent", ImGuiTableColumnFlags.WidthStretch, 2.2f);
+        ImGui.TableSetupColumn("Outcome", ImGuiTableColumnFlags.WidthFixed, outcomeWidth);
+        ImGui.TableSetupColumn("Sent", ImGuiTableColumnFlags.WidthStretch, 1f);
         ImGui.TableHeadersRow();
 
         // The table's cells are data the user came here to read, so they draw in the normal text
