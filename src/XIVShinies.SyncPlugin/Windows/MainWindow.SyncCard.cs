@@ -151,7 +151,7 @@ internal sealed partial class MainWindow
 
         // Whether the wait needs a line of its own is SyncStatusView.NeedsWaitLine's rule.
         if (SyncStatusView.NeedsWaitLine(status, syncManager.LastStatus, backingOff))
-            ImGui.TextUnformatted(SyncStatusView.WaitLine(BackendHost()));
+            DrawWrapped(SyncStatusView.WaitLine(BackendHost()), ImGuiCol.Text);
 
         // "When?" is half of what a status line is for: without it, a deliberately quiet stretch
         // (item acquisitions fire no event) is indistinguishable from a hang. Muted, unlike the
@@ -474,11 +474,11 @@ internal sealed partial class MainWindow
             // contrast. Only red says "you have to do something".
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
-                ImGui.TextUnformatted(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()));
+                DrawWrapped(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()), ImGuiCol.Text);
                 break;
 
             case ApiStatus.NetworkError:
-                ImGui.TextUnformatted($"Could not reach {BackendHost()}. Will try again.");
+                DrawWrapped($"Could not reach {BackendHost()}. Will try again.", ImGuiCol.Text);
                 break;
 
             // The settings-side refusal, as opposed to NetworkError's unreachable server: the

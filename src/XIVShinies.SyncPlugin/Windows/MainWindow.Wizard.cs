@@ -241,12 +241,14 @@ internal sealed partial class MainWindow
         // `.Value` reads the tuple out of its nullable wrapper, safe because after `??=` it always
         // holds a value.
         var opening = chooseStepOpening.Value;
-        ImGui.TextWrapped(ConsentCopy.WizardIntro(
-            opening.AnythingSwitchedOn,
-            trackerOffered: !OccultGate.ServerHasSwitchedOff(remoteConfig),
-            trackerOn: opening.TrackerOn,
-            userHasAChoice: ConsentCopy.UserHasAChoice(wizardRows, remoteConfig),
-            host: BackendHost()));
+        DrawWrapped(
+            ConsentCopy.WizardIntro(
+                opening.AnythingSwitchedOn,
+                trackerOffered: !OccultGate.ServerHasSwitchedOff(remoteConfig),
+                trackerOn: opening.TrackerOn,
+                userHasAChoice: ConsentCopy.UserHasAChoice(wizardRows, remoteConfig),
+                host: BackendHost()),
+            ImGuiCol.Text);
 
         Widgets.SectionGap();
 

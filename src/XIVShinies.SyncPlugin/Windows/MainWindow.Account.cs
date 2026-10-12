@@ -143,7 +143,7 @@ internal sealed partial class MainWindow
         // broken wizard, so the wait says what it is waiting for.
         if (onboarding.AwaitingConfig)
         {
-            ImGui.TextUnformatted($"Token accepted. Asking {BackendHost()} what it collects...");
+            DrawWrapped($"Token accepted. Asking {BackendHost()} what it collects...", ImGuiCol.Text);
             return;
         }
 
@@ -167,7 +167,7 @@ internal sealed partial class MainWindow
                 break;
 
             case TokenFeedbackKind.Checking:
-                ImGui.TextUnformatted($"Checking with {BackendHost()}...");
+                DrawWrapped($"Checking with {BackendHost()}...", ImGuiCol.Text);
                 break;
 
             case TokenFeedbackKind.Accepted:

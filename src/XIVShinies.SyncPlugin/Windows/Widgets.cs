@@ -28,9 +28,9 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// <para>
 /// Stateless by design: a primitive that needs a font takes the caller's <see cref="IFontHandle"/>
 /// as a parameter, and one that wraps text takes the caller's wrap edge (a card's inner right, or
-/// null for the window edge). The window owns its fonts and its card state; this class owns only
-/// how things draw — which is what lets a second window reuse the same look without inheriting
-/// anything.
+/// null for the edge of the current content region). The window owns its fonts and its card
+/// state; this class owns only how things draw — which is what lets a second window reuse the
+/// same look without inheriting anything.
 /// </para>
 /// <para>
 /// Colors here come from Dalamud's own palette (and, for muted text, from the active style)
@@ -121,29 +121,57 @@ internal static class Widgets
     /// Needed because <c>TextWrapped</c> has no colored variant and <c>TextColored</c> does not
     /// wrap — long descriptions would run straight off the window edge. Pushing
     /// <c>ImGuiCol.Text</c> recolors whatever text is drawn inside the scope. The wrap position is
-    /// pushed by hand rather than via <c>TextWrapped</c>, because TextWrapped always wraps at the
-    /// window edge — inside a card the text must break at the card's inner edge instead. A wrap
-    /// position of 0 means "the window edge", so a null <paramref name="wrapEdge"/> behaves
-    /// exactly like TextWrapped.
+    /// pushed by hand so the caller's edge applies whatever encloses the call: <c>TextWrapped</c>
+    /// would keep any wrap position already pushed, such as a card's. A null
+    /// <paramref name="wrapEdge"/> pushes 0, which ImGui reads as the right edge of the current
+    /// content region: the window's, or a table cell's inside a table. Lines break at spaces wherever
+    /// each word fits (see <see cref="BreakForWrap"/>).
     /// </remarks>
     internal static void DrawWrapped(string text, Vector4 color, float? wrapEdge)
     {
         using (ImRaii.PushColor(ImGuiCol.Text, color))
         using (ImRaii.TextWrapPos(wrapEdge ?? 0f))
         {
-            ImGui.TextUnformatted(text);
+            ImGui.TextUnformatted(BreakForWrap(text, wrapEdge));
         }
     }
 
     /// <summary>Draws wrapped text in one of the current style's own colors.</summary>
-    internal static void DrawWrapped(string text, ImGuiCol styleColor, float? wrapEdge)
+    /// <remarks>
+    /// The style's color is passed on as it is stored. <c>GetColorU32</c> would apply the style's
+    /// overall transparency, which ImGui applies again when it draws the text, so text in a faded
+    /// style or a disabled scope would come out fainter than plain text.
+    /// </remarks>
+    // `(int)styleColor` converts the enum value to its number, which indexes the style's color list.
+    internal static void DrawWrapped(string text, ImGuiCol styleColor, float? wrapEdge) =>
+        DrawWrapped(text, ImGui.GetStyle().Colors[(int)styleColor], wrapEdge);
+
+    /// <summary>
+    /// Puts line breaks into text about to be drawn from the cursor to a wrap edge, at spaces only
+    /// (see <see cref="TextWrap"/> for why).
+    /// </summary>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="wrapEdge">
+    /// The wrap position in cursor space (a card's inner right, or a tooltip's fixed width), or null
+    /// for the right edge of the current content region (the window's, or a table cell's inside a
+    /// table).
+    /// </param>
+    private static string BreakForWrap(string text, float? wrapEdge)
     {
-        using (ImRaii.PushColor(ImGuiCol.Text, ImGui.GetColorU32(styleColor)))
-        using (ImRaii.TextWrapPos(wrapEdge ?? 0f))
-        {
-            ImGui.TextUnformatted(text);
-        }
+        var cursorX = ImGui.GetCursorPosX();
+        var edge = wrapEdge ?? (cursorX + ImGui.GetContentRegionAvail().X);
+
+        // One scaled pixel short of the edge: ImGui's own wrapping measures the same line with its own
+        // rounding, and a line measured here as exactly filling the room must not be broken again there.
+        return BreakAtSpacesForFont(text, edge - cursorX - ImGuiHelpers.GlobalScale);
     }
+
+    /// <summary>Breaks text at spaces for a width, measured in the current font.</summary>
+    // `static s => ...` is a lambda, like the arrow function `s => ...`, that may not use the local
+    // variables, parameters or `this` around it, though it can still call static methods such as
+    // ImGui's, so it carries no closure.
+    private static string BreakAtSpacesForFont(string text, float width) =>
+        TextWrap.BreakAtSpaces(text, width, static s => ImGui.CalcTextSize(s).X);
 
     /// <summary>
     /// A wrapped paragraph in which some spans carry their own color (null means the default text
@@ -747,14 +775,16 @@ internal static class Widgets
     /// <remarks>
     /// The wrap width is a fixed multiple of the font size rather than of any window: a tooltip
     /// floats free of the layout that spawned it, so without an explicit wrap edge a long sentence
-    /// would stretch into one very wide line.
+    /// would stretch into one very wide line. Its lines break at spaces wherever each word fits, as
+    /// <see cref="DrawWrapped(string, Vector4, float?)"/>'s do.
     /// </remarks>
     /// <param name="text">The tooltip's content, wrapped to a readable width.</param>
     internal static void DrawTooltip(string text)
     {
         ImGui.BeginTooltip();
-        ImGui.PushTextWrapPos(ImGui.GetFontSize() * 24f);
-        ImGui.TextUnformatted(text);
+        var wrapEdge = ImGui.GetFontSize() * 24f;
+        ImGui.PushTextWrapPos(wrapEdge);
+        ImGui.TextUnformatted(BreakForWrap(text, wrapEdge));
         ImGui.PopTextWrapPos();
         ImGui.EndTooltip();
     }
