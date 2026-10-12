@@ -48,8 +48,8 @@ public class SyncStatusViewTests
         new[] {Row(serverEnabled: false, serverGloballyOff: true)};
 
     /// <summary>
-    /// The ladder, with reading the character not given up and no sharing unless a test says
-    /// otherwise.
+    /// The ladder, logged in, with reading the character not given up and no sharing unless a test
+    /// says otherwise.
     /// </summary>
     private static SyncStatusKind Select(
         bool masterEnabled,
@@ -58,10 +58,11 @@ public class SyncStatusViewTests
         bool hasCharacter,
         bool hasUploaded,
         bool characterNotRead = false,
-        bool sharingCanRun = false) =>
+        bool sharingCanRun = false,
+        bool loggedIn = true) =>
         SyncStatusView.Select(
             masterEnabled, rows, blockedPendingUserAction, hasCharacter, hasUploaded,
-            characterNotRead, sharingCanRun);
+            characterNotRead, sharingCanRun, loggedIn);
 
     [Fact]
     public void A_healthy_pipeline_that_has_uploaded_states_the_last_outcome()
@@ -139,6 +140,67 @@ public class SyncStatusViewTests
         Assert.Equal(
             SyncStatusKind.WaitingForCharacter,
             Select(true, Running(), false, hasCharacter: false, hasUploaded: true));
+    }
+
+    // With nobody logged in there is no character to wait for: logging in is what starts syncing.
+    // The last upload outcome is cleared at logout; here it is set, to pin the order.
+    [Fact]
+    public void Nobody_logged_in_is_not_a_wait_for_a_character()
+    {
+        Assert.Equal(
+            SyncStatusKind.LoggedOut,
+            Select(true, Running(), false, hasCharacter: false, hasUploaded: true, loggedIn: false));
+    }
+
+    // Logged out with nothing switched on, or with every collection switched off by the server, the
+    // line saying why nothing is collected is still the truer one.
+    [Fact]
+    public void Nothing_switched_on_outranks_nobody_being_logged_in()
+    {
+        var nothingOn = new[] {Row(userEnabled: false)};
+        var serverOff = new[] {Row(userEnabled: true, serverEnabled: false)};
+
+        Assert.Equal(
+            SyncStatusKind.NothingSwitchedOnByUser,
+            Select(true, nothingOn, false, hasCharacter: false, hasUploaded: false, loggedIn: false));
+        Assert.Equal(
+            SyncStatusKind.NothingPermittedByServer,
+            Select(true, serverOff, false, hasCharacter: false, hasUploaded: false, loggedIn: false));
+    }
+
+    // The switch, a pause and a halt all hold while nobody is logged in (the master switch is a
+    // setting, and /config is polled at the title screen too), and each outranks it. The halt
+    // matters most: its fix is a press, which LoggedOut would refuse.
+    [Fact]
+    public void The_switch_a_pause_and_a_halt_outrank_nobody_being_logged_in()
+    {
+        Assert.Equal(
+            SyncStatusKind.SwitchedOffByUser,
+            Select(false, Running(), false, hasCharacter: false, hasUploaded: false, loggedIn: false));
+        Assert.Equal(
+            SyncStatusKind.PausedByServer,
+            Select(true, Paused(), false, hasCharacter: false, hasUploaded: false, loggedIn: false));
+        Assert.Equal(
+            SyncStatusKind.BlockedPendingUserAction,
+            Select(true, Running(), true, hasCharacter: false, hasUploaded: false, loggedIn: false));
+    }
+
+    // Logging in is asked only while no character has been identified.
+    [Fact]
+    public void An_identified_character_is_never_reported_as_logged_out()
+    {
+        Assert.Equal(
+            SyncStatusKind.NothingUploadedYet,
+            Select(true, Running(), false, hasCharacter: true, hasUploaded: false, loggedIn: false));
+    }
+
+    [Fact]
+    public void The_character_wait_sentences_are_pinned()
+    {
+        Assert.Equal(
+            "Reading your character — syncing starts once it has been read.",
+            SyncStatusView.WaitingForCharacterSentence);
+        Assert.Equal("Log in to a character to start syncing.", SyncStatusView.LoggedOutSentence);
     }
 
     // An empty list is nobody's decision, so it must not draw the sentence blaming the server —
@@ -258,21 +320,25 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.CharacterNotRead, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, false)]
+    [InlineData(SyncStatusKind.LoggedOut, false)]
     public void The_cadence_promise_holds_only_where_nothing_stops_the_pipeline(
         SyncStatusKind kind, bool expected)
     {
         Assert.Equal(expected, SyncStatusView.CadenceHolds(kind));
     }
 
-    // Sync now is refused only where pressing it would produce no upload while the button still
+    // Sync now is refused only where pressing it would add no upload while the button still
     // played its "Syncing" flash — two states the upload gate refuses, two that collect nothing
-    // for it to send. The halt and a character that could not be read deliberately keep it live:
-    // each state's own copy tells the user to press it.
+    // for it to send, and nobody logged in, where the login brings its own sync. Waiting for a
+    // character adds no upload either, but stays out of this set so a server wait keeps its own line;
+    // SyncNowOffered refuses the press there instead. The halt and a character that could not be read
+    // deliberately keep it live: each state's own copy tells the user to press it.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
     [InlineData(SyncStatusKind.PausedByServer, true)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true)]
+    [InlineData(SyncStatusKind.LoggedOut, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false)]
     [InlineData(SyncStatusKind.CharacterNotRead, false)]
     [InlineData(SyncStatusKind.WaitingForCharacter, false)]
@@ -288,6 +354,7 @@ public class SyncStatusViewTests
 
     // Every status, with and without a server-requested wait. The sentences invite a press only where
     // one uploads something now; a halt is the exception, since the press itself is what lifts it.
+    // While the character is still being read, a press brings nothing sooner.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
@@ -301,7 +368,9 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, false, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true, false)]
-    [InlineData(SyncStatusKind.WaitingForCharacter, false, true)]
+    [InlineData(SyncStatusKind.LoggedOut, false, false)]
+    [InlineData(SyncStatusKind.LoggedOut, true, false)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, false, false)]
     [InlineData(SyncStatusKind.WaitingForCharacter, true, false)]
     [InlineData(SyncStatusKind.LastUploadOutcome, false, true)]
     [InlineData(SyncStatusKind.LastUploadOutcome, true, false)]
@@ -314,8 +383,7 @@ public class SyncStatusViewTests
     }
 
     // The button follows the sentences, plus a character that could not be read during a wait, where
-    // a press starts reading it again, which the wait does not hold back. Waiting for a character
-    // during a wait stays shut: the reading is already under way, or nobody is logged in.
+    // a press starts reading it again, which the wait does not hold back.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
@@ -329,7 +397,9 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, false, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true, false)]
-    [InlineData(SyncStatusKind.WaitingForCharacter, false, true)]
+    [InlineData(SyncStatusKind.LoggedOut, false, false)]
+    [InlineData(SyncStatusKind.LoggedOut, true, false)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, false, false)]
     [InlineData(SyncStatusKind.WaitingForCharacter, true, false)]
     [InlineData(SyncStatusKind.LastUploadOutcome, false, true)]
     [InlineData(SyncStatusKind.LastUploadOutcome, true, false)]
@@ -374,8 +444,8 @@ public class SyncStatusViewTests
             SyncStatusKind.LastUploadOutcome, ApiStatus.NetworkError, backingOff: true));
     }
 
-    // No wait, no line; and the states with a sentence of their own (a press would do nothing, or a
-    // halt) need none.
+    // No wait, no line; and the states where nothing uploads when the wait ends either, whose own line
+    // already says so, or a halt, need none.
     [Theory]
     [InlineData(SyncStatusKind.LastUploadOutcome, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
@@ -383,6 +453,7 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.BlockedPendingUserAction, true)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true)]
+    [InlineData(SyncStatusKind.LoggedOut, true)]
     public void No_wait_line_without_a_wait_or_where_another_sentence_covers_it(
         SyncStatusKind kind, bool backingOff)
     {

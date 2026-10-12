@@ -37,7 +37,10 @@ public enum SyncStatusKind
     /// </summary>
     NothingPermittedByServer,
 
-    /// <summary>No character is loaded yet.</summary>
+    /// <summary>Nobody is logged in.</summary>
+    LoggedOut,
+
+    /// <summary>Logged in, and the character is still being read.</summary>
     WaitingForCharacter,
 
     /// <summary>An upload has happened this session, and its outcome is the status.</summary>
@@ -78,6 +81,9 @@ public static class SyncStatusView
     /// <param name="sharingCanRun">
     /// Whether the settings and the server let the live tracker or the Crucible sharing run.
     /// </param>
+    /// <param name="loggedIn">
+    /// Whether a character is logged in. Asked only while no character has been identified.
+    /// </param>
     public static SyncStatusKind Select(
         bool masterEnabled,
         IReadOnlyList<CategorySettingsRow> rows,
@@ -85,7 +91,8 @@ public static class SyncStatusView
         bool hasCharacter,
         bool hasUploaded,
         bool characterNotRead,
-        bool sharingCanRun)
+        bool sharingCanRun,
+        bool loggedIn)
     {
         if (!masterEnabled)
             return SyncStatusKind.SwitchedOffByUser;
@@ -117,14 +124,17 @@ public static class SyncStatusView
             // No rows at all is nobody's decision — there is no collection for the server to have
             // refused — so it must not draw the sentence that blames one. Unreachable while the
             // registry always yields collectors; answered explicitly because the alternative
-            // reading is the accusatory one.
+            // reading is the accusatory one. `a ? b : c` picks b when a is true, else c, as in
+            // TypeScript.
             return rows.Count == 0 || ManifestConsent.AnyServerEnabled(rows)
                 ? SyncStatusKind.NothingSwitchedOnByUser
                 : SyncStatusKind.NothingPermittedByServer;
         }
 
+        // No character yet: either nobody is logged in, and nothing uploads until someone is, or the
+        // character logged in is still being read, and syncing starts on its own once it is.
         if (!hasCharacter)
-            return SyncStatusKind.WaitingForCharacter;
+            return loggedIn ? SyncStatusKind.WaitingForCharacter : SyncStatusKind.LoggedOut;
 
         return hasUploaded ? SyncStatusKind.LastUploadOutcome : SyncStatusKind.NothingUploadedYet;
     }
@@ -141,41 +151,50 @@ public static class SyncStatusView
     /// running.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
+    // `is A or B or C` is true when the value is any one of them.
     public static bool CadenceHolds(SyncStatusKind kind) =>
         kind is SyncStatusKind.WaitingForCharacter
             or SyncStatusKind.LastUploadOutcome
             or SyncStatusKind.NothingUploadedYet;
 
     /// <summary>
-    /// Whether pressing "Sync now" would achieve nothing, so the button should not offer to.
+    /// Whether a "Sync now" press would add no upload at all, in a state where nothing would upload
+    /// once a server-requested wait ended either, so the button should not offer to.
     /// </summary>
     /// <remarks>
-    /// A press produces no upload in any of these: the first two are refused at the upload gate,
-    /// and the last two collect an empty snapshot the uploader then skips. In all four the button
-    /// would still play its "Syncing" flash — a moment of reassurance directly beneath a line
-    /// saying nothing is syncing.
+    /// A press adds no upload in any of these: the first two are refused at the upload gate, the
+    /// next two collect an empty snapshot the uploader then skips, and while nobody is logged in the
+    /// sweep a press asks for waits for a character and becomes the one sync that login brings
+    /// anyway. In all five the button would still play its "Syncing" flash — a moment of
+    /// reassurance under the status line saying why nothing will upload.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     public static bool ManualSyncWouldDoNothing(SyncStatusKind kind) =>
         kind is SyncStatusKind.SwitchedOffByUser
             or SyncStatusKind.PausedByServer
             or SyncStatusKind.NothingSwitchedOnByUser
-            or SyncStatusKind.NothingPermittedByServer;
+            or SyncStatusKind.NothingPermittedByServer
+            or SyncStatusKind.LoggedOut;
 
     /// <summary>
     /// Whether the card's sentences invite a "Sync now" press: the cadence sentence and the line
     /// beneath the read-status panel.
     /// </summary>
     /// <remarks>
-    /// Beyond the states where a press would upload nothing at all, a press while the server has asked
-    /// the plugin to wait uploads nothing until the wait ends, so "update immediately" would be false.
-    /// A halt is the exception: the press itself is what lifts it, wait or no wait. Neither sentence
-    /// draws during a halt, so that answer reaches the button, through <see cref="SyncNowEnabled"/>.
+    /// Beyond the states in <see cref="ManualSyncWouldDoNothing"/>, two more bring nothing sooner.
+    /// While the character is still being read, a press merges into the login sync, just as it does
+    /// while nobody is logged in; the state stays out of that set because a wait still needs its own
+    /// line there (see <see cref="NeedsWaitLine"/>). And while the server has asked the plugin to
+    /// wait, a press uploads nothing until the wait ends, so "update immediately" would be false. A
+    /// halt is the exception: the press itself is what lifts it, wait or no wait. Neither sentence
+    /// draws during a halt, so that answer reaches the button, through
+    /// <see cref="SyncNowEnabled"/>.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool SyncNowOffered(SyncStatusKind kind, bool backingOff) =>
         !ManualSyncWouldDoNothing(kind)
+        && kind != SyncStatusKind.WaitingForCharacter
         && (!backingOff || kind == SyncStatusKind.BlockedPendingUserAction);
 
     /// <summary>Whether the "Sync now" button is enabled.</summary>
@@ -197,6 +216,13 @@ public static class SyncStatusView
     public const string CharacterNotReadSentence =
         "Your character could not be read, so nothing is uploaded. Press Sync now to try again.";
 
+    /// <summary>What the card says in <see cref="SyncStatusKind.WaitingForCharacter"/>.</summary>
+    public const string WaitingForCharacterSentence =
+        "Reading your character — syncing starts once it has been read.";
+
+    /// <summary>What the card says in <see cref="SyncStatusKind.LoggedOut"/>.</summary>
+    public const string LoggedOutSentence = "Log in to a character to start syncing.";
+
     /// <summary>What the card says while the website has asked the plugin to wait.</summary>
     /// <param name="host">The configured website's address.</param>
     // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
@@ -209,14 +235,14 @@ public static class SyncStatusView
     /// <remarks>
     /// The status line states the wait itself when it is the outcome of the refused upload. A wait
     /// outlives that outcome, though: it survives a relog, which clears the last outcome, and the card
-    /// would otherwise say nothing about why uploads are held back. The states where a press would do
-    /// nothing anyway, and a halt, have their own sentence and need no second one.
+    /// would otherwise say nothing about why uploads are held back. In the states in
+    /// <see cref="ManualSyncWouldDoNothing"/>, nothing uploads when the wait ends either, and their own
+    /// line already says why; they and a halt need no second one.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="lastStatus">The last upload's outcome, or null when none happened this session.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
-    // `ApiStatus?` may be null, like `ApiStatus | null`. `is A or B` is true when the value is
-    // either one.
+    // `ApiStatus?` may be null, like `ApiStatus | null`.
     public static bool NeedsWaitLine(SyncStatusKind kind, ApiStatus? lastStatus, bool backingOff)
     {
         if (!backingOff || ManualSyncWouldDoNothing(kind) || kind == SyncStatusKind.BlockedPendingUserAction)
@@ -251,8 +277,8 @@ public static class SyncStatusView
     {
         var interval = TimeText.Interval(fullSyncInterval);
 
-        // `a ? b : c` picks b when a is true, else c, as in TypeScript. "Most" is load-bearing: only
-        // some collections are announced by the game, and the rest wait for the sweep.
+        // "Most" is load-bearing: only some collections are announced by the game, and the rest wait
+        // for the sweep.
         var schedule = !backingOff && AnyAnnouncedCollectionOn(rows)
             ? $"Most new unlocks upload within seconds. Everything else syncs automatically every {interval}"
             : $"Your collections sync automatically every {interval}";

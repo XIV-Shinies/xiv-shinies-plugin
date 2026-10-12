@@ -253,10 +253,10 @@ public static class CollectorRegistry
         // travels with it. Otherwise a level that lags behind the game looks like a broken sync
         // rather than an old sighting.
         Details =
-            "All 24 support jobs travel together, updating each time you visit the Crescent. " +
-            "The knowledge level is captured only when you choose \"Review your knowledge " +
-            "level and currencies\" at Jeffroy in Phantom Village, and is sent with the time " +
-            "you opened it.",
+            "All 24 support jobs travel together, read by the automatic sync or Sync now while " +
+            "you are inside the Crescent. The knowledge level is captured only when you choose " +
+            "\"Review your knowledge level and currencies\" at Jeffroy in Phantom Village, and " +
+            "is sent with the time you opened it.",
     };
 
     private static readonly CategoryInfo OccultRecords = new()

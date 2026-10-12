@@ -95,7 +95,8 @@ internal sealed partial class MainWindow
             syncManager.HasCharacter,
             syncManager.LastStatus is not null,
             syncManager.IdentityCaptureGaveUp,
-            sharingCanRun);
+            sharingCanRun,
+            syncManager.IsLoggedIn);
 
         // Read once, so the status line, the wait line, the button and the sentences below all
         // describe the same wait.
@@ -154,13 +155,16 @@ internal sealed partial class MainWindow
             // status — the sentence the user came to read — even though it is neither good news nor
             // bad.
             //
-            // This state covers two moments the plugin cannot tell apart from here: nobody is
-            // logged in at all, and the few seconds right after login while the character is still
-            // being identified (identity is only captured once the game reports it settled). The
-            // copy speaks to both — naming the post-login delay matters most, because a player who
-            // IS logged in would otherwise read "waiting for a character" as the plugin failing to
-            // see them.
-            ImGui.TextUnformatted("Waiting for a character — syncing starts a few seconds after you log in.");
+            // The character has not been read yet. The copy names no duration because the wait has
+            // no fixed length (see SyncManager.CaptureIdentityIfSettled). Saying that the character
+            // is being read matters: the player is logged in, and a bare wait would read as the
+            // plugin failing to see them.
+            ImGui.TextUnformatted(SyncStatusView.WaitingForCharacterSentence);
+        }
+        else if (status == SyncStatusKind.LoggedOut)
+        {
+            // Normal text, like the wait above: nothing is wrong, and logging in is all it takes.
+            ImGui.TextUnformatted(SyncStatusView.LoggedOutSentence);
         }
         else if (status == SyncStatusKind.LastUploadOutcome && syncManager.LastStatus is { } lastStatus)
         {
@@ -300,7 +304,7 @@ internal sealed partial class MainWindow
     /// The group is exception-first: a healthy source (Live or Cached) has nothing the user must do,
     /// so it compresses into a small chip — its tone's icon and color, the note's short label, and the
     /// note's optional detail on hover — while a Missing note keeps a full line, because its text names
-    /// a required in-game action and hover must never be the only way to see one (see
+    /// what the user needs to know and hover must never be the only way to see it (see
     /// <see cref="SourceNote"/> for the rule). The chips draw first, as one row that wraps at the
     /// card's inner edge; the lines follow. Both decisions switch on the TONE alone, never on a source
     /// key or category name, which is what keeps a future source renderable without touching this
@@ -379,9 +383,8 @@ internal sealed partial class MainWindow
         {
             // Cached does not count as missing (see SourceNoteText for why Cached is a healthy resting
             // state rather than a gap): gating the caller's follow-up hint on it too would make that
-            // hint permanent noise that never clears. Missing is different — it means the source is
-            // contributing nothing at all, and every Missing note names a real, one-time in-game action
-            // that changes that.
+            // hint permanent noise that never clears. Missing is different — it marks something this
+            // pass did not read, and that is the gap the hint beneath the panel speaks to.
             if (note.Tone is SourceTone.Missing)
                 hasMissingNote = true;
 

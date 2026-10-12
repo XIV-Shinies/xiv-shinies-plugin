@@ -309,7 +309,7 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     private volatile int sessionGeneration;
 
-    // The next four are WRITTEN only on the game's main thread — from the Update handler, from work
+    // The next five are WRITTEN only on the game's main thread — from the Update handler, from work
     // marshaled onto it with RunOnFrameworkThread, and from the Login/Logout/Unlock events, which
     // reach the plugin on that same thread (Login through Dalamud's framework update, Logout through
     // a hook on the game's own logout callback). The one exception is the constructor's own OnLogin
@@ -337,6 +337,13 @@ internal sealed class SyncManager : IDisposable
     /// the latest write, so the settings window can read it from the draw call.
     /// </remarks>
     private volatile bool identityCaptureGaveUp;
+
+    /// <summary>True from a login to the next logout. See <see cref="IsLoggedIn"/>.</summary>
+    /// <remarks>
+    /// Kept here rather than read from the game in the window, because the settings window draws
+    /// outside the framework thread's guarantee. Written alongside the fields above.
+    /// </remarks>
+    private volatile bool loggedIn;
 
     /// <summary>When the next <c>/config</c> poll is due. Null means "poll at the first opportunity".</summary>
     private DateTimeOffset? nextConfigPollAt;
@@ -679,6 +686,14 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     public bool IdentityCaptureGaveUp => identityCaptureGaveUp && identity is null;
 
+    /// <summary>True while a character is logged in, whether or not it has been read yet.</summary>
+    /// <remarks>
+    /// What lets the window tell nobody being logged in apart from the ordinary wait after login,
+    /// while the character is still being read. A volatile bool, so safe to read from the draw call; at worst
+    /// one frame stale.
+    /// </remarks>
+    public bool IsLoggedIn => loggedIn;
+
     /// <summary>
     /// The identified character, or null when nobody usable is loaded. The live tracker and the
     /// Crucible sharing read this so every upload path attributes work to one identity, captured in
@@ -904,6 +919,7 @@ internal sealed class SyncManager : IDisposable
         loginSettledAt = timeProvider.GetUtcNow() + LoginSettleDelay;
         identityAttempts = 0;
         identityCaptureGaveUp = false;
+        loggedIn = true;
     }
 
     /// <summary>The character logged out. Everything character-specific is dropped.</summary>
@@ -917,6 +933,7 @@ internal sealed class SyncManager : IDisposable
         loginSettledAt = null;
         identityAttempts = 0;
         identityCaptureGaveUp = false;
+        loggedIn = false;
 
         // The "user must fix this" halt is released on logout, because its most common cause —
         // the server would not match this character to a verified claim — belongs to the

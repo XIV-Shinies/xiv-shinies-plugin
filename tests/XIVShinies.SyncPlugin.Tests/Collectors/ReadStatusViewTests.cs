@@ -115,8 +115,8 @@ public class ReadStatusViewTests
         Assert.Equal("Optional hover copy.", note.Detail);
     }
 
-    // The hover copy belongs to the healthy chip alone: a partial line already carries its own
-    // required action, and hover must never be the only home of one.
+    // The hover copy belongs to the healthy chip alone: a partial line is already visible and says
+    // what reads the unread half.
     [Fact]
     public void A_partial_line_does_not_carry_the_chip_hover_copy()
     {
@@ -131,9 +131,9 @@ public class ReadStatusViewTests
         Assert.Null(Assert.Single(status.Collections).Detail);
     }
 
-    // A partially read collection keeps a visible action line: the phrase the collector authored
-    // names the unread half and the in-game action that reads it, drawn in the Missing tone so
-    // the action stays on screen rather than hiding behind a healthy-looking chip.
+    // A partially read collection keeps a visible line: the phrase the collector authored names the
+    // unread half and what reads it, drawn in the Missing tone so it stays on screen rather than
+    // hiding behind a healthy-looking chip.
     [Fact]
     public void A_partially_read_collection_draws_a_line_naming_the_unread_half()
     {
@@ -170,7 +170,7 @@ public class ReadStatusViewTests
     }
 
     // The suppression takes the hover copy with it — no chip means nowhere to hover — unlike a
-    // partial phrase, which survives because it names a required action.
+    // partial phrase, which survives because it says something no container line says.
     [Fact]
     public void A_manifest_rows_chip_hover_copy_is_suppressed_with_its_chip()
     {

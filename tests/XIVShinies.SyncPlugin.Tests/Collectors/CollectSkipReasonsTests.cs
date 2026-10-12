@@ -91,12 +91,14 @@ public class CollectSkipReasonsTests
     }
 
     [Fact]
-    public void Being_outside_the_occult_instance_asks_the_user_to_enter_the_crescent()
+    public void Being_outside_the_occult_instance_names_the_syncs_that_read_it_inside()
     {
         var hint = CollectSkipReasons.Describe(CollectSkipReasons.NotInOccultInstance, Host);
 
         Assert.Equal(
-            "not read yet — enter the Occult Crescent once; it syncs during your visit.", hint);
+            "not read yet — the automatic sync or Sync now reads it while you are inside the Occult " +
+            "Crescent.",
+            hint);
     }
 
     // The checkbox beside the category already says it is off; repeating it would be noise.
