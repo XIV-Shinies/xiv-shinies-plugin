@@ -216,4 +216,83 @@ public class OccultGateTests
         Assert.Null(OccultGate.ServerOffText(ConfigWithTracker(), Host));
         Assert.Null(OccultGate.ServerOffText(null, Host));
     }
+
+    // --- When the card names the master switch -----------------------------------------------
+
+    /// <summary>An opted-in user who has since switched syncing off.</summary>
+    private static PluginSettings SwitchedOff()
+    {
+        var settings = OptedIn();
+        settings.MasterEnabled = false;
+        return settings;
+    }
+
+    // Past onboarding, no /config is fetched while the master switch is off, so a session that
+    // starts with it off has none; one switched off mid-session keeps the last.
+    [Fact]
+    public void The_master_switch_is_named_with_or_without_a_config()
+    {
+        Assert.True(OccultGate.StoppedBySyncSwitch(SwitchedOff(), ConfigWithTracker()));
+        Assert.True(OccultGate.StoppedBySyncSwitch(SwitchedOff(), remoteConfig: null));
+    }
+
+    // With an unusable token, switching syncing on would not start the tracker either.
+    [Fact]
+    public void An_unusable_token_is_not_stopped_by_the_switch()
+    {
+        var settings = SwitchedOff();
+        settings.Token = "not-a-token";
+
+        Assert.False(OccultGate.StoppedBySyncSwitch(settings, ConfigWithTracker()));
+    }
+
+    [Fact]
+    public void A_switch_that_is_on_is_not_named()
+    {
+        Assert.False(OccultGate.StoppedBySyncSwitch(OptedIn(), ConfigWithTracker()));
+    }
+
+    [Fact]
+    public void A_tracker_switched_off_by_the_user_is_not_stopped_by_the_switch()
+    {
+        var settings = SwitchedOff();
+        settings.ShareOccultInstanceState = false;
+
+        Assert.False(OccultGate.StoppedBySyncSwitch(settings, ConfigWithTracker()));
+    }
+
+    // The server's "Off" chip explains these, so the card names no switch of the user's.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void A_tracker_the_server_rules_out_is_not_stopped_by_the_switch(
+        bool globallyEnabled, bool trackerEnabled)
+    {
+        var config = ConfigWithTracker(globallyEnabled: globallyEnabled, trackerEnabled: trackerEnabled);
+        var noBlock = ConfigWithTracker() with { OccultTracker = null };
+
+        Assert.False(OccultGate.StoppedBySyncSwitch(SwitchedOff(), config));
+        Assert.False(OccultGate.StoppedBySyncSwitch(SwitchedOff(), noBlock));
+    }
+
+    // The setup wizard draws the card before its last step turns the master switch on.
+    [Fact]
+    public void The_setup_wizard_names_no_switch()
+    {
+        var settings = SwitchedOff();
+        settings.OnboardingComplete = false;
+
+        Assert.False(OccultGate.StoppedBySyncSwitch(settings, ConfigWithTracker()));
+    }
+
+    // The switch is the only thing stopping the tracker: turning it on lets the tracker run.
+    [Fact]
+    public void Turning_the_switch_on_is_all_the_tracker_needs()
+    {
+        var settings = SwitchedOff();
+        Assert.True(OccultGate.StoppedBySyncSwitch(settings, ConfigWithTracker()));
+
+        settings.MasterEnabled = true;
+        Assert.True(OccultGate.CanTrack(settings, ConfigWithTracker()));
+    }
 }

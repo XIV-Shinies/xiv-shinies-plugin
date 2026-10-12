@@ -32,7 +32,7 @@ internal sealed partial class MainWindow
         DrawSettingsHeader();
 
         Widgets.SectionGap();
-        DrawSyncCard(rows);
+        DrawSyncCard(rows, remoteConfig);
 
         Widgets.SectionGap();
         BrandSeparator();

@@ -4,8 +4,8 @@ namespace XIVShinies.SyncPlugin.Windows;
 
 /// <summary>
 /// The sentence that tells a player how to end a halt: syncing stopped until they fix something.
-/// Drawn on the sync card and, while the halt is the only thing stopping either one, on the live
-/// tracker's card and the Crucible run sharing's card.
+/// Drawn on the sync card and, while the settings and the server would otherwise let either one run,
+/// on the live tracker's card and the Crucible run sharing's card (see <see cref="SharingCardLine"/>).
 /// </summary>
 /// <remarks>
 /// A halt has three kinds of cause, each with its own fix: a character refusal (the four

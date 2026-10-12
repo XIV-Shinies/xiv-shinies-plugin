@@ -186,6 +186,24 @@ that too) and release. If they disagree, the record has moved: leave the list al
 keeps to the bestiary, and find the record's new place (`RankRecordOffset`) before adding the
 version.
 
+### Checking the way back from a character that could not be read
+
+Reading the logged-in character gives up when reading it fails or its name or home world never
+becomes readable, and only a "Sync now" press or the next login starts it again. An ordinary
+session never gets there, so a Debug build can put the plugin in that state:
+
+```
+/shinies forgetcharacter  # logged in, after the login sync
+```
+
+Same setup as the seeding command above. While a collection is switched on, or a ticked live
+tracker or Crucible sharing is one the website offers and has switched on, the sync card says the
+character could not be read and "Sync now" is live; each such sharing card says so too. With
+nothing waiting on the character, the card keeps its line saying why nothing is collected, and the
+button stays off. In the first case, press Sync now: the lines clear, `/xllog` shows "Character
+loaded; queuing a login sync." (a Debug-level line, so set `/xllog` to show Debug), and sharing
+resumes.
+
 ## Testing philosophy — pure logic vs. game surfaces
 
 Be honest about this split; do not fake it.
