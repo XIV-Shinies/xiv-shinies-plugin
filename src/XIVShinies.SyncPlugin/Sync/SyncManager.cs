@@ -78,7 +78,10 @@ internal sealed class SyncManager : IDisposable
     /// <summary>How long to wait before re-reading a character whose details were not usable yet.</summary>
     private static readonly TimeSpan IdentityRetryDelay = TimeSpan.FromSeconds(5);
 
-    /// <summary>How many times to re-read an unusable character before giving up until next login.</summary>
+    /// <summary>
+    /// How many times to re-read an unusable character before giving up until a "Sync now" press or
+    /// the next login.
+    /// </summary>
     private const int MaxIdentityAttempts = 12;
 
     private readonly IFramework framework;
@@ -306,9 +309,11 @@ internal sealed class SyncManager : IDisposable
     /// </remarks>
     private volatile int sessionGeneration;
 
-    // The next three are WRITTEN only on the game's main thread — from the Update handler, and from
-    // the Login/Logout/Unlock events, which reach the plugin on that same thread (Login through
-    // Dalamud's framework update, Logout through a hook on the game's own logout callback). They
+    // The next four are WRITTEN only on the game's main thread — from the Update handler, from work
+    // marshaled onto it with RunOnFrameworkThread, and from the Login/Logout/Unlock events, which
+    // reach the plugin on that same thread (Login through Dalamud's framework update, Logout through
+    // a hook on the game's own logout callback). The one exception is the constructor's own OnLogin
+    // call, which runs before any handler is subscribed, so nothing else can be writing yet. They
     // therefore need no synchronization between writers. (`identity` is additionally null-checked by
     // the settings window via HasCharacter; a reference read is atomic, so the worst case there is a
     // one-frame-stale status line.) Writing any of them from a background thread would break this
@@ -322,6 +327,16 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>How many times the character has been read but found unusable since the last login.</summary>
     private int identityAttempts;
+
+    /// <summary>
+    /// True once identity capture has given up for this login, until a login, a logout or a "Sync
+    /// now" press clears it. See <see cref="IdentityCaptureGaveUp"/>.
+    /// </summary>
+    /// <remarks>
+    /// Written on the framework thread, alongside the fields above. `volatile` makes each read see
+    /// the latest write, so the settings window can read it from the draw call.
+    /// </remarks>
+    private volatile bool identityCaptureGaveUp;
 
     /// <summary>When the next <c>/config</c> poll is due. Null means "poll at the first opportunity".</summary>
     private DateTimeOffset? nextConfigPollAt;
@@ -571,6 +586,44 @@ internal sealed class SyncManager : IDisposable
             lastSyncedAtBox = newest.At;
         }
     }
+
+    /// <summary>
+    /// Puts identity capture in the state it reaches when it gives up, so the way out a "Sync now"
+    /// press offers can be checked in game.
+    /// </summary>
+    /// <remarks>
+    /// DEBUG-only. A real give-up needs a character that cannot be read, or whose name or home world
+    /// never becomes readable, which an ordinary session does not produce. A "Sync now" press, a
+    /// login or a logout leaves this state exactly as they leave a real give-up.
+    /// </remarks>
+    public void ForgetCharacterForTesting()
+    {
+        // Marshaled because the identity fields are written only on the framework thread (see the
+        // note above `identity`), and a command can arrive from the console's draw call. `_ =`
+        // discards the returned task on purpose, and `() => { ... }` is an inline function with a
+        // body, like an arrow function with braces.
+        _ = framework.RunOnFrameworkThread(() =>
+        {
+            // A marshal queued just before teardown still runs, and a give-up happens only while
+            // logged in. `||` is true when either side is, and stops at the first true, as in
+            // TypeScript.
+            if (lifetimeToken.IsCancellationRequested || !clientState.IsLoggedIn)
+                return;
+
+            identity = null;
+            loginSettledAt = null;
+            identityAttempts = 0;
+            identityCaptureGaveUp = true;
+
+            // A real give-up comes before any upload of the login, so the card has no last outcome,
+            // time or read status to show; each is set to the value a logout leaves it at.
+            lastStatusCode = -1;
+            lastSyncedAtBox = null;
+            hasCollected = false;
+
+            log.Information("Character forgotten as if reading it gave up. Press Sync now to read it again.");
+        });
+    }
 #endif
 
     /// <summary>
@@ -614,6 +667,17 @@ internal sealed class SyncManager : IDisposable
     /// the framework thread is writing it; the worst outcome is a status line that is one frame stale.
     /// </remarks>
     public bool HasCharacter => identity is not null;
+
+    /// <summary>
+    /// True when the plugin has stopped trying to read the logged-in character, so nothing uploads
+    /// until a "Sync now" press or the next login starts it again.
+    /// </summary>
+    /// <remarks>
+    /// What lets the window tell this apart from the ordinary wait after login, when the character
+    /// is still being read. A volatile bool, so safe to read from the draw call; at worst one frame
+    /// stale.
+    /// </remarks>
+    public bool IdentityCaptureGaveUp => identityCaptureGaveUp && identity is null;
 
     /// <summary>
     /// The identified character, or null when nobody usable is loaded. The live tracker and the
@@ -722,19 +786,19 @@ internal sealed class SyncManager : IDisposable
             var now = timeProvider.GetUtcNow();
 
             // Identity capture can give up (a home world that never resolved), and only a fresh
-            // login re-arms it. Without this, "Sync now" would queue a sweep that the
+            // login or this press re-arms it. Without this, "Sync now" would queue a sweep that the
             // `identity is null` guard silently drops on every frame, and the button would appear
             // to do nothing at all.
             //
-            // `loginSettledAt is null` is what distinguishes "gave up" from "still waiting": a
-            // pending capture — the login settle wait, or an identity retry — leaves a deadline
-            // set, and only the give-up paths clear it without producing an identity. Re-arming
-            // while one is pending would move that deadline to NOW, so a press moments after login
-            // would skip the settle wait entirely — see LoginSettleDelay for what that wait buys.
-            if (identity is null && loginSettledAt is null && clientState.IsLoggedIn)
+            // Only after a give-up. A pending capture, the login settle wait or an identity retry, is
+            // left alone: re-arming it would move its deadline to NOW, so a press moments after login
+            // would skip the settle wait entirely (see LoginSettleDelay for what that wait buys).
+            // Logout clears the flag, so a press at the title screen re-arms nothing.
+            if (identityCaptureGaveUp && identity is null)
             {
                 loginSettledAt = now;
                 identityAttempts = 0;
+                identityCaptureGaveUp = false;
             }
 
             scheduler.Request(SyncTrigger.Manual, now);
@@ -839,6 +903,7 @@ internal sealed class SyncManager : IDisposable
     {
         loginSettledAt = timeProvider.GetUtcNow() + LoginSettleDelay;
         identityAttempts = 0;
+        identityCaptureGaveUp = false;
     }
 
     /// <summary>The character logged out. Everything character-specific is dropped.</summary>
@@ -851,6 +916,7 @@ internal sealed class SyncManager : IDisposable
         identity = null;
         loginSettledAt = null;
         identityAttempts = 0;
+        identityCaptureGaveUp = false;
 
         // The "user must fix this" halt is released on logout, because its most common cause —
         // the server would not match this character to a verified claim — belongs to the
@@ -1056,7 +1122,7 @@ internal sealed class SyncManager : IDisposable
     /// The character is committed only when it is <b>usable</b>. An empty name or home world would
     /// fail the contract's length constraints and earn a 400 on every single upload for the rest of
     /// the session — a silent, permanent failure. So an unusable read is retried a bounded number of
-    /// times and then abandoned until the next login, rather than cached.
+    /// times and then abandoned until a "Sync now" press or the next login, rather than cached.
     /// </remarks>
     private void CaptureIdentityIfSettled(DateTimeOffset now)
     {
@@ -1091,8 +1157,10 @@ internal sealed class SyncManager : IDisposable
         {
             // A character we cannot identify is a character we must not upload for: the hash is what
             // the server binds the data to, and guessing it would write to the wrong character.
-            log.Error(ex, "Could not read the local character; syncing stays idle until next login.");
+            log.Error(
+                ex, "Could not read the local character; syncing stays idle until Sync now or next login.");
             loginSettledAt = null;
+            identityCaptureGaveUp = true;
             return;
         }
 
@@ -1103,8 +1171,9 @@ internal sealed class SyncManager : IDisposable
             {
                 log.Warning(
                     "The local character's name or home world never became readable; " +
-                    "syncing stays idle until next login.");
+                    "syncing stays idle until Sync now or next login.");
                 loginSettledAt = null;
+                identityCaptureGaveUp = true;
                 return;
             }
 
@@ -1115,6 +1184,7 @@ internal sealed class SyncManager : IDisposable
 
         loginSettledAt = null;
         identityAttempts = 0;
+        identityCaptureGaveUp = false;
         identity = candidate;
 
         log.Debug("Character loaded; queuing a login sync.");

@@ -23,6 +23,8 @@ public class SyncStatusViewTests
     // tell one that was passed in from one written into the copy.
     private const string Host = "shinies.example";
 
+    // `bool userEnabled = true` gives the parameter a default, so a call may leave it out, like
+    // `userEnabled = true` in a TypeScript parameter list.
     private static CategorySettingsRow Row(
         bool userEnabled = true,
         bool serverEnabled = true,
@@ -45,12 +47,28 @@ public class SyncStatusViewTests
     private static IReadOnlyList<CategorySettingsRow> Paused() =>
         new[] {Row(serverEnabled: false, serverGloballyOff: true)};
 
+    /// <summary>
+    /// The ladder, with reading the character not given up and no sharing unless a test says
+    /// otherwise.
+    /// </summary>
+    private static SyncStatusKind Select(
+        bool masterEnabled,
+        IReadOnlyList<CategorySettingsRow> rows,
+        bool blockedPendingUserAction,
+        bool hasCharacter,
+        bool hasUploaded,
+        bool characterNotRead = false,
+        bool sharingCanRun = false) =>
+        SyncStatusView.Select(
+            masterEnabled, rows, blockedPendingUserAction, hasCharacter, hasUploaded,
+            characterNotRead, sharingCanRun);
+
     [Fact]
     public void A_healthy_pipeline_that_has_uploaded_states_the_last_outcome()
     {
         Assert.Equal(
             SyncStatusKind.LastUploadOutcome,
-            SyncStatusView.Select(true, Running(), false, hasCharacter: true, hasUploaded: true));
+            Select(true, Running(), false, hasCharacter: true, hasUploaded: true));
     }
 
     [Fact]
@@ -58,7 +76,7 @@ public class SyncStatusViewTests
     {
         Assert.Equal(
             SyncStatusKind.NothingUploadedYet,
-            SyncStatusView.Select(true, Running(), false, hasCharacter: true, hasUploaded: false));
+            Select(true, Running(), false, hasCharacter: true, hasUploaded: false));
     }
 
     // The user's own switch beats everything: reporting the last upload's "will try again" would
@@ -68,7 +86,7 @@ public class SyncStatusViewTests
     {
         Assert.Equal(
             SyncStatusKind.SwitchedOffByUser,
-            SyncStatusView.Select(false, Paused(), true, hasCharacter: false, hasUploaded: true));
+            Select(false, Paused(), true, hasCharacter: false, hasUploaded: true));
     }
 
     // A paused server explains the silence completely, and the actions the blocked state asks for
@@ -78,7 +96,7 @@ public class SyncStatusViewTests
     {
         Assert.Equal(
             SyncStatusKind.PausedByServer,
-            SyncStatusView.Select(true, Paused(), true, hasCharacter: true, hasUploaded: true));
+            Select(true, Paused(), true, hasCharacter: true, hasUploaded: true));
     }
 
     // A pause turns every row off, so "nothing is switched on" is true at the same moment — and
@@ -88,7 +106,7 @@ public class SyncStatusViewTests
     {
         Assert.Equal(
             SyncStatusKind.PausedByServer,
-            SyncStatusView.Select(true, Paused(), false, hasCharacter: true, hasUploaded: true));
+            Select(true, Paused(), false, hasCharacter: true, hasUploaded: true));
     }
 
     // A real fault outranks an idle pipeline: the user can fix the token, and being told about
@@ -100,7 +118,7 @@ public class SyncStatusViewTests
 
         Assert.Equal(
             SyncStatusKind.BlockedPendingUserAction,
-            SyncStatusView.Select(true, nothingOn, true, hasCharacter: true, hasUploaded: true));
+            Select(true, nothingOn, true, hasCharacter: true, hasUploaded: true));
     }
 
     // Nothing switched on is the user's own doing and is worth saying before the card falls
@@ -112,7 +130,7 @@ public class SyncStatusViewTests
 
         Assert.Equal(
             SyncStatusKind.NothingSwitchedOnByUser,
-            SyncStatusView.Select(true, nothingOn, false, hasCharacter: false, hasUploaded: false));
+            Select(true, nothingOn, false, hasCharacter: false, hasUploaded: false));
     }
 
     [Fact]
@@ -120,7 +138,7 @@ public class SyncStatusViewTests
     {
         Assert.Equal(
             SyncStatusKind.WaitingForCharacter,
-            SyncStatusView.Select(true, Running(), false, hasCharacter: false, hasUploaded: true));
+            Select(true, Running(), false, hasCharacter: false, hasUploaded: true));
     }
 
     // An empty list is nobody's decision, so it must not draw the sentence blaming the server —
@@ -130,7 +148,7 @@ public class SyncStatusViewTests
     {
         Assert.Equal(
             SyncStatusKind.NothingSwitchedOnByUser,
-            SyncStatusView.Select(
+            Select(
                 true, Array.Empty<CategorySettingsRow>(), false, hasCharacter: true,
                 hasUploaded: true));
     }
@@ -145,7 +163,7 @@ public class SyncStatusViewTests
 
         Assert.Equal(
             SyncStatusKind.NothingPermittedByServer,
-            SyncStatusView.Select(true, serverOff, false, hasCharacter: true, hasUploaded: true));
+            Select(true, serverOff, false, hasCharacter: true, hasUploaded: true));
     }
 
     // The mirror of the case above: the server permits it and the user declined, which is theirs
@@ -157,7 +175,72 @@ public class SyncStatusViewTests
 
         Assert.Equal(
             SyncStatusKind.NothingSwitchedOnByUser,
-            SyncStatusView.Select(true, userOff, false, hasCharacter: true, hasUploaded: true));
+            Select(true, userOff, false, hasCharacter: true, hasUploaded: true));
+    }
+
+    // --- A character the plugin stopped trying to read -------------------------------------------
+
+    // Nothing uploads until a Sync now press or the next login reads the character again, so with a
+    // collection on this outranks the ordinary wait for a character, whose promise of a start would be
+    // false.
+    [Fact]
+    public void A_character_that_could_not_be_read_outranks_waiting_for_one()
+    {
+        Assert.Equal(
+            SyncStatusKind.CharacterNotRead,
+            Select(true, Running(), false, hasCharacter: false, hasUploaded: false, characterNotRead: true));
+    }
+
+    // A player who only shares reads the sync card too, and the Collections section holding the
+    // sharing cards can be collapsed, so the card names the character rather than the empty boxes.
+    [Fact]
+    public void A_character_a_sharing_waits_on_outranks_nothing_switched_on()
+    {
+        var nothingOn = new[] {Row(userEnabled: false)};
+        var serverOff = new[] {Row(userEnabled: true, serverEnabled: false)};
+
+        Assert.Equal(
+            SyncStatusKind.CharacterNotRead,
+            Select(true, nothingOn, false, false, false, characterNotRead: true, sharingCanRun: true));
+        Assert.Equal(
+            SyncStatusKind.CharacterNotRead,
+            Select(true, serverOff, false, false, false, characterNotRead: true, sharingCanRun: true));
+    }
+
+    // With nothing collected and nothing shared, the character holds nothing back, and "nothing is
+    // switched on" is the truer line.
+    [Fact]
+    public void A_character_nothing_waits_on_is_not_named()
+    {
+        var nothingOn = new[] {Row(userEnabled: false)};
+
+        Assert.Equal(
+            SyncStatusKind.NothingSwitchedOnByUser,
+            Select(true, nothingOn, false, false, false, characterNotRead: true, sharingCanRun: false));
+    }
+
+    // The states above it in the ladder still win: the switch, a pause, and a halt, whose press
+    // clears this too.
+    [Fact]
+    public void The_switch_a_pause_and_a_halt_outrank_a_character_not_read()
+    {
+        Assert.Equal(
+            SyncStatusKind.SwitchedOffByUser,
+            Select(false, Running(), false, false, false, characterNotRead: true, sharingCanRun: true));
+        Assert.Equal(
+            SyncStatusKind.PausedByServer,
+            Select(true, Paused(), false, false, false, characterNotRead: true, sharingCanRun: true));
+        Assert.Equal(
+            SyncStatusKind.BlockedPendingUserAction,
+            Select(true, Running(), true, false, false, characterNotRead: true, sharingCanRun: true));
+    }
+
+    [Fact]
+    public void The_character_line_is_pinned()
+    {
+        Assert.Equal(
+            "Your character could not be read, so nothing is uploaded. Press Sync now to try again.",
+            SyncStatusView.CharacterNotReadSentence);
     }
 
     // --- What the card may promise, and what the button may offer -----------------------------
@@ -172,6 +255,7 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.SwitchedOffByUser, false)]
     [InlineData(SyncStatusKind.PausedByServer, false)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false)]
+    [InlineData(SyncStatusKind.CharacterNotRead, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, false)]
     public void The_cadence_promise_holds_only_where_nothing_stops_the_pipeline(
@@ -182,14 +266,15 @@ public class SyncStatusViewTests
 
     // Sync now is refused only where pressing it would produce no upload while the button still
     // played its "Syncing" flash — two states the upload gate refuses, two that collect nothing
-    // for it to send. The halt deliberately keeps it live: that state's own copy tells the user
-    // to press it.
+    // for it to send. The halt and a character that could not be read deliberately keep it live:
+    // each state's own copy tells the user to press it.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
     [InlineData(SyncStatusKind.PausedByServer, true)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false)]
+    [InlineData(SyncStatusKind.CharacterNotRead, false)]
     [InlineData(SyncStatusKind.WaitingForCharacter, false)]
     [InlineData(SyncStatusKind.LastUploadOutcome, false)]
     [InlineData(SyncStatusKind.NothingUploadedYet, false)]
@@ -210,6 +295,8 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.PausedByServer, true, false)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, true, true)]
+    [InlineData(SyncStatusKind.CharacterNotRead, false, true)]
+    [InlineData(SyncStatusKind.CharacterNotRead, true, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, false, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, false, false)]
@@ -226,8 +313,9 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.SyncNowOffered(kind, backingOff));
     }
 
-    // The button follows the sentences, plus one state: waiting for a character during a wait, where a
-    // press restarts finding the character, which the wait does not hold back.
+    // The button follows the sentences, plus a character that could not be read during a wait, where
+    // a press starts reading it again, which the wait does not hold back. Waiting for a character
+    // during a wait stays shut: the reading is already under way, or nobody is logged in.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
@@ -235,12 +323,14 @@ public class SyncStatusViewTests
     [InlineData(SyncStatusKind.PausedByServer, true, false)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, true, true)]
+    [InlineData(SyncStatusKind.CharacterNotRead, false, true)]
+    [InlineData(SyncStatusKind.CharacterNotRead, true, true)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, false, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, false, false)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true, false)]
     [InlineData(SyncStatusKind.WaitingForCharacter, false, true)]
-    [InlineData(SyncStatusKind.WaitingForCharacter, true, true)]
+    [InlineData(SyncStatusKind.WaitingForCharacter, true, false)]
     [InlineData(SyncStatusKind.LastUploadOutcome, false, true)]
     [InlineData(SyncStatusKind.LastUploadOutcome, true, false)]
     [InlineData(SyncStatusKind.NothingUploadedYet, false, true)]
@@ -264,11 +354,13 @@ public class SyncStatusViewTests
     }
 
     // A wait outlives the outcome that started it: after a relog the card states "nothing uploaded
-    // yet" or a wait for a character, and the wait line is what says uploads are held back.
-    // Every row has no last outcome, so the null is written once, in the call.
+    // yet", a wait for a character, or a character that could not be read, and the wait line is what
+    // says uploads are held back. Every row has no last outcome, so the null is written once, in the
+    // call.
     [Theory]
     [InlineData(SyncStatusKind.NothingUploadedYet)]
     [InlineData(SyncStatusKind.WaitingForCharacter)]
+    [InlineData(SyncStatusKind.CharacterNotRead)]
     public void A_wait_the_status_line_does_not_state_gets_its_own_line(SyncStatusKind kind)
     {
         Assert.True(SyncStatusView.NeedsWaitLine(kind, lastStatus: null, backingOff: true));

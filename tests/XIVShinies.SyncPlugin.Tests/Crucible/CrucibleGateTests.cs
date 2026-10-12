@@ -260,4 +260,83 @@ public class CrucibleGateTests
         Assert.Null(CrucibleGate.ServerOffText(ConfigWithCrucible(), Host));
         Assert.Null(CrucibleGate.ServerOffText(null, Host));
     }
+
+    // --- When the card names the master switch ---------------------------------------------------
+
+    /// <summary>An opted-in user who has since switched syncing off.</summary>
+    private static PluginSettings SwitchedOff()
+    {
+        var settings = OptedIn();
+        settings.MasterEnabled = false;
+        return settings;
+    }
+
+    // Past onboarding, no /config is fetched while the master switch is off, so a session that
+    // starts with it off has none; one switched off mid-session keeps the last.
+    [Fact]
+    public void The_master_switch_is_named_with_or_without_a_config()
+    {
+        Assert.True(CrucibleGate.StoppedBySyncSwitch(SwitchedOff(), ConfigWithCrucible()));
+        Assert.True(CrucibleGate.StoppedBySyncSwitch(SwitchedOff(), remoteConfig: null));
+    }
+
+    // With an unusable token, switching syncing on would not start the sharing either.
+    [Fact]
+    public void An_unusable_token_is_not_stopped_by_the_switch()
+    {
+        var settings = SwitchedOff();
+        settings.Token = "not-a-token";
+
+        Assert.False(CrucibleGate.StoppedBySyncSwitch(settings, ConfigWithCrucible()));
+    }
+
+    [Fact]
+    public void A_switch_that_is_on_is_not_named()
+    {
+        Assert.False(CrucibleGate.StoppedBySyncSwitch(OptedIn(), ConfigWithCrucible()));
+    }
+
+    [Fact]
+    public void A_sharing_switched_off_by_the_user_is_not_stopped_by_the_switch()
+    {
+        var settings = SwitchedOff();
+        settings.ShareCrucibleRuns = false;
+
+        Assert.False(CrucibleGate.StoppedBySyncSwitch(settings, ConfigWithCrucible()));
+    }
+
+    // The server's "Off" chip explains these, so the card names no switch of the user's.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void A_sharing_the_server_rules_out_is_not_stopped_by_the_switch(
+        bool globallyEnabled, bool sharingEnabled)
+    {
+        var config = ConfigWithCrucible(sharingEnabled: sharingEnabled, globallyEnabled: globallyEnabled);
+        var noBlock = ConfigWithCrucible() with { CrucibleRuns = null };
+
+        Assert.False(CrucibleGate.StoppedBySyncSwitch(SwitchedOff(), config));
+        Assert.False(CrucibleGate.StoppedBySyncSwitch(SwitchedOff(), noBlock));
+    }
+
+    // The setup wizard draws the card before its last step turns the master switch on.
+    [Fact]
+    public void The_setup_wizard_names_no_switch()
+    {
+        var settings = SwitchedOff();
+        settings.OnboardingComplete = false;
+
+        Assert.False(CrucibleGate.StoppedBySyncSwitch(settings, ConfigWithCrucible()));
+    }
+
+    // The switch is the only thing stopping the sharing: turning it on lets the sharing run.
+    [Fact]
+    public void Turning_the_switch_on_is_all_the_sharing_needs()
+    {
+        var settings = SwitchedOff();
+        Assert.True(CrucibleGate.StoppedBySyncSwitch(settings, ConfigWithCrucible()));
+
+        settings.MasterEnabled = true;
+        Assert.True(CrucibleGate.CanShare(settings, ConfigWithCrucible()));
+    }
 }

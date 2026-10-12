@@ -23,6 +23,12 @@ public enum SyncStatusKind
     /// <summary>Syncing has stopped for something only the user can resolve.</summary>
     BlockedPendingUserAction,
 
+    /// <summary>
+    /// The plugin has stopped trying to read the logged-in character, while a collection or a sharing
+    /// feature is waiting on it.
+    /// </summary>
+    CharacterNotRead,
+
     /// <summary>The server permits collections, but the user has none of them switched on.</summary>
     NothingSwitchedOnByUser,
 
@@ -68,12 +74,18 @@ public static class SyncStatusView
     /// </param>
     /// <param name="hasCharacter">Whether a character has been identified.</param>
     /// <param name="hasUploaded">Whether an upload has completed this session.</param>
+    /// <param name="characterNotRead">Whether the plugin has stopped trying to read the character.</param>
+    /// <param name="sharingCanRun">
+    /// Whether the settings and the server let the live tracker or the Crucible sharing run.
+    /// </param>
     public static SyncStatusKind Select(
         bool masterEnabled,
         IReadOnlyList<CategorySettingsRow> rows,
         bool blockedPendingUserAction,
         bool hasCharacter,
-        bool hasUploaded)
+        bool hasUploaded,
+        bool characterNotRead,
+        bool sharingCanRun)
     {
         if (!masterEnabled)
             return SyncStatusKind.SwitchedOffByUser;
@@ -83,6 +95,15 @@ public static class SyncStatusView
 
         if (blockedPendingUserAction)
             return SyncStatusKind.BlockedPendingUserAction;
+
+        // Below the halt, whose press clears this too, and above every quiet state: nothing uploads
+        // until a Sync now press or the next login reads the character again, and no other line
+        // would say so. Only while something waits on the character, though. A player sharing
+        // nothing and collecting nothing loses nothing by it, and the line saying why nothing is
+        // collected is the truer one. `&&` and `||` stop as soon as the answer is known, as in
+        // TypeScript.
+        if (characterNotRead && (ManifestConsent.AnyEffectivelyOn(rows) || sharingCanRun))
+            return SyncStatusKind.CharacterNotRead;
 
         // Below the broken states and above the waiting ones: nothing here is wrong, so it must not
         // outrank a fault, but it does explain a silence the states below would leave unexplained.
@@ -159,15 +180,22 @@ public static class SyncStatusView
 
     /// <summary>Whether the "Sync now" button is enabled.</summary>
     /// <remarks>
-    /// Wherever the sentences invite a press, and in one state more: waiting for a character during a
-    /// server-requested wait. There a press restarts finding the character after it gave up, which
-    /// the wait does not hold back, so the button stays live although no sentence promises an upload.
+    /// Wherever the sentences invite a press, and in one state more: a character the plugin stopped
+    /// trying to read, during a server-requested wait. There a press starts reading the character
+    /// again, which the wait does not hold back, so the button stays live although no upload follows
+    /// until the wait ends.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool SyncNowEnabled(SyncStatusKind kind, bool backingOff) =>
         SyncNowOffered(kind, backingOff)
-        || (backingOff && kind == SyncStatusKind.WaitingForCharacter);
+        || (backingOff && kind == SyncStatusKind.CharacterNotRead);
+
+    /// <summary>What the card says in <see cref="SyncStatusKind.CharacterNotRead"/>.</summary>
+    // A `const` is fixed when the code compiles and is read through the class
+    // (`SyncStatusView.CharacterNotReadSentence`), like an exported constant.
+    public const string CharacterNotReadSentence =
+        "Your character could not be read, so nothing is uploaded. Press Sync now to try again.";
 
     /// <summary>What the card says while the website has asked the plugin to wait.</summary>
     /// <param name="host">The configured website's address.</param>

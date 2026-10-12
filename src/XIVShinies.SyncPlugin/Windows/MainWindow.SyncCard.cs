@@ -6,7 +6,9 @@ using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
@@ -21,7 +23,11 @@ internal sealed partial class MainWindow
     /// <see cref="DrawStatus"/>). Passed in rather than rebuilt so the settings screen builds them
     /// exactly once per frame — see <see cref="DrawSettings"/>.
     /// </param>
-    private void DrawSyncCard(IReadOnlyList<CategorySettingsRow> rows)
+    /// <param name="remoteConfig">
+    /// The screen's one <c>/config</c> snapshot, or null if none has arrived.
+    /// </param>
+    // `ConfigResponse?` may be null, like `ConfigResponse | null` in TypeScript.
+    private void DrawSyncCard(IReadOnlyList<CategorySettingsRow> rows, ConfigResponse? remoteConfig)
     {
         using (BrandCard())
         {
@@ -59,7 +65,7 @@ internal sealed partial class MainWindow
             }
 
             CloseCardHeader();
-            DrawStatus(rows);
+            DrawStatus(rows, remoteConfig);
         }
     }
 
@@ -69,8 +75,17 @@ internal sealed partial class MainWindow
     /// <param name="rows">
     /// This frame's category rows, which the "Reading from:" panel turns into its collection lines.
     /// </param>
-    private void DrawStatus(IReadOnlyList<CategorySettingsRow> rows)
+    /// <param name="remoteConfig">
+    /// The screen's one <c>/config</c> snapshot, which says whether a sharing feature may run.
+    /// </param>
+    private void DrawStatus(IReadOnlyList<CategorySettingsRow> rows, ConfigResponse? remoteConfig)
     {
+        // Whether a sharing feature may run counts as well as the collections: a character the plugin
+        // stopped trying to read holds back the live tracker and the Crucible sharing too. `||` is
+        // true when either side is, and stops at the first true, as in TypeScript.
+        var sharingCanRun = OccultGate.CanTrack(configuration.Settings, remoteConfig)
+            || CrucibleGate.CanShare(configuration.Settings, remoteConfig);
+
         // Which state to state is SyncStatusView.Select's rule — including the order they override
         // each other in. Only how each one looks is decided here.
         var status = SyncStatusView.Select(
@@ -78,7 +93,9 @@ internal sealed partial class MainWindow
             rows,
             syncManager.BlockedPendingUserAction,
             syncManager.HasCharacter,
-            syncManager.LastStatus is not null);
+            syncManager.LastStatus is not null,
+            syncManager.IdentityCaptureGaveUp,
+            sharingCanRun);
 
         // Read once, so the status line, the wait line, the button and the sentences below all
         // describe the same wait.
@@ -103,6 +120,11 @@ internal sealed partial class MainWindow
             // differ from the last upload's outcome; HaltCopy decides among the kinds of fix.
             // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
             DrawWarning($"Syncing has stopped. {HaltSentence()}");
+        }
+        else if (status == SyncStatusKind.CharacterNotRead)
+        {
+            // Red, like the halt: nothing uploads until the player presses Sync now or logs in again.
+            DrawWarning(SyncStatusView.CharacterNotReadSentence);
         }
         else if (status == SyncStatusKind.NothingSwitchedOnByUser)
         {

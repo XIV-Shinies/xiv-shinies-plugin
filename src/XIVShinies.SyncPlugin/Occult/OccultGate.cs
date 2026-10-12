@@ -8,13 +8,12 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the tracker's consent gate, in the same pure-and-tested mold as
-/// <see cref="UploadGate"/> and <see cref="Collectors.CollectorGate"/>: the manager asks it
-/// every tick and stops the moment it says no, so consent revocation takes effect within a
-/// second. Layered on top of the base gates (master switch, completed onboarding, usable
-/// token, server's global kill switch) are the tracker's own two: the user's
-/// <see cref="PluginSettings.ShareOccultInstanceState"/> toggle and the server's
-/// <c>occultTracker.enabled</c> switch.
+/// This is the tracker's consent gate, alongside <see cref="UploadGate"/> and
+/// <see cref="Collectors.CollectorGate"/>: the manager asks it every tick and stops the moment it
+/// says no, so consent revocation takes effect within a second. Layered on top of the base gates
+/// (master switch, completed onboarding, usable token, server's global kill switch) are the
+/// tracker's own two: the user's <see cref="PluginSettings.ShareOccultInstanceState"/> toggle and
+/// the server's <c>occultTracker.enabled</c> switch.
 /// </para>
 /// <para>
 /// A config with no <c>occultTracker</c> block reads as OFF — deliberately opposite to the
@@ -76,6 +75,34 @@ public static class OccultGate
     public static bool ServerHasSwitchedOff(ConfigResponse? remoteConfig) =>
         remoteConfig is not null
         && (!remoteConfig.Enabled || remoteConfig.OccultTracker is not { Enabled: true });
+
+    /// <summary>
+    /// True when the user's own master switch is the reason the tracker is not running: it is off,
+    /// while the tracker's toggle is ticked, the token is usable, and the server has not ruled the
+    /// tracker out.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The tracker's card names this (see <see cref="Windows.SharingCardLine"/>); like the collection
+    /// boxes above it, its toggle keeps its tick while the switch is off.
+    /// </para>
+    /// <para>
+    /// Only after onboarding: the setup wizard draws the card before its last step turns the master
+    /// switch on, so the switch is off there as a matter of course. Only with a usable token, too:
+    /// without one, switching syncing on would not start the tracker either, so the switch is not the
+    /// reason. A config that has not arrived rules nothing out, as in
+    /// <see cref="ServerHasSwitchedOff"/>; past onboarding no <c>/config</c> is fetched while the
+    /// master switch is off, so a session that starts with it off has none until it is switched on.
+    /// </para>
+    /// </remarks>
+    /// <param name="settings">The user's persisted choices.</param>
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
+    public static bool StoppedBySyncSwitch(PluginSettings settings, ConfigResponse? remoteConfig) =>
+        settings.OnboardingComplete
+        && !settings.MasterEnabled
+        && settings.HasUsableToken()
+        && settings.ShareOccultInstanceState
+        && !ServerHasSwitchedOff(remoteConfig);
 
     /// <summary>
     /// What the tracker's "Off" chip says, or null while the server still permits the tracker.

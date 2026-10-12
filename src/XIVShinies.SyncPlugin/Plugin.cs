@@ -419,6 +419,8 @@ public sealed class Plugin : IDalamudPlugin
         //                                   sheet; the answer goes to /xllog, not the screen
         //   /shinies dumpranks            — write the beast rank record to /xllog, to check it
         //                                   against the NPC's bestiary after a game patch
+        //   /shinies forgetcharacter      — act as if reading the character gave up, to check
+        //                                   that "Sync now" reads it again
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
         {
@@ -456,6 +458,14 @@ public sealed class Plugin : IDalamudPlugin
         {
             // Marshaled for the same reason as dumpslots: it reads game memory.
             _ = Framework.RunOnFrameworkThread(tamedBeastObserver.AuditRankRecord);
+            return;
+        }
+
+        if (words.Length > 0 && words[0].Equals("forgetcharacter", StringComparison.OrdinalIgnoreCase))
+        {
+            // Opened as well, since the point is to look at the cards that name the state.
+            syncManager.ForgetCharacterForTesting();
+            mainWindow.IsOpen = true;
             return;
         }
 #endif

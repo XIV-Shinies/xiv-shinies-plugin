@@ -63,6 +63,24 @@ public static class CrucibleGate
         && (!remoteConfig.Enabled || remoteConfig.CrucibleRuns is not { Enabled: true });
 
     /// <summary>
+    /// True when the user's own master switch is the reason the sharing is not running: it is off,
+    /// while the sharing's toggle is ticked, the token is usable, and the server has not ruled the
+    /// sharing out.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <see cref="Occult.OccultGate.StoppedBySyncSwitch"/>, whose remarks explain the terms;
+    /// <see cref="Windows.SharingCardLine"/> decides what the card draws for it.
+    /// </remarks>
+    /// <param name="settings">The user's persisted choices.</param>
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
+    public static bool StoppedBySyncSwitch(PluginSettings settings, ConfigResponse? remoteConfig) =>
+        settings.OnboardingComplete
+        && !settings.MasterEnabled
+        && settings.HasUsableToken()
+        && settings.ShareCrucibleRuns
+        && !ServerHasSwitchedOff(remoteConfig);
+
+    /// <summary>
     /// What an "Off" chip for the sharing should say, or null while the server still permits it.
     /// </summary>
     /// <remarks>
