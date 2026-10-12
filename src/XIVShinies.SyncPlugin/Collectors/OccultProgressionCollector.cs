@@ -24,11 +24,11 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// A knowledge-only pass clears the category's skip reason (any collected pass does — see
 /// <c>Sync.CollectionStatusMemory.MergeSkipReasons</c>) but carries a partial note in its
 /// place while the login session has not read the jobs, so the settings read-status panel
-/// says the job levels still need an instance visit exactly when they do — a session that has
-/// already read the jobs gets the healthy chip instead. The reverse gap is quieter: a pass
-/// that read the jobs without a knowledge sighting puts where the knowledge level comes from
-/// on the chip's hover, never a visible line, because the sighting clears at every logout and
-/// a line would nag every session.
+/// says the job levels still need a full sync inside an instance exactly when they do — a
+/// session that has already read the jobs gets the healthy chip instead. The reverse gap is
+/// quieter: a pass that read the jobs without a knowledge sighting puts where the knowledge
+/// level comes from on the chip's hover, never a visible line, because the sighting clears at
+/// every logout and a line would nag every session.
 /// </para>
 /// <para>
 /// The knowledge sighting rides along when one exists; see <see cref="KnowledgeObservation"/>
@@ -126,8 +126,8 @@ public sealed unsafe class OccultProgressionCollector : ICollector
                     sighting,
                     partialNote: jobsReadThisSession
                         ? null
-                        : "knowledge level read — job levels sync during your next " +
-                          "Occult Crescent visit.")
+                        : "knowledge level read — job levels are read by the automatic sync or " +
+                          "Sync now while you are inside the Occult Crescent.")
                 : CollectResult.Skipped(CollectSkipReasons.NotInOccultInstance);
         }
 
@@ -157,8 +157,9 @@ public sealed unsafe class OccultProgressionCollector : ICollector
             jobs,
             sighting,
             collectedDetail: sighting is null
-                ? "Your knowledge level syncs when you open the review window at Jeffroy in " +
-                  "Phantom Village."
+                ? "Your knowledge level is read when you open the review window at Jeffroy in " +
+                  "Phantom Village, and sent by the next automatic sync or Sync now. Logging out " +
+                  "first drops it."
                 : null);
     }
 }

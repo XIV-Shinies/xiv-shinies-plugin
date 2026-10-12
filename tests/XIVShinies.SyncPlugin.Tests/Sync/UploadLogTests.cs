@@ -952,7 +952,7 @@ public class UploadLogTests
         };
 
         Assert.Equal(
-            "deferred — rate limited — retry in 90s (attempt 2)",
+            "deferred — rate limited — asked to wait 90s (attempt 2)",
             UploadLogText.OutcomeText(entry, Host));
     }
 
@@ -967,7 +967,7 @@ public class UploadLogTests
         };
 
         Assert.Equal(
-            "deferred — " + Host + " is not taking uploads — retry in 90s",
+            "deferred — " + Host + " is not taking uploads — asked to wait 90s",
             UploadLogText.OutcomeText(entry, Host));
     }
 

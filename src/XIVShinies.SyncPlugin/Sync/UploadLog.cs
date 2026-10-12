@@ -643,7 +643,7 @@ public static class UploadLogText
         var text = StatusText(entry.Status, host);
 
         if (entry.RetryAfter is { } wait)
-            text += $" — retry in {(int)wait.TotalSeconds}s";
+            text += $" — asked to wait {(int)wait.TotalSeconds}s";
 
         if (entry.Attempt > 1)
             text += $" (attempt {entry.Attempt})";

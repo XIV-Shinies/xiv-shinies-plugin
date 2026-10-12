@@ -209,9 +209,9 @@ public static class ReadStatusView
         if (row.SkipReason is not { } reason)
         {
             // Read, but only partly: the phrase the collector authored names the unread half and
-            // the in-game action that reads it. Drawn as a Missing line because that is the
-            // honest tone for the unread half — it has contributed nothing yet, and the action
-            // must stay visible rather than hide in a hover. Never suppressed for a
+            // what reads it. Drawn as a Missing line because that is the honest tone for the
+            // unread half — it has contributed nothing yet, and that must stay visible rather than
+            // hide in a hover. Never suppressed for a
             // manifest-driven row: unlike the healthy chip below, the phrase says something no
             // container line says.
             if (row.PartialNote is { } partialNote)
@@ -244,7 +244,7 @@ public static class ReadStatusView
         if (CollectSkipReasons.IsDeliberate(reason))
             return null;
 
-        // A reason with advice: the collection was missed AND the user can do something about it.
+        // A reason with advice: the collection was missed AND the hint says what resolves it.
         if (CollectSkipReasons.Describe(reason, host) is { } hint)
         {
             return new SourceNote

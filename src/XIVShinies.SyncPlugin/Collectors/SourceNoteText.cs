@@ -63,7 +63,7 @@ public static class SourceNoteText
             // The detail says what the key covers in a player's vocabulary — and discloses the
             // one gap in it: the game only exposes a content-bound currency (Occult Crescent's
             // pieces, for example) while the character is inside that content, so those counts
-            // can only sync from in-zone visits.
+            // are read only by a sync that runs there.
             (SourceKeys.Currencies, SourceStates.Live) =>
                 new SourceNote
                 {
@@ -265,8 +265,8 @@ public enum SourceTone
 
 /// <summary>
 /// One source note for the settings window's "Reading from:" panel, carrying everything both of its
-/// renderable forms need: the compact chip (healthy sources) and the full line (sources needing an
-/// in-game action).
+/// renderable forms need: the compact chip and the full line, which states something this pass did
+/// not read and what the user needs to know about it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -277,9 +277,9 @@ public enum SourceTone
 /// </para>
 /// <para>
 /// The split between the optional properties encodes one design rule: <b>hover may hide optional
-/// information, never a required action.</b> <see cref="Detail"/> is hover-only and therefore only
-/// ever carries copy the user can live without seeing; <see cref="Text"/> is always visible and is
-/// where a required action belongs. Every Missing note the builders produce carries a
+/// information, never what the user needs to know.</b> <see cref="Detail"/> is hover-only and
+/// therefore only ever carries copy the user can live without seeing; <see cref="Text"/> is always
+/// visible and is where a gap and what resolves it belong. Every Missing note the builders produce carries a
 /// <see cref="Text"/> (a test sweeps the whole copy set to enforce it); the window still degrades
 /// safely if one ever does not, by drawing the note as a chip instead.
 /// </para>
@@ -294,7 +294,7 @@ public sealed record SourceNote
 
     /// <summary>
     /// The full-line form's sentence, already written for a player (never a raw wire string). Present
-    /// on every Missing note, because the in-game action it names must stay visible.
+    /// on every Missing note, because what it says about the gap must stay visible.
     /// </summary>
     public string? Text { get; init; }
 

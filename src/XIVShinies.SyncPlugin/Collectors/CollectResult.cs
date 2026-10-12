@@ -58,8 +58,8 @@ public static class CollectSkipReasons
 
     /// <summary>
     /// The character is not inside an Occult Crescent instance, where this collection's source
-    /// (the instance director's state) lives. The user fixes this by entering the Crescent;
-    /// the settings UI turns this reason into that hint.
+    /// (the instance director's state) lives. A full sync that runs while the user is inside the
+    /// Crescent reads it; the settings UI turns this reason into that hint.
     /// </summary>
     public const string NotInOccultInstance = "not_in_occult_instance";
 
@@ -77,9 +77,9 @@ public static class CollectSkipReasons
     /// <para>
     /// Every string returned here is a <b>phrase, not a standalone sentence</b>: it is drawn after the
     /// category's own display name, as "<c>{DisplayName}: {phrase}</c>" (see
-    /// <see cref="ReadStatusView"/>). A new reason's copy must complete that pattern, and — because
-    /// nothing happens on its own; the plugin cannot see the user open a window — must name the one
-    /// in-game action that resolves it.
+    /// <see cref="ReadStatusView"/>). A new reason's copy must complete that pattern and name what
+    /// resolves it (an action in game or in these settings, the condition a sync must run under, or
+    /// what it is waiting on), because a skipped collection is read again only by a later sync.
     /// </para>
     /// <para>
     /// An unrecognized reason returns null rather than the raw code — a wire string like
@@ -97,8 +97,11 @@ public static class CollectSkipReasons
         AchievementListNotLoaded =>
             "not read yet — open your Achievements window in game once.",
 
+        // A short visit can fall between full passes (see NotInOccultInstance), so a visit alone does
+        // not guarantee a read; the hint names the condition a sync must run under.
         NotInOccultInstance =>
-            "not read yet — enter the Occult Crescent once; it syncs during your visit.",
+            "not read yet — the automatic sync or Sync now reads it while you are inside the Occult " +
+            "Crescent.",
 
         // The hint names no category on purpose: every manifest-driven collection — item counts
         // and quest sequences alike — reports this same reason.
@@ -199,7 +202,8 @@ public sealed record CollectResult
     /// A phrase for the settings read-status panel when this pass read only part of what the
     /// category covers, or null when there is nothing partial to say. Drawn after the category's
     /// display name ("<c>{DisplayName}: {phrase}</c>"), like a skip hint — it names the half
-    /// that was not read and the in-game action that reads it.
+    /// that was not read and what reads it: an in-game action, or the condition a sync must run
+    /// under.
     /// </summary>
     /// <remarks>
     /// Only meaningful on a collected result: a skipped category's whole story is its
@@ -213,8 +217,8 @@ public sealed record CollectResult
 
     /// <summary>
     /// Hover copy for the category's healthy read-status chip, or null when the chip needs
-    /// none. Where <see cref="PartialNote"/> is a visible line naming a required action, this
-    /// is optional information a reader can live without — which is exactly what the chip's
+    /// none. Where <see cref="PartialNote"/> is a visible line naming what reads the unread half,
+    /// this is optional information a reader can live without — which is exactly what the chip's
     /// hover is allowed to carry (see <see cref="SourceNote.Detail"/>).
     /// </summary>
     /// <remarks>

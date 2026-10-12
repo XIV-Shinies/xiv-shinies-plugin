@@ -67,7 +67,7 @@ public class SourceNoteTextTests
     // currency subsystem), so they get a chip of their own — without it the panel would imply
     // currencies are never read. The detail also discloses the one gap in that coverage: the
     // game only exposes a content-bound currency (Occult Crescent's pieces, for example) while
-    // the character is inside that content, so those counts sync from in-zone visits.
+    // the character is inside that content, so those counts are read only by a sync that runs there.
     [Fact]
     public void Live_currencies_are_a_chip_naming_what_they_cover_and_the_content_bound_gap()
     {

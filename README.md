@@ -14,7 +14,7 @@
 A [Dalamud](https://github.com/goatcorp/Dalamud) plugin for Final Fantasy XIV that
 automatically records your collection progress on [XIV Shinies](https://xiv-shinies.com).
 New unlocks — quests, achievements, mounts, minions, and more — appear on the site within
-seconds, and everything else syncs automatically in the background, so you stop hand-marking
+seconds, and most of the rest syncs automatically in the background, so you stop hand-marking
 what you already earned.
 
 ![The settings window: sync status, collection toggles, and the branded header](images/screenshots/settings-1-masthead-sync.png)
@@ -30,12 +30,17 @@ sends only raw facts the game knows and never computes site concepts like relic 
 keeps it stable as the site grows new collections and rules.
 
 **Quests**, **Achievements**, **Mounts**, **Minions** and **Orchestrion rolls** upload within
-seconds of the unlock, because the game announces those the moment they happen.
+seconds of the unlock, because the game announces those the moment they happen. Achievements
+need your Achievements window opened at least once each session first, since the game loads
+that list only then.
 
 Everything else travels with the periodic full sync, or immediately when you press
 **Sync now**: **Tracked items** (the item counts that prove relic progress), **Quest
-progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records** and
-**Phantom jobs**.
+progress**, **Triple Triad cards**, **Triple Triad NPCs** and **Occult records**. **Phantom
+jobs** are read by one of those syncs that runs while you are inside the Occult Crescent, and
+your knowledge level once you open the review window at Jeffroy. **Tamed beasts** upload within
+seconds of a change being read, when you talk to the Crucible's NPC or open your Master's
+Bestiary.
 
 ## What gets sent
 
