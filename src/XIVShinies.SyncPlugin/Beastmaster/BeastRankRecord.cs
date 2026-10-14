@@ -99,6 +99,7 @@ public static class BeastRankRecord
     public static readonly IReadOnlySet<string> VerifiedGameVersions = new HashSet<string>
     {
         "2026.09.15.0000.0000",
+        "2026.10.06.0000.0000",
     };
 
     /// <summary>How many bytes the record set spans for a bestiary of this size.</summary>
