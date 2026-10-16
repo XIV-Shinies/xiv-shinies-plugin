@@ -167,7 +167,7 @@ indexed by row id, so every row has a bit.
 
 Each beast's rank is read from a record the game loads into the Crucible of the Unbroken NPC's
 conversation when the player talks to them. Its place in memory is not published, so a patch can
-move it. Each held beast also has an HP record there with a fixed shape that most moves break,
+move it. Each held beast also has an HP record there with a shape that most moves break,
 even when every beast reads the same rank and EXP (see `BeastRankRecord` for the moves it cannot
 catch). A move usually breaks the marker first, which reads as a record not yet filled: nothing
 goes up and nothing is logged. A record whose marker passes but whose checks fail is refused
@@ -181,9 +181,9 @@ talking to the NPC again, look at the record:
 Debug build only, same setup as the seeding command above. It writes whether the record passes its
 checks and, for each beast, its rank, EXP and HP record to `/xllog`. Open the NPC's "View the
 Master's Bestiary", select several beasts, and compare each detail panel's rank and EXP (`67/100`)
-with the dump's line for that number; a Crucible run's team window shows the max HP that the HP
-record repeats. If they disagree, the record has moved: find its new place (`RankRecordOffset`) and
-release.
+with the dump's line for that number; a beast's HP in a Crucible run's team window, before any feed,
+matches one of the five figures in its HP record. If either check fails, the record has moved: find
+its new place (`RankRecordOffset`) and release.
 
 ### Checking the way back from a character that could not be read
 
