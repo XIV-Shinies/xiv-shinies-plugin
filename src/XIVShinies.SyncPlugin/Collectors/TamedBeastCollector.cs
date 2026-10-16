@@ -147,9 +147,8 @@ public sealed class TamedBeastCollector : ICollector
         if (total is null || seen == 0)
         {
             // Once ranks are read the NPC has been talked to, and what is left is the bestiary: the
-            // record set adds no beast on a game version it has not been checked on, and a beast
-            // still at rank 1 with no EXP is never added from it. Naming the NPC again would send
-            // the player in a circle.
+            // record set adds only a beast raised past a fresh pact, so one still at rank 1 with no
+            // EXP waits for the window. Naming the NPC again would send the player in a circle.
             if (ranksRead)
             {
                 return "ranks read at the Crucible — open your Master's Bestiary in game to record " +

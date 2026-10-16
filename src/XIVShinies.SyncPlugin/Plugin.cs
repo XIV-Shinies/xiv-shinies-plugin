@@ -417,8 +417,8 @@ public sealed class Plugin : IDalamudPlugin
         //                                   (see MainWindow.OverrideVersionForScreenshots)
         //   /shinies dumpslots            — audit the unlock bitmask's coverage of the Mount
         //                                   sheet; the answer goes to /xllog, not the screen
-        //   /shinies dumpranks            — write the beast rank record to /xllog, to check it
-        //                                   against the NPC's bestiary after a game patch
+        //   /shinies dumpranks            — write the beast rank record to /xllog, to investigate
+        //                                   ranks that stop arriving after a game patch
         //   /shinies forgetcharacter      — act as if reading the character gave up, to check
         //                                   that "Sync now" reads it again
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);

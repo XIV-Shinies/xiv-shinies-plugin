@@ -163,28 +163,27 @@ cannot report, and `mounts` would have to stop declaring completeness.
 Minions need no equivalent audit — their bitmask is sized to the `Companion` sheet's row count and
 indexed by row id, so every row has a bit.
 
-### Re-checking the beast rank record after a game patch
+### Investigating the beast rank record after a game patch
 
 Each beast's rank is read from a record the game loads into the Crucible of the Unbroken NPC's
 conversation when the player talks to them. Its place in memory is not published, so a patch can
-move it, and a small move can still pass every check the reader runs. The record therefore proves a
-pact only on the game versions in `BeastRankRecord.VerifiedGameVersions`. On any other version,
-ranks go up only beside beasts the Master's Bestiary has shown as held, and `/xllog` says so the
-first time per load that an unchecked record passes its checks. Every patch, hotfixes included,
-needs this check before talking to the NPC alone records beasts again:
+move it. Each held beast also has an HP record there with a fixed shape that most moves break,
+even when every beast reads the same rank and EXP (see `BeastRankRecord` for the moves it cannot
+catch). A move usually breaks the marker first, which reads as a record not yet filled: nothing
+goes up and nothing is logged. A record whose marker passes but whose checks fail is refused
+instead, and `/xllog` warns once. Either way, when ranks stop arriving after a patch, even after
+talking to the NPC again, look at the record:
 
 ```
 /shinies dumpranks        # at the Crucible's entrance, after talking to its NPC
 ```
 
-Debug build only, same setup as the seeding command above. It writes the game version, whether the
-record passes its checks, and each beast's rank and EXP to `/xllog`. Open the NPC's "View the
+Debug build only, same setup as the seeding command above. It writes whether the record passes its
+checks and, for each beast, its rank, EXP and HP record to `/xllog`. Open the NPC's "View the
 Master's Bestiary", select several beasts, and compare each detail panel's rank and EXP (`67/100`)
-with the dump's line for that number. If every one matches, add the version the dump printed to
-`VerifiedGameVersions` (and, if the dump's beast count differs from `VerifiedBeastCount`, update
-that too) and release. If they disagree, the record has moved: leave the list alone, so the plugin
-keeps to the bestiary, and find the record's new place (`RankRecordOffset`) before adding the
-version.
+with the dump's line for that number; a Crucible run's team window shows the max HP that the HP
+record repeats. If they disagree, the record has moved: find its new place (`RankRecordOffset`) and
+release.
 
 ### Checking the way back from a character that could not be read
 
