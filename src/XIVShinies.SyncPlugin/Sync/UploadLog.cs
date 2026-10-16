@@ -175,9 +175,8 @@ public sealed record UploadLogEntry
     public TimeSpan? RetryAfter { get; init; }
 
     /// <summary>
-    /// The literal HTTP status code, when a response arrived. The contract mapping erases it
-    /// (a 502 from a proxy and a 418 both become <see cref="ApiStatus.Unknown"/>), and
-    /// diagnostics need the real number.
+    /// The literal HTTP status code, when a response arrived, for diagnostics
+    /// (<see cref="ApiResponse{T}.HttpStatusCode"/> says why the contract status alone is not enough).
     /// </summary>
     public int? HttpStatusCode { get; init; }
 

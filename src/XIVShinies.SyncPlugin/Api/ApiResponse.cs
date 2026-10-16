@@ -29,10 +29,12 @@ public sealed record ApiResponse<T> where T : class
     public TimeSpan? RetryAfter { get; init; }
 
     /// <summary>
-    /// The literal HTTP status code, when a response arrived at all (null for network failures).
-    /// <see cref="Status"/> is the contract's interpretation and can erase the number — a 502
-    /// from a proxy and a 418 both map to <see cref="ApiStatus.Unknown"/> — so diagnostics keep
-    /// the original.
+    /// The literal HTTP status code, when a response arrived at all: null when none did, and kept on
+    /// a <see cref="ApiStatus.NetworkError"/> whose headers arrived but whose body was refused or
+    /// cut off.
+    /// <see cref="Status"/> is the contract's interpretation and can erase the number — a 500
+    /// and a proxy's 502 both map to <see cref="ApiStatus.ServerError"/> — so diagnostics keep the
+    /// original.
     /// </summary>
     public int? HttpStatusCode { get; init; }
 

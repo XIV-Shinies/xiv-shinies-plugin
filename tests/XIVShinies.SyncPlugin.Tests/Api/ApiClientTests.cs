@@ -60,7 +60,8 @@ public class ApiClientTests
         Func<HttpRequestMessage, HttpResponseMessage> respond,
         string token = ValidToken,
         string baseUrl = "https://xiv-shinies.com",
-        bool customBackendAcknowledged = false)
+        bool customBackendAcknowledged = false,
+        TimeSpan? requestTimeout = null)
     {
         var handler = new StubHandler(respond);
         var settings = new PluginSettings
@@ -69,7 +70,7 @@ public class ApiClientTests
             BaseUrl = baseUrl,
             CustomBackendAcknowledged = customBackendAcknowledged,
         };
-        return (new ApiClient(settings, "1.2.3", handler), handler);
+        return (new ApiClient(settings, "1.2.3", handler, requestTimeout), handler);
     }
 
     [Fact]
@@ -381,6 +382,28 @@ public class ApiClientTests
         Assert.True(ApiStatusMap.IsRetryable(response.Status));
     }
 
+    // A proxy that cannot reach the server answers with its own 5xx and an HTML page, such as
+    // Cloudflare's 530 when its tunnel is down. The page is not an error body the plugin can read,
+    // but the status still has to come through as a retryable server error, with the real number
+    // kept for diagnostics. `(HttpStatusCode)530` is a cast: it turns the number into the enum type even
+    // though the enum has no named member for 530.
+    [Fact]
+    public async Task A_proxy_5xx_with_an_html_body_is_a_retryable_server_error()
+    {
+        var (client, _) = Build(_ => new HttpResponseMessage((HttpStatusCode)530)
+        {
+            Content = new StringContent(
+                "<html><body>error code: 1033</body></html>", Encoding.UTF8, "text/html"),
+        });
+
+        var response = await client.GetMeAsync();
+
+        Assert.Equal(ApiStatus.ServerError, response.Status);
+        Assert.True(ApiStatusMap.IsRetryable(response.Status));
+        Assert.Equal(530, response.HttpStatusCode);
+        Assert.Null(response.Error);
+    }
+
     [Fact]
     public async Task A_transport_failure_becomes_a_network_error_rather_than_an_exception()
     {
@@ -390,6 +413,9 @@ public class ApiClientTests
 
         Assert.Equal(ApiStatus.NetworkError, response.Status);
         Assert.True(ApiStatusMap.IsRetryable(response.Status));
+
+        // No headers arrived, so there is no status code to keep.
+        Assert.Null(response.HttpStatusCode);
     }
 
     // A timeout surfaces as TaskCanceledException while the CALLER's token is not canceled. The
@@ -402,6 +428,7 @@ public class ApiClientTests
         var response = await client.GetMeAsync();
 
         Assert.Equal(ApiStatus.NetworkError, response.Status);
+        Assert.Null(response.HttpStatusCode);
     }
 
     // ...but a genuine caller cancellation is NOT an error and must propagate to the caller.
@@ -574,6 +601,114 @@ public class ApiClientTests
             length = 0;
             return false;
         }
+    }
+
+    // A response body whose connection breaks after the headers arrive. It either drops, so every
+    // read fails the way a broken socket's does, with an IOException, or stalls, so an async read
+    // never finishes until it is canceled (the synchronous Read, which the client never calls,
+    // always throws). A `Stream` subclass must answer every abstract member, and
+    // `override` marks each as this class's version of one the base class declares. The ones a
+    // read-only, unseekable body never needs throw NotSupportedException, except Flush, which is
+    // empty because flushing a read-only stream is legal and does nothing. ReadAsync is not
+    // abstract; it is overridden because it is the read the client actually makes.
+    private sealed class BrokenBodyStream : Stream
+    {
+        private readonly bool stalls;
+
+        public BrokenBodyStream(bool stalls) => this.stalls = stalls;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new IOException("The connection was reset.");
+
+        // `ValueTask<int>` is a lighter Task for a result that is often ready at once.
+        // `Memory<byte>` is a span-like view of bytes that, unlike a span, can be held across an
+        // `await`. `= default` makes the token optional; a default CancellationToken never cancels.
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!stalls)
+                throw new IOException("The connection was reset.");
+
+            // `Timeout.Infinite` waits forever, so only the token can end the wait, as only a
+            // deadline or a cancellation can end a read from a connection that went silent.
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    // The read of a body whose connection dropped fails with an IOException, which is not an
+    // HttpRequestException. It still has to come back as a network error, keeping the status code
+    // that did arrive, since nothing may throw out of the client's methods.
+    [Fact]
+    public async Task A_connection_dropped_mid_body_is_a_network_error_not_an_exception()
+    {
+        var (client, _) = Build(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new BrokenBodyStream(stalls: false)),
+        });
+
+        var response = await client.GetMeAsync();
+
+        Assert.Equal(ApiStatus.NetworkError, response.Status);
+        Assert.Equal(200, response.HttpStatusCode);
+    }
+
+    // A body that stalls after the headers arrive is held to the request's deadline, so the request
+    // ends as a network error rather than waiting on a connection that went silent.
+    [Fact]
+    public async Task A_body_that_stalls_past_the_deadline_is_a_network_error()
+    {
+        var (client, _) = Build(
+            _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new BrokenBodyStream(stalls: true)),
+            },
+            requestTimeout: TimeSpan.FromMilliseconds(200));
+
+        var response = await client.GetMeAsync();
+
+        Assert.Equal(ApiStatus.NetworkError, response.Status);
+        Assert.Equal(200, response.HttpStatusCode);
+    }
+
+    // The caller canceling while the body is read is not an error, as it is not before the headers:
+    // the cancellation propagates to the caller.
+    [Fact]
+    public async Task A_caller_cancellation_during_the_body_read_propagates()
+    {
+        using var cts = new CancellationTokenSource();
+        var (client, _) = Build(_ =>
+        {
+            // Canceled once the headers are on their way back, so the body read is what it ends.
+            cts.CancelAfter(TimeSpan.FromMilliseconds(100));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new BrokenBodyStream(stalls: true)),
+            };
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetMeAsync(cts.Token));
     }
 
     // An honest hostile server: the oversized body is advertised in the headers, so the client

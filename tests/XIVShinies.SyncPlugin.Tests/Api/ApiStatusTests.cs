@@ -18,10 +18,33 @@ public class ApiStatusTests
     [InlineData(429, ApiStatus.RateLimited)]
     [InlineData(500, ApiStatus.ServerError)]
     [InlineData(503, ApiStatus.SyncDisabled)]
-    [InlineData(418, ApiStatus.Unknown)]  // anything the contract doesn't define
+    [InlineData(418, ApiStatus.Unknown)]  // any other code outside 5xx
     public void Maps_http_status_codes_to_contract_meanings(int httpStatus, ApiStatus expected)
     {
         Assert.Equal(expected, ApiStatusMap.FromHttpStatusCode(httpStatus));
+    }
+
+    // Every 5xx but 503 reads as a 500 does, including the codes a proxy sends when it cannot reach
+    // the server (ApiStatus.ServerError lists them and says why a retry is safe).
+    [Theory]
+    [InlineData(501)]
+    [InlineData(502)]
+    [InlineData(504)]
+    [InlineData(520)]
+    [InlineData(530)]
+    [InlineData(599)]
+    public void Every_other_server_side_failure_reads_as_a_server_error(int httpStatus)
+    {
+        Assert.Equal(ApiStatus.ServerError, ApiStatusMap.FromHttpStatusCode(httpStatus));
+    }
+
+    // The edges of the 5xx range: the codes either side of it do not read as server errors.
+    [Theory]
+    [InlineData(499)]
+    [InlineData(600)]
+    public void A_code_outside_the_5xx_range_is_unknown(int httpStatus)
+    {
+        Assert.Equal(ApiStatus.Unknown, ApiStatusMap.FromHttpStatusCode(httpStatus));
     }
 
     // A 403 is always a failed character match, and the body's error code says which of four it
