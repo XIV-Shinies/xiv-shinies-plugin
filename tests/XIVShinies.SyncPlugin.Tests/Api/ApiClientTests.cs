@@ -382,18 +382,18 @@ public class ApiClientTests
         Assert.True(ApiStatusMap.IsRetryable(response.Status));
     }
 
-    // A proxy that cannot reach the server answers with its own 5xx and an HTML page, such as
-    // Cloudflare's 530 when its tunnel is down. The page is not an error body the plugin can read,
-    // but the status still has to come through as a retryable server error, with the real number
-    // kept for diagnostics. `(HttpStatusCode)530` is a cast: it turns the number into the enum type even
-    // though the enum has no named member for 530.
+    // A proxy that cannot reach the server answers with its own 5xx and an HTML page, sometimes with
+    // a code outside the standard list, such as 530. The page is not an error body the plugin can
+    // read, but the status still has to come through as a retryable server error, with the real
+    // number kept for diagnostics. `(HttpStatusCode)530` is a cast: it turns the number into the
+    // enum type even though the enum has no named member for 530.
     [Fact]
     public async Task A_proxy_5xx_with_an_html_body_is_a_retryable_server_error()
     {
         var (client, _) = Build(_ => new HttpResponseMessage((HttpStatusCode)530)
         {
             Content = new StringContent(
-                "<html><body>error code: 1033</body></html>", Encoding.UTF8, "text/html"),
+                "<html><body>The server could not be reached.</body></html>", Encoding.UTF8, "text/html"),
         });
 
         var response = await client.GetMeAsync();

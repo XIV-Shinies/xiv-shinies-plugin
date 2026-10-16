@@ -56,9 +56,9 @@ public enum ApiStatus
     RateLimited,
 
     /// <summary>
-    /// 500, when the server failed mid-apply, or any other 5xx but 503, such as a proxy's 502 or
-    /// 504, or Cloudflare's 520 to 527 or 530 when it cannot reach or hear back from the server.
-    /// Writes are idempotent, so a later retry is safe.
+    /// 500, when the server failed mid-apply, or any other 5xx but 503, such as the 502, 504 or
+    /// other 5xx a proxy sends when it cannot reach or hear back from the server. Writes are
+    /// idempotent, so a later retry is safe.
     /// </summary>
     ServerError,
 

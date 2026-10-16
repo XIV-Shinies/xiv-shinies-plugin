@@ -462,7 +462,7 @@ them.
 | **405** | —                                                               | Wrong method (the route accepts only POST).                                                                          |
 | **413** | `{"error": "payload_too_large"}`                                | `Content-Length` missing, non-numeric, or over the cap. Don't retry unchanged; split the upload.                    |
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
-| **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent. The plugin treats any other 5xx but 503 the same way, such as a proxy's 502 or 504, or Cloudflare's 520 to 527 or 530 when it cannot reach or hear back from the server. |
+| **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent. The plugin treats any other 5xx but 503 the same way, such as the 502, 504 or other 5xx a proxy sends when it cannot reach or hear back from the server. |
 | **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | Global kill switch is off. Back off the full hour.                                                                   |
 
 ### POST /api/plugin/v1/occult/instance-state
