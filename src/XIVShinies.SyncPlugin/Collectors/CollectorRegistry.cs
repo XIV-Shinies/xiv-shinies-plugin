@@ -293,7 +293,7 @@ public static class CollectorRegistry
             "Talking to the NPC at the Crucible of the Unbroken's entrance records your beasts and " +
             "each one's rank. Paging through your Master's Bestiary once with no filter applied " +
             "confirms the whole set and adds any beast the NPC's record could not: one still at " +
-            "rank 1 with no experience, or every beast for a while after a game update. Nothing " +
+            "rank 1 with no experience, or every beast if a game update moves the record. Nothing " +
             "else about you is read for this beyond the zone you are in, and other players are " +
             "never involved.",
 

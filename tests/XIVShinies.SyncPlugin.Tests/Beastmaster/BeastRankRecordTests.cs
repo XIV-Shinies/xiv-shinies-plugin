@@ -8,10 +8,17 @@ using XIVShinies.SyncPlugin.Beastmaster;
 namespace XIVShinies.SyncPlugin.Tests.Beastmaster;
 
 // The beast record set sits where no published definition names it, so these pin both halves of the
-// reader: a well-formed record set yields each ranked beast's rank, and anything else yields nothing.
+// reader: a record set laid out as the game holds it yields the rank of each beast its HP records
+// vouch for, and one that is not yields nothing.
+// Each `[Fact]` is one test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row,
+// like `it.each`. `uint` is an unsigned 32-bit number, never negative, the type of the marker and of
+// each word in an HP record.
 public class BeastRankRecordTests
 {
-    /// <summary>A record set's bytes: the marker, then the ranks, then the EXP figures.</summary>
+    /// <summary>
+    /// A record set's bytes: the marker, then the ranks, then the EXP figures, then a well-formed HP
+    /// record for every beast.
+    /// </summary>
     // `params byte[] ranks` lets a caller list the ranks one by one, like a rest parameter
     // (`...ranks`) in JavaScript.
     private static byte[] RecordSet(uint marker, byte[] exp, params byte[] ranks)
@@ -22,7 +29,27 @@ public class BeastRankRecordTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, marker);
         ranks.CopyTo(bytes, BeastRankRecord.MarkerBytes);
         exp.CopyTo(bytes, BeastRankRecord.MarkerBytes + ranks.Length);
+
+        // Each beast gets its own max HP, as each species has in the game. `(uint)` converts the int
+        // arithmetic to the `uint` words the record holds.
+        for (var number = 1; number <= ranks.Length; number++)
+        {
+            var maxHp = (uint)(1500 + (10 * number));
+            WriteHpRecord(bytes, ranks.Length, number, 40, 80, maxHp, maxHp, maxHp);
+        }
+
         return bytes;
+    }
+
+    /// <summary>Overwrites one beast's HP record with the five words given.</summary>
+    private static void WriteHpRecord(byte[] bytes, int beastCount, int number, params uint[] words)
+    {
+        var start = BeastRankRecord.HpRecordsStart(beastCount)
+            + (BeastRankRecord.HpRecordBytes * (number - 1));
+
+        // `AsSpan(offset)` is a view of the array from that offset on, so each word lands in place.
+        for (var word = 0; word < words.Length; word++)
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(start + (4 * word)), words[word]);
     }
 
     /// <summary>A filled record set with the given ranks and every EXP figure at 0.</summary>
@@ -87,6 +114,18 @@ public class BeastRankRecordTests
         Assert.Null(BeastRankRecord.Read(Filled(9, 6, 3), beastCount: 4));
     }
 
+    // One byte short of the last HP record is still too few: the reading is refused rather than
+    // looked for past the end of the bytes.
+    [Fact]
+    public void A_record_set_cut_short_inside_its_hp_records_refuses_the_reading()
+    {
+        // `AsSpan(start, length)` is a view of that many bytes from `start`, like
+        // `subarray(start, start + length)`.
+        var bytes = Filled(9, 6).AsSpan(0, BeastRankRecord.ByteLength(2) - 1);
+
+        Assert.Null(BeastRankRecord.Read(bytes, beastCount: 2));
+    }
+
     // Without the bestiary's size the EXP figures cannot be found, so nothing can be checked.
     [Fact]
     public void An_unknown_bestiary_size_refuses_the_reading()
@@ -126,7 +165,8 @@ public class BeastRankRecordTests
     }
 
     // Rank 1 with no EXP could be how the record set stores a beast without a pact, so it proves
-    // nothing. Its rank is still read, for a beast the bestiary shows as held.
+    // nothing. Its rank is still read when its HP record is well-formed, for a beast the bestiary
+    // shows as held.
     [Fact]
     public void A_beast_at_rank_one_with_no_exp_is_ranked_but_not_leveled()
     {
@@ -196,7 +236,7 @@ public class BeastRankRecordTests
     {
         var bytes = RecordSet(0, new byte[2], 9, 6);
 
-        var assessment = BeastRankRecord.Assess(bytes, 2, Array.Empty<int>(), layoutVerified: true);
+        var assessment = BeastRankRecord.Assess(bytes, 2, Array.Empty<int>());
 
         Assert.Equal(RankRecordVerdict.NotFilled, assessment.Verdict);
         Assert.Null(assessment.Reading);
@@ -205,7 +245,7 @@ public class BeastRankRecordTests
     [Fact]
     public void A_filled_record_set_with_a_bad_value_is_refused()
     {
-        var assessment = BeastRankRecord.Assess(Filled(9, 26), 2, Array.Empty<int>(), layoutVerified: true);
+        var assessment = BeastRankRecord.Assess(Filled(9, 26), 2, Array.Empty<int>());
 
         Assert.Equal(RankRecordVerdict.Refused, assessment.Verdict);
         Assert.Null(assessment.Reading);
@@ -216,7 +256,7 @@ public class BeastRankRecordTests
     [Fact]
     public void A_record_set_that_leaves_a_held_beast_unranked_is_refused()
     {
-        var assessment = BeastRankRecord.Assess(Filled(9, 0), 2, new[] { 2 }, layoutVerified: true);
+        var assessment = BeastRankRecord.Assess(Filled(9, 0), 2, new[] { 2 });
 
         Assert.Equal(RankRecordVerdict.Refused, assessment.Verdict);
     }
@@ -224,49 +264,149 @@ public class BeastRankRecordTests
     [Fact]
     public void A_record_set_that_passes_every_check_is_accepted_with_its_reading()
     {
-        var assessment = BeastRankRecord.Assess(Filled(9, 6), 2, new[] { 1 }, layoutVerified: true);
+        var assessment = BeastRankRecord.Assess(Filled(9, 6), 2, new[] { 1 });
 
         Assert.Equal(RankRecordVerdict.Accepted, assessment.Verdict);
         Assert.Equal(new Dictionary<int, int> { [1] = 9, [2] = 6 }, assessment.Reading!.Ranks);
         Assert.Equal(new[] { 1, 2 }, assessment.Reading.Leveled.OrderBy(number => number));
     }
 
-    // On a game version the layout was not checked on, a shifted record set could pass every check,
-    // so the reading proves no pact: its ranks still travel beside the beasts the window showed held.
+    // A beast the window showed as held has a pact, so a record set with no well-formed HP record for
+    // it is not the record set it claims to be.
     [Fact]
-    public void On_an_unchecked_layout_an_accepted_reading_proves_no_pact()
+    public void A_held_beast_without_a_well_formed_hp_record_is_refused()
     {
-        var assessment = BeastRankRecord.Assess(Filled(9, 6), 2, new[] { 1 }, layoutVerified: false);
+        var bytes = Filled(9, 1);
+        WriteHpRecord(bytes, 2, 2, 0, 0, 0, 0, 0);
 
-        Assert.Equal(RankRecordVerdict.Accepted, assessment.Verdict);
-        Assert.Equal(new Dictionary<int, int> { [1] = 9, [2] = 6 }, assessment.Reading!.Ranks);
-        Assert.Empty(assessment.Reading.Leveled);
+        var assessment = BeastRankRecord.Assess(bytes, 2, new[] { 2 });
+
+        Assert.Equal(RankRecordVerdict.Refused, assessment.Verdict);
     }
 
-    // --- Which layouts are trusted -----------------------------------------------------------------
+    // --- The HP records ----------------------------------------------------------------------------
 
+    // The layout pinned in plain numbers, independent of the helpers above, which place their bytes
+    // with the reader's own arithmetic: a bestiary of 50 has its HP records from byte 104, and the
+    // whole record set spans 1104 bytes.
     [Fact]
-    public void A_checked_version_with_the_checked_bestiary_size_is_trusted()
+    public void The_record_set_is_laid_out_as_the_game_holds_it()
     {
-        var version = BeastRankRecord.VerifiedGameVersions.First();
+        Assert.Equal(104, BeastRankRecord.HpRecordsStart(50));
+        Assert.Equal(1104, BeastRankRecord.ByteLength(50));
 
-        Assert.True(BeastRankRecord.IsLayoutVerified(version, BeastRankRecord.VerifiedBeastCount));
+        // One beast, written out byte by byte: the marker, rank 9, EXP 0, then the HP record's words
+        // 40, 80 and a max HP of 1510 (0x05E6) three times, each with its lowest byte first.
+        var bytes = new byte[]
+        {
+            2, 0, 0, 0,
+            9,
+            0,
+            40, 0, 0, 0, 80, 0, 0, 0, 0xE6, 5, 0, 0, 0xE6, 5, 0, 0, 0xE6, 5, 0, 0,
+        };
+
+        Assert.Equal(new Dictionary<int, int> { [1] = 9 }, BeastRankRecord.Read(bytes, beastCount: 1)!.Ranks);
+        Assert.Equal(1510u, BeastRankRecord.HpRecordWord(BeastRankRecord.HpRecord(bytes, 1, 0), 2));
     }
 
-    // A grown bestiary moves where the EXP figures start, whatever the game version.
+    // The smallest figures that still rise toward a repeated max HP.
     [Fact]
-    public void A_bestiary_of_a_different_size_is_not_trusted()
+    public void The_smallest_rising_record_is_well_formed()
     {
-        var version = BeastRankRecord.VerifiedGameVersions.First();
+        var record = new byte[BeastRankRecord.HpRecordBytes];
+        record[4] = 1;
+        record[8] = 2;
+        record[12] = 2;
+        record[16] = 2;
 
-        Assert.False(BeastRankRecord.IsLayoutVerified(version, BeastRankRecord.VerifiedBeastCount + 1));
+        Assert.True(BeastRankRecord.IsWellFormedHpRecord(record));
     }
 
+    // Each case breaks the shape one way. The `u` suffix writes a number as a `uint`.
     [Theory]
-    [InlineData("2099.01.01.0000.0000")]
-    [InlineData(null)]
-    public void An_unchecked_or_unknown_game_version_is_not_trusted(string? version)
+    [InlineData(40u, 80u, 1520u, 1521u, 1520u)] // the max HP disagrees with itself
+    [InlineData(40u, 80u, 1520u, 1520u, 1519u)] // ...in the last word
+    [InlineData(80u, 80u, 1520u, 1520u, 1520u)] // the first figure is not below the second
+    [InlineData(40u, 1520u, 1520u, 1520u, 1520u)] // the second figure is not below the max HP
+    [InlineData(40u, 80u, 65536u, 65536u, 65536u)] // the max HP does not fit in two bytes
+    [InlineData(0u, 0u, 0u, 0u, 0u)] // no record at all
+    public void A_raised_beast_without_a_well_formed_hp_record_refuses_the_whole_reading(
+        uint first, uint second, uint third, uint fourth, uint fifth)
     {
-        Assert.False(BeastRankRecord.IsLayoutVerified(version, BeastRankRecord.VerifiedBeastCount));
+        var bytes = Filled(9, 6);
+        WriteHpRecord(bytes, 2, 2, first, second, third, fourth, fifth);
+
+        Assert.Null(BeastRankRecord.Read(bytes, beastCount: 2));
+    }
+
+    // Rank 1 with some EXP is raised too, so it is held to the shape as firmly as a higher rank.
+    [Fact]
+    public void A_beast_at_rank_one_with_exp_and_no_hp_record_refuses_the_whole_reading()
+    {
+        var bytes = RecordSet(BeastRankRecord.FilledMarker, new byte[] { 0, 5 }, 9, 1);
+        WriteHpRecord(bytes, 2, 2, 0, 0, 0, 0, 0);
+
+        Assert.Null(BeastRankRecord.Read(bytes, beastCount: 2));
+    }
+
+    // A beast neither raised nor shown as held may have no pact, so its HP record is not held to the
+    // shape: the beast is only left unranked, and the rest of the reading stands.
+    [Fact]
+    public void A_fresh_beast_without_a_well_formed_hp_record_is_left_unranked()
+    {
+        var bytes = Filled(9, 1);
+        WriteHpRecord(bytes, 2, 2, 0, 0, 0, 0, 0);
+
+        var reading = BeastRankRecord.Read(bytes, beastCount: 2);
+
+        Assert.Equal(new Dictionary<int, int> { [1] = 9 }, reading!.Ranks);
+        Assert.Equal(new[] { 1 }, reading.Leveled);
+    }
+
+    // With every beast at the same rank and EXP, nothing in those figures can tell a record set read
+    // from the wrong place apart from one read from the right place. The HP records still can at
+    // each distance below, none of them a whole number of HP records: whole words short of one
+    // record, and one to three bytes either side of one.
+    [Theory]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(12)]
+    [InlineData(16)]
+    [InlineData(17)]
+    [InlineData(18)]
+    [InlineData(19)]
+    [InlineData(21)]
+    [InlineData(22)]
+    [InlineData(23)]
+    public void A_record_set_read_a_few_bytes_early_is_refused_even_when_every_beast_reads_the_same(int shift)
+    {
+        // A `const` local is a value fixed when the code compiles, which nothing can reassign.
+        const int beastCount = 50;
+
+        // `Enumerable.Repeat(value, count)` yields the value that many times, like
+        // `Array(count).fill(value)` in JavaScript.
+        var ranks = Enumerable.Repeat((byte)BeastRankRecord.MaxRank, beastCount).ToArray();
+        var inPlace = RecordSet(BeastRankRecord.FilledMarker, new byte[beastCount], ranks);
+
+        // The same bytes `shift` places later, behind bytes whose first four happen to read as the
+        // marker: the marker, every rank and every EXP figure still pass their checks. The copy views
+        // all but the last `shift` bytes of the record set and writes them from `shift` on.
+        var early = new byte[inPlace.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(early, BeastRankRecord.FilledMarker);
+        inPlace.AsSpan(0, inPlace.Length - shift).CopyTo(early.AsSpan(shift));
+
+        Assert.Equal(beastCount, BeastRankRecord.Read(inPlace, beastCount)!.Leveled.Count);
+        Assert.Null(BeastRankRecord.Read(early, beastCount));
+    }
+
+    // The HP records begin after one rank byte and one EXP byte per beast, so a bestiary larger than
+    // the record set looks for them in the wrong place.
+    [Fact]
+    public void A_record_set_laid_out_for_a_smaller_bestiary_is_refused()
+    {
+        var bytes = new byte[BeastRankRecord.ByteLength(4)];
+        Filled(9, 6, 3).CopyTo(bytes, 0);
+
+        Assert.Null(BeastRankRecord.Read(bytes, beastCount: 4));
     }
 }

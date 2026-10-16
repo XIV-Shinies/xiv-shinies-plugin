@@ -395,9 +395,9 @@ Field constraints:
   fills when the player talks to the Crucible of the Unbroken's NPC, and sends `rank` for each
   listed beast it ranks. A beast enters the list from the bestiary window, or from the record set
   when it is raised past a fresh pact (rank 2 or above, or rank 1 with some EXP), which only a
-  held beast can be; the second path holds only on a game version where the record set's place
-  was checked, and never for a beast the window listed as not held. A beast whose rank has not
-  been read goes up without one, and a rank never travels without its beast's number.
+  held beast can be; the second path never adds a beast the window listed as not held. A record
+  set that fails the plugin's checks adds nothing. A beast whose rank has not been read goes up
+  without one, and a rank never travels without its beast's number.
   `battlehorn` is never sent: no place the plugin reads carries it. Numbers outside the catalog
   are dropped with a warning rather than a 400, but `0` fails validation like every id-list
   category. **Completeness is decided per upload here as well as per category**, because the

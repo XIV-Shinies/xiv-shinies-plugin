@@ -61,12 +61,14 @@ response fields) and a field-by-field contract conformance audit.
   talk with the NPC never reaches it. While the character is in the entrance's zone with the
   collection switched on, the watcher walks `EventFramework`'s handler map once a second, reading
   only each entry's event id, copies the record set out of the one matching handler through
-  `SafeMemory`, and keeps it only if every value is in range and it ranks every beast the window
-  showed as held; what the record set adds to an upload is set out in the API contract's
-  `tamedBeasts` bullet. Beyond those it reads only the login state, the zone id, the game's version
-  string and the bestiary sheet's size, none of which is about another player. The **Crucible run
-  sharing** listens by name for the Crucible's own windows (the board, the team,
-  the run HUD, the treasure, loot and shop offers, and the results screen) and reads them only
+  `SafeMemory`, and keeps it only if every value is in range, every raised beast has a well-formed
+  HP record, and it ranks every beast the window showed as held. The HP figures are only compared,
+  never kept or sent (a development-build dump command, compiled out of Release, writes them to
+  the local log); what the record set adds to an upload is set out in the API contract's
+  `tamedBeasts` bullet. Beyond those it reads only the login state, the zone id and the bestiary
+  sheet's size, none of which is about another player. The **Crucible run sharing** listens by
+  name for the Crucible's own windows (the board, the team, the run HUD, the treasure, loot and
+  shop offers, and the results screen) and reads them only
   while the game shows them to the player, and the board, team and offer windows once more as each
   closes, while the sharing is on and the character is out of combat. The board window lists the
   current fight's enemies as rows of their own; the reader reads only each row's record

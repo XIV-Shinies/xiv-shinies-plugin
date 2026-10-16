@@ -8,10 +8,6 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 // AtkUnitBase, the game's base window type, whose values back what the window displays.
 using FFXIVClientStructs.FFXIV.Component.GUI;
-// `using X = ...` gives a type a local name, like `import { Framework as GameFramework }`: the game's
-// own Framework, which reports the running game's version, would otherwise clash with Dalamud's
-// IFramework in reading.
-using GameFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Diagnostics;
@@ -55,7 +51,9 @@ public sealed unsafe class TamedBeastObserver : IDisposable
 
     /// <summary>How far into that conversation's event handler the beast record set begins.</summary>
     /// <remarks>
-    /// <see cref="BeastRankRecord.VerifiedGameVersions"/> lists the game versions it was checked on.
+    /// No published definition names this place, so a game patch can move it; see
+    /// <see cref="BeastRankRecord"/> for the checks that refuse a reading taken from elsewhere, and
+    /// the moves they cannot catch.
     /// </remarks>
     private const int RankRecordOffset = 0x468;
 
@@ -94,11 +92,6 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     // Whether a refused reading of the record set has been reported since the last accepted one: the
     // same refusal would otherwise repeat every second the player stands at the entrance.
     private bool rankRefusalReported;
-
-    // The running game's version, read once, and whether the note about an unchecked version has been
-    // written. Null until read.
-    private string? gameVersion;
-    private bool unverifiedLayoutReported;
 
     // The bestiary's size, read from the game's data the first time the window opens or the NPC's
     // handler is found, rather than in the constructor: a character who never plays beastmaster
@@ -295,6 +288,8 @@ public sealed unsafe class TamedBeastObserver : IDisposable
                 lastLoggedRead = summary;
 
                 // Built from the summary alone, so the line changes exactly when the summary does.
+                // `$"..."` is an interpolated string, like a JavaScript template literal, and `+`
+                // joins the pieces across lines.
                 var tally = summary.Ledger;
                 log.Debug(
                     $"Bestiary page read: {summary.Listed} listed, {summary.Held} held, " +
@@ -388,8 +383,7 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         if (!TryCopyRankRecord(out var bytes, out var size))
             return false;
 
-        var layoutVerified = BeastRankRecord.IsLayoutVerified(GameVersion(), size);
-        var assessment = BeastRankRecord.Assess(bytes, size, ledger.Snapshot(), layoutVerified);
+        var assessment = BeastRankRecord.Assess(bytes, size, ledger.Snapshot());
 
         // `switch` picks one branch by value, like a JavaScript switch statement.
         switch (assessment.Verdict)
@@ -413,14 +407,6 @@ public sealed unsafe class TamedBeastObserver : IDisposable
                 return false;
 
             default:
-                if (!layoutVerified && !unverifiedLayoutReported)
-                {
-                    unverifiedLayoutReported = true;
-                    log.Information(
-                        $"The beasts' rank record has not been checked on game version {GameVersion()}, " +
-                        "so ranks are sent only for beasts the Master's Bestiary has shown as held.");
-                }
-
                 // A refusal after this one is news again and is reported.
                 rankRefusalReported = false;
 
@@ -474,9 +460,9 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         if (handler == 0)
             return false;
 
-        // The record set's length, and where its EXP figures start, both follow from the bestiary's
-        // size; without it nothing can be checked. `is not > 0` is true for null as well as for 0 or
-        // less, since a null value matches no number pattern.
+        // The record set's length, and where its EXP figures and HP records start, follow from the
+        // bestiary's size; without it nothing can be checked. `is not > 0` is true for null as well
+        // as for 0 or less, since a null value matches no number pattern.
         var count = BeastCount();
         if (count is not > 0)
             return false;
@@ -494,27 +480,14 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         return true;
     }
 
-    /// <summary>The running game's version, read once from the game, or null when unreadable.</summary>
-    private string? GameVersion()
-    {
-        if (gameVersion is null)
-        {
-            var game = GameFramework.Instance();
-            if (game != null)
-                gameVersion = game->GameVersionString;
-        }
-
-        return gameVersion;
-    }
-
 #if DEBUG
     /// <summary>
-    /// Writes the record set to the log as it reads now, whatever the game version, so a maintainer
-    /// can compare it with the NPC's bestiary after a game patch. Development builds only.
+    /// Writes the record set to the log as it reads now, whatever its checks decide, so a maintainer
+    /// can compare it with the game when ranks stop arriving after a patch. Development builds only.
     /// </summary>
     /// <remarks>
-    /// CLAUDE.md's "Re-checking the beast rank record after a game patch" says how to use it. Runs on
-    /// the framework thread; the caller marshals there.
+    /// CLAUDE.md's "Investigating the beast rank record after a game patch" says how to use it. Runs
+    /// on the framework thread; the caller marshals there.
     /// </remarks>
     public void AuditRankRecord()
     {
@@ -526,21 +499,24 @@ public sealed unsafe class TamedBeastObserver : IDisposable
             return;
         }
 
-        var version = GameVersion() ?? "unknown";
-        var verified = BeastRankRecord.IsLayoutVerified(version, size);
-        var assessment = BeastRankRecord.Assess(bytes, size, ledger.Snapshot(), layoutVerified: true);
+        var assessment = BeastRankRecord.Assess(bytes, size, ledger.Snapshot());
         var marker = BeastRankRecord.IsFilled(bytes) ? "filled" : "not filled";
-        log.Information(
-            $"Beast rank record on game version {version} ({(verified ? "checked" : "not checked")}), " +
-            $"{size} beasts: {marker}, {assessment.Verdict}.");
+        log.Information($"Beast rank record, {size} beasts: {marker}, {assessment.Verdict}.");
 
-        // One line per beast: the bytes as stored, so they can be compared with the bestiary's
-        // detail panel, which shows the rank and the EXP as "67/100".
+        // One line per beast: the figures as stored, so they can be compared with the bestiary's
+        // detail panel, which shows the rank and the EXP as "67/100", and with a Crucible run's team
+        // window, which shows the max HP its HP record repeats in the last three words.
         for (var index = 0; index < size; index++)
         {
             var rank = bytes[BeastRankRecord.MarkerBytes + index];
             var exp = bytes[BeastRankRecord.MarkerBytes + size + index];
-            log.Information($"  No. {index + 1}: rank {rank}, EXP {exp}");
+            var hp = BeastRankRecord.HpRecord(bytes, size, index);
+            var shape = BeastRankRecord.IsWellFormedHpRecord(hp) ? "well-formed" : "misshapen";
+            log.Information(
+                $"  No. {index + 1}: rank {rank}, EXP {exp}, HP record " +
+                $"{BeastRankRecord.HpRecordWord(hp, 0)} {BeastRankRecord.HpRecordWord(hp, 1)} " +
+                $"{BeastRankRecord.HpRecordWord(hp, 2)} {BeastRankRecord.HpRecordWord(hp, 3)} " +
+                $"{BeastRankRecord.HpRecordWord(hp, 4)} ({shape})");
         }
     }
 #endif
