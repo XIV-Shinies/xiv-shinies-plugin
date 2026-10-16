@@ -55,7 +55,11 @@ public enum ApiStatus
     /// <summary>429 — over the per-token rate limit. Honor <c>Retry-After</c>.</summary>
     RateLimited,
 
-    /// <summary>500 — the server failed mid-apply. Writes are idempotent, so a later retry is safe.</summary>
+    /// <summary>
+    /// 500, when the server failed mid-apply, or any other 5xx but 503, such as the 502, 504 or
+    /// other 5xx a proxy sends when it cannot reach or hear back from the server. Writes are
+    /// idempotent, so a later retry is safe.
+    /// </summary>
     ServerError,
 
     /// <summary>
@@ -66,7 +70,11 @@ public enum ApiStatus
     /// </summary>
     SyncDisabled,
 
-    /// <summary>No HTTP response at all (DNS failure, timeout, connection reset).</summary>
+    /// <summary>
+    /// No usable HTTP response: none arrived (DNS failure, timeout, connection reset), or one did
+    /// and its body was refused as too large or cut off before the end, by a dropped connection,
+    /// the request's deadline, or the plugin unloading.
+    /// </summary>
     NetworkError,
 
     /// <summary>
@@ -76,7 +84,10 @@ public enum ApiStatus
     /// </summary>
     NotConfigured,
 
-    /// <summary>A status the contract does not define.</summary>
+    /// <summary>
+    /// A status outside the 5xx range that the contract does not define, such as a 404 or 418, or a
+    /// 200 whose body was empty or did not parse as the expected response.
+    /// </summary>
     Unknown,
 }
 
@@ -113,8 +124,14 @@ public static class ApiStatusMap
             405 => ApiStatus.MethodNotAllowed,
             413 => ApiStatus.PayloadTooLarge,
             429 => ApiStatus.RateLimited,
+            // Listed for the reader: the range below gives a 500 the same answer.
             500 => ApiStatus.ServerError,
             503 => ApiStatus.SyncDisabled,
+
+            // `>= 500 and < 600` joins two relational patterns with `and`: it matches any code in
+            // that range, like `code >= 500 && code < 600`. The arms above match first, so a 503
+            // never reaches this one.
+            >= 500 and < 600 => ApiStatus.ServerError,
             _ => ApiStatus.Unknown,
         };
 

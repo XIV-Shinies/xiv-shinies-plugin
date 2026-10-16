@@ -1509,7 +1509,8 @@ internal sealed class SyncManager : IDisposable
                 }
 
                 // Writes are idempotent server-side, so repeating the identical body is safe.
-                log.Debug($"Retrying {trigger} sync after {response.Status}.");
+                var code = HttpCodeNote(response.HttpStatusCode);
+                log.Debug($"Retrying {trigger} sync after {response.Status}{code}.");
                 await Task.Delay(RetryPolicy.TransientRetryDelay, lifetimeToken).ConfigureAwait(false);
             }
         }
@@ -1615,12 +1616,19 @@ internal sealed class SyncManager : IDisposable
 
         // Transient. The caller decides whether an attempt remains.
         if (outcomeWarnings.ShouldReport(response.Status))
-            log.Warning($"Sync failed: {response.Status}.");
+            log.Warning($"Sync failed: {response.Status}{HttpCodeNote(response.HttpStatusCode)}.");
         else
-            log.Debug($"Sync failed again: {response.Status}.");
+            log.Debug($"Sync failed again: {response.Status}{HttpCodeNote(response.HttpStatusCode)}.");
 
         return false;
     }
+
+    /// <summary>
+    /// " (HTTP 530)" when a response arrived, and nothing when none did, for the log lines of a
+    /// transient failure and its retry, whose statuses each stand for many codes.
+    /// </summary>
+    private static string HttpCodeNote(int? httpStatusCode) =>
+        httpStatusCode is { } code ? $" (HTTP {code})" : string.Empty;
 
     /// <summary>Fetches <c>/config</c> when it is due, adopting the server's cadence and manifest.</summary>
     private void PollConfigIfDue(DateTimeOffset now)

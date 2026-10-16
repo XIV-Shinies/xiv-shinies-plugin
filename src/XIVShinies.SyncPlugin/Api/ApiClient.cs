@@ -63,6 +63,13 @@ public sealed class ApiClient : IDisposable
     // settings UI takes effect immediately without rebuilding the client.
     private readonly PluginSettings settings;
 
+    // The longest one request may take, from sending it to reading the last byte of its body.
+    // HttpClient's own Timeout stops counting once the headers arrive (SendAsync asks for
+    // ResponseHeadersRead), so SendAsync holds the body read to this deadline as well: a connection
+    // that stalls silently mid-body fails as a network error instead of leaving the request in
+    // flight for the rest of the session.
+    private readonly TimeSpan requestTimeout;
+
     /// <summary>Creates a client bound to the given settings.</summary>
     /// <param name="settings">Live settings; the token and base URL are re-read per request.</param>
     /// <param name="pluginVersion">Version string for the <c>User-Agent</c> header.</param>
@@ -70,10 +77,21 @@ public sealed class ApiClient : IDisposable
     /// Optional transport override. Production passes null (a real network handler); tests pass a
     /// stub so the client's real header/URL/status code runs against a fake socket.
     /// </param>
-    public ApiClient(PluginSettings settings, string pluginVersion, HttpMessageHandler? messageHandler = null)
+    /// <param name="requestTimeout">
+    /// How long one request may take, body included; 30 seconds when omitted. Tests pass a short
+    /// one so a stalled body fails without a long wait.
+    /// </param>
+    public ApiClient(
+        PluginSettings settings,
+        string pluginVersion,
+        HttpMessageHandler? messageHandler = null,
+        TimeSpan? requestTimeout = null)
     {
         this.settings = settings;
         lifetimeToken = lifetime.Token;
+
+        // `??` takes the right side when the left is null, like `??` in TypeScript.
+        this.requestTimeout = requestTimeout ?? TimeSpan.FromSeconds(30);
 
         if (messageHandler is null)
         {
@@ -90,7 +108,7 @@ public sealed class ApiClient : IDisposable
             http = new HttpClient(messageHandler, disposeHandler: false);
         }
 
-        http.Timeout = TimeSpan.FromSeconds(30);
+        http.Timeout = this.requestTimeout;
 
         // Identify ourselves on every request, as the contract requires. TryParseAdd rather than
         // ParseAdd: a malformed version string must never throw out of the plugin's constructor
@@ -204,17 +222,27 @@ public sealed class ApiClient : IDisposable
             return new ApiResponse<T> { Status = ApiStatus.NotConfigured };
         }
 
+        // The status code once the headers arrive, declared outside the `try` so a failure while the
+        // body is read can still report it. Null until then.
+        int? arrivedCode = null;
+
         try
         {
             // Build from the authority only, so a stray path in the user's base URL can't rewrite
             // the endpoint (e.g. "https://host/foo" must still hit "https://host/api/plugin/v1/me").
             var url = $"{baseUri!.GetLeftPart(UriPartial.Authority)}/{ApiPrefix}/{path}";
 
-            // A request canceled either by the caller OR by plugin unload. `using var` on a local
-            // guarantees Dispose runs when the variable leaves scope — the same job as a `finally`
-            // block, and the reason we never leak request/response objects.
+            // A request canceled by the caller, by plugin unload, or by the deadline set just below.
+            // `using var` on a local guarantees Dispose runs when the variable leaves scope — the
+            // same job as a `finally` block, and the reason we never leak request/response objects.
             using var linked =
                 CancellationTokenSource.CreateLinkedTokenSource(lifetimeToken, cancellationToken);
+
+            // One deadline for the whole request, body read included (see requestTimeout).
+            // `CancelAfter` cancels the source once the time is up, which ends the send or the body
+            // read, whichever is under way, with an OperationCanceledException that the first catch
+            // below reports as a network error.
+            linked.CancelAfter(requestTimeout);
 
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
@@ -229,6 +257,7 @@ public sealed class ApiClient : IDisposable
                 .ConfigureAwait(false);
 
             var rawCode = (int)response.StatusCode;
+            arrivedCode = rawCode;
 
             // What the number alone says. It decides only whether this is a success; a failure's
             // final status is worked out below, once its error body has been read.
@@ -251,7 +280,8 @@ public sealed class ApiClient : IDisposable
             {
                 var value = Deserialize<T>(body);
 
-                // A 200 whose body we cannot read is not a success.
+                // A 200 whose body was empty or did not parse as the expected response is not a
+                // success.
                 return value is null
                     ? new ApiResponse<T> { Status = ApiStatus.Unknown, HttpStatusCode = rawCode }
                     : new ApiResponse<T> { Status = ApiStatus.Ok, Value = value, HttpStatusCode = rawCode };
@@ -277,17 +307,24 @@ public sealed class ApiClient : IDisposable
         // A genuine caller cancellation fails the filter and propagates, as it should.
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return new ApiResponse<T> { Status = ApiStatus.NetworkError };
+            return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
         }
         catch (HttpRequestException)
         {
-            // DNS failure, refused connection, TLS problem — no HTTP status ever arrived.
-            return new ApiResponse<T> { Status = ApiStatus.NetworkError };
+            // DNS failure, refused connection, TLS problem: the send fails before any status arrives.
+            return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
+        }
+        catch (IOException)
+        {
+            // The connection dropped after the headers arrived, while the body was being read. The
+            // read reports that with an IOException (HttpIOException derives from it) rather than
+            // an HttpRequestException.
+            return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
         }
         catch (ObjectDisposedException)
         {
             // The plugin unloaded while this request was starting or in flight.
-            return new ApiResponse<T> { Status = ApiStatus.NetworkError };
+            return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
         }
     }
 
