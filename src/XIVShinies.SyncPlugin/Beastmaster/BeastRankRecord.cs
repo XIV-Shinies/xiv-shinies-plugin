@@ -128,25 +128,38 @@ public static class BeastRankRecord
     /// </summary>
     /// <param name="record">The HP record's bytes.</param>
     /// <remarks>
-    /// A figure, a larger one, then the max HP, larger still, in each of the last three words. The
-    /// rising order rules out an all-zero record. A beast's max HP runs to a few thousand, well
-    /// inside two bytes. Read a byte or two early, every figure is multiplied by 256 or more; read a
-    /// byte or two late, each word takes the next figure's low bytes as its high ones. Either way the
-    /// max HP's word almost always lands past the ceiling, which catches the misread even where the
-    /// figures keep their order.
+    /// <para>
+    /// Five HP figures for the beast, its rank capped a step higher for each: the first three stop
+    /// growing at ranks 5, 10 and 15, and the first two are about 4/11 and half of the HP at their
+    /// cap. So the first three rise, which rules out an all-zero record, and the last three never
+    /// fall, matching at rank 15 or below. The second passes half the third by rounding at most,
+    /// which refuses a read one word early behind a zero: that keeps every other part of the shape
+    /// but puts the first figure, over half the second, in the second's place.
+    /// </para>
+    /// <para>
+    /// The last figure, the HP at the beast's own rank, runs to a few thousand, inside two bytes. A
+    /// read a byte or two early multiplies every figure by 256 or more; one a byte or two late gives
+    /// each word the next figure's low bytes as its high ones. Either way the last figure almost
+    /// always lands past the ceiling, which catches the misread even where the figures keep order.
+    /// </para>
     /// </remarks>
     public static bool IsWellFormedHpRecord(ReadOnlySpan<byte> record)
     {
         var first = HpRecordWord(record, 0);
         var second = HpRecordWord(record, 1);
-        var maxHp = HpRecordWord(record, 2);
+        var third = HpRecordWord(record, 2);
+        var fourth = HpRecordWord(record, 3);
+        var last = HpRecordWord(record, 4);
 
-        // `ushort.MaxValue` is 65,535, the largest number two bytes hold.
+        // `ushort.MaxValue` is 65,535, the largest number two bytes hold. `third / 2` divides whole
+        // numbers and drops any remainder, like `Math.floor(third / 2)`; the 16 is a margin past any
+        // rounding.
         return first < second
-            && second < maxHp
-            && maxHp <= ushort.MaxValue
-            && HpRecordWord(record, 3) == maxHp
-            && HpRecordWord(record, 4) == maxHp;
+            && second < third
+            && second <= (third / 2) + 16
+            && third <= fourth
+            && fourth <= last
+            && last <= ushort.MaxValue;
     }
 
     /// <summary>
