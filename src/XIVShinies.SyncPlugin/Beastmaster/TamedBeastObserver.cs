@@ -505,8 +505,8 @@ public sealed unsafe class TamedBeastObserver : IDisposable
 
         // One line per beast: the figures as stored, so they can be compared with the bestiary's
         // detail panel, which shows the rank and the EXP as "67/100", and with a Crucible run's team
-        // window, which shows each beast's HP; before any feed, that matches one of its five HP
-        // figures.
+        // window, which before any feed shows each beast's HP figure for the board being run: the
+        // first figure on the first board, through the last on the fifth.
         for (var index = 0; index < size; index++)
         {
             var rank = bytes[BeastRankRecord.MarkerBytes + index];

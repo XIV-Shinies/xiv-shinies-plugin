@@ -182,8 +182,9 @@ Debug build only, same setup as the seeding command above. It writes whether the
 checks and, for each beast, its rank, EXP and HP record to `/xllog`. Open the NPC's "View the
 Master's Bestiary", select several beasts, and compare each detail panel's rank and EXP (`67/100`)
 with the dump's line for that number; a beast's HP in a Crucible run's team window, before any feed,
-matches one of the five figures in its HP record. If either check fails, the record has moved: find
-its new place (`RankRecordOffset`) and release.
+matches its HP record's figure for the board being run (the first figure on the first board, through
+the last on the fifth). If either check fails, the record has moved: find its new place
+(`RankRecordOffset`) and release.
 
 ### Checking the way back from a character that could not be read
 
