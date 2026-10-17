@@ -129,10 +129,10 @@ public static class BeastRankRecord
     /// <param name="record">The HP record's bytes.</param>
     /// <remarks>
     /// <para>
-    /// Five HP figures for the beast, its rank capped a step higher for each: the first three stop
-    /// growing at ranks 5, 10 and 15, and the first two are about 4/11 and half of the HP at their
-    /// cap. So the first three rise, which rules out an all-zero record, and the last three never
-    /// fall, matching at rank 15 or below. The second passes half the third by rounding at most,
+    /// The beast's HP on each of the five Master's Boards in turn. Each board caps the rank a beast
+    /// fights at (5, 10, 15, 20 and 25), and the first two field it at about 4/11 and half of the HP
+    /// at that cap. So the first three rise, which rules out an all-zero record, and the last three
+    /// never fall, matching at rank 15 or below. The second passes half the third by rounding at most,
     /// which refuses a read one word early behind a zero: that keeps every other part of the shape
     /// but puts the first figure, over half the second, in the second's place.
     /// </para>
