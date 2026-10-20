@@ -1,7 +1,7 @@
 <div align="center">
   <img src="src/XIVShinies.SyncPlugin/images/icon.png" width="120" alt="The XIV Shinies mascot holding a teal gem">
   <h1>XIV Shinies Sync</h1>
-  <p><em>Your collections, on <a href="https://xiv-shinies.com">xiv-shinies.com</a>, the moment you earn them.</em></p>
+  <p><em>Your collections, on <a href="https://xiv-shinies.com">xiv-shinies.com</a>, as you earn them.</em></p>
   <p>
     <a href="https://xiv-shinies.com">🌐 xiv-shinies.com</a>
     &nbsp;·&nbsp;

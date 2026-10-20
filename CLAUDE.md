@@ -89,6 +89,14 @@ The manifest's descriptive fields live in `XIVShinies.SyncPlugin.json`; the SDK 
 `DalamudApiLevel` (from the SDK version) at build time. `<Version>` is bumped per release by
 the `/releasing` flow (see `.claude/skills/releasing/`), never by hand outside it.
 
+`repo.json` repeats every field of `XIVShinies.SyncPlugin.json` (name, tagline, description, tags,
+gallery images…) word for word; `PluginMeta`'s name, source link and tagline pieces (the ones the
+settings masthead draws) match the manifest's `Name`, `RepoUrl` and `Punchline`; and the
+`Description` stays within `StoreListingTests.DescriptionMaxLength`. `StoreListingTests` fails
+`dotnet test`, and with it the pull request's build check, when any of these breaks. The fields only
+`repo.json` carries (the build-stamped fields and the download links) are the `/releasing` flow's
+to set, and the Release workflow checks the version and download links against the tag.
+
 ## Build & test
 
 ```powershell

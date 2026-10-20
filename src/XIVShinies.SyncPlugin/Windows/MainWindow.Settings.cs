@@ -272,13 +272,13 @@ internal sealed partial class MainWindow
             // color, meaning the normal text color: it is the one sentence that says what the
             // plugin is for, so it reads at full contrast.
             //
-            // The official name is hardcoded here, unlike the sentences that state where data
+            // The site's name is a PluginMeta constant, unlike the sentences that state where data
             // goes. This is the project's tagline quoted from the manifest, and a tagline naming
             // whatever server a developer happens to be pointed at would be quoting nothing.
             Widgets.DrawWrappedSpans(
-                ("Your collections, on", null),
-                ("xiv-shinies.com,", Brand.Gold),
-                ("the moment you earn them.", null));
+                (PluginMeta.TaglineLead, null),
+                (PluginMeta.TaglineSite, Brand.Gold),
+                (PluginMeta.TaglineTail, null));
 
             ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
             DrawLinkButtons();

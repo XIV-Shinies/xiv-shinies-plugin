@@ -278,7 +278,7 @@ Field constraints:
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
-| `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet for what the deployed server enforces |
+| `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
@@ -385,10 +385,7 @@ Field constraints:
   game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
   category declares itself `"full"` (see the `collectionScopes` bullet below). Storage is
   sticky insert-only, and uncataloged ids drop under the catalog-trailing rule.
-- **`tamedBeasts` id space & semantics.** ⚠️ *The deployed server does not implement this category:
-  its key is stripped on arrival under the unknown-key rule, so none of the validation described
-  here is enforced, and this describes what the plugin sends rather than what the server does. The
-  deployed server wins over this doc, as always.* Entries are objects, not bare ids: `{"number": n}`,
+- **`tamedBeasts` id space & semantics.** Entries are objects, not bare ids: `{"number": n}`,
   where `n` is the bestiary number — the `XBMPet` sheet row id (1–50), which is what the
   server's catalog is keyed on. `rank` (1–25) and `battlehorn` (1–3) are accepted alongside
   `number`. The plugin reads the game's record set of the character's beasts, which the game

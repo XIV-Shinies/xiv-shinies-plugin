@@ -61,4 +61,18 @@
   <ItemGroup>
     <None Update="Crucible\Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!--
+    The plugin manifest and repo.json, whose installer listing StoreListingTests checks. Both live
+    outside this project, so Include names each by its relative path and Link files it under
+    StoreListing in the build output, where the tests read it.
+  -->
+  <ItemGroup>
+    <None Include="..\..\src\XIVShinies.SyncPlugin\XIVShinies.SyncPlugin.json"
+          Link="StoreListing\XIVShinies.SyncPlugin.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\repo.json"
+          Link="StoreListing\repo.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
