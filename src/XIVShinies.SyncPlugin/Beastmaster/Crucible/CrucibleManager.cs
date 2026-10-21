@@ -103,6 +103,13 @@ internal sealed class CrucibleManager : IDisposable
     private readonly CancellationToken lifetimeToken;
 
     /// <summary>
+    /// The sharing's wait after a 503 saying syncing is switched off, which the website saying the
+    /// sharing is back on ends early (see <see cref="SyncResumeWait"/>). Armed by the upload task,
+    /// asked by the frame handler.
+    /// </summary>
+    private readonly SyncResumeWait syncWait = new();
+
+    /// <summary>
     /// Whether a refused payload has been reported at warning level since the sharing last started
     /// over (a login, a logout, or a stand-down); later ones are logged at debug level.
     /// </summary>
@@ -231,8 +238,20 @@ internal sealed class CrucibleManager : IDisposable
     private void Tick(DateTimeOffset now)
     {
         // Read once: the background config poll can replace it at any moment, and the gate and the
-        // heartbeat must agree about the same one.
+        // heartbeat must agree about the same one. The poll number is read before it (see
+        // SyncManager.ConfigAnsweredPoll).
+        var answeredPoll = syncManager.ConfigAnsweredPoll;
         var config = syncManager.RemoteConfig;
+
+        // Once the latest /config says the sharing is on again, the wait a switched-off 503 started
+        // ends (see SyncResumeWait). Asked before the gate below, so a wait set while the gate was
+        // closed still ends.
+        var sharingOn = config is not null && !CrucibleGate.ServerHasSwitchedOff(config);
+        if (syncWait.TryEnd(answeredPoll, sharingOn, now))
+        {
+            scheduler.SyncResumed();
+            log.Debug("Crucible run sharing: syncing is back on; uploads resume.");
+        }
 
         if (!GateOpen(config))
         {
@@ -467,13 +486,23 @@ internal sealed class CrucibleManager : IDisposable
             {
                 case CrucibleOutcomeKind.Accepted:
                     scheduler.MarkAccepted(upload, now);
+                    syncWait.UploadAccepted();
                     settled = true;
                     LogAccepted(response.Value, upload.Trigger);
                     break;
 
+                // A 503 saying syncing is switched off waits until the website says it is back on, or
+                // the wait ends (see Tick); SyncResumeWait.Arm says whether it may end early. The
+                // latch is armed before the wait is set (see SyncResumeWait for why).
                 case CrucibleOutcomeKind.Retry:
-                    scheduler.MarkRetry(upload, outcome.Until ?? now, now);
+                    var retryAt = outcome.Until ?? now;
+                    var endsEarly = outcome.EndsWhenSyncResumes
+                        && syncWait.Arm(syncManager.ConfigPollsStarted, now, retryAt);
+                    scheduler.MarkRetry(upload, retryAt, now, endsEarly);
                     settled = true;
+                    if (outcome.EndsWhenSyncResumes)
+                        syncManager.BringConfigPollForward();
+
                     // The note is the plugin's own text, chosen by matching the code, so no
                     // server-supplied text reaches the log. `a ? b : c` picks b when a is true and c
                     // otherwise, as in TypeScript.

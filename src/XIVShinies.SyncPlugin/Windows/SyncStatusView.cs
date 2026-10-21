@@ -165,16 +165,21 @@ public static class SyncStatusView
     /// once a server-requested wait ended either, so the button should not offer to.
     /// </summary>
     /// <remarks>
-    /// A press adds no upload in any of these: the first two are refused at the upload gate, the
-    /// next two collect an empty snapshot the uploader then skips, and while nobody is logged in the
-    /// sweep a press asks for waits for a character and becomes the one sync that login brings
-    /// anyway. In all five the button would still play its "Syncing" flash — a moment of
-    /// reassurance under the status line saying why nothing will upload.
+    /// <para>
+    /// A press adds no upload in any of these: the first is refused at the upload gate, the next two
+    /// collect an empty snapshot the uploader then skips, and while nobody is logged in the sweep a
+    /// press asks for waits for a character and becomes the one sync that login brings anyway. In all
+    /// four the button would still play its "Syncing" flash — a moment of reassurance under the status
+    /// line saying why nothing will upload.
+    /// </para>
+    /// <para>
+    /// A pause is not among them: there a press asks the website whether syncing is back on, and
+    /// syncs if it is (see <see cref="SyncNowEnabled"/>).
+    /// </para>
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     public static bool ManualSyncWouldDoNothing(SyncStatusKind kind) =>
         kind is SyncStatusKind.SwitchedOffByUser
-            or SyncStatusKind.PausedByServer
             or SyncStatusKind.NothingSwitchedOnByUser
             or SyncStatusKind.NothingPermittedByServer
             or SyncStatusKind.LoggedOut;
@@ -184,34 +189,38 @@ public static class SyncStatusView
     /// beneath the read-status panel.
     /// </summary>
     /// <remarks>
-    /// Beyond the states in <see cref="ManualSyncWouldDoNothing"/>, two more bring nothing sooner.
-    /// While the character is still being read, a press merges into the login sync, just as it does
-    /// while nobody is logged in; the state stays out of that set because a wait still needs its own
-    /// line there (see <see cref="NeedsWaitLine"/>). And while the server has asked the plugin to
-    /// wait, a press uploads nothing until the wait ends, so "update immediately" would be false. A
-    /// halt is the exception: the press itself is what lifts it, wait or no wait. Neither sentence
-    /// draws during a halt, so that answer reaches the button, through
+    /// Beyond the states in <see cref="ManualSyncWouldDoNothing"/>, three more must not promise an
+    /// immediate update. While the character is still being read, a press merges into the login sync,
+    /// just as it does while nobody is logged in; the state stays out of that set because a wait still
+    /// needs its own line there (see <see cref="NeedsWaitLine"/>). During a pause, a press only asks
+    /// the website whether syncing is back on, and uploads nothing unless it is. And while the server
+    /// has asked the plugin to wait, a press uploads nothing until the wait ends, so "update
+    /// immediately" would be false. A halt is the exception: the press itself is what lifts it, wait
+    /// or no wait. Neither sentence draws during a halt, so that answer reaches the button, through
     /// <see cref="SyncNowEnabled"/>.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool SyncNowOffered(SyncStatusKind kind, bool backingOff) =>
         !ManualSyncWouldDoNothing(kind)
-        && kind != SyncStatusKind.WaitingForCharacter
+        && kind is not (SyncStatusKind.WaitingForCharacter or SyncStatusKind.PausedByServer)
         && (!backingOff || kind == SyncStatusKind.BlockedPendingUserAction);
 
     /// <summary>Whether the "Sync now" button is enabled.</summary>
     /// <remarks>
-    /// Wherever the sentences invite a press, and in one state more: a character the plugin stopped
-    /// trying to read, during a server-requested wait. There a press starts reading the character
-    /// again, which the wait does not hold back, so the button stays live although no upload follows
-    /// until the wait ends.
+    /// Wherever the sentences invite a press, and in two states more that a server-requested wait
+    /// does not hold back. A character the plugin stopped trying to read: a press starts reading it
+    /// again, although no upload follows until the wait ends. And a pause: a press asks the website
+    /// once whether syncing is back on, and syncs if it is (see <see cref="Sync.PausedPress"/>), so a
+    /// player who has just turned "Sync from the plugin" back on need not wait for the next scheduled
+    /// check.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool SyncNowEnabled(SyncStatusKind kind, bool backingOff) =>
         SyncNowOffered(kind, backingOff)
-        || (backingOff && kind == SyncStatusKind.CharacterNotRead);
+        || (backingOff && kind == SyncStatusKind.CharacterNotRead)
+        || kind == SyncStatusKind.PausedByServer;
 
     /// <summary>What the card says in <see cref="SyncStatusKind.CharacterNotRead"/>.</summary>
     // A `const` is fixed when the code compiles and is read through the class
@@ -239,8 +248,8 @@ public static class SyncStatusView
     /// The status line states the wait itself when it is the outcome of the refused upload. A wait
     /// outlives that outcome, though: it survives a relog, which clears the last outcome, and the card
     /// would otherwise say nothing about why uploads are held back. In the states in
-    /// <see cref="ManualSyncWouldDoNothing"/>, nothing uploads when the wait ends either, and their own
-    /// line already says why; they and a halt need no second one.
+    /// <see cref="ManualSyncWouldDoNothing"/> and during a pause, nothing uploads when the wait ends
+    /// either, and their own line already says why; they and a halt need no second one.
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="lastStatus">The last upload's outcome, or null when none happened this session.</param>
@@ -248,8 +257,12 @@ public static class SyncStatusView
     // `ApiStatus?` may be null, like `ApiStatus | null`.
     public static bool NeedsWaitLine(SyncStatusKind kind, ApiStatus? lastStatus, bool backingOff)
     {
-        if (!backingOff || ManualSyncWouldDoNothing(kind) || kind == SyncStatusKind.BlockedPendingUserAction)
+        if (!backingOff
+            || ManualSyncWouldDoNothing(kind)
+            || kind is SyncStatusKind.BlockedPendingUserAction or SyncStatusKind.PausedByServer)
+        {
             return false;
+        }
 
         var statusLineSaysIt = kind == SyncStatusKind.LastUploadOutcome
             && lastStatus is ApiStatus.RateLimited or ApiStatus.SyncDisabled;

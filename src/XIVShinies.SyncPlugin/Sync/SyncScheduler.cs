@@ -35,9 +35,10 @@ public sealed class SyncScheduler
     public static readonly TimeSpan MaxFullSyncInterval = TimeSpan.FromHours(24);
 
     /// <summary>
-    /// Guards every field below. <c>NotifyUnlock</c> and <c>Poll</c> run on the framework thread,
-    /// but <c>MarkUploaded</c> and <c>BackOffUntil</c> run on a background task once the HTTP call
-    /// finishes, so the state really is touched from more than one thread.
+    /// Guards every field below. <c>NotifyUnlock</c>, <c>Poll</c> and <c>SyncResumed</c> run on the
+    /// framework thread, but <c>MarkUploaded</c>, <c>BackOffUntil</c> and
+    /// <c>BackOffUntilSyncResumes</c> run on a background task once the HTTP call finishes, so the
+    /// state really is touched from more than one thread.
     /// </summary>
     /// <remarks>
     /// C# note: <c>lock (x) { … }</c> lets one thread at a time into the block. JavaScript has no
@@ -54,11 +55,32 @@ public sealed class SyncScheduler
     /// <summary>A queued full sweep, if the user (or a login) asked for one.</summary>
     private SyncTrigger? pendingFullSweep;
 
-    /// <summary>When the last full sweep happened. Null until one has, so the interval never fires first.</summary>
+    /// <summary>
+    /// When the last full sweep happened. Null until one has, so the interval clock never fires first;
+    /// only a sweep owed on resume (see <see cref="intervalSweepOwed"/>) can come before it.
+    /// </summary>
     private DateTimeOffset? lastFullSweepAt;
 
     /// <summary>The moment a server-instructed backoff expires. Null when not backing off.</summary>
     private DateTimeOffset? backoffUntil;
+
+    /// <summary>
+    /// The deadline of a wait that syncing coming back on ends early (see
+    /// <see cref="BackOffUntilSyncResumes"/>). Null when not waiting on one.
+    /// </summary>
+    private DateTimeOffset? syncResumesBy;
+
+    /// <summary>
+    /// The trigger of the upload a switched-off 503 refused, sent again as a sweep when
+    /// <see cref="SyncResumed"/> ends the wait. Null when nothing is owed.
+    /// </summary>
+    private SyncTrigger? owedOnResume;
+
+    /// <summary>
+    /// True when a periodic sweep is due at once, whatever the interval clock says: the sweep owed
+    /// for a refused interval or unlock upload.
+    /// </summary>
+    private bool intervalSweepOwed;
 
     /// <summary>How long to wait after an unlock before uploading, batching the burst.</summary>
     public TimeSpan UnlockDebounce { get; private set; } = TimeSpan.FromSeconds(5);
@@ -102,6 +124,30 @@ public sealed class SyncScheduler
         }
     }
 
+    /// <summary>
+    /// Queues a full sweep like <see cref="Request"/>, unless a full sweep has been handed out or
+    /// accepted at or after <paramref name="since"/> (see <see cref="lastFullSweepAt"/>).
+    /// </summary>
+    /// <param name="trigger">
+    /// The sweep's trigger: <see cref="SyncTrigger.Login"/> or <see cref="SyncTrigger.Manual"/>.
+    /// </param>
+    /// <param name="since">The moment the reason for the sweep arose.</param>
+    /// <param name="now">The current moment.</param>
+    /// <remarks>
+    /// For a request that reaches the scheduler a moment after its reason: a sweep handed out in
+    /// between already sent everything this one would, so a second would only spend an upload.
+    /// </remarks>
+    public void RequestUnlessSweptSince(SyncTrigger trigger, DateTimeOffset since, DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            if (lastFullSweepAt is { } sweptAt && sweptAt >= since)
+                return;
+        }
+
+        Request(trigger, now);
+    }
+
     /// <summary>Records that a category just unlocked, and (re)opens the debounce window.</summary>
     /// <remarks>
     /// The window <b>slides</b>: each new unlock pushes the deadline out, so a quest turn-in that
@@ -135,6 +181,66 @@ public sealed class SyncScheduler
         }
     }
 
+    /// <summary>
+    /// Suppresses all work until the given moment, or until <see cref="SyncResumed"/>, whichever
+    /// comes first: the wait a 503 saying syncing is switched off starts (see
+    /// <see cref="RetryPolicy.EndsWhenSyncResumes"/>).
+    /// </summary>
+    /// <param name="until">When the wait ends on its own.</param>
+    /// <param name="refused">The trigger of the upload the 503 refused.</param>
+    /// <remarks>
+    /// Kept apart from <see cref="BackOffUntil"/>'s deadline, so syncing coming back on ends this
+    /// wait without cutting short a rate limit in force at the same time. It never shortens either.
+    /// The refused upload is remembered so that an early end can send it again (see
+    /// <see cref="SyncResumed"/>).
+    /// </remarks>
+    public void BackOffUntilSyncResumes(DateTimeOffset until, SyncTrigger refused)
+    {
+        lock (gate)
+        {
+            if (syncResumesBy is null || until > syncResumesBy)
+                syncResumesBy = until;
+
+            // Two refusals owe the stronger of the two (see OwedRank). `is null` tests for null, like
+            // `=== null`.
+            if (owedOnResume is null || OwedRank(refused) > OwedRank(owedOnResume.Value))
+                owedOnResume = refused;
+        }
+    }
+
+    /// <summary>
+    /// Ends the wait <see cref="BackOffUntilSyncResumes"/> started, because a <c>/config</c> answer
+    /// says syncing is back on, and queues again the upload it refused. A
+    /// <see cref="BackOffUntil"/> wait stays in force, and holds the queued sweep like any other.
+    /// </summary>
+    /// <remarks>
+    /// The refused upload was handed out and settled, so without this nothing would go up until the
+    /// next unlock or interval. A refused login or manual sweep goes again as itself; a refused
+    /// interval or unlock upload brings the periodic sweep forward, since a full sweep sends every
+    /// category the unlock upload would have.
+    /// </remarks>
+    public void SyncResumed()
+    {
+        lock (gate)
+        {
+            syncResumesBy = null;
+
+            if (owedOnResume is SyncTrigger.Login or SyncTrigger.Manual)
+            {
+                if (pendingFullSweep is null || Rank(owedOnResume.Value) > Rank(pendingFullSweep.Value))
+                    pendingFullSweep = owedOnResume;
+            }
+            else if (owedOnResume is not null && pendingFullSweep is null)
+            {
+                // A requested sweep already queued covers the refused upload, so only without one is
+                // the periodic sweep brought forward.
+                intervalSweepOwed = true;
+            }
+
+            owedOnResume = null;
+        }
+    }
+
     /// <summary>True while a server-instructed wait is in force at the given moment.</summary>
     /// <remarks>
     /// Read-only: unlike <see cref="Poll"/>, asking never ends the wait, so the sync card can ask
@@ -146,7 +252,8 @@ public sealed class SyncScheduler
         // `lock` with no braces guards the single statement after it. `x is { } until` matches when x
         // is not null and names the value `until`, so the comparison only runs against a real moment.
         lock (gate)
-            return backoffUntil is { } until && now < until;
+            return (backoffUntil is { } until && now < until)
+                || (syncResumesBy is { } resumesBy && now < resumesBy);
     }
 
     /// <summary>Forgets all queued work, as when the player logs out.</summary>
@@ -169,6 +276,10 @@ public sealed class SyncScheduler
         {
             pendingUnlockCategories.Clear();
             pendingFullSweep = null;
+
+            // An upload owed on resume was for the previous character, like the queued work above.
+            owedOnResume = null;
+            intervalSweepOwed = false;
 
             // Forgetting the last sweep means the next login sweeps on its own merits, rather than
             // inheriting an interval measured against the previous character.
@@ -211,6 +322,17 @@ public sealed class SyncScheduler
                 backoffUntil = null;
             }
 
+            // The same for a wait that syncing coming back on would have ended sooner. One that runs
+            // out on its own owes nothing: the next upload goes on its own schedule.
+            if (syncResumesBy is { } resumesBy)
+            {
+                if (now < resumesBy)
+                    return null;
+
+                syncResumesBy = null;
+                owedOnResume = null;
+            }
+
             // A clock that jumped backwards past the last sweep would otherwise delay the next one by
             // however far it jumped. Treat the earlier "now" as the new reference point.
             if (lastFullSweepAt is { } lastSweep && now < lastSweep)
@@ -222,6 +344,9 @@ public sealed class SyncScheduler
             {
                 pendingFullSweep = null;
                 pendingUnlockCategories.Clear();
+
+                // It covers a periodic sweep owed on resume too, for the same reason.
+                intervalSweepOwed = false;
 
                 // Anchor the interval clock the moment a sweep is ISSUED, not when it succeeds.
                 // Otherwise a login sweep whose upload fails transiently would leave this null, and
@@ -249,8 +374,9 @@ public sealed class SyncScheduler
             //    have added is an acquisition timestamp for the categories it named — and the
             //    contract does not promise that a later upload can supply a date for a row an earlier
             //    upload already created. So we neither rely on that nor spend a request finding out.
-            if (lastFullSweepAt is { } sweptAt && now >= sweptAt + FullSyncInterval)
+            if (intervalSweepOwed || (lastFullSweepAt is { } sweptAt && now >= sweptAt + FullSyncInterval))
             {
+                intervalSweepOwed = false;
                 lastFullSweepAt = now;
                 pendingUnlockCategories.Clear();
                 return new SyncDue { Trigger = SyncTrigger.Interval };
@@ -264,6 +390,17 @@ public sealed class SyncScheduler
     private static int Rank(SyncTrigger trigger) => trigger switch
     {
         SyncTrigger.Manual => 2,
+        _ => 1,
+    };
+
+    /// <summary>
+    /// Ranks a refused upload owed on resume: a requested sweep (manual above login) outranks an
+    /// interval or unlock upload, which the periodic sweep covers.
+    /// </summary>
+    private static int OwedRank(SyncTrigger trigger) => trigger switch
+    {
+        SyncTrigger.Manual => 3,
+        SyncTrigger.Login => 2,
         _ => 1,
     };
 

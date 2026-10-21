@@ -851,6 +851,146 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(scheduler.Poll(At(100))!));
     }
 
+    // A wait the website's switch can end holds the retry until the switch comes back on (see
+    // RetryPolicy.EndsWhenSyncResumes), and then only for the least retry wait.
+    [Fact]
+    public void A_wait_for_sync_to_resume_ends_when_sync_resumes()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        Assert.Null(scheduler.Poll(At(60)));
+
+        scheduler.SyncResumed();
+
+        Assert.Same(upload, scheduler.Poll(At(60)));
+    }
+
+    // Syncing coming back on at once still leaves the least retry wait, so no answer turns into a
+    // tight loop of requests.
+    [Fact]
+    public void Sync_resuming_still_waits_the_least_retry_wait()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(At(16.9)));
+        Assert.Same(upload, scheduler.Poll(At(17)));
+    }
+
+    // With no word that syncing is back on, the wait still ends when the server said it would.
+    [Fact]
+    public void A_wait_for_sync_to_resume_still_ends_at_its_deadline()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+
+        Assert.Null(scheduler.Poll(At(3601)));
+        Assert.Same(upload, scheduler.Poll(At(3602)));
+    }
+
+    // Syncing coming back on says nothing about load, so a rate limit in force outlasts it.
+    [Fact]
+    public void Sync_resuming_leaves_a_rate_limit_in_force()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(100), At(2));
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(At(99)));
+        Assert.Same(upload, scheduler.Poll(At(100)));
+    }
+
+    // Two such waits: the later deadline wins, as with any wait.
+    [Fact]
+    public void The_later_of_two_waits_for_sync_to_resume_wins()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        scheduler.MarkRetry(upload, At(600), At(2), endsWhenSyncResumes: true);
+
+        Assert.Null(scheduler.Poll(At(1800)));
+    }
+
+    // The request a wait answers may no longer be in flight (a reset came between); the wait still
+    // holds, and syncing coming back on still ends it.
+    [Fact]
+    public void A_late_wait_for_sync_to_resume_still_holds_until_sync_resumes()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var early = scheduler.Poll(At(2))!;
+
+        scheduler.Reset();
+        scheduler.MarkRetry(early, At(3603), At(3), endsWhenSyncResumes: true);
+        scheduler.Queue(Bag(120, 3), Board, At(3));
+
+        Assert.Null(scheduler.Poll(At(60)));
+
+        scheduler.SyncResumed();
+
+        Assert.Equal(["bag"], Kinds(scheduler.Poll(At(60))!));
+    }
+
+    // A reset forgets the queue but not the wait, which is about the token.
+    [Fact]
+    public void A_reset_keeps_a_wait_for_sync_to_resume()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+
+        scheduler.Reset();
+        scheduler.Queue(Bag(120, 10), Board, At(10));
+
+        Assert.Null(scheduler.Poll(At(60)));
+    }
+
+    // Syncing coming back on ends only its own wait: a refused payload's hold stays.
+    [Fact]
+    public void Sync_resuming_leaves_a_refused_payloads_hold()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        scheduler.MarkDropped(scheduler.Poll(At(2))!, At(2), At(62));
+        scheduler.Queue(Bag(120, 3), Board, At(3));
+
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(At(61)));
+        Assert.NotNull(scheduler.Poll(At(62)));
+    }
+
+    // A clock that jumps backwards moves a wait for sync to resume back with it, like any wait.
+    [Fact]
+    public void A_clock_that_jumps_backwards_keeps_a_wait_for_sync_to_resume_its_length()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+
+        Assert.Null(scheduler.Poll(At(-3598)));
+        Assert.Same(upload, scheduler.Poll(At(2)));
+    }
+
     // --- Resetting ------------------------------------------------------------------------------
 
     // A reset, as on logging out, forgets everything queued, the visit, the retry and the content

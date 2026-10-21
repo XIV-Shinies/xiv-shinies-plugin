@@ -17,7 +17,8 @@ public sealed record ErrorResponse
     /// </summary>
     /// <remarks>
     /// Server-supplied, so it is never displayed or logged. On a 403 it is compared exactly against
-    /// the four character-refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), and on a
+    /// the four character-refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), on a 503
+    /// against <c>sync_disabled</c> (see <see cref="Sync.RetryPolicy.EndsWhenSyncResumes"/>), and on a
     /// Crucible upload that is to be sent again against <c>busy</c> (see
     /// <c>CrucibleOutcomePolicy.IsBusy</c>); on any other answer it is unused.
     /// </remarks>

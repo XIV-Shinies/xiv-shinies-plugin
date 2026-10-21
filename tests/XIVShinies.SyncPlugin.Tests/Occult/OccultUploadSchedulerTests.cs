@@ -278,6 +278,74 @@ public class OccultUploadSchedulerTests
         Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(5)));
     }
 
+    // A wait the website's switch can end holds the tracker until the switch comes back on, and no
+    // longer (see RetryPolicy.EndsWhenSyncResumes).
+    [Fact]
+    public void A_wait_for_sync_to_resume_ends_when_sync_resumes()
+    {
+        var scheduler = new OccultUploadScheduler();
+        scheduler.NotifyChanged(T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1));
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(1)));
+
+        scheduler.SyncResumed();
+
+        Assert.Equal(OccultTrigger.Change, scheduler.Poll(T0 + TimeSpan.FromMinutes(1)));
+    }
+
+    // With no word that syncing is back on, the wait still ends when the server said it would.
+    [Fact]
+    public void A_wait_for_sync_to_resume_still_ends_at_its_deadline()
+    {
+        var scheduler = new OccultUploadScheduler();
+        scheduler.NotifyChanged(T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1));
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(59)));
+        Assert.Equal(OccultTrigger.Change, scheduler.Poll(T0 + TimeSpan.FromHours(1)));
+    }
+
+    // Syncing coming back on says nothing about load, so a rate limit in force outlasts it.
+    [Fact]
+    public void Sync_resuming_leaves_a_rate_limit_in_force()
+    {
+        var scheduler = new OccultUploadScheduler();
+        scheduler.NotifyChanged(T0);
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(5));
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1));
+
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(4)));
+        Assert.Equal(OccultTrigger.Change, scheduler.Poll(T0 + TimeSpan.FromMinutes(5)));
+    }
+
+    // A second refusal never shortens the wait the first one set.
+    [Fact]
+    public void A_wait_for_sync_to_resume_is_never_shortened()
+    {
+        var scheduler = new OccultUploadScheduler();
+        scheduler.NotifyChanged(T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1));
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromMinutes(10));
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(30)));
+    }
+
+    // Like a backoff, a wait for sync to resume is about the token, so relogging keeps it.
+    [Fact]
+    public void Reset_keeps_a_wait_for_sync_to_resume()
+    {
+        var scheduler = new OccultUploadScheduler();
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1));
+        scheduler.Reset();
+
+        scheduler.NotifyChanged(T0 + TimeSpan.FromSeconds(10));
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(1)));
+    }
+
     // --- Config --------------------------------------------------------------------------
 
     // 90 sits strictly inside the clamp range, so this only passes if the config value is

@@ -136,6 +136,13 @@ internal sealed class OccultManager : IDisposable
     /// <summary>True while an upload is on the wire, so a second one never starts under it.</summary>
     private volatile bool uploadInFlight;
 
+    /// <summary>
+    /// The tracker's wait after a 503 saying syncing is switched off, which the website saying the
+    /// tracker is back on ends early (see <see cref="SyncResumeWait"/>). Armed by the upload task,
+    /// asked by the tick.
+    /// </summary>
+    private readonly SyncResumeWait syncWait = new();
+
     /// <summary>Wires the manager to the game. Subscribes only; uploads nothing on its own.</summary>
     public OccultManager(
         IFramework framework,
@@ -217,7 +224,19 @@ internal sealed class OccultManager : IDisposable
     /// <summary>One per-second pass: gates, enter/leave detection, state diff, upload dispatch.</summary>
     private void Tick(DateTimeOffset now)
     {
+        // The poll number before the config (see SyncManager.ConfigAnsweredPoll).
+        var answeredPoll = syncManager.ConfigAnsweredPoll;
         var config = syncManager.RemoteConfig;
+
+        // Once the latest /config says the tracker is on again, the wait a switched-off 503 started
+        // ends (see SyncResumeWait). Asked before the gate below, so a wait set while the gate was
+        // closed still ends.
+        var trackerOn = config is not null && !OccultGate.ServerHasSwitchedOff(config);
+        if (syncWait.TryEnd(answeredPoll, trackerOn, now))
+        {
+            scheduler.SyncResumed();
+            log.Debug("Occult tracker: syncing is back on; uploads resume.");
+        }
 
         // The tracker's consent gate (see OccultGate for the full ladder), plus the user-action
         // halt shared with /sync: when any upload path or the config poll has been refused for
@@ -433,19 +452,37 @@ internal sealed class OccultManager : IDisposable
 
             // What to do with the answer is OccultOutcomePolicy's rule; this switch only carries
             // it out. Each case is a statement block, like a `case:` in a TypeScript switch.
-            var outcome = OccultOutcomePolicy.Classify(response.Status, response.RetryAfter, now);
+            // `?.` reads through a possibly-null value, like optional chaining: no error body, no code.
+            var outcome = OccultOutcomePolicy.Classify(
+                response.Status, response.RetryAfter, now, response.Error?.Error);
             switch (outcome.Kind)
             {
                 case OccultOutcomeKind.Applied:
                     scheduler.MarkUploaded(now);
+                    syncWait.UploadAccepted();
                     LogApplied(response.Value, trigger);
                     break;
 
                 // The server asked for quiet (429, or a 503 kill switch / tracker_unavailable), and
                 // a terminal rejection of the payload (400/405/413) goes quiet the same way.
                 // `when` narrows a case with an extra condition; here it unwraps the time.
+                // A 503 saying syncing is switched off waits until the website says it is back on, or
+                // the wait ends (see Tick); SyncResumeWait.Arm says whether it may end early. The
+                // latch is armed before the wait is set (see SyncResumeWait for why).
                 case OccultOutcomeKind.BackOff or OccultOutcomeKind.Pause when outcome.Until is { } until:
-                    scheduler.BackOffUntil(until);
+                    if (outcome.EndsWhenSyncResumes
+                        && syncWait.Arm(syncManager.ConfigPollsStarted, now, until))
+                    {
+                        scheduler.BackOffUntilSyncResumes(until);
+                    }
+                    else
+                    {
+                        scheduler.BackOffUntil(until);
+                    }
+
+                    if (outcome.EndsWhenSyncResumes)
+                        syncManager.BringConfigPollForward();
+
                     log.Debug($"Occult tracker quiet until {until:u} after {response.Status}.");
                     break;
 

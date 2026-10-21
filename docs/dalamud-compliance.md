@@ -103,11 +103,19 @@ response fields) and a field-by-field contract conformance audit.
   any path (collections, the live tracker, or the Crucible sharing) and collects nothing for
   upload; whether it still polls `/config` depends on which halt it is. A character the server
   would not match (unclaimed, unverified, claimed twice, or linked elsewhere) leaves the poll
-  running on its normal interval — `/config` answers that caller normally, and the poll is the
-  only way a server-side change (a pause lifting, a category returning) reaches a plugin whose
-  Sync now button a pause has disabled. A token-shaped halt stops the poll too, because `/config`
-  is token-scoped and every request would draw the same refusal forever. The poll carries the
-  token and nothing about the character. `Sync/SyncTickPlan.cs` holds the rule and is unit-tested.
+  running on its normal interval — `/config` answers that caller normally, and the poll is how a
+  server-side change (a pause lifting, a category returning) reaches the plugin unprompted. A
+  token-shaped halt stops the poll too, because `/config` is token-scoped and every request would
+  draw the same refusal forever. The poll carries the token and nothing about the character.
+  `Sync/SyncTickPlan.cs` holds the rule and is unit-tested.
+- **When syncing is switched off on the website.** A 503 `sync_disabled` on any path brings the
+  next `/config` poll forward to two minutes away, never pushing back one due sooner; once
+  `/config` says syncing is off, every path is gated locally, so no further refusal arrives to
+  bring it forward again. The refusal's wait ends early only on a poll started after it that says
+  the path is on, and a second refusal inside a wait that ended early, with no upload accepted in
+  between, waits its whole `Retry-After` (`Sync/SyncResumeWait.cs`). During a pause, a Sync now
+  press asks `/config` once instead of syncing, at most once every ten seconds however fast the
+  button is pressed, and syncs only if the answer says syncing is back on (`Sync/PausedPress.cs`).
 - **The consents that stand for later.** The live occult tracker's toggle is the one setting that
   defaults ON, defensible only because the ticked box is **visible on the wizard's consent step**
   before anything can send. When the server has the tracker switched off — for the feature alone,

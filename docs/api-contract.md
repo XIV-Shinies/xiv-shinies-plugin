@@ -93,8 +93,9 @@ Characters are ordered alphabetically by name. Statuses: **200**, **401**, **405
 
 ### GET /api/plugin/v1/config
 
-Remote config + item manifest. The plugin polls this roughly every 30 minutes. Values are
-read per request, so a flipped kill switch reaches the plugin on its next poll.
+Remote config + item manifest. The plugin polls this roughly every 30 minutes, a few minutes
+after a 503 `sync_disabled`, and once when the player presses Sync now while `enabled` is false.
+Values are read per request, so a flipped kill switch reaches the plugin on its next poll.
 
 ```jsonc
 200
@@ -462,7 +463,7 @@ them.
 | **413** | `{"error": "payload_too_large"}`                                | `Content-Length` missing, non-numeric, or over the cap. Don't retry unchanged; split the upload.                    |
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
 | **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent. The plugin treats any other 5xx but 503 the same way, such as the 502, 504 or other 5xx a proxy sends when it cannot reach or hear back from the server. |
-| **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | The global kill switch, or the account's "Sync from the plugin" switch, is off. Back off the full hour.              |
+| **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | The global kill switch, or the account's "Sync from the plugin" switch, is off. Back off the full hour, or until a `/config` poll started after the 503 answers `enabled: true` (for the live tracker and the Crucible sharing, their own block's `enabled` too). |
 
 ### POST /api/plugin/v1/occult/instance-state
 
@@ -671,7 +672,9 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   which piece the rest of a baseline belongs to. A 429 or 503 is retried after its
   `Retry-After`, and a network failure after a backoff, each with the same content; a 503 `busy`
   that arrives without its `Retry-After` is retried on the client's own backoff rather than the
-  hour this client otherwise waits after a 503 without one. A 400 or 403 is not retried unchanged.
+  hour this client otherwise waits after a 503 without one. A 503 `sync_disabled` may go again
+  sooner, once a `/config` poll started after it says the sharing is on (`enabled` and
+  `crucibleRuns.enabled`). A 400 or 403 is not retried unchanged.
 
 #### Response
 
@@ -856,7 +859,10 @@ players.
   through which game mechanism, is recorded in [currency-coverage.md](currency-coverage.md)
   — the reference for curating currency ids into manifest groups.
 - **Rate limits and backoff.** The default limit is 60 uploads per token per hour. Honor
-  `Retry-After` on 429 and 503 and back off — do not tight-loop retries.
+  `Retry-After` on 429 and 503 and back off — do not tight-loop retries. The one early end is a 503
+  `sync_disabled`: the plugin goes again once a `/config` poll started after it says that upload
+  path is on (see the `/sync` 503 row), and a second such 503 inside the wait it ended early, with
+  no upload accepted in between, waits its whole `Retry-After`.
 - **Kill switches are server-enforced too.** A disabled category is stripped from the payload
   before any write; the stripped keys ride back in `skippedCategories` so the plugin can tell
   the user why a category didn't sync. Stripping covers both reasons a category can be off: the

@@ -193,6 +193,15 @@ public sealed class CrucibleUploadScheduler
     /// <summary>When the wait was set, so a backward clock jump can move it back.</summary>
     private DateTimeOffset? waitSetAt;
 
+    /// <summary>
+    /// The deadline of a wait that syncing coming back on ends early (see <see cref="MarkRetry"/>
+    /// and <see cref="SyncResumed"/>), or null when not waiting on one.
+    /// </summary>
+    private DateTimeOffset? syncResumesBy;
+
+    /// <summary>When that wait was set, so a backward clock jump can move it back.</summary>
+    private DateTimeOffset? syncResumesSetAt;
+
     /// <summary>How long a quiet board waits before a heartbeat.</summary>
     // `{ get; private set; }`: anyone may read it, only this class may change it.
     public TimeSpan Heartbeat { get; private set; } = TimeSpan.FromSeconds(60);
@@ -399,6 +408,15 @@ public sealed class CrucibleUploadScheduler
                 waitUntil = null;
             }
 
+            // The same for a wait that syncing coming back on would have ended sooner.
+            if (syncResumesBy is { } resumesBy)
+            {
+                if (now < resumesBy)
+                    return null;
+
+                syncResumesBy = null;
+            }
+
             // The budget holds everything too, until it allows one more upload.
             if (!BudgetAllows(now))
                 return null;
@@ -480,19 +498,32 @@ public sealed class CrucibleUploadScheduler
     }
 
     /// <summary>
-    /// The upload is to be sent again, unchanged, once the given moment has passed: a 429 or 503
-    /// with its <c>Retry-After</c>, or a network failure after a backoff.
+    /// The upload is to be sent again, unchanged, once the given moment has passed (or sooner when
+    /// <paramref name="endsWhenSyncResumes"/> and <see cref="SyncResumed"/> ends the wait): a 429 or
+    /// 503 with its <c>Retry-After</c>, or a network failure after a backoff.
     /// </summary>
     /// <param name="upload">The upload <see cref="Poll"/> handed out.</param>
     /// <param name="retryAt">When the server, or the caller's backoff, says it may go again.</param>
     /// <param name="now">The current moment.</param>
+    /// <param name="endsWhenSyncResumes">
+    /// Whether <see cref="SyncResumed"/> may end the wait before <paramref name="retryAt"/>: true when
+    /// the caller lets a 503 saying syncing is switched off end early (see
+    /// <see cref="Sync.SyncResumeWait.Arm"/>). Defaults to false.
+    /// </param>
     /// <remarks>
+    /// <para>
     /// The wait is never shorter than <see cref="MinRetryWait"/>, doubled for each failure in a
     /// row, so no answer can turn into a tight loop of requests. The wait applies even when the
     /// upload is no longer the one in flight: a 429 or 503 limits the token, not one upload, and a
     /// network failure means the server is unreachable whichever upload met it.
+    /// </para>
+    /// <para>
+    /// A wait that syncing coming back on may end is held apart from the others, and only the part
+    /// past the least wait is, so ending it early still leaves the least wait and any rate limit.
+    /// </para>
     /// </remarks>
-    public void MarkRetry(CrucibleUpload upload, DateTimeOffset retryAt, DateTimeOffset now)
+    public void MarkRetry(
+        CrucibleUpload upload, DateTimeOffset retryAt, DateTimeOffset now, bool endsWhenSyncResumes = false)
     {
         lock (gate)
         {
@@ -506,7 +537,15 @@ public sealed class CrucibleUploadScheduler
                 leastWait = MaxRetryWait;
 
             var waitEnds = retryAt > now + leastWait ? retryAt : now + leastWait;
-            Hold(waitEnds, now);
+            if (endsWhenSyncResumes)
+            {
+                Hold(now + leastWait, now);
+                HoldUntilSyncResumes(waitEnds, now);
+            }
+            else
+            {
+                Hold(waitEnds, now);
+            }
 
             if (!IsInFlight(upload))
                 return;
@@ -565,6 +604,19 @@ public sealed class CrucibleUploadScheduler
         }
     }
 
+    /// <summary>
+    /// Ends the wait a <see cref="MarkRetry"/> for a switched-off 503 started, because the website
+    /// says syncing is back on. Every other wait stays in force.
+    /// </summary>
+    public void SyncResumed()
+    {
+        lock (gate)
+        {
+            syncResumesBy = null;
+            syncResumesSetAt = null;
+        }
+    }
+
     /// <summary>Whether this is the very upload in flight.</summary>
     /// <remarks>
     /// By identity, not by value: two heartbeats for the same board are equal records, and a late
@@ -579,6 +631,19 @@ public sealed class CrucibleUploadScheduler
         {
             waitUntil = until;
             waitSetAt = now;
+        }
+    }
+
+    /// <summary>
+    /// Holds everything until the given moment or <see cref="SyncResumed"/>, whichever comes first;
+    /// the later of two such holds wins.
+    /// </summary>
+    private void HoldUntilSyncResumes(DateTimeOffset until, DateTimeOffset now)
+    {
+        if (syncResumesBy is null || until > syncResumesBy)
+        {
+            syncResumesBy = until;
+            syncResumesSetAt = now;
         }
     }
 
@@ -606,6 +671,12 @@ public sealed class CrucibleUploadScheduler
         {
             waitUntil = until - (set - now);
             waitSetAt = now;
+        }
+
+        if (syncResumesSetAt is { } resumesSet && now < resumesSet && syncResumesBy is { } resumesBy)
+        {
+            syncResumesBy = resumesBy - (resumesSet - now);
+            syncResumesSetAt = now;
         }
 
         for (var index = 0; index < queue.Count; index++)

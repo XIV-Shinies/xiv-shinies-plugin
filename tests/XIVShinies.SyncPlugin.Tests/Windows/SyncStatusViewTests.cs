@@ -329,14 +329,15 @@ public class SyncStatusViewTests
     }
 
     // Sync now is refused only where pressing it would add no upload while the button still
-    // played its "Syncing" flash — two states the upload gate refuses, two that collect nothing
+    // played its "Syncing" flash — a state the upload gate refuses, two that collect nothing
     // for it to send, and nobody logged in, where the login brings its own sync. Waiting for a
     // character adds no upload either, but stays out of this set so a server wait keeps its own line;
     // SyncNowOffered refuses the press there instead. The halt and a character that could not be read
-    // deliberately keep it live: each state's own copy tells the user to press it.
+    // deliberately keep it live: each state's own copy tells the user to press it. During a pause a
+    // press asks the website whether syncing is back on, so that state is not refused either.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
-    [InlineData(SyncStatusKind.PausedByServer, true)]
+    [InlineData(SyncStatusKind.PausedByServer, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true)]
     [InlineData(SyncStatusKind.LoggedOut, true)]
@@ -383,13 +384,14 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.SyncNowOffered(kind, backingOff));
     }
 
-    // The button follows the sentences, plus a character that could not be read during a wait, where
-    // a press starts reading it again, which the wait does not hold back.
+    // The button follows the sentences, plus two states a wait does not hold back: a character that
+    // could not be read, where a press starts reading it again, and a pause, where a press asks the
+    // website whether syncing is back on.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
-    [InlineData(SyncStatusKind.PausedByServer, false, false)]
-    [InlineData(SyncStatusKind.PausedByServer, true, false)]
+    [InlineData(SyncStatusKind.PausedByServer, false, true)]
+    [InlineData(SyncStatusKind.PausedByServer, true, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, true, true)]
     [InlineData(SyncStatusKind.CharacterNotRead, false, true)]

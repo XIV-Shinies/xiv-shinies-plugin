@@ -9,9 +9,9 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// <remarks>
 /// <para>
 /// Pure bookkeeping in the <c>SyncScheduler</c> mold: no clock (every method takes <c>now</c>),
-/// no game, no network. <c>Notify*</c> and <c>Poll</c> run on the framework thread, but
-/// <c>MarkUploaded</c> and <c>BackOffUntil</c> run on a background task once the HTTP call
-/// finishes, so a lock guards the state.
+/// no game, no network. <c>Notify*</c>, <c>Poll</c> and <c>SyncResumed</c> run on the framework
+/// thread, but <c>MarkUploaded</c>, <c>BackOffUntil</c> and <c>BackOffUntilSyncResumes</c> run on a
+/// background task once the HTTP call finishes, so a lock guards the state.
 /// </para>
 /// <para>
 /// Priority when several things are due: leave, then enter, then a settled change, then the
@@ -59,6 +59,12 @@ public sealed class OccultUploadScheduler
 
     /// <summary>The moment a server-instructed backoff expires. Null when not backing off.</summary>
     private DateTimeOffset? backoffUntil;
+
+    /// <summary>
+    /// The deadline of a wait that syncing coming back on ends early (see
+    /// <see cref="BackOffUntilSyncResumes"/>). Null when not waiting on one.
+    /// </summary>
+    private DateTimeOffset? syncResumesBy;
 
     /// <summary>How long between idle re-uploads.</summary>
     public TimeSpan Heartbeat { get; private set; } = TimeSpan.FromSeconds(60);
@@ -152,6 +158,34 @@ public sealed class OccultUploadScheduler
         }
     }
 
+    /// <summary>
+    /// Suppresses all work until the given moment, or until <see cref="SyncResumed"/>, whichever
+    /// comes first: the wait a 503 saying syncing is switched off starts.
+    /// </summary>
+    /// <remarks>
+    /// The same rule as <c>SyncScheduler.BackOffUntilSyncResumes</c>: kept apart from
+    /// <see cref="BackOffUntil"/>'s deadline, and never shortened.
+    /// </remarks>
+    public void BackOffUntilSyncResumes(DateTimeOffset until)
+    {
+        lock (gate)
+        {
+            if (syncResumesBy is null || until > syncResumesBy)
+                syncResumesBy = until;
+        }
+    }
+
+    /// <summary>
+    /// Ends the wait <see cref="BackOffUntilSyncResumes"/> started, because the website says syncing
+    /// is back on. A <see cref="BackOffUntil"/> wait stays in force.
+    /// </summary>
+    public void SyncResumed()
+    {
+        // `lock` with no braces guards the single statement after it.
+        lock (gate)
+            syncResumesBy = null;
+    }
+
     /// <summary>Forgets all queued work and the heartbeat, as when the player logs out.</summary>
     /// <remarks>The backoff deadline deliberately survives, as in <c>SyncScheduler</c>: it is
     /// the server talking to the token, and relogging must not shake off a rate limit.</remarks>
@@ -189,6 +223,15 @@ public sealed class OccultUploadScheduler
                     return null;
 
                 backoffUntil = null;
+            }
+
+            // The same for a wait that syncing coming back on would have ended sooner.
+            if (syncResumesBy is { } resumesBy)
+            {
+                if (now < resumesBy)
+                    return null;
+
+                syncResumesBy = null;
             }
 
             // A clock that jumped backwards past the anchor would otherwise stall the

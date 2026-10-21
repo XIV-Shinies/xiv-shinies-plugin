@@ -12,8 +12,9 @@ public enum CrucibleOutcomeKind
     Accepted,
 
     /// <summary>
-    /// The same upload goes again once <see cref="CrucibleOutcome.Until"/> has passed, or later if the
-    /// scheduler's least wait is longer.
+    /// The same upload goes again once <see cref="CrucibleOutcome.Until"/> has passed (or, when
+    /// <see cref="CrucibleOutcome.EndsWhenSyncResumes"/>, once the website says the sharing is back
+    /// on), and never before the scheduler's least wait.
     /// </summary>
     Retry,
 
@@ -36,10 +37,16 @@ public enum CrucibleOutcomeKind
 /// When a <see cref="CrucibleOutcomeKind.Retry"/> may go again, or when a
 /// <see cref="CrucibleOutcomeKind.Drop"/>'s hold ends; null for the other outcomes.
 /// </param>
+/// <param name="EndsWhenSyncResumes">
+/// Whether the website saying syncing is back on may end a retry's wait before
+/// <paramref name="Until"/> (see <see cref="RetryPolicy.EndsWhenSyncResumes"/>).
+/// </param>
 // A `record struct`: a small value with value equality, copied rather than shared like a class. A `?`
-// after a type means the value may be null, like `T | null`, and `= null` gives a parameter a default,
-// like `until: T | null = null` in TypeScript: a caller may leave it out, and it is then null.
-public readonly record struct CrucibleOutcome(CrucibleOutcomeKind Kind, DateTimeOffset? Until = null);
+// after a type means the value may be null, like `T | null`. `= null` and `= false` give a parameter
+// a default, like `until: T | null = null` in TypeScript: a caller may leave it out, and it then takes
+// that value.
+public readonly record struct CrucibleOutcome(
+    CrucibleOutcomeKind Kind, DateTimeOffset? Until = null, bool EndsWhenSyncResumes = false);
 
 /// <summary>Decides what the Crucible run sharing does with each answer to an upload.</summary>
 /// <remarks>
@@ -50,8 +57,9 @@ public readonly record struct CrucibleOutcome(CrucibleOutcomeKind Kind, DateTime
 /// as terminal, so the halt is decided before the drop.
 /// </para>
 /// <para>
-/// A retry waits for whatever the server asked, or for nothing more; the scheduler then holds it to
-/// its own least wait, doubled for each failure in a row (see <see cref="CrucibleUploadScheduler"/>).
+/// A retry waits for whatever the server asked, or for nothing more, or until the website says the
+/// sharing is back on after a switched-off 503; the scheduler then holds it to its own least wait,
+/// doubled for each failure in a row (see <see cref="CrucibleUploadScheduler"/>).
 /// </para>
 /// </remarks>
 public static class CrucibleOutcomePolicy
@@ -99,10 +107,14 @@ public static class CrucibleOutcomePolicy
             return new CrucibleOutcome(CrucibleOutcomeKind.Retry, now);
         }
 
-        // A 429 or 503: the server asked for quiet, for as long as it said. `is { } until` matches
-        // when there is a value and names it.
+        // A 429 or 503: the server asked for quiet, for as long as it said, or until syncing is back
+        // on for a 503 saying it is switched off. `is { } until` matches when there is a value and
+        // names it.
         if (RetryPolicy.BackoffUntil(status, retryAfter, now) is { } until)
-            return new CrucibleOutcome(CrucibleOutcomeKind.Retry, until);
+        {
+            return new CrucibleOutcome(
+                CrucibleOutcomeKind.Retry, until, RetryPolicy.EndsWhenSyncResumes(status, errorCode));
+        }
 
         if (status == ApiStatus.NotConfigured)
             return new CrucibleOutcome(CrucibleOutcomeKind.Retry, now);
