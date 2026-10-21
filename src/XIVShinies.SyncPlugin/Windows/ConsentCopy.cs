@@ -13,8 +13,7 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// <remarks>
 /// Each claim is decided from the same rows and <c>/config</c> the controls beneath it are drawn from
 /// (the wizard intro's user-driven inputs as they stood when its step opened), so a sentence and its
-/// controls cannot describe different states. Kept apart from the window so the states that would
-/// make a sentence false are reachable from tests.
+/// controls cannot describe different states.
 /// </remarks>
 // A `static class` holds only shared members and is never instantiated: a module of functions.
 public static class ConsentCopy

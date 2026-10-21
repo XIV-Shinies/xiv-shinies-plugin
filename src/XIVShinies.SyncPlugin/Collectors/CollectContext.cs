@@ -50,7 +50,7 @@ public sealed record CollectContext
     /// It carries no truncation warning of its own — it is a modifier on the item manifest
     /// rather than a manifest, so a clip here shows up as counts the server chose not to omit.
     /// </remarks>
-    // Recomputed on each read like the manifests; the collector reads it once per pass.
+    // Recomputed on each read; the collector reads it once per pass.
     public IReadOnlySet<uint> ItemOmitWhenUnseenIds
     {
         get
@@ -178,7 +178,7 @@ public sealed record CollectContext
     /// a single number. Reached through <see cref="ManifestFor"/>; see
     /// <see cref="ManifestCatalog"/>.
     /// </remarks>
-    // Recomputed on each read like the item manifest; the collector reads it once per pass.
+    // Recomputed on each read; the collector reads it once per pass.
     internal IReadOnlyList<uint> ReadQuestSequenceManifest()
     {
         var manifest = RemoteConfig?.QuestSequenceManifest;

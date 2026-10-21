@@ -8,9 +8,8 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Split out of the orchestrator so it can be unit-tested. The orchestrator holds Dalamud services
-/// and cannot be constructed outside the game; this cannot fail to be testable, because it knows
-/// nothing but a list and a set of keys.
+/// It knows nothing but a list of collectors and a set of keys. The orchestrator, which holds the
+/// Dalamud services, hands both in.
 /// </para>
 /// <para>
 /// It matters more than its size suggests. An unlock upload names the categories it carries, and the

@@ -5,8 +5,8 @@ using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Tests.Onboarding;
 
-// The first-run wizard, as pure logic: which step we are on, and whether the user may move forward.
-// The window draws whatever this says. Nothing here touches the game, the network, or ImGui.
+// The first-run wizard's state: which step it is on, and whether the user may move forward. The
+// window draws whatever this says.
 public class OnboardingStateTests
 {
     private const string ValidToken = "xvs_0123456789012345678901234567890123456789abc";
@@ -93,8 +93,7 @@ public class OnboardingStateTests
     // by then has what it was waiting for.
     //
     // (Whether the wait ends on a FAILED poll as well as a successful one is SyncManager's contract, not
-    // this class's: it lowers the flag on any answer at all. That is a live-HTTP surface, verified by
-    // in-game QA.)
+    // this class's: it lowers the flag on any answer at all, and in-game QA verifies that.)
     [Theory]
     [InlineData(OnboardingStep.Welcome)]
     [InlineData(OnboardingStep.ChooseCategories)]

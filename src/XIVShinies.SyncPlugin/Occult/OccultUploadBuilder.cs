@@ -6,7 +6,7 @@ namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
 /// Assembles the <c>POST /occult/instance-state</c> request from the tracker's wire-ready
-/// snapshot. Pure — no game, no clock, no network — so the wire shape stays unit-testable.
+/// snapshot. It reads neither the game nor the clock, and sends nothing itself.
 /// </summary>
 public static class OccultUploadBuilder
 {

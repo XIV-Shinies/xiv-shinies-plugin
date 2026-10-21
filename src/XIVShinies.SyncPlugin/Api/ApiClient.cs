@@ -380,7 +380,7 @@ public sealed class ApiClient : IDisposable
     /// both, or a 429/503 would silently lose its backoff. Never returns a negative wait: a date
     /// already in the past means "you may retry now". Clamped to <see cref="MaxRetryAfter"/>,
     /// because the header is server-controlled and an unbounded backoff would let a hostile
-    /// backend mute syncing indefinitely — the same reason the config intervals are clamped.
+    /// backend mute syncing indefinitely.
     /// </remarks>
     private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
     {
@@ -404,8 +404,8 @@ public sealed class ApiClient : IDisposable
     }
 
     // Never let a malformed body throw into the game; an unparseable response is just "no value".
-    // NotSupportedException is caught alongside JsonException for the same reason the serialize
-    // guard does: a type the serializer cannot handle must degrade, not crash.
+    // NotSupportedException is caught alongside JsonException: a type the serializer cannot
+    // handle must degrade, not crash.
     private static T? Deserialize<T>(string body) where T : class
     {
         if (string.IsNullOrWhiteSpace(body))

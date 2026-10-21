@@ -33,8 +33,8 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// wrong screenshot.
 /// </para>
 /// <para>
-/// Dalamud-free on purpose, like the rest of <c>Sync</c>'s pure logic: it takes the collectors
-/// and a clock, and returns records. That keeps it unit-testable.
+/// It takes the collectors and the current moment, and returns records; it reads neither the game
+/// nor the clock.
 /// </para>
 /// </remarks>
 public static class UploadLogSeed
@@ -243,8 +243,7 @@ public static class UploadLogSeed
 
     /// <summary>The categories minus one, for a row where that collection could not be read.</summary>
     /// <remarks>
-    /// Drops the first collection when the named one is not registered, on the same reasoning as
-    /// <see cref="Moved(IReadOnlyList{UploadLogCategory}, string)"/>: the row exists to show a
+    /// Drops the first collection when the named one is not registered: the row exists to show a
     /// category missing from the sent list, and dropping nothing would quietly lose that.
     /// </remarks>
     private static IReadOnlyList<UploadLogCategory> Without(

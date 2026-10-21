@@ -186,11 +186,12 @@ internal sealed class UploadLogTable
             if (entry.Detail is { } detail)
                 Widgets.DrawWrapped(detail, ImGuiCol.Text, null);
 
-            // Mixed colors inside one flowing line need the span helper, exactly like the
-            // wizard intro's gold website name. A null span color means the normal text color,
-            // which is what the counts themselves use — they are the densest data in the table.
-            // What each category says, and which parts of it are highlighted, is the pure
-            // UploadLogText.SentSpans rule; this loop only maps its highlight flag to
+            // Mixed colors inside one flowing line need the span helper. A null span color means
+            // the normal text color, which is what the counts themselves use — they are the
+            // densest data in the table.
+            //
+            // What each category says, and which parts of it are highlighted, is
+            // UploadLogText.SentSpans's rule; this loop only maps its highlight flag to
             // Brand.Gold and draws. Only the separator between categories is muted.
             ImGui.TableNextColumn();
 

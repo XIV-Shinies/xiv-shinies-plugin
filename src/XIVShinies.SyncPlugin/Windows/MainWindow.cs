@@ -43,8 +43,7 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// <para>
 /// This class draws and nothing else. Which step the wizard is on lives in <see cref="OnboardingState"/>;
 /// which rows to draw lives in <see cref="CategorySettingsView"/>; what a token probe means lives in
-/// <see cref="Onboarding.TokenCheck"/>. All three are pure and unit-tested, which is why almost
-/// nothing here can be wrong in an interesting way.
+/// <see cref="Onboarding.TokenCheck"/>.
 /// </para>
 /// </remarks>
 // `sealed` means no other class may inherit from this one. We inherit from Dalamud's `Window` base
@@ -93,8 +92,7 @@ internal sealed partial class MainWindow : Window, IDisposable
     // release will carry, before the release flow sets it. See OverrideVersionForScreenshots.
     //
     // volatile because the seeding command writes it from the framework thread while the draw
-    // thread reads it — the same reason UploadLog marks its entry list volatile. A reference
-    // assignment is atomic, so the worst case is a frame of staleness.
+    // thread reads it. A reference assignment is atomic, so the worst case is a frame of staleness.
     private volatile string pluginVersion;
 #else
     private readonly string pluginVersion;

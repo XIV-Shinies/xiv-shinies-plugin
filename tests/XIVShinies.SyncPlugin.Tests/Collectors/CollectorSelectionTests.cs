@@ -6,9 +6,9 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// Picks the collectors an upload runs. Pure: no game, no network. The category keys used here are
-// deliberately ones the plugin does not ship, so a name branch sneaking into the selection logic
-// would fail these tests rather than pass them by coincidence.
+// Picks the collectors an upload runs. The category keys used here are deliberately ones the plugin
+// does not ship, so a name branch sneaking into the selection logic would fail these tests rather
+// than pass them by coincidence.
 public class CollectorSelectionTests
 {
     private const string Facewear = "facewear";

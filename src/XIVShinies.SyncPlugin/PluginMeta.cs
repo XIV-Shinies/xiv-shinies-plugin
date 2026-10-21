@@ -7,9 +7,7 @@ namespace XIVShinies.SyncPlugin;
 // Comments that start with three slashes (///) are "XML doc comments" — the C# version of
 // JSDoc/TSDoc. Editors show them on hover, and they can be compiled into API docs.
 /// <summary>
-/// Pure, game-independent plugin constants and helpers. Deliberately free of Dalamud/game
-/// types so the xUnit test project can exercise it without a running game (see the CLAUDE.md
-/// "pure logic vs. game surfaces" split).
+/// Game-independent plugin constants and helpers. Nothing here touches Dalamud or game types.
 /// </summary>
 // `static class` means this class can never be instantiated with `new` and holds no
 // per-instance data — it's just a bucket of shared constants and functions, like a plain TS

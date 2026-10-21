@@ -17,7 +17,6 @@ public class CollectorRunnerTests
     private const string UnknownCategory = "facewear";
 
     // A collector is just a category key plus a Collect() that returns facts or a skip reason.
-    // It touches no game service, which is exactly why the runner is unit-testable.
     private sealed class FakeCollector : ICollector
     {
         private readonly Func<CollectResult> collect;

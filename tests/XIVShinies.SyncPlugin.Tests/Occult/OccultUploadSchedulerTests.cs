@@ -5,8 +5,8 @@ using XIVShinies.SyncPlugin.Occult;
 namespace XIVShinies.SyncPlugin.Tests.Occult;
 
 // Decides *when* the occult uploader fires and with which trigger word, never *what* it sends
-// (the tracker owns the snapshot). Same pure-scheduler discipline as SyncSchedulerTests: no
-// clock, no game, no network — every method takes the current time.
+// (the tracker owns the snapshot). Every method that needs the time is handed it rather than
+// reading a clock.
 public class OccultUploadSchedulerTests
 {
     // An arbitrary fixed instant. Tests move time by adding to it, never by waiting.
@@ -148,7 +148,7 @@ public class OccultUploadSchedulerTests
     }
 
     // A failed heartbeat must wait out a fresh interval, not retry every tick. The interval
-    // clock stamps when the heartbeat is ISSUED (the SyncScheduler pattern).
+    // clock stamps when the heartbeat is ISSUED.
     [Fact]
     public void A_heartbeat_is_not_retried_every_tick_after_a_failed_upload()
     {
@@ -254,7 +254,7 @@ public class OccultUploadSchedulerTests
 
     // --- Backoff -------------------------------------------------------------------------
 
-    // Deferred, never dropped: pending work survives the backoff (matching SyncScheduler).
+    // Deferred, never dropped: pending work survives the backoff.
     [Fact]
     public void A_backoff_defers_pending_work_without_dropping_it()
     {

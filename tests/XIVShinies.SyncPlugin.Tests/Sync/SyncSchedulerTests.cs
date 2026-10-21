@@ -7,8 +7,8 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// Decides *when* to upload, never *how*. No clock, no game, no network: every method takes the
-// current time as an argument, so these tests run instantly instead of sleeping.
+// Decides *when* to upload, never *how*. Every method that needs the current time takes it as an
+// argument rather than reading a clock, so these tests run instantly instead of sleeping.
 public class SyncSchedulerTests
 {
     // An arbitrary fixed instant. Tests move time by adding to it, never by waiting.

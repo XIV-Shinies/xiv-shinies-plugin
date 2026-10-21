@@ -17,9 +17,9 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
-// Exercises ApiClient against a fake HTTP transport. This is legitimate unit testing, not a faked
-// game service: HttpMessageHandler is the documented seam for substituting the network, so the
-// client's real header, URL, and status-handling code runs — only the socket is replaced.
+// Exercises ApiClient against a fake HTTP transport. HttpMessageHandler is the documented seam for
+// substituting the network, so the client's real header, URL, and status-handling code runs — only
+// the socket is replaced.
 public class ApiClientTests
 {
     private const string ValidToken = "xvs_0123456789012345678901234567890123456789abc";

@@ -9,12 +9,10 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pure bookkeeping in the house style of <c>SyncScheduler</c>: it never reads the game, never
-/// touches the clock (every call takes <c>now</c>), and holds no Dalamud types — which is what
-/// lets the timestamp rules live under unit tests. <see cref="Apply"/> and <see cref="Reset"/>
-/// are only ever called from the framework thread, so the mutable state needs no lock;
-/// <see cref="Current"/> may be read from any thread because it hands out an immutable
-/// snapshot (see its remarks).
+/// It never reads the game, never touches the clock (<see cref="Apply"/> is handed <c>now</c>),
+/// and holds no Dalamud types. <see cref="Apply"/> and <see cref="Reset"/> are only ever called from the
+/// framework thread, so the mutable state needs no lock; <see cref="Current"/> may be read from
+/// any thread because it hands out an immutable snapshot (see its remarks).
 /// </para>
 /// <para>
 /// The memory matters for three things. First, <b>down-stamping</b>: when a CE flips out of

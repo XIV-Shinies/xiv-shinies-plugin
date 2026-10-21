@@ -14,12 +14,10 @@ namespace XIVShinies.SyncPlugin.Diagnostics;
 /// log line becomes tens of thousands of identical entries a day.
 /// </para>
 /// <para>
-/// Shared protocol with <see cref="Sync.SyncOutcomeWarnings"/> and
-/// <see cref="Collectors.FrameBudgetWarnings"/>: test-and-record, which <c>HashSet.Add</c> does in
-/// one call by returning false when the key was already present — JavaScript's
-/// <c>Set.prototype.add</c> returns the set, so it cannot. True means be loud; false means say it
-/// quietly rather than not at all. <see cref="Sync.PayloadCapWarnings"/> records the same way but
-/// hands back the lines to log, so a repeat is simply omitted.
+/// <see cref="IsFirstSighting"/> tests and records at once: <c>HashSet.Add</c> returns false when
+/// the key was already present (JavaScript's <c>Set.prototype.add</c> returns the set instead, so
+/// it cannot tell a new key from a repeat). True means be loud; false means say it quietly rather
+/// than not at all.
 /// </para>
 /// <para>
 /// Not thread-safe. Callers serialize access: one thread, or a gate that admits one caller at a

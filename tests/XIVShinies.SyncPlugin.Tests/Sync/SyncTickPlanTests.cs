@@ -5,8 +5,8 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
 /// <summary>
-/// How much of a frame's sync work may run — see <see cref="SyncTickPlan"/> for why the ordering
-/// lives outside the frame callback.
+/// How much of a frame's sync work may run — see <see cref="SyncTickPlan"/> for the two rules the
+/// ordering keeps.
 /// </summary>
 public class SyncTickPlanTests
 {

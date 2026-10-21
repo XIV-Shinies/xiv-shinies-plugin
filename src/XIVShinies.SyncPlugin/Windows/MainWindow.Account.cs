@@ -131,8 +131,8 @@ internal sealed partial class MainWindow
 
     /// <summary>Says what the token box should be telling the user, in a color that matches.</summary>
     /// <remarks>
-    /// Which message applies is decided by <see cref="TokenFeedback"/>, which is pure and tested. All
-    /// that is left here is turning a kind into pixels.
+    /// Which message applies is decided by <see cref="TokenFeedback"/>. All that is left here is
+    /// turning a kind into pixels.
     /// </remarks>
     private void DrawTokenCheckFeedback()
     {

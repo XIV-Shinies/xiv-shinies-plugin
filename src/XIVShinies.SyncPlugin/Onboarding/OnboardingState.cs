@@ -33,7 +33,7 @@ public enum OnboardingStep
 /// <para>
 /// Deliberately free of Dalamud, ImGui, and the network. Verifying the token is an HTTP call, so the
 /// window makes it and reports the answer back here through <see cref="RecordTokenCheck"/> — this
-/// class only remembers what happened. That is what makes the whole flow testable.
+/// class only remembers what happened.
 /// </para>
 /// </remarks>
 public sealed class OnboardingState
@@ -106,9 +106,8 @@ public sealed class OnboardingState
 
     /// <summary>Records whether the server's config is still outstanding.</summary>
     /// <remarks>
-    /// Pushed in by the window rather than asked for, in the same spirit as
-    /// <see cref="RecordTokenCheck"/>: the network lives out there, and this class only remembers what
-    /// it is told. That is what keeps the whole wizard testable without a server.
+    /// Pushed in by the window rather than asked for: the network lives out there, and this class
+    /// only remembers what it is told.
     /// </remarks>
     public void NotifyAwaitingConfig(bool awaiting) => AwaitingConfig = awaiting;
 

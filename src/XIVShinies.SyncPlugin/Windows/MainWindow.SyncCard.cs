@@ -257,7 +257,7 @@ internal sealed partial class MainWindow
             // list beneath it mean anything, and the notes themselves are colored by tone.
             ImGui.TextUnformatted("Reading from:");
 
-            // The whole panel is assembled by a pure, tested builder, so this window stays a printer:
+            // The whole panel is assembled by ReadStatusView.Build, so this window stays a printer:
             // it draws whatever notes it is handed and never asks which collection or which container
             // produced one. The rows are this frame's, built once at the top of DrawSettings and
             // shared with the consent card below.
@@ -420,8 +420,9 @@ internal sealed partial class MainWindow
         };
 
     /// <summary>
-    /// Maps a source note's tone to the icon drawn beside it — the same switch-on-tone discipline as
-    /// <see cref="ToneColor"/>, and for the reason given there.
+    /// Maps a source note's tone to the icon drawn beside it. A switch on the tone alone, never on a
+    /// source key, so a future storage source gets its icon the moment
+    /// <see cref="SourceNoteText.Describe"/> assigns it a tone, with no change needed here.
     /// </summary>
     private static FontAwesomeIcon ToneIcon(SourceTone tone) =>
         tone switch
@@ -434,8 +435,7 @@ internal sealed partial class MainWindow
             // color above, and the chip's hover explains why.
             SourceTone.Unreadable => FontAwesomeIcon.EyeSlash,
 
-            // Mirrors ToneColor's fallback arm: keeps the expression exhaustive against a future
-            // tone without throwing at draw time.
+            // Keeps the expression exhaustive against a future tone without throwing at draw time.
             _ => FontAwesomeIcon.QuestionCircle,
         };
 
@@ -460,7 +460,8 @@ internal sealed partial class MainWindow
     /// </summary>
     private string HaltSentence()
     {
-        // One read of the identity, for the same reason as CharacterRefusalSentence.
+        // One read of the identity, so the name and the home world always come from the same
+        // character even if a logout lands mid-frame.
         var character = syncManager.Identity;
 
         return HaltCopy.For(

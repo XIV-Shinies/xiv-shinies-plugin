@@ -10,9 +10,8 @@ namespace XIVShinies.SyncPlugin;
 /// </summary>
 /// <remarks>
 /// A deliberately thin shell. Implementing <c>IPluginConfiguration</c> ties this type to
-/// <c>Dalamud.dll</c>, which only exists inside the running game — so it cannot be constructed in
-/// a unit test. All the actual settings and their rules live in <see cref="PluginSettings"/>,
-/// which is Dalamud-free and therefore testable.
+/// <c>Dalamud.dll</c>, which only exists inside the running game. All the actual settings and their
+/// rules live in <see cref="PluginSettings"/>, which touches no Dalamud types.
 /// </remarks>
 // `[Serializable]` is an "attribute" — metadata attached to a type, written in square brackets
 // above it. There's no direct React analog; think of it as a compile-time tag/decorator that

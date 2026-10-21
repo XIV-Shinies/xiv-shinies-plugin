@@ -16,10 +16,11 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Same shape as <see cref="SyncManager"/>, at a fraction of the size: every policy decision lives
-/// in a pure, unit-tested class (the encounter tracker, upload scheduler, upload builder and outcome
-/// policy), so this class only moves data between the game, those classes, and the API client —
-/// and is verified by in-game QA.
+/// The rules live in classes that touch no game state: what each encounter's status is in
+/// <see cref="OccultEncounterTracker"/>, when an upload goes in <see cref="OccultUploadScheduler"/>,
+/// what it carries in <see cref="OccultUploadBuilder"/>, and what each answer means in
+/// <see cref="OccultOutcomePolicy"/>. This class only moves data between the game, those classes,
+/// and the API client. It reads the game, so in-game QA verifies it.
 /// </para>
 /// <para>
 /// <b>Threading.</b> Game state is read inside the per-frame <c>Update</c> handler (throttled
@@ -68,7 +69,7 @@ internal sealed class OccultManager : IDisposable
 
     private readonly string pluginVersion;
 
-    /// <summary>The source of "now". Injected so tests of the pure parts never meet a wall clock.</summary>
+    /// <summary>The source of "now".</summary>
     private readonly TimeProvider timeProvider;
 
     private readonly OccultEncounterTracker tracker = new();
@@ -97,14 +98,19 @@ internal sealed class OccultManager : IDisposable
     /// </summary>
     private readonly CancellationTokenSource lifetime = new();
 
-    /// <summary>A copy of the token, taken before the source can ever be disposed (see
-    /// <see cref="SyncManager"/>'s field of the same name for the full reasoning).</summary>
+    /// <summary>A copy of the token, taken before the source can ever be disposed.</summary>
+    /// <remarks>
+    /// Reading <c>lifetime.Token</c> after the source is disposed throws, and an upload started
+    /// before <see cref="Dispose"/> may still be running then, so the token is captured once in
+    /// the constructor. A token whose source was canceled and then disposed is still safe to
+    /// observe.
+    /// </remarks>
     private readonly CancellationToken lifetimeToken;
 
     // The fields below live on the game's main thread only (written and read inside the Update
     // handler and the logout event, which reaches the plugin on that same thread through a hook on
-    // the game's own logout callback) — the same single-writer discipline SyncManager documents.
-    // `uploadInFlight` is the exception: cleared by the background task, hence volatile.
+    // the game's own logout callback), so they need no lock. `uploadInFlight` is the exception:
+    // cleared by the background task, hence volatile.
 
     /// <summary>When the next game-state read is due.</summary>
     private DateTimeOffset nextReadAt = DateTimeOffset.MinValue;
@@ -475,10 +481,10 @@ internal sealed class OccultManager : IDisposable
         }
         catch (Exception ex)
         {
-            // Last-resort net, as in SyncManager: an exception in a discarded task would
-            // otherwise surface as an unobserved-task exception with no context. Reported in full
-            // once; the heartbeat would otherwise repeat a deterministic one for as long as the
-            // character stays inside, at whatever cadence the server set.
+            // Last-resort net: an exception in a discarded task would otherwise surface as an
+            // unobserved-task exception with no context. Reported in full once; the heartbeat
+            // would otherwise repeat a deterministic one for as long as the character stays
+            // inside, at whatever cadence the server set.
             if (uploadFailures.IsFirstSighting(ex))
                 log.Error(ex, "Unexpected failure during occult upload.");
             else

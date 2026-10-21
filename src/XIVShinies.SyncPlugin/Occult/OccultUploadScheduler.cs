@@ -8,10 +8,10 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pure bookkeeping in the <c>SyncScheduler</c> mold: no clock (every method takes <c>now</c>),
-/// no game, no network. <c>Notify*</c> and <c>Poll</c> run on the framework thread, but
-/// <c>MarkUploaded</c> and <c>BackOffUntil</c> run on a background task once the HTTP call
-/// finishes, so a lock guards the state.
+/// It only decides: it reads nothing from the game, sends nothing itself, and keeps no clock
+/// (every method that needs the time is handed <c>now</c>). <c>Notify*</c> and <c>Poll</c> run
+/// on the framework thread, but <c>MarkUploaded</c> and <c>BackOffUntil</c> run on a background
+/// task once the HTTP call finishes, so a lock guards the state.
 /// </para>
 /// <para>
 /// Priority when several things are due: leave, then enter, then a settled change, then the
@@ -78,7 +78,7 @@ public sealed class OccultUploadScheduler
     /// <summary>The character entered an occult instance: first snapshot due immediately.</summary>
     /// <remarks><paramref name="now"/> is unused here (the work is due immediately, so there
     /// is no deadline to compute); the parameter exists for call-site symmetry with the other
-    /// Notify methods, matching how <c>SyncScheduler.Request</c> is shaped.</remarks>
+    /// Notify methods.</remarks>
     public void NotifyEntered(DateTimeOffset now)
     {
         lock (gate)
@@ -153,8 +153,8 @@ public sealed class OccultUploadScheduler
     }
 
     /// <summary>Forgets all queued work and the heartbeat, as when the player logs out.</summary>
-    /// <remarks>The backoff deadline deliberately survives, as in <c>SyncScheduler</c>: it is
-    /// the server talking to the token, and relogging must not shake off a rate limit.</remarks>
+    /// <remarks>The backoff deadline deliberately survives: it is the server talking to the
+    /// token, and relogging must not shake off a rate limit.</remarks>
     public void Reset()
     {
         lock (gate)
@@ -172,11 +172,10 @@ public sealed class OccultUploadScheduler
     /// Called once per framework tick; each piece of work is handed out exactly once.
     /// </summary>
     /// <remarks>
-    /// Every issued trigger re-anchors the heartbeat clock at issue time, not on success —
-    /// the SyncScheduler pattern. A failed upload therefore waits out a fresh interval
-    /// instead of retrying every tick, and even a failed ENTER still leads to a heartbeat
-    /// one interval later, so a single transient error cannot silently end presence
-    /// reporting for the whole visit.
+    /// Every issued trigger re-anchors the heartbeat clock at issue time, not on success. A
+    /// failed upload therefore waits out a fresh interval instead of retrying every tick, and
+    /// even a failed ENTER still leads to a heartbeat one interval later, so a single transient
+    /// error cannot silently end presence reporting for the whole visit.
     /// </remarks>
     public OccultTrigger? Poll(DateTimeOffset now)
     {

@@ -27,8 +27,7 @@ public enum TokenCheckState
 /// <remarks>
 /// The distinction this class exists to draw is <b>"your token is wrong"</b> versus <b>"we could not
 /// ask"</b>. Collapsing the two would either blame the user for the server being down, or leave them
-/// retrying a token that will never work. Pure, so both branches are covered by tests rather than by
-/// hope.
+/// retrying a token that will never work.
 /// </remarks>
 public static class TokenCheck
 {

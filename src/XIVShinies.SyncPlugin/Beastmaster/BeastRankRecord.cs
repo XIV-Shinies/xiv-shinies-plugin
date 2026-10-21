@@ -57,7 +57,7 @@ public sealed record RankRecordAssessment(RankRecordVerdict Verdict, BeastRankRe
 /// The record set is a marker of 2 (four bytes, little-endian), then one rank byte per beast in
 /// bestiary order (No. 1 first), then one EXP byte per beast, then one HP record per beast in the
 /// same order (see <see cref="IsWellFormedHpRecord"/>). A rank runs 1–25 for a beast the character
-/// holds and an EXP figure 0–100 toward the next rank. Dalamud-free, so the unit suite can run it.
+/// holds and an EXP figure 0–100 toward the next rank. It reads no game memory: the bytes are handed in.
 /// </para>
 /// <para>
 /// No published definition names the record set's place in memory, so a game patch can move it.

@@ -20,9 +20,8 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// network in it: <see cref="UploadGate"/> says whether an upload is allowed, <see cref="SyncScheduler"/>
 /// says when and what, <see cref="RetryPolicy"/> says what to do about a failure,
 /// <see cref="CollectorSelection"/> says which collectors run, and <see cref="SyncPayloadBuilder"/>
-/// says what the body looks like. That is what makes those parts unit-testable, and it is why this
-/// class cannot be — it holds Dalamud services, so merely constructing it requires the game process.
-/// It is verified by in-game QA instead.
+/// says what the body looks like. This class holds Dalamud services, so merely constructing it
+/// requires the game process, and in-game QA verifies it.
 /// </para>
 /// <para>
 /// <b>Threading.</b> Two worlds meet here. Game state may only be read on the framework thread, and
@@ -104,7 +103,7 @@ internal sealed class SyncManager : IDisposable
     private readonly IReadOnlyList<ICollector> collectors;
     private readonly string pluginVersion;
 
-    /// <summary>The source of "now". Injected so the schedule never depends on the wall clock in tests.</summary>
+    /// <summary>The source of "now".</summary>
     private readonly TimeProvider timeProvider;
 
     private readonly SyncScheduler scheduler = new();
@@ -254,8 +253,8 @@ internal sealed class SyncManager : IDisposable
     /// <para>
     /// Written at every place a halt is raised (the upload, the config poll, and the live tracker and
     /// Crucible sharing through <see cref="HaltFromLiveUpload"/>), always before the flag, so a reader
-    /// that sees the flag set also sees the status that set it. An int for the same reason as
-    /// <see cref="lastStatusCode"/>: <c>volatile</c> cannot hold a nullable enum.
+    /// that sees the flag set also sees the status that set it. An int because <c>volatile</c>
+    /// cannot hold a nullable enum.
     /// </para>
     /// <para>
     /// Two things read it, through <see cref="HaltStatus"/>: the window, to name the fix for
@@ -302,10 +301,10 @@ internal sealed class SyncManager : IDisposable
     /// <remarks>
     /// A request in flight cannot be recalled: logout does not cancel it (only plugin unload does),
     /// so its answer can land seconds later — and without this counter that late answer would write
-    /// the <i>previous</i> character's status, or worse a halt, onto the next one's session. Same pattern
-    /// as <see cref="Windows.TokenVerifier"/>: the work captures the generation it was started for,
-    /// and an answer to a superseded generation is thrown away. Only the framework thread writes
-    /// this (single writer, so the non-atomic increment is safe); background tasks only read it.
+    /// the <i>previous</i> character's status, or worse a halt, onto the next one's session. The work
+    /// captures the generation it was started for, and an answer to a superseded generation is thrown
+    /// away. Only the framework thread writes this (single writer, so the non-atomic increment is
+    /// safe); background tasks only read it.
     /// </remarks>
     private volatile int sessionGeneration;
 
@@ -370,15 +369,14 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>
     /// Each category's latest partial-read phrase (see <see cref="Collectors.CollectResult.PartialNote"/>),
-    /// merged across passes rather than replaced, for the same reason <see cref="lastSkipped"/>
-    /// is (see <see cref="CollectionStatusMemory.MergePartialNotes"/> for the exact rule): a
+    /// merged across passes rather than replaced, because an unlock pass runs only some collectors
+    /// (see <see cref="CollectionStatusMemory.MergePartialNotes"/> for the exact rule): a
     /// pass that collected a category in full clears its note, a pass that did not run it leaves
     /// the last note standing. For the settings window.
     /// </summary>
     /// <remarks>
-    /// <c>volatile</c>, and never mutated once handed out, for the same cross-thread reason as
-    /// <see cref="lastSkipped"/>: the writer is the collection pass on the framework thread, the
-    /// reader is the window's draw call.
+    /// <c>volatile</c>, and never mutated once handed out: the writer is the collection pass on the
+    /// framework thread, the reader is the window's draw call.
     /// </remarks>
     private volatile IReadOnlyDictionary<string, string> lastPartialNotes =
         new Dictionary<string, string>();
@@ -408,9 +406,8 @@ internal sealed class SyncManager : IDisposable
     /// the truthful thing to show — not a snapshot of whichever pass happened to run most recently.
     /// </para>
     /// <para>
-    /// <c>volatile</c>, and never mutated once handed out, for the same cross-thread reason as
-    /// <see cref="lastSkipped"/>: the writer is the collection pass on the framework thread, the
-    /// reader is the window's draw call.
+    /// <c>volatile</c>, and never mutated once handed out: the writer is the collection pass on the
+    /// framework thread, the reader is the window's draw call.
     /// </para>
     /// </remarks>
     private volatile IReadOnlyDictionary<string, ItemSourceStatus> lastSourceNotes =
@@ -788,9 +785,8 @@ internal sealed class SyncManager : IDisposable
         // Marshaled rather than run inline: this method is called from the window's draw call,
         // which Dalamud does not promise to invoke on the framework thread, and the identity-rearm
         // fields below belong to the framework thread's single-writer discipline (loginSettledAt
-        // is a struct field the framework tick reads every frame). The same pattern, for the same
-        // reason, as RequestOnboardingConfigPoll's marshal. The scheduler request rides inside the
-        // marshal too, so the rearm always lands before the sweep it exists to unblock.
+        // is a struct field the framework tick reads every frame). The scheduler request rides
+        // inside the marshal too, so the rearm always lands before the sweep it exists to unblock.
         _ = framework.RunOnFrameworkThread(() =>
         {
             // A marshal queued just before teardown still runs; starting work against a canceled
@@ -874,11 +870,11 @@ internal sealed class SyncManager : IDisposable
         // Marshaled rather than started inline. This runs from the window's draw call, which Dalamud
         // does not promise to invoke on the framework thread, and StartConfigPoll writes
         // `nextConfigPollAt` — a struct field the framework tick reads every frame. Keeping every
-        // write to it on the framework thread is the same single-writer discipline the identity
-        // fields document above, and it is what makes those per-frame reads safe without locks.
+        // write to it on the framework thread gives it a single writer, which is what makes those
+        // per-frame reads safe without locks.
         //
-        // `_ =` discards the returned task deliberately, like the Task.Run calls elsewhere in this
-        // class: nothing awaits it, and StartConfigPoll cannot throw.
+        // `_ =` discards the returned task deliberately: nothing awaits it, and StartConfigPoll
+        // cannot throw.
         _ = framework.RunOnFrameworkThread(() =>
         {
             // The marshal can land after teardown has begun: Dispose unsubscribes the event handlers,
@@ -959,8 +955,8 @@ internal sealed class SyncManager : IDisposable
         // that no longer exists.
         lastSkipped = new Dictionary<string, string>();
 
-        // Partial notes and chip hover copy are session-scoped for the same reason: whatever was
-        // read, or left unread, belonged to the departing character.
+        // Partial notes and chip hover copy are session-scoped too: whatever was read, or left
+        // unread, belonged to the departing character.
         lastPartialNotes = new Dictionary<string, string>();
         lastCollectedDetails = new Dictionary<string, string>();
 
@@ -1062,9 +1058,8 @@ internal sealed class SyncManager : IDisposable
     /// "this one collection just gained something".
     /// </para>
     /// <para>
-    /// The <c>identity is null</c> guard is the same compliance gate <see cref="OnUnlock"/> carries,
-    /// and for the same reason: the identity is only ever captured on the far side of the upload
-    /// gate, so this stays completely inert until the user has opted in.
+    /// The <c>identity is null</c> guard is a compliance gate: the identity is only ever captured on
+    /// the far side of the upload gate, so this stays completely inert until the user has opted in.
     /// </para>
     /// </remarks>
     public void NotifyCategoryChanged(string categoryKey)
@@ -1354,22 +1349,22 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>
     /// Folds this pass's skip reasons into what the settings window shows. The merge rules live
-    /// in <see cref="CollectionStatusMemory"/>, where they are unit-tested — including why the
-    /// memory is merged rather than replaced.
+    /// in <see cref="CollectionStatusMemory"/>, which also explains why the memory is merged
+    /// rather than replaced.
     /// </summary>
     private void RememberSkipReasons(CollectionSnapshot snapshot) =>
         lastSkipped = CollectionStatusMemory.MergeSkipReasons(lastSkipped, snapshot);
 
     /// <summary>
     /// Merges this pass's partial-read phrases into the settings window's memory of them. The
-    /// rules live in <see cref="CollectionStatusMemory"/>, where they are unit-tested.
+    /// rules live in <see cref="CollectionStatusMemory"/>.
     /// </summary>
     private void RememberPartialNotes(CollectionSnapshot snapshot) =>
         lastPartialNotes = CollectionStatusMemory.MergePartialNotes(lastPartialNotes, snapshot);
 
     /// <summary>
     /// Merges this pass's healthy-chip hover copy into the settings window's memory of it. The
-    /// rules live in <see cref="CollectionStatusMemory"/>, where they are unit-tested.
+    /// rules live in <see cref="CollectionStatusMemory"/>.
     /// </summary>
     private void RememberCollectedDetails(CollectionSnapshot snapshot) =>
         lastCollectedDetails =
@@ -1399,8 +1394,7 @@ internal sealed class SyncManager : IDisposable
     /// Escalates to Warning for a pass that is repeatedly expensive, because at that point it is no
     /// longer a curiosity: a pass that overruns the frame is a visible stutter for the player, and
     /// the fix is to spread the work across frames rather than to collect less. Which passes qualify
-    /// is <see cref="CollectionCost.IsAlarming"/>'s rule, unit-tested alongside the arithmetic and
-    /// the ordering; only the logging is here.
+    /// is <see cref="CollectionCost.IsAlarming"/>'s rule; only the logging is here.
     /// </remarks>
     private void LogCollectionCost(CollectionSnapshot snapshot, SyncTrigger trigger)
     {
@@ -1491,9 +1485,9 @@ internal sealed class SyncManager : IDisposable
                 {
                     // Settled: recorded even for failures — a transparency log that hid failed
                     // uploads would be lying. The generation is re-checked at the moment of
-                    // writing, the same discipline HandleResponse applies to the status fields:
-                    // HandleResponse also returns true for a response it DISCARDED as stale, and
-                    // a previous character's upload must not be written into the log either.
+                    // writing: HandleResponse also returns true for a response it DISCARDED as
+                    // stale, and a previous character's upload must not be written into the next
+                    // one's log.
                     if (startedFor == sessionGeneration)
                         uploadLog.Record(settledEntry);
 
@@ -1646,8 +1640,8 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <remarks>
     /// <b>Framework thread only.</b> <c>nextConfigPollAt</c> is a struct field with no
-    /// synchronization, written here and read by every frame's tick, so it follows the same
-    /// single-writer discipline as the identity fields: one writer, one thread, no locks.
+    /// synchronization, written here and read by every frame's tick, so it keeps one writer on one
+    /// thread and needs no locks.
     /// </remarks>
     private void StartConfigPoll(DateTimeOffset now)
     {
@@ -1660,8 +1654,8 @@ internal sealed class SyncManager : IDisposable
         nextConfigPollAt = now + ConfigPollInterval;
         configPollInFlight = true;
 
-        // Untokened for the same reason as the upload above: an already-canceled token would make
-        // Task.Run skip the delegate, stranding configPollInFlight at true.
+        // Untokened: an already-canceled token would make Task.Run skip the delegate, stranding
+        // configPollInFlight at true.
         var startedFor = sessionGeneration;
         _ = Task.Run(() => PollConfigAsync(startedFor));
     }
@@ -1714,12 +1708,11 @@ internal sealed class SyncManager : IDisposable
                 // completes on a background task, but PluginSettings' lists are not thread-safe and
                 // the framework thread reads EnabledItemGroupKeys on every collection pass
                 // (CollectorRunner copies it into the collect context). Keeping every settings
-                // MUTATION on the framework thread — the same single-writer discipline the
-                // identity fields document above — is what makes those reads safe without locks.
+                // MUTATION on the framework thread gives them a single writer, which is what makes
+                // those reads safe without locks.
                 //
-                // `_ =` discards the returned task on purpose, like the Task.Run calls above:
-                // nothing awaits it, and the try/catch inside keeps anything from escaping into
-                // an unobserved-task exception.
+                // `_ =` discards the returned task on purpose: nothing awaits it, and the
+                // try/catch inside keeps anything from escaping into an unobserved-task exception.
                 _ = framework.RunOnFrameworkThread(() =>
                 {
                     // The marshal can land after teardown has begun — Dispose unsubscribes the
@@ -1745,8 +1738,8 @@ internal sealed class SyncManager : IDisposable
                     }
                     catch (Exception ex)
                     {
-                        // Same last-resort net as UploadAsync: a throw in a discarded task would
-                        // surface as an unobserved-task exception long after the context is gone.
+                        // A last-resort net: a throw in a discarded task would surface as an
+                        // unobserved-task exception long after the context is gone.
                         log.Error(ex, "Item group consent migration failed.");
                     }
                 });
@@ -1754,7 +1747,7 @@ internal sealed class SyncManager : IDisposable
                 return;
             }
 
-            // The halt, by contrast, is scoped like the upload's: a failure that arrives after the
+            // The halt, by contrast, is scoped to the session: a failure that arrives after the
             // character who caused it left must not halt the next one's session. Nor does a poll made
             // during onboarding halt anything — the user is still at the token box, being told what the
             // server thinks of their token by the wizard itself, and a halt raised here would outlive
@@ -1811,8 +1804,8 @@ internal sealed class SyncManager : IDisposable
     /// <summary>Brings the next <c>/config</c> poll forward to the short retry delay.</summary>
     private void RescheduleConfigPollSoon()
     {
-        // `_ =` discards the returned task deliberately, as elsewhere in this class: nothing awaits it,
-        // and the delegate cannot throw.
+        // `_ =` discards the returned task deliberately: nothing awaits it, and the delegate cannot
+        // throw.
         _ = framework.RunOnFrameworkThread(() =>
         {
             // The marshal can land after teardown has begun; there is no next poll to schedule then.

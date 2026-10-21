@@ -9,8 +9,8 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <para>
 /// Lives outside the orchestrator because it is a decision, not plumbing: given a set of clipped
 /// categories, the current manifest version, and what was said before, which lines should be
-/// logged. That makes it pure — no Dalamud services, no logger, no clock — and therefore
-/// unit-testable, which the orchestrator itself is not.
+/// logged. It holds no Dalamud services, no logger and no clock: it returns the lines, and the
+/// orchestrator logs them.
 /// </para>
 /// <para>
 /// Not thread-safe, and does not need to be: the collection pass that drives it is framework

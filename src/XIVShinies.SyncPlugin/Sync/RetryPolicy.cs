@@ -7,9 +7,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// What to do after an upload attempt: retry it, wait, or stop and tell the user.
 /// </summary>
 /// <remarks>
-/// Pure decisions over an <see cref="ApiStatus"/>, so the rules are unit-tested rather than buried
-/// in the orchestrator's control flow. The overriding rule is politeness: a server that answered
-/// "stop" or "wait" is never argued with.
+/// Decisions over an <see cref="ApiStatus"/>, with every input handed in: it reads neither the
+/// network nor the clock. The overriding rule is politeness: a server that answered "stop" or
+/// "wait" is never argued with.
 /// </remarks>
 public static class RetryPolicy
 {

@@ -13,8 +13,7 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// The four refusals look alike from inside the game (the upload was refused) but are fixed in
 /// different places: a claim to make on the website, a Lodestone bio code to add, a duplicate claim
 /// to remove, or a link only the site's admins can change. A sentence that named the wrong fix would
-/// send the player to a page with nothing on it for them, so the wording lives here, where the
-/// tests pin every sentence exactly.
+/// send the player to a page with nothing on it for them.
 /// </para>
 /// <para>
 /// The name and home world are the local character's own, read from the game, not the copies the

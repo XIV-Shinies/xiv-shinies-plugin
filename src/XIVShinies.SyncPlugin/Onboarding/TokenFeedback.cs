@@ -31,10 +31,9 @@ public enum TokenFeedbackKind
 /// Chooses which message the token box shows, from what is typed and what the server last said.
 /// </summary>
 /// <remarks>
-/// Extracted from the window because it is a real decision — it consults both the probe's outcome and
-/// the contents of the text box — and a window cannot be unit-tested. The window is left holding only
-/// the mapping from a kind to a color and a sentence, which is the part that cannot be wrong in an
-/// interesting way.
+/// The decision lives here: it consults both the probe's outcome and the contents of the text box.
+/// The window holds only the mapping from a kind to a color and a sentence, which is the part that
+/// cannot be wrong in an interesting way.
 /// </remarks>
 public static class TokenFeedback
 {

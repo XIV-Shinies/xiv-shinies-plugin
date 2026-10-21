@@ -351,7 +351,7 @@ public class CollectContextTests
     }
 
     // Each id costs a walk of the game's active-quest array on the framework thread — cheap, but
-    // not free a million times over. Same hostile-backend reasoning as the item manifest cap.
+    // not free a million times over, and a hostile or broken backend could send millions.
     [Fact]
     public void An_oversized_quest_sequence_manifest_is_truncated_to_the_cap()
     {

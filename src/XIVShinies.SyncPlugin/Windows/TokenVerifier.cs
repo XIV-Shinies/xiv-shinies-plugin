@@ -17,9 +17,8 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// imperceptible.
 /// </para>
 /// <para>
-/// This is the same pattern the uploader uses, for the same reason. It is not a unit-testable class —
-/// it owns a live <see cref="ApiClient"/> — but it holds no decisions either. Which state the answer
-/// means is decided by <see cref="Onboarding.TokenCheck"/>, which is pure.
+/// It owns a live <see cref="ApiClient"/> but holds no decisions: which state the answer means is
+/// decided by <see cref="Onboarding.TokenCheck"/>.
 /// </para>
 /// </remarks>
 internal sealed class TokenVerifier : IDisposable

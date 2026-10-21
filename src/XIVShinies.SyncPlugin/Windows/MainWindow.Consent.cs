@@ -101,7 +101,7 @@ internal sealed partial class MainWindow
 
             // One save for the whole batch. Marking them seen makes the next rebuild report
             // IsNew=false, so this runs once per batch of newly-seen categories rather than every
-            // frame — the same lifecycle DrawGroupCheckboxes uses for groups.
+            // frame.
             if (newlySeenCategories is not null)
             {
                 configuration.Settings.MarkCategoriesSeen(newlySeenCategories);
@@ -170,15 +170,15 @@ internal sealed partial class MainWindow
             ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
 
             // Clicking a row is proof it was shown, even before the server has answered about it.
-            // Recorded here rather than left to the caller's batch, because that batch withholds
-            // the record for a row drawn before the answer arrived, and a row the user has just
-            // acted on must not be caught by that.
+            // Recorded here rather than left to the caller's batch, because on a badging surface
+            // that batch withholds the record for a row drawn before the answer arrived, and a row
+            // the user has just acted on must not be caught by that.
             configuration.Settings.MarkCategoriesSeen(new[] { row.Key });
             configuration.Save();
         }
 
-        // Remembering the key keeps the chip drawn once the caller's batched save makes the next
-        // rebuild report the row un-new — the same lifecycle DrawGroupCheckboxes uses.
+        // Remembering the key keeps the chip drawn for the rest of the session once the caller's
+        // batched save makes the next rebuild report the row un-new.
         if (showNewChips && row.IsEffectivelyNew)
             categoriesBadgedThisSession.Add(row.Key);
 
@@ -593,12 +593,11 @@ internal sealed partial class MainWindow
     /// <remarks>
     /// The paragraph sibling of <see cref="DrawDetailsHint"/>, which trails a one-line label:
     /// <c>SameLine</c> after a WRAPPED paragraph anchors at the end of its first line, leaving
-    /// the mark floating mid-paragraph. So the paragraph is flowed here word by word (the same
-    /// flow as <see cref="Widgets.DrawWrappedSpans"/>) and the mark is appended as one more
-    /// word, wrapping to the next line only when it genuinely does not fit. Fit is measured
-    /// against the enclosing card's inner edge when there is one, so the lines break where the
-    /// card's own wrapped text does; drawn outside a card, it measures to the window's content
-    /// edge instead.
+    /// the mark floating mid-paragraph. So the paragraph is flowed here word by word and the mark
+    /// is appended as one more word, wrapping to the next line only when it genuinely does not
+    /// fit. Fit is measured against the enclosing card's inner edge when there is one, so the lines
+    /// break where the card's own wrapped text does; drawn outside a card, it measures to the
+    /// window's content edge instead.
     /// </remarks>
     /// <param name="text">The paragraph.</param>
     /// <param name="details">The hover text behind the trailing mark, or null for no mark.</param>
@@ -744,7 +743,9 @@ internal sealed partial class MainWindow
         // and the draw can never disagree.
         var width = ChipWidth(badge.Icon, badge.Text);
 
-        // The same two-branch fit test the words use, for the same reasons — see the flow loop.
+        // Continues the line, wrapping home when the chip does not fit before the right edge. As
+        // the paragraph's first item it wraps only toward a home column the caller chose: without
+        // one, home is the current column, and wrapping would repeat the same failed fit.
         if (!first)
         {
             ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
@@ -914,8 +915,8 @@ internal sealed partial class MainWindow
             if (ImGui.Checkbox($"{group.Label}##group-{group.Key}", ref groupEnabled))
             {
                 // The category and its groups have to agree, because neither can send anything without
-                // the other. That rule lives in ManifestConsent, where it is unit-tested and names no
-                // category; this window only reports the click.
+                // the other. That rule lives in ManifestConsent, which names no category; this
+                // window only reports the click.
                 ManifestConsent.SetGroupConsent(row, group.Key, groupEnabled, configuration.Settings);
                 configuration.Save();
             }
@@ -923,9 +924,8 @@ internal sealed partial class MainWindow
             // Drawing a group IS showing it to the user, so it is marked seen regardless of which
             // surface drew it — the wizard's consent step shows a group just as plainly as the
             // settings screen does. A group under a collection the server has switched off is the
-            // exception, for the same reason the collection itself is (see
-            // CategorySettingsRow.WasDrawnAsUsable): it was drawn grayed and unusable, so its turn
-            // has not come.
+            // exception, as the collection itself is (see CategorySettingsRow.WasDrawnAsUsable):
+            // it was drawn grayed and unusable, so its turn has not come.
             if (group.IsNew && row.WasDrawnAsUsable)
                 (newlySeen ??= new List<string>()).Add(group.Key);
 
@@ -993,7 +993,7 @@ internal sealed partial class MainWindow
     private void DrawSelectAll(IReadOnlyList<CategorySettingsRow> rows)
     {
         // Whether the box reads as ticked is a rule about consent, not about drawing, so it lives in
-        // ManifestConsent with the rest of them and is unit-tested there.
+        // ManifestConsent with the rest of them.
         var allEnabled = ManifestConsent.AllConsentGiven(rows);
 
         // Disabled rather than hidden, so the list reads the same shape whatever the server has
@@ -1004,8 +1004,10 @@ internal sealed partial class MainWindow
 
         if (clicked)
         {
-            // Answered rather than merely drawn, so each row written here is recorded as shown for
-            // the same reason a row's own checkbox does it (see DrawCategoryRow).
+            // The click answers for every row the server permits, changed or not, so each is
+            // recorded as shown here, even before the server has answered about it: on a badging
+            // surface the caller's batch withholds that record for a row drawn before the answer
+            // arrived.
             var answered = new List<string>(rows.Count);
 
             foreach (var row in rows)

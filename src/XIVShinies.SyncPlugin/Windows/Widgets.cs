@@ -244,14 +244,13 @@ internal static class Widgets
     /// beside it with no extra alignment work.
     /// </para>
     /// <para>
-    /// A smaller scale reuses the footprint-reservation trick <see cref="DrawChip"/> uses for its
-    /// hand-drawn badge: reserve the FULL, unscaled glyph's box with an invisible <c>Dummy</c> — so
-    /// this call still advances the layout cursor exactly as far as the unscaled icon would, keeping
-    /// whatever <c>ImGui.SameLine()</c> comes next lined up on the same row it would expect — then
-    /// paint the smaller glyph directly onto the window's draw list, centered inside that reserved
-    /// box. Painting through the draw list instead of a second <c>ImGui.Text</c> call means the
-    /// smaller glyph itself never touches the layout cursor, so there is nothing for the mid-call
-    /// font-scale change below to disturb.
+    /// A smaller scale takes two steps: reserve the FULL, unscaled glyph's box with an invisible
+    /// <c>Dummy</c> — so this call still advances the layout cursor exactly as far as the unscaled
+    /// icon would, keeping whatever <c>ImGui.SameLine()</c> comes next lined up on the same row it
+    /// would expect — then paint the smaller glyph directly onto the window's draw list, centered
+    /// inside that reserved box. Painting through the draw list instead of a second
+    /// <c>ImGui.Text</c> call means the smaller glyph itself never touches the layout cursor, so
+    /// there is nothing for the mid-call font-scale change below to disturb.
     /// </para>
     /// <para>
     /// <c>ImGui.SetWindowFontScale</c> is WINDOW-global state — it is not scoped by the icon font
@@ -534,8 +533,7 @@ internal static class Widgets
     /// <para>
     /// ImGui has no built-in "label plus rule" widget, so the rule is hand-drawn on the window's
     /// <em>draw list</em> — a list of raw shapes attached to the window, separate from the layout
-    /// cursor that ordinary widgets like <c>TextDisabled</c> advance. This is the same primitive
-    /// <see cref="BrandSeparator"/> and <see cref="DrawChip"/> use. Because draw-list calls never
+    /// cursor that ordinary widgets like <c>TextDisabled</c> advance. Because draw-list calls never
     /// move the cursor themselves, the label's own <c>TextDisabled</c> call is what actually
     /// reserves layout space; the rule is simply painted over empty space to its right, and
     /// <c>NewLine</c> at the end restores normal top-to-bottom flow for whatever the caller draws
@@ -544,12 +542,12 @@ internal static class Widgets
     /// <para>
     /// The rule spans from just right of the label text to the row's right edge — the caller's
     /// <paramref name="innerRight"/> (a card's inner edge) when inside a card, or the window's own
-    /// content edge otherwise, the same fallback <see cref="BrandSeparator"/> uses, so the rule can
-    /// never overrun whichever container it is in. It is centered on the label's text line (half of
-    /// <c>GetTextLineHeight</c> below the line's top, where the cursor sits) and colored from the
-    /// active Dalamud theme's disabled-text color with its alpha thinned further, rather than a
-    /// literal color, so it reads as a quiet divider beneath the label instead of competing with
-    /// it — and still matches whatever theme the user has chosen.
+    /// content edge otherwise, so the rule can never overrun whichever container it is in. It is
+    /// centered on the label's text line (half of <c>GetTextLineHeight</c> below the line's top,
+    /// where the cursor sits) and colored from the active Dalamud theme's disabled-text color with
+    /// its alpha thinned further, rather than a literal color, so it reads as a quiet divider
+    /// beneath the label instead of competing with it — and still matches whatever theme the user
+    /// has chosen.
     /// </para>
     /// </remarks>
     /// <param name="label">The section heading drawn before the rule.</param>
@@ -563,8 +561,7 @@ internal static class Widgets
 
         // GetCursorPosX() is in cursor-space (relative to the window's content region), the same
         // coordinate space innerRight arrives in. Subtracting one from the other gives a plain
-        // pixel width that stays correct no matter where on screen this row ends up, which is why
-        // BrandSeparator computes its own width the same way.
+        // pixel width that stays correct no matter where on screen this row ends up.
         var afterLabelX = ImGui.GetCursorPosX();
         var rightEdge = innerRight ?? (afterLabelX + ImGui.GetContentRegionAvail().X);
 
@@ -580,9 +577,9 @@ internal static class Widgets
         var lineStart = ImGui.GetCursorScreenPos() + new Vector2(gap, centerY);
         var lineEnd = lineStart + new Vector2(width, 0f);
 
-        // Derived from the active style rather than a hardcoded literal, matching how the upload
-        // log reads ImGuiCol.TextDisabled for its own muted color. The alpha is thinned further on
-        // top of that so the rule sits visually behind the label instead of reading as more text.
+        // Derived from the active style rather than a hardcoded literal. The alpha is thinned
+        // further on top of that so the rule sits visually behind the label instead of reading as
+        // more text.
         var ruleColor = ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled];
         ruleColor.W *= 0.6f;
 
@@ -622,9 +619,10 @@ internal static class Widgets
 
     /// <summary>
     /// Measures the glyph, the label, and the pill outline a "chip" badge needs, without drawing
-    /// anything. Split out of the chip's draw pass so a caller that must position a chip somewhere
-    /// other than "wherever the cursor currently is" — see <see cref="DrawHeaderRightChip"/>, which
-    /// right-aligns one against a fixed edge — can know its exact footprint first.
+    /// anything. Kept apart from the chip's draw pass so a caller that must position a chip
+    /// somewhere other than "wherever the cursor currently is" — see
+    /// <see cref="DrawHeaderRightChip"/>, which right-aligns one against a fixed edge — can know its
+    /// exact footprint first.
     /// </summary>
     /// <remarks>
     /// <c>ImGui.SetWindowFontScale</c> is WINDOW-global state (see <see cref="DrawIcon"/>): it is not
@@ -683,10 +681,9 @@ internal static class Widgets
         var chipSize = new Vector2(contentWidth + (2f * paddingX), contentHeight + (2f * paddingY));
 
         // Rounding at half the chip's height makes the outline a full pill — semicircular ends,
-        // no straight corner anywhere — the same technique BrandToggle uses for its track. A
-        // pill reads as a tag; a slightly-rounded rectangle reads as a button waiting to be
-        // clicked, which these are not. Derived from the measured height rather than set as a
-        // constant so the ends stay semicircular at any font scale.
+        // no straight corner anywhere. A pill reads as a tag; a slightly-rounded rectangle reads
+        // as a button waiting to be clicked, which these are not. Derived from the measured
+        // height rather than set as a constant so the ends stay semicircular at any font scale.
         var rounding = chipSize.Y / 2f;
 
         return new ChipMetrics(
@@ -713,8 +710,7 @@ internal static class Widgets
         var contentHeight = Math.Max(metrics.IconSize.Y, metrics.TextSize.Y);
 
         // Center the icon and the text independently within the content height, in case their
-        // measured heights differ slightly — the same "split the leftover margin" centering DrawIcon
-        // uses for a shrunk glyph inside its reserved box.
+        // measured heights differ slightly.
         var iconPos = contentOrigin + new Vector2(0f, (contentHeight - metrics.IconSize.Y) / 2f);
         var textPos = contentOrigin + new Vector2(
             metrics.IconSize.X + metrics.IconTextGap, (contentHeight - metrics.TextSize.Y) / 2f);
@@ -797,15 +793,14 @@ internal static class Widgets
     /// parameter, so any caller can reuse the same compact-tag look with a glyph of its own.
     /// </summary>
     /// <remarks>
-    /// ImGui has no built-in chip/pill widget, so this is built from primitives, the same way
-    /// <see cref="BrandToggle"/> hand-draws a switch: <see cref="MeasureChip"/> works out the exact
-    /// footprint, then <see cref="PaintChip"/> paints it on the window's draw list — a list of raw
-    /// shapes attached to the window, distinct from the layout cursor React-style widgets normally
-    /// advance. Draw-list calls never move the layout cursor themselves, so a trailing <c>Dummy</c>
-    /// reserves the same footprint by hand; without it, whatever is drawn next would land on top of
-    /// the chip instead of after it. That <c>Dummy</c> is also a real (if inert) item, which is what
-    /// lets a caller attach hover behavior — <c>ImGui.IsItemHovered()</c> right after this call
-    /// answers for the chip's reserved rectangle.
+    /// ImGui has no built-in chip/pill widget, so this is built from primitives:
+    /// <see cref="MeasureChip"/> works out the exact footprint, then <see cref="PaintChip"/> paints
+    /// it on the window's draw list — a list of raw shapes attached to the window, distinct from the
+    /// layout cursor React-style widgets normally advance. Draw-list calls never move the layout
+    /// cursor themselves, so a trailing <c>Dummy</c> reserves the same footprint by hand; without it,
+    /// whatever is drawn next would land on top of the chip instead of after it. That <c>Dummy</c>
+    /// is also a real (if inert) item, which is what lets a caller attach hover behavior —
+    /// <c>ImGui.IsItemHovered()</c> right after this call answers for the chip's reserved rectangle.
     /// </remarks>
     /// <param name="iconFont">The caller's icon font.</param>
     /// <param name="icon">The glyph drawn before the text, at a smaller scale than the text.</param>
@@ -863,8 +858,8 @@ internal static class Widgets
     /// </para>
     /// <para>
     /// The layout cursor is left exactly where the preceding widget put it: painting through the
-    /// draw list, like <see cref="BrandSeparator"/> and <see cref="DrawSectionLabel"/>, never touches
-    /// it, so the caller does not need to save or restore anything around this call.
+    /// draw list never touches it, so the caller does not need to save or restore anything around
+    /// this call.
     /// </para>
     /// </remarks>
     /// <param name="iconFont">The caller's icon font.</param>
@@ -888,8 +883,7 @@ internal static class Widgets
         var rowMax = ImGui.GetItemRectMax();
         var rowHeight = rowMax.Y - rowMin.Y;
 
-        // A small scaled gap keeps the chip's outline off the card's own edge, matching the gap
-        // DrawSectionLabel leaves between a label and its rule.
+        // A small scaled gap keeps the chip's outline off the card's own edge.
         var margin = 8f * ImGuiHelpers.GlobalScale;
 
         var topLeft = new Vector2(

@@ -14,10 +14,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// the sheet, and "which are actually stored right now?" only through a per-slot bit field.
 /// </para>
 /// <para>
-/// Both steps are pure — <see cref="Build"/> takes plain (set ID, piece array) rows and
-/// <see cref="StoredPieces"/> takes a piece array plus a <see cref="ushort"/> of bits — so both are
-/// unit-tested, while reading the game sheet and the dresser cache that supply them is left to the
-/// collector.
+/// Neither step reads game state: <see cref="Build"/> takes plain (set ID, piece array) rows and
+/// <see cref="StoredPieces"/> takes a piece array plus a <see cref="ushort"/> of bits. Reading the
+/// game sheet and the dresser cache that supply them is left to the collector.
 /// </para>
 /// </remarks>
 public static class MirageSetIndex

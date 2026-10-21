@@ -15,7 +15,7 @@ namespace XIVShinies.SyncPlugin.Tests.Sync;
 // waiting on real syncs. Its one real failure mode is quiet: a seeded row that CLAIMS a state the
 // window then declines to draw — a "(changed)" mark the diff does not agree with, a proof note
 // that does not appear. So the tests that check a claimed state run the seeded entries through
-// the same pure rules the window uses (UploadLogDiff, UploadLogText); the rest read the records.
+// the same rules the window uses (UploadLogDiff, UploadLogText); the rest read the records.
 //
 // Compiled only into DEBUG builds, like the seed itself — `dotnet test -c Release` excludes this
 // whole file, which is why CI builds and tests both configurations.

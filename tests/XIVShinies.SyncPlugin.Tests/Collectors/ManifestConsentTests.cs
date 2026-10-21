@@ -332,10 +332,8 @@ public class ManifestConsentTests
     }
 
     // --- "The server asked, and the user has not agreed to answer" --------------------------
-    // The rule that decides whether a manifest-driven collection is scanned at all. It lives here, and
-    // not in the collector that acts on it, because that collector reads game memory and cannot be
-    // constructed outside the game — while this decision is pure, and shipping it wrong would mean the
-    // plugin quietly telling the user it read a collection it never looked at.
+    // The rule that decides whether a manifest-driven collection is scanned at all. Getting it wrong
+    // would mean the plugin quietly telling the user it read a collection it never looked at.
 
     private static CollectContext ContextWith(
         IReadOnlyList<ItemManifestGroup>? groups, params string[] enabledGroupKeys) =>

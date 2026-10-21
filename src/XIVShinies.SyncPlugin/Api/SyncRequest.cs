@@ -92,9 +92,8 @@ public sealed record SyncRequest
     /// collection — so an upload that does not declare it carries no evidence of absence.
     /// </para>
     /// <para>
-    /// Category-keyed like <see cref="Collections"/>, and for the same reason: each collection
-    /// declares its own completeness and the builder passes it through, so no caller ever branches
-    /// on a category name.
+    /// Category-keyed: each collection declares its own completeness and the builder passes it
+    /// through, so no caller ever branches on a category name.
     /// </para>
     /// </remarks>
     public Dictionary<string, string>? CollectionScopes { get; init; }
@@ -177,10 +176,10 @@ public static class SyncFacts
     /// <c>MKDSupportJob</c> row id, plus the optional knowledge sighting.
     /// </summary>
     /// <remarks>
-    /// Built by hand like <see cref="Sequences"/>, and for the same key reason — job ids must
-    /// become plain decimal strings. The knowledge key is present
-    /// only when an observation exists: the contract reads its absence as "never sighted", and
-    /// its <c>observedAt</c> must be a second-exact UTC string with a trailing <c>Z</c> (the
+    /// Built by hand rather than serialized, because the job ids must become plain decimal strings
+    /// and a serializer's dictionary-key policy could silently reshape them. The knowledge key is
+    /// present only when an observation exists: the contract reads its absence as "never sighted",
+    /// and its <c>observedAt</c> must be a second-exact UTC string with a trailing <c>Z</c> (the
     /// server rejects numeric-offset forms).
     /// </remarks>
     public static JsonNode Progression(
@@ -204,7 +203,8 @@ public static class SyncFacts
 
             jobsNode[jobId.ToString(CultureInfo.InvariantCulture)] = new JsonObject
             {
-                // Int-typed for the same JsonValue-CLR-type reason Sequences documents.
+                // Widened to int: an in-memory JsonValue remembers the CLR type it was built from,
+                // so a uint- or byte-backed node would refuse GetValue<int>() until serialized.
                 ["exp"] = (int)progress.Exp,
                 ["level"] = (int)progress.Level,
             };

@@ -56,9 +56,8 @@ public enum SyncStatusKind
 /// <remarks>
 /// <para>
 /// The precedence is the whole content of this class, and it is a promise about what the user
-/// sees rather than an implementation detail — so it lives where a test can reach it, the same
-/// reason <see cref="CategorySettingsView.BadgeFor"/> does. The window renders whichever kind it is
-/// handed and decides nothing.
+/// sees rather than an implementation detail. The window renders whichever kind it is handed and
+/// decides nothing.
 /// </para>
 /// <para>
 /// Each state overrides the ones below it because stating a lower one while a higher one holds

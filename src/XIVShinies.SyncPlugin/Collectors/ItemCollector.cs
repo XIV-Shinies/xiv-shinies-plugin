@@ -43,11 +43,11 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// retainer ID ever leaves the process.
 /// </para>
 /// <para>
-/// Reads game memory through FFXIVClientStructs, so it must run on the framework thread and cannot
-/// be unit-tested. The pure logic it builds on — <see cref="ArmoireIndex"/> (the armoire lookup),
-/// <see cref="MirageSetIndex"/> (expanding a stored outfit into its pieces), and
-/// <see cref="ItemTallies.BuildPossessions"/> (turning the tallies into wire entries) — is covered by
-/// tests; the container reads themselves are verified by in-game QA.
+/// Reads game memory through FFXIVClientStructs, so it must run on the framework thread, and
+/// in-game QA verifies its container reads. It builds on <see cref="ArmoireIndex"/> (the armoire
+/// lookup), <see cref="MirageSetIndex"/> (expanding a stored outfit into its pieces), and
+/// <see cref="ItemTallies.BuildPossessions"/> (turning the tallies into wire entries), none of which
+/// reads the game.
 /// </para>
 /// </remarks>
 // `unsafe` allows raw pointers. FFXIVClientStructs maps the game's own memory layout, so its
@@ -146,8 +146,7 @@ public sealed unsafe class ItemCollector : ICollector
         // looked for, so nothing is looked at — and a collection nothing was read for must say so
         // rather than report an empty set of facts, which would read as "your inventory was checked
         // and you own none of these". The settings window turns this reason into the one action that
-        // resolves it (see CollectSkipReasons.Describe). The rule itself is pure, and lives in
-        // ManifestConsent so it can be unit-tested; this class cannot be, as it reads game memory.
+        // resolves it (see CollectSkipReasons.Describe). The rule itself lives in ManifestConsent.
         if (ManifestConsent.GroupsOfferedButNoneEnabled(context))
             return CollectResult.Skipped(CollectSkipReasons.NoItemGroupsEnabled);
 
@@ -246,10 +245,9 @@ public sealed unsafe class ItemCollector : ICollector
 
         // GetSize() is the slot count for THIS container. Walking each slot once makes the whole live
         // scan cost O(total slots) — a few hundred across every bag and armoury chest — regardless of
-        // how many ids the manifest asks about. The previous design called GetInventoryItemCount once
-        // per manifest id, which re-walked the containers for every id: O(ids x containers). Walking
-        // once and matching against a HashSet costs the same whether the manifest holds ten ids or a
-        // thousand.
+        // how many ids the manifest asks about. GetInventoryItemCount, called once per manifest id,
+        // would re-walk the containers for every id: O(ids x containers). Walking once and matching
+        // against a HashSet costs the same whether the manifest holds ten ids or a thousand.
         var size = container->GetSize();
         for (var slotIndex = 0; slotIndex < size; slotIndex++)
         {

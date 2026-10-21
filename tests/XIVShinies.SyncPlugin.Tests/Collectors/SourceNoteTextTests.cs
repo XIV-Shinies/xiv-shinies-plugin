@@ -6,11 +6,10 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// SourceNoteText is the source-note twin of CollectSkipReasons: it turns a (source key, scan status)
-// pair into one note for the settings window. Like that helper it is pure and Dalamud-free, so every
-// piece of copy the window can show is pinned down here rather than only being seen in game. The
-// window's job then shrinks to "render whatever non-null note this returns", with no source-name
-// branch of its own — the same extensibility discipline the rest of the settings surface follows.
+// SourceNoteText turns a (source key, scan status) pair into one note for the settings window, and
+// every piece of copy the window can show is pinned down here. The window's job is to "render whatever
+// non-null note this returns", with no source-name branch of its own — the same extensibility
+// discipline the rest of the settings surface follows.
 //
 // A note has two renderable forms, and the tone decides which the window uses. Live and Cached notes
 // render as a compact chip: Label is the chip's text, and Detail — when present — is optional hover

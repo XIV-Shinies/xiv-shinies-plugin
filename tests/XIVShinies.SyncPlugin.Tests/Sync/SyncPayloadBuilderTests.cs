@@ -7,7 +7,7 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// Assembles the upload body from a collection pass. Pure: it never reads the game or the network.
+// Assembles the upload body from a collection pass.
 public class SyncPayloadBuilderTests
 {
     private static readonly CharacterIdentity Identity = new()

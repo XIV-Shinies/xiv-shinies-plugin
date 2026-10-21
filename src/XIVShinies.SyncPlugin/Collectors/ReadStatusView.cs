@@ -42,8 +42,8 @@ public sealed record ReadStatus
 /// <see cref="SourceNote"/> on a <see cref="ReadStatus"/> which the window prints without interpreting.
 /// </para>
 /// <para>
-/// Pure and Dalamud-free, which is what makes the <b>extensibility contract testable</b>: a row for a
-/// category this plugin has never heard of must flow through and produce a line. There is no table of
+/// It reads no game state, and it keeps the <b>extensibility contract</b>: a row for a category
+/// this plugin has never heard of must flow through and produce a line. There is no table of
 /// category names here and no table of source names — a collection's line is built from the row the
 /// collector produced, and a container's line comes from <see cref="SourceNoteText.Describe"/>.
 /// Adding a collection, or a storage container, must require no change to this file.
@@ -133,9 +133,8 @@ public static class ReadStatusView
         // Alphabetical, matching the consent checklist the user reads these against — the two lists
         // name the same collections, so a reader comparing them should not have to search.
         //
-        // OrdinalIgnoreCase for the same reason GroupBySection uses it: these labels are English
-        // strings authored in this repo, and an ordinal sort gives every user the same order
-        // whatever their machine's locale — which is also what makes it testable.
+        // OrdinalIgnoreCase because these labels are English strings authored in this repo, and an
+        // ordinal sort gives every user the same order whatever their machine's locale.
         //
         // The CONTAINERS are deliberately left in the order the pass reported them, because that
         // order groups the sources by how they behave — the ones a user can act on ahead of the one

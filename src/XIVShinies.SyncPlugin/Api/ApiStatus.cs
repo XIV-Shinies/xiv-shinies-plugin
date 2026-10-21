@@ -93,7 +93,8 @@ public enum ApiStatus
 
 /// <summary>
 /// Translates raw HTTP status codes into <see cref="ApiStatus"/> and classifies how the client
-/// must react. Keeping this pure (no HttpClient, no Dalamud) is what lets it be unit-tested.
+/// must react. It works only from the codes it is handed, and touches neither HttpClient nor
+/// Dalamud.
 /// </summary>
 public static class ApiStatusMap
 {

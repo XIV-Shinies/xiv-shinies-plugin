@@ -8,9 +8,9 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests;
 
-// PluginSettings holds every user-facing setting and is deliberately Dalamud-free, so the suite
-// can construct it directly. Its persistence shell (Configuration) implements a Dalamud interface
-// and therefore cannot be instantiated outside the game — that part is covered by in-game QA.
+// PluginSettings holds every user-facing setting. Its persistence shell, Configuration, implements a
+// Dalamud interface and cannot be instantiated outside the game, so in-game QA covers it and these
+// tests construct PluginSettings directly.
 public class PluginSettingsTests
 {
     // The collection pass reads the enabled groups on the framework thread while the user can be ticking
@@ -309,8 +309,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsItemGroupSeen("new"));
     }
 
-    // The category-level twin of the group seen-tracking below. Same contract, one level up: the
-    // settings badge a collection the install has never shown.
+    // Collections are seen-tracked too: the settings window badges a collection the install has
+    // never shown.
     [Fact]
     public void Seen_tracking_marks_categories_and_tolerates_duplicates()
     {
@@ -547,8 +547,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
-    // Called at load with the registered collectors, so it takes the same best-effort line the
-    // other bulk writers do rather than throwing into the plugin's constructor.
+    // Called at load with the registered collectors, so it is best-effort: it skips what it cannot
+    // use rather than throwing into the plugin's constructor.
     [Fact]
     public void Auto_enabling_tolerates_a_null_sequence_and_skips_blanks()
     {
@@ -739,7 +739,7 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // Reading tolerates blank keys (returns false), mirroring IsItemGroupEnabled.
+        // Reading tolerates blank keys (returns false).
         Assert.False(settings.IsItemGroupSeen(null!));
         Assert.False(settings.IsItemGroupSeen(""));
     }

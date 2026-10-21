@@ -54,7 +54,8 @@ public static class PayloadCaps
     /// <b>Not for the upload path.</b> Capping a bare dictionary cannot retract the completeness
     /// claim of a category it truncates, because the claim lives on the snapshot — so a payload
     /// built from this would ship a shortened list still declared complete. The snapshot overload
-    /// exists to make that impossible; this one exists so the shape rules can be exercised alone.
+    /// exists to make that impossible. This one is internal, and only <c>PayloadCapsTests</c> calls
+    /// it, to check the shape rules on a bare dictionary.
     /// </remarks>
     // The return type is a named TUPLE: one value carrying two named parts, which the caller
     // takes apart with `var (bounded, dropped) = ...`. The closest JS/TS analog is returning
@@ -147,7 +148,7 @@ public static class PayloadCaps
             }
 
             // First truncation seen: copy the dictionary once, so untouched categories keep
-            // sharing their original JsonNode instances (Assert.Same territory) and only the
+            // their original JsonNode instances — the very objects, not copies — and only the
             // capped one gets a fresh value.
             bounded ??= new Dictionary<string, JsonNode>(collections);
             bounded[key] = truncated;

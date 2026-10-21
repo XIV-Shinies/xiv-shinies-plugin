@@ -73,8 +73,8 @@ public static class SyncPayloadBuilder
     /// <remarks>
     /// <para>
     /// Only <c>"full"</c> is ever emitted: an omitted key already means "partial" on the server,
-    /// so writing <c>"partial"</c> out would say nothing at the cost of bytes — the same
-    /// minimize-what-you-send reasoning that drops unreadable source notes below.
+    /// so writing <c>"partial"</c> out would say nothing at the cost of bytes, which the
+    /// minimize-what-you-send rule forbids.
     /// </para>
     /// <para>
     /// An <c>unlock</c> upload declares nothing, whatever its collectors read. The contract asks
@@ -99,7 +99,7 @@ public static class SyncPayloadBuilder
             return null;
 
         // Null until a declaration survives the checks, so "none" becomes an omitted key without
-        // a second emptiness check — the same shape as BuildWireSourceNotes below.
+        // a second emptiness check.
         Dictionary<string, string>? scopes = null;
 
         foreach (var categoryKey in snapshot.CompleteKeys)

@@ -9,10 +9,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pure bookkeeping: it never reads the game, never touches the network, and never asks the clock
-/// what time it is. Every method takes <c>now</c> as an argument instead, which is what lets the
-/// whole thing be unit-tested without waiting real seconds. The caller (<c>SyncManager</c>) owns the
-/// clock and does the actual work.
+/// Bookkeeping only: it never reads the game, never touches the network, and never asks the clock
+/// what time it is. Every method that needs the current time takes it as <c>now</c>. The caller
+/// (<c>SyncManager</c>) owns the clock and does the actual work.
 /// </para>
 /// <para>
 /// Three sources of work, in descending priority: a user-driven request (<c>manual</c>, <c>login</c>),

@@ -35,7 +35,8 @@ public sealed record ConfigResponse
     /// entire signal. That keeps the two sides free to disagree about wording without a release.
     /// </para>
     /// </remarks>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups below.
+    // NOT `required`: the server omits it whenever no category needs a note, and a missing
+    // required member would fail the whole /config.
     public Dictionary<string, string>? CategoryNotes { get; init; }
 
     /// <summary>
@@ -96,7 +97,8 @@ public sealed record ConfigResponse
     /// this way is the server's catalog knowledge; the plugin applies the set generically and
     /// never hardcodes an id.
     /// </remarks>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
+    // NOT `required`: an older server omits it, and a missing required member would fail the
+    // whole /config.
     public IReadOnlyList<uint>? ItemOmitWhenUnseenIds { get; init; }
 
     /// <summary>
@@ -104,7 +106,8 @@ public sealed record ConfigResponse
     /// block. Null means the server has no tracker endpoint, so the tracker stays off (see
     /// <see cref="Occult.OccultGate"/> for the reasoning and the rest of the gate ladder).
     /// </summary>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
+    // NOT `required`: a server without the tracker endpoint omits the block, and a missing
+    // required member would fail the whole /config.
     public OccultTrackerConfig? OccultTracker { get; init; }
 
     /// <summary>
@@ -125,7 +128,8 @@ public sealed record ConfigResponse
     /// Which quests qualify is the server's catalog knowledge; the plugin reads the sequences
     /// generically and never hardcodes a quest id.
     /// </remarks>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
+    // NOT `required`: an older server omits it, and a missing required member would fail the
+    // whole /config.
     public IReadOnlyList<uint>? QuestSequenceManifest { get; init; }
 
     /// <summary>

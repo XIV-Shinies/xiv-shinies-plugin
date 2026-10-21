@@ -16,10 +16,10 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </typeparam>
 /// <remarks>
 /// <para>
-/// Reads game data, so <see cref="Collect"/> must run on the framework thread. It cannot be
-/// unit-tested (constructing it loads <c>Dalamud.dll</c>); it is verified by in-game QA. The
-/// decisions worth testing — gating, skip handling, payload assembly — live in the Dalamud-free
-/// <see cref="CollectorRunner"/> instead.
+/// Reads game data, so <see cref="Collect"/> must run on the framework thread, and in-game QA
+/// verifies it. The gating rule lives in <see cref="CollectorGate"/>, <see cref="CollectorRunner"/>
+/// applies it and handles skips, and <see cref="Sync.SyncPayloadBuilder"/> assembles the request
+/// body.
 /// </para>
 /// <para>
 /// Reads only the <b>local</b> player's unlock state. It never touches the object table or any

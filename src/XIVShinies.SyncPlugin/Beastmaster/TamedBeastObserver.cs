@@ -142,9 +142,8 @@ public sealed unsafe class TamedBeastObserver : IDisposable
         addonLifecycle.RegisterListener(AddonEvent.PostSetup, BestiaryAddonName, OnBestiaryAddon);
         addonLifecycle.RegisterListener(AddonEvent.PostRefresh, BestiaryAddonName, OnBestiaryAddon);
 
-        // Both session edges, for the reason KnowledgeObserver documents: a session that ended
-        // without its logout event firing would otherwise leave one character's beasts in place for
-        // the next character to upload as their own.
+        // Both session edges: a session that ended without its logout event firing would otherwise
+        // leave one character's beasts in place for the next character to upload as their own.
         clientState.Login += OnLogin;
         clientState.Logout += OnLogout;
 
@@ -161,7 +160,7 @@ public sealed unsafe class TamedBeastObserver : IDisposable
     /// </summary>
     /// <remarks>
     /// The key travels with the event so that whatever schedules the upload never has to name this
-    /// collection — the same self-description that keeps category names out of the unlock router.
+    /// collection.
     /// </remarks>
     public event Action<string>? BeastsLearned;
 
@@ -371,7 +370,8 @@ public sealed unsafe class TamedBeastObserver : IDisposable
                 log.Debug(ex, "Could not read the beasts' ranks again.");
         }
 
-        // Outside the catch for the same reason as in OnBestiaryAddon.
+        // Outside the catch, so that a fault raised downstream by whatever schedules the upload is
+        // reported as itself rather than as a failure to read the ranks.
         if (isNews)
             BeastsLearned?.Invoke(CategoryKeys.TamedBeasts);
     }

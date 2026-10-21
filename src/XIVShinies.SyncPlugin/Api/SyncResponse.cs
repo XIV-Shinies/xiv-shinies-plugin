@@ -24,9 +24,8 @@ public sealed record SyncResponse
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A dictionary rather than one property per category, for the same reason
-    /// <see cref="SyncRequest.Collections"/> is one: a property per collection would mean adding a
-    /// collection touches this file too, breaking the rule that adding one is a single new
+    /// A dictionary rather than one property per category: a property per collection would mean
+    /// adding a collection touches this file too, breaking the rule that adding one is a single new
     /// collector class and nothing else. No category's presence is part of this type's contract, so
     /// a server generation that names different categories simply deserializes.
     /// </para>

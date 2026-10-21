@@ -311,10 +311,9 @@ public sealed record UploadLogEntry
         if (facts is not JsonArray entries)
             return null;
 
-        // Shape-sniff the first element, the same way PayloadCaps tells the two array shapes
-        // apart: possession arrays are homogeneous, so a non-object first element means this
-        // whole array is some other kind of list and a count of zero would be a lie, not an
-        // answer.
+        // Shape-sniff the first element: possession arrays are homogeneous, so a non-object
+        // first element means this whole array is some other kind of list and a count of zero
+        // would be a lie, not an answer.
         if (entries.Count > 0 && entries[0] is not JsonObject)
             return null;
 
@@ -386,7 +385,6 @@ public sealed record UploadLogEntry
 
         // Eight hex characters: not a security boundary, just a change detector — 32 bits is
         // plenty to make an accidental collision between two consecutive uploads implausible.
-        // (Same hex idiom as ContentIdHash, for one way of doing things across the codebase.)
         return Convert.ToHexStringLower(bytes.AsSpan(0, 4));
     }
 }
@@ -753,12 +751,12 @@ public static class UploadLogText
     /// </remarks>
     /// <param name="categories">The entry's categories, in the order the collectors ran.</param>
     /// <param name="displayNameFor">
-    /// The label the window draws for a category key. Passed in rather than looked up here so this
-    /// stays Dalamud-free and testable: the names come from the registered collectors, which only the
-    /// window can reach. Ordering on this rather than on the key matters because a key is a wire
-    /// identifier that need not resemble its label, so a key order would put the words on screen in an
-    /// order the reader cannot account for. Compared with OrdinalIgnoreCase: these labels are English
-    /// strings authored in this repo, so every user gets the same order whatever their locale.
+    /// The label the window draws for a category key. Passed in rather than looked up here: the names
+    /// come from the registered collectors, which only the window can reach. Ordering on this rather
+    /// than on the key matters because a key is a wire identifier that need not resemble its label,
+    /// so a key order would put the words on screen in an order the reader cannot account for.
+    /// Compared with OrdinalIgnoreCase: these labels are English strings authored in this repo, so
+    /// every user gets the same order whatever their locale.
     /// </param>
     public static IReadOnlyList<UploadLogCategory> InDisplayOrder(
         IReadOnlyList<UploadLogCategory> categories,
@@ -783,10 +781,10 @@ public static class UploadLogText
     /// The category keys ordered by the name the reader sees, for the window's "Could not read" line.
     /// </summary>
     /// <remarks>
-    /// The same rule as <see cref="InDisplayOrder"/> and for the same reason — the two lines sit in
-    /// one table cell, so a reader meets both orders at once. Keys rather than categories because
-    /// an unreadable category has nothing recorded about it beyond its key: it is named precisely
-    /// because nothing was collected for it.
+    /// Ordered by the same rule as <see cref="InDisplayOrder"/>: the two lines sit in one table cell,
+    /// so a reader meets both orders at once. Keys rather than categories because an unreadable
+    /// category has nothing recorded about it beyond its key: it is named precisely because nothing
+    /// was collected for it.
     /// </remarks>
     /// <param name="categoryKeys">The unreadable category keys.</param>
     /// <param name="displayNameFor">The label the window draws for a category key.</param>
@@ -796,7 +794,8 @@ public static class UploadLogText
     {
         var ordered = new List<string>(categoryKeys);
 
-        // Tie broken by the key, as in InDisplayOrder.
+        // Tie broken by the key, so two collections sharing a display name keep the same order on
+        // every run.
         ordered.Sort((left, right) =>
         {
             var byName = string.Compare(

@@ -9,7 +9,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <remarks>
 /// A separate class because the code that needs these answers lives outside the collectors — the sync
 /// orchestrator, for one — and the extensibility contract forbids it from naming a category to get them.
-/// Pure and Dalamud-free, so the gate test can run a collector this plugin has never heard of through it.
+/// It touches no game state: the collectors, rows, settings and context it works on are all handed in.
 /// </remarks>
 public static class ManifestConsent
 {
@@ -190,10 +190,10 @@ public static class ManifestConsent
     /// </summary>
     /// <remarks>
     /// Read from the rows rather than from the config so the window keeps its single source for
-    /// what the server currently permits, and so the state is reachable from a test. Any row
-    /// answers for all of them — the pause is one flag applied to every collection — so the first
-    /// one that reports it settles the question. An empty list answers "not paused", which is the
-    /// permissive direction and unreachable while the registry always yields collectors.
+    /// what the server currently permits. Any row answers for all of them — the pause is one flag
+    /// applied to every collection — so the first one that reports it settles the question. An
+    /// empty list answers "not paused", which is the permissive direction and unreachable while the
+    /// registry always yields collectors.
     /// </remarks>
     /// <param name="rows">This frame's category rows.</param>
     public static bool ServerHasPausedEverything(IReadOnlyList<CategorySettingsRow> rows)
@@ -249,11 +249,9 @@ public static class ManifestConsent
     /// switched on — so there is nothing the pass is allowed to look for.
     /// </summary>
     /// <remarks>
-    /// Lives here rather than in the item collector that acts on it: that collector reads game memory
-    /// and cannot be constructed outside the game, so a rule deciding whether a whole collection is
-    /// scanned at all would otherwise only ever be witnessed in game. Distinct from an empty manifest,
-    /// which means the server asked about nothing — this means it asked, and the user has not agreed to
-    /// answer.
+    /// The rule lives here and reads only the context it is handed; the item collector that acts on
+    /// it reads game memory. Distinct from an empty manifest, which means the server asked about
+    /// nothing — this means it asked, and the user has not agreed to answer.
     /// </remarks>
     /// <param name="context">The collect context for this pass.</param>
     public static bool GroupsOfferedButNoneEnabled(CollectContext context) =>

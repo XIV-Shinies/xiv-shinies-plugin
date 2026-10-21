@@ -207,8 +207,8 @@ public sealed class Plugin : IDalamudPlugin
             // themselves — see KnowledgeObserver's remarks for the passive-capture design.
             knowledgeObserver = new KnowledgeObserver(AddonLifecycle, ClientState, Log);
 
-            // The bestiary capture, built before the collectors for the same reason: the tamed
-            // beasts collector reads from it. The consent question is handed over as a callback
+            // The bestiary capture, built before the collectors because the tamed beasts
+            // collector reads from it. The consent question is handed over as a callback
             // rather than the settings object, so the observer never has to know how consent is
             // decided — only whether it stands. It asks about its own collection, so no category is
             // named here.
@@ -456,7 +456,8 @@ public sealed class Plugin : IDalamudPlugin
 
         if (words.Length > 0 && words[0].Equals("dumpranks", StringComparison.OrdinalIgnoreCase))
         {
-            // Marshaled for the same reason as dumpslots: it reads game memory.
+            // Marshaled rather than called straight: a command handler runs wherever the command
+            // arrived, and this reads game memory.
             _ = Framework.RunOnFrameworkThread(tamedBeastObserver.AuditRankRecord);
             return;
         }

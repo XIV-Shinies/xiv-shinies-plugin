@@ -17,10 +17,10 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// checks that the scan reaches every declared key.
 /// </para>
 /// <para>
-/// Reachable from a unit test because <see cref="CategoryInfo"/> is Dalamud-free: reading the
-/// registry's private static fields runs only their initializers, which construct records and load
-/// no game assembly. (The registry's <c>Create</c> method mentions Dalamud services in its signature,
-/// but a signature is not resolved unless the method is called.) The fields stay private: they are
+/// Reading the registry's private static fields runs only their initializers, which construct
+/// <see cref="CategoryInfo"/> records and load no game assembly, so the scan works without the game
+/// running. (The registry's <c>Create</c> method mentions Dalamud services in its signature, but a
+/// signature is not resolved unless the method is called.) The fields stay private: they are
 /// implementation detail to every caller but these tests, and making them visible purely to be tested
 /// would be the wrong trade.
 /// </para>

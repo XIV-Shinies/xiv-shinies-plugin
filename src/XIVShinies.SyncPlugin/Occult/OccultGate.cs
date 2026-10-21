@@ -55,7 +55,7 @@ public static class OccultGate
     /// — the global pause reaches it through <see cref="UploadGate.CanUpload"/>, and a drawn
     /// toggle that reads only the feature's own switch would sit ticked and full-contrast claiming
     /// to share instance state while a paused server accepts nothing. A config carrying no
-    /// <c>occultTracker</c> block counts as off here for the same reason it does there — a server
+    /// <c>occultTracker</c> block counts as off here, as it does in <see cref="CanTrack"/>: a server
     /// that never advertised the endpoint cannot serve it, so a toggle reading "on" would describe
     /// something that is not happening.
     /// </para>

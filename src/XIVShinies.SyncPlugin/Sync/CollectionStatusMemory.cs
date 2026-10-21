@@ -15,11 +15,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// from the previous memory and lets the new pass overrule only the categories it actually ran.
 /// </para>
 /// <para>
-/// Pure and Dalamud-free, like the other per-pass rules (<see cref="Collectors.CollectorSelection"/>,
-/// <see cref="PayloadCaps"/>): <see cref="SyncManager"/> holds the fields and the thread
-/// discipline, this class holds the arithmetic, and the tests hold the arithmetic to account.
-/// Every merge returns a fresh dictionary and never touches its inputs, which is what lets the
-/// manager publish the result to the draw thread without a lock.
+/// <see cref="SyncManager"/> holds the fields and the thread discipline; this class holds the
+/// arithmetic. Every merge returns a fresh dictionary and never touches its inputs, which is what
+/// lets the manager publish the result to the draw thread without a lock.
 /// </para>
 /// </remarks>
 public static class CollectionStatusMemory

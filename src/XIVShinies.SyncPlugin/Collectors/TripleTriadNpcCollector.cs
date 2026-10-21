@@ -39,9 +39,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// manual mark. Reporting what was found, and claiming nothing beyond it, is the honest answer.
 /// </para>
 /// <para>
-/// Reads game memory through FFXIVClientStructs, so it must run on the framework thread and cannot
-/// be unit-tested; it is verified by in-game QA. Reads only the <b>local</b> player's battle
-/// results — never the object table or any other character, which is a hard Dalamud rule.
+/// Reads game memory through FFXIVClientStructs, so it must run on the framework thread, and
+/// in-game QA verifies it. Reads only the <b>local</b> player's battle results — never the object
+/// table or any other character, which is a hard Dalamud rule.
 /// </para>
 /// </remarks>
 // `unsafe` allows raw pointers. FFXIVClientStructs maps the game's own memory layout, so its

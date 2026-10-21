@@ -7,7 +7,7 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
 // Enforces the contract's payload caps client-side, so an over-cap category is truncated rather
-// than costing the whole upload a 400. Pure: it never reads the game or the network.
+// than costing the whole upload a 400.
 public class PayloadCapsTests
 {
     // Builds an id-list array (numbers) with the given count, as SyncFacts.Ids would produce.

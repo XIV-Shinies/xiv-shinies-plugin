@@ -104,7 +104,8 @@ public sealed record CategoryInfo
     /// <para>
     /// Self-description in the same sense as <see cref="UsesItemManifest"/>: a collector reads this
     /// flag rather than deciding entitlement for itself, so the decision sits beside the category
-    /// it describes and one test can pin the whole set. A collection whose domain only becomes
+    /// it describes. <c>CompletenessDeclarationTests</c> pins the whole set: a collection that
+    /// starts or stops declaring has to update it. A collection whose domain only becomes
     /// readable on the player's action requires its own pass to have earned the claim as well —
     /// <c>TamedBeastCollector</c> is the worked example. Declaring it is a request, not a guarantee:
     /// <see cref="CollectResult.CompleteEnumeration"/> describes the floor applied at the factory,

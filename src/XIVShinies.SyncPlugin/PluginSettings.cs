@@ -10,11 +10,9 @@ namespace XIVShinies.SyncPlugin;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Deliberately free of Dalamud types. <see cref="Configuration"/> implements Dalamud's
-/// <c>IPluginConfiguration</c>, which means merely constructing it requires loading
-/// <c>Dalamud.dll</c> — impossible outside the running game. Keeping the settings and their logic
-/// here lets the xUnit suite exercise them directly, while <see cref="Configuration"/> stays a
-/// thin persistence shell.
+/// Free of Dalamud types, so it can be constructed without the game running.
+/// <see cref="Configuration"/>, which implements Dalamud's <c>IPluginConfiguration</c> and so needs
+/// <c>Dalamud.dll</c> loaded, is a thin persistence shell around it.
 /// </para>
 /// <para>
 /// A fresh install must upload nothing until the user has been shown what gets sent and has
@@ -134,8 +132,9 @@ public class PluginSettings
         // install still ahead of its wizard is left alone, because the wizard marks what it shows.
         if (fromVersion < 2 && OnboardingComplete)
         {
-            // Held across both writes so the flag and the baseline land as one step, the same
-            // nested-lock shape as InitializeSeenCategories.
+            // Held across both writes so the flag and the baseline land as one step.
+            // MarkCategoriesSeen takes the same lock inside; C#'s `lock` is reentrant for the
+            // thread that owns it, so the inner call re-enters rather than deadlocking.
             lock (gate)
             {
                 MarkCategoriesSeen(CategoriesPresentBeforeSeenTracking);
@@ -407,8 +406,7 @@ public class PluginSettings
 
     /// <summary>Mark the given categories as seen in the settings UI.</summary>
     /// <remarks>
-    /// Idempotent, and best-effort about blanks, for the same reasons
-    /// <see cref="MarkItemGroupsSeen"/> is: it is called from the draw loop, where one malformed
+    /// Idempotent, and best-effort about blanks: it is called from the draw loop, where one malformed
     /// entry must not take the frame down.
     /// </remarks>
     public void MarkCategoriesSeen(IEnumerable<string> categoryKeys)
@@ -635,10 +633,9 @@ public class PluginSettings
         ItemGroupConsentMigrated = true;
 
         // Collect the legacy group keys once; both steps below operate on the same set. A blank
-        // key is skipped rather than passed on: group data comes from the server, and a malformed
-        // group must degrade gracefully here for the same reason it does in MarkItemGroupsSeen —
-        // SetItemGroupEnabled would throw on it, and a throw mid-migration would leave the
-        // run-once flag set with only part of the work done.
+        // key is skipped rather than passed on: group data comes from the server, so a malformed
+        // group must degrade gracefully — SetItemGroupEnabled would throw on it, and a throw
+        // mid-migration would leave the run-once flag set with only part of the work done.
         var legacyGroupKeys = new List<string>();
         foreach (var group in groups)
         {
@@ -728,10 +725,9 @@ public class PluginSettings
     /// </para>
     /// <para>
     /// So a wizard that could not offer the choice records the answer the user never got to give,
-    /// and records the cautious one. This is the same rule
-    /// <see cref="ApplyUpgradeMigrations"/> already applies to an install that onboarded before the
-    /// toggle existed, for the same reason: a user the wizard never showed the toggle to has not
-    /// agreed to it.
+    /// and records the cautious one. <see cref="ApplyUpgradeMigrations"/> applies the same rule to
+    /// an install that onboarded before the toggle existed: a user the wizard never showed the
+    /// toggle to has not agreed to it.
     /// </para>
     /// </remarks>
     /// <param name="toggleWasOfferable">

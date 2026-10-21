@@ -14,7 +14,7 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 /// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>.
 /// </para>
 /// <para>
-/// The flag is reachable from a unit test through <see cref="CategoryInfoReflection"/>.
+/// These tests read the flag through <see cref="CategoryInfoReflection"/>.
 /// </para>
 /// </remarks>
 public class CompletenessDeclarationTests

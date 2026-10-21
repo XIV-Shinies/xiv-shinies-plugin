@@ -5,9 +5,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The glamour-dresser outfit mapping is the pure part of resolving stored outfits into their
-// pieces, so it is unit-tested here; reading the game's dresser cache is verified by in-game QA.
-// Two behaviors are pinned: Build turns sheet rows into a set-id -> piece-array lookup, and
+// The glamour-dresser outfit mapping, which resolves stored outfits into their pieces. Two
+// behaviors are pinned: Build turns sheet rows into a set-id -> piece-array lookup, and
 // StoredPieces reads a slot's unlock bits to say which of those pieces are actually in the outfit.
 public class MirageSetIndexTests
 {

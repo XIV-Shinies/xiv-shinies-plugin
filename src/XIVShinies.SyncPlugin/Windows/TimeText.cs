@@ -6,9 +6,7 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// Renders elapsed time the way a person says it.
 /// </summary>
 /// <remarks>
-/// Pure, so the boundary choices (when does "just now" become "1 minute ago"?) are pinned by tests
-/// rather than discovered by users. Deliberately coarse: a sync status line needs "about how long",
-/// not a stopwatch.
+/// Deliberately coarse: a sync status line needs "about how long", not a stopwatch.
 /// </remarks>
 public static class TimeText
 {

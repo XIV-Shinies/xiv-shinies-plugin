@@ -13,8 +13,8 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// <remarks>
 /// <para>
 /// <b>Framework thread only</b>, like every game-memory read in this plugin. This is the thin
-/// unsafe layer: it makes no decisions (the tracker owns all interpretation) so that the logic
-/// stays unit-testable and this class stays small enough to verify by in-game QA.
+/// unsafe layer: it makes no decisions (the tracker owns all interpretation). It reads game
+/// memory, so in-game QA verifies it.
 /// </para>
 /// <para>
 /// <c>unsafe</c> marks code that works with raw pointers — the game's objects are C++ structs

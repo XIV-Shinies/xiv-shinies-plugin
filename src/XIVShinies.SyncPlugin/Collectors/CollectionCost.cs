@@ -9,15 +9,13 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <remarks>
 /// <para>
 /// Collection runs on the game's framework thread, which has roughly 16.7ms to draw a frame at 60fps.
-/// Every collector spends part of that, and this plugin is expected to grow more of them — so the
-/// cost is measured and surfaced rather than assumed. A contributor who adds an expensive collector
+/// Every collector spends part of that, and every collection added spends more — so the cost is
+/// measured and surfaced rather than assumed. A contributor who adds an expensive collector
 /// sees its price the first time a sweep runs.
 /// </para>
 /// <para>
-/// Pure, and separate from the orchestrator that logs it, for the usual reason: the orchestrator
-/// holds Dalamud services and cannot be constructed outside the game, so anything left inside it is
-/// untestable. The ordering and the budget threshold are both easy to get backwards, which is exactly
-/// why they live somewhere a test can reach them.
+/// It reads no game state and logs nothing: the snapshot is handed in, and the orchestrator logs
+/// what this returns.
 /// </para>
 /// </remarks>
 public sealed record CollectionCost

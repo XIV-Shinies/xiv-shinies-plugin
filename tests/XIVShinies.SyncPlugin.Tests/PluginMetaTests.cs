@@ -7,12 +7,8 @@ using XIVShinies.SyncPlugin;
 namespace XIVShinies.SyncPlugin.Tests;
 
 // A plain class holds the tests (xUnit creates a fresh instance per test, so there's no shared
-// state to leak between them). This smoke test proves two things at once: the xUnit harness runs,
-// and the test project successfully links against pure plugin logic.
-//
-// Reminder on scope (see CLAUDE.md): unit tests here cover PURE logic only. Anything that touches
-// game APIs (IUnlockState, IPlayerState, inventory) or live HTTP is verified via in-game QA
-// instead, because Dalamud services can't be created outside the running game.
+// state to leak between them). These tests pin the plugin's fixed names and the User-Agent format
+// the server contract requires.
 public class PluginMetaTests
 {
     // `[Fact]` marks a parameterless test method — the equivalent of `test(...)`/`it(...)` in

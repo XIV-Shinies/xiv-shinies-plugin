@@ -111,9 +111,9 @@ public class CategorySettingsViewTests
         Assert.True(row.IsNew);
     }
 
-    // The category-level twin of Group_rows_carry_the_users_enabled_and_seen_state_per_group. The
-    // polarity is what matters — inverting it would badge every familiar collection forever, and
-    // IsNew is defaulted rather than required, so nothing else would catch it.
+    // Each row carries whether this install has shown its collection. The polarity is what matters
+    // — inverting it would badge every familiar collection forever, and IsNew is defaulted rather
+    // than required, so nothing else would catch it.
     [Fact]
     public void Category_rows_carry_the_installs_seen_state_per_category()
     {
@@ -861,8 +861,7 @@ public class CategorySettingsViewTests
 
     // --- Which mark a row wears -----------------------------------------------------------------
     // BadgeFor decides between "Off", "New" and nothing. The precedence is a promise about what the
-    // user sees, so it is pinned here rather than left inside the draw method where no test reaches
-    // it. Rows come from the real Build so the inputs are the ones the window actually passes.
+    // user sees. Rows come from the real Build so the inputs are the ones the window actually passes.
 
     private static CategorySettingsRow UnseenRow(bool serverEnabled)
     {
@@ -947,7 +946,7 @@ public class CategorySettingsViewTests
 
     // --- When a drawing retires the announcement ------------------------------------------------
     // ShowingRetiresTheBadge decides which drawings are recorded as seen. The rule differs per
-    // surface, so it takes the surface as a parameter — and it is pure so both arms are testable.
+    // surface, so it takes the surface as a parameter.
 
     private static CategorySettingsRow UnseenRowWithNoConfig() =>
         Assert.Single(CategorySettingsView.Build(

@@ -14,15 +14,16 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <para>
 /// The single sanctioned exception is a collection driven by a server manifest, which also brings
 /// its <c>/config</c> field, a derivation on <see cref="CollectContext"/>, and the
-/// <see cref="ManifestCatalog"/> entry tying them to a category. Deriving a manifest's ids differs
-/// per manifest and has to stay unit-testable, and every manifest-driven collector reads the game
-/// — so the derivation lives in those Dalamud-free classes rather than here. The catalog entry is
-/// the only place a category is named.
+/// <see cref="ManifestCatalog"/> entry tying them to a category. Each manifest derives its ids its
+/// own way. The derivation lives on <see cref="CollectContext"/>, which touches no game state, and
+/// never on the collector: a collector reads the game, so in-game QA is the only check on any rule
+/// placed there. The catalog entry is the only place a category is named.
 /// </para>
 /// <para>
 /// This interface is deliberately free of Dalamud types even though every real implementation
-/// reads the game. That keeps the runner and the payload assembly unit-testable with a fake
-/// collector, while the implementations themselves are verified by in-game QA.
+/// reads the game: the unit suite runs fake collectors through the runner and the payload assembly,
+/// and a Dalamud type here would stop them loading outside the game. In-game QA verifies the real
+/// implementations.
 /// </para>
 /// </remarks>
 // An `interface` is a contract a class promises to fulfill — the same idea as a TypeScript
@@ -70,10 +71,11 @@ public interface ICollector
     /// one-liner says everything.
     /// </summary>
     /// <remarks>
-    /// Self-description like the two above. <see cref="WhatGetsSent"/> still has to name every kind
-    /// of data that leaves the machine on its own — this carries the scope and reassurance detail
-    /// that would otherwise crowd the consent list, never a disclosure the visible line omitted.
-    /// Where it names the website, it writes <see cref="HostPlaceholder.Token"/> the same way.
+    /// Self-description: the collector carries this copy, and the UI renders whatever it is handed.
+    /// <see cref="WhatGetsSent"/> still has to name every kind of data that leaves the machine on its
+    /// own — this carries the scope and reassurance detail that would otherwise crowd the consent
+    /// list, never a disclosure the visible line omitted. Where it names the website, it writes
+    /// <see cref="HostPlaceholder.Token"/>, as <see cref="WhatGetsSent"/> does.
     /// </remarks>
     string? Details { get; }
 

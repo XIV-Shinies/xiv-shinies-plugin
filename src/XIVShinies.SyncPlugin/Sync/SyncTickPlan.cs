@@ -20,11 +20,9 @@ public enum TickAction
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is an ordering, and an ordering stated only as a sequence of early returns inside a frame
-/// callback is one a test cannot reach — the callback holds Dalamud services and cannot be
-/// constructed outside the game. Stating it here keeps the two rules that matter checkable: consent
-/// gates absolutely everything, and a halt stops the collecting and uploading without stopping a
-/// poll the server would still answer.
+/// This is an ordering with two rules that matter: consent gates absolutely everything, and a halt
+/// stops the collecting and uploading without stopping a poll the server would still answer. The
+/// frame callback in <c>SyncManager</c> asks this class and does only the work it allows.
 /// </para>
 /// <para>
 /// Nothing here lifts a halt — only the user does, by fixing what caused it. The poll that survives

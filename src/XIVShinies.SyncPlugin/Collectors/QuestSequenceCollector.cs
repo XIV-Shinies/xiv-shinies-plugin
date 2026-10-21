@@ -28,10 +28,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// journal does later).
 /// </para>
 /// <para>
-/// Reads game memory through FFXIVClientStructs, so it must run on the framework thread and cannot
-/// be unit-tested; it is verified by in-game QA. The pure logic around it — the manifest funnel
-/// (<see cref="CollectContext.ManifestFor"/>) and the payload shape
-/// (<see cref="CollectResult.Sequences"/>) — is covered by tests.
+/// Reads game memory through FFXIVClientStructs, so it must run on the framework thread, and
+/// in-game QA verifies it. The manifest funnel (<see cref="CollectContext.ManifestFor"/>) and the
+/// payload shape (<see cref="CollectResult.Sequences"/>) live outside it and read no game state.
 /// </para>
 /// <para>
 /// Reads only the <b>local</b> player's journal. It never touches the object table or any other

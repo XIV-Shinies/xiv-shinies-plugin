@@ -45,10 +45,7 @@ public enum OccultOutcomeKind
 // A `record struct`: a small value with value equality, copied rather than shared like a class.
 public readonly record struct OccultOutcome(OccultOutcomeKind Kind, DateTimeOffset? Until = null);
 
-/// <summary>
-/// Decides what the live tracker does with an upload's answer. Pure, so the rule is unit-tested
-/// rather than buried in the upload task.
-/// </summary>
+/// <summary>Decides what the live tracker does with an upload's answer.</summary>
 /// <remarks>
 /// The order of the checks is part of the rule, because the status sets overlap.
 /// <see cref="ApiStatus.NotConfigured"/> comes before the halt, although

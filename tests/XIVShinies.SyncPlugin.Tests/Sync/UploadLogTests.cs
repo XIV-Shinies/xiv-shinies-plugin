@@ -10,7 +10,7 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
 // The upload log is a transparency surface: it must describe the payload that actually went out,
-// so its summarization is pinned here rather than eyeballed in game.
+// so its summarization is pinned here.
 public class UploadLogTests
 {
     // The website address the copy names. `const` fixes the value when the code compiles, which
@@ -1438,7 +1438,7 @@ public class UploadLogTests
     }
 
     // --- Sent-column spans -------------------------------------------------------------------
-    // SentSpans is the pure rule behind the window's Sent column: what each category's text
+    // SentSpans is the rule behind the window's Sent column: what each category's text
     // says, split into spans, and which spans draw highlighted (the window maps the flag to
     // gold). Pinned here because the precedence — "(changed)" always highlights, the proof note
     // only when steps were proved — is invisible to the eye until the rare states coincide.
@@ -1513,7 +1513,7 @@ public class UploadLogTests
 
     // --- The Sent column's order ---------------------------------------------------------------
 
-    // InDisplayOrder is the pure rule behind the Sent column's ordering. The window names the same
+    // InDisplayOrder is the rule behind the Sent column's ordering. The window names the same
     // collections in three places - this column, the consent checklist, and the sync card's chips -
     // and a reader compares them by position, so the three have to agree.
 
@@ -1641,8 +1641,8 @@ public class UploadLogTests
         Assert.Equal(new[] { "achievements", "mounts", "quests" }, ordered.ToArray());
     }
 
-    // The same reason the Sent column orders on the label: a key need not resemble the name drawn
-    // for it, so a key-ordered line would read in an order the user cannot account for.
+    // Ordered on the label because a key need not resemble the name drawn for it: a key-ordered
+    // line would read in an order the user cannot account for.
     [Fact]
     public void Unreadable_keys_are_ordered_by_label_rather_than_by_key()
     {

@@ -5,10 +5,12 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// </summary>
 /// <remarks>
 /// The numeric values mirror the game's own <c>DynamicEventState</c> enum exactly — the reader
-/// casts the raw byte it finds in the CE container to this type. The enum is redeclared here
-/// (rather than using FFXIVClientStructs' one) so the tracker logic stays Dalamud-free and
-/// unit-testable; a mismatch would be caught the moment the reader's cast produced an undefined
-/// value. The observed full cycle is Inactive → Register → Warmup → Battle → Inactive.
+/// casts the raw byte it finds in the CE container to this type. The enum is declared here,
+/// rather than taken from FFXIVClientStructs, so the tracker uses no game types. Nothing checks
+/// the mirror at run time: a byte outside these values reads as down (see
+/// <c>OccultEncounterTracker.MapCe</c>), so a game patch that changes <c>DynamicEventState</c>
+/// needs this enum re-checked. The observed full cycle is Inactive → Register → Warmup → Battle →
+/// Inactive.
 /// </remarks>
 public enum DynamicEventPhase : byte
 {

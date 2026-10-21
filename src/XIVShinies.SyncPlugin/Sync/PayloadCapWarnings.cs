@@ -7,10 +7,6 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pure and outside the orchestrator, like <see cref="Collectors.ManifestTruncationWarnings"/>:
-/// a decision a test can reach, rather than plumbing the orchestrator buries.
-/// </para>
-/// <para>
 /// One character's collection only grows against a ceiling the contract fixes, so a category that
 /// crosses a cap stays across it on every later full sweep, and one line carries everything a
 /// reader learns from that.

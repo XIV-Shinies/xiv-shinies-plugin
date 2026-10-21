@@ -47,8 +47,8 @@ internal sealed partial class MainWindow
 
         // Captured immediately before the header so the "New" chip below can be placed on the
         // header's own row: CollapsingHeader always spans the full available width regardless of
-        // whether it happens to sit inside a BrandCard, so this is the same cursor-space-to-inner-
-        // right-edge fallback Widgets.DrawSectionLabel uses.
+        // whether it happens to sit inside a BrandCard, so the chip's right edge is the card's inner
+        // edge when there is one and the content region's right edge otherwise.
         var headerRowCursorX = ImGui.GetCursorPosX();
         var headerRowScreenX = ImGui.GetCursorScreenPos().X;
         var headerRowInnerRight =
@@ -152,7 +152,7 @@ internal sealed partial class MainWindow
             // wire-term plain-text dump on the clipboard for bug reports. Both dim while there is
             // nothing to act on. Buttons are drawn first and their faces after — a face's text is
             // its own item, and SameLine between the buttons must anchor on a real button
-            // rectangle, not on an overlay (the same two-pass trick as the masthead links).
+            // rectangle, not on an overlay.
             const string clearLabel = "Clear";
             const string copyLabel = "Copy log";
             var clearWidth = IconButtonWidth(FontAwesomeIcon.Trash, clearLabel);

@@ -8,8 +8,8 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <remarks>
 /// The game answers "is this in the armoire?" by <b>Cabinet row ID</b>, not by item ID, so a lookup
 /// table is needed to go from the item IDs the server asks about to the ID the game understands.
-/// Building it is pure — it takes plain (cabinetId, itemId) pairs — so it is unit-tested, while
-/// reading the game sheet that supplies those pairs is left to the collector.
+/// Building it reads no game state: it takes plain (cabinetId, itemId) pairs, and reading the game
+/// sheet that supplies those pairs is left to the collector.
 /// </remarks>
 public static class ArmoireIndex
 {

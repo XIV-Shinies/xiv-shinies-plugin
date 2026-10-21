@@ -9,11 +9,10 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the source-note twin of <see cref="CollectSkipReasons.Describe"/>. That helper maps a
-/// category's skip <i>reason</i> to advice; this one maps a storage source's scan <i>status</i> to a
-/// note — the copy, and the tone that colors it. Both keep the same discipline: what they hand back
-/// is rendered as given, and nothing downstream branches on which source or category produced it, so
-/// a new source can surface a note just by reporting a status the copy set below already covers.
+/// It maps a storage source's scan <i>status</i> to a note — the copy, and the tone that colors it.
+/// What it hands back is rendered as given, and nothing downstream branches on which source produced
+/// it, so a new source can surface a note just by reporting a status the copy set below already
+/// covers.
 /// </para>
 /// <para>
 /// The tone carries the note's meaning, and it also decides which of the note's two forms the window
@@ -29,8 +28,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </para>
 /// <para>
 /// An unrecognized source key, or a known source in a state this set has no note for, returns null.
-/// A raw wire string like <c>"unscanned"</c> means nothing to a player, so silence beats leaking it —
-/// exactly as <see cref="CollectSkipReasons.Describe"/> swallows reasons it has no advice for.
+/// A raw wire string like <c>"unscanned"</c> means nothing to a player, so silence beats leaking it.
 /// </para>
 /// </remarks>
 public static class SourceNoteText
@@ -41,8 +39,7 @@ public static class SourceNoteText
     /// <param name="host">The configured website's address, named where a note says who keeps proof.</param>
     // A tuple switch reads the (source, state) pair like a small table: each arm is one recognized
     // combination the item collector actually produces, and the final `_ => null` covers every
-    // unknown key and every unexpected state at once. This mirrors CollectSkipReasons.Describe's
-    // single-switch shape.
+    // unknown key and every unexpected state at once.
     public static SourceNote? Describe(string sourceKey, ItemSourceStatus status, string host) =>
         (sourceKey, status.State) switch
         {

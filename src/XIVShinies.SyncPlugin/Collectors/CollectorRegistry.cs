@@ -13,7 +13,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <b>This is the only place a collection is registered.</b> Adding one means adding a single
 /// entry here — no change to the runner, the payload, the settings UI, or the API client. The
 /// collectors are handed to <see cref="CollectorRunner"/> rather than constructed inside it,
-/// because they hold Dalamud services and would otherwise make the runner impossible to test.
+/// because they hold Dalamud services and the runner holds none.
 /// </remarks>
 public static class CollectorRegistry
 {

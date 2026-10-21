@@ -9,9 +9,9 @@ namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
 // ReadStatusView assembles the settings window's whole "Reading from:" panel: the collections the sync
 // will actually upload, and the storage containers the item counts are drawn from, returned as two
-// separate groups so the window can label each. It is pure and Dalamud-free, so every note the panel can
-// show is pinned here rather than only seen in game — and, like CategorySettingsView, it must contain no
-// category-name or source-name branch, which is what these tests exist to enforce.
+// separate groups so the window can label each. Every note the panel can show is pinned here. Like
+// CategorySettingsView, it must contain no category-name or source-name branch, which is what these
+// tests exist to enforce.
 //
 // A note's tone picks its rendered form (see SourceNote): healthy notes are chips whose Label is their
 // entire visible text, notes needing an in-game action are full lines carried in Text.
@@ -276,7 +276,7 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // Same reasoning for the server's per-category kill switch: the settings card already explains the
+    // The server's per-category kill switch gets no note: the settings card already explains the
     // grayed-out checkbox, and the collection is not being uploaded either way.
     [Fact]
     public void A_collection_the_server_switched_off_gets_no_note_at_all()

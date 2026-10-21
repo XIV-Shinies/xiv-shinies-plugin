@@ -3,8 +3,7 @@ using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Tests.Onboarding;
 
-// Which message the token box shows. It depends on BOTH what the server last said and what is typed,
-// which is why it lives here rather than inside the window where nothing could test it.
+// Which message the token box shows. It depends on BOTH what the server last said and what is typed.
 public class TokenFeedbackTests
 {
     private const string ValidToken = "xvs_0123456789012345678901234567890123456789abc";

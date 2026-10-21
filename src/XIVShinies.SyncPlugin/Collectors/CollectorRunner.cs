@@ -73,14 +73,13 @@ public sealed record CollectionSnapshot
     /// <remarks>
     /// <para>
     /// Collection happens on the game's framework thread, which has roughly 16ms to produce a frame.
-    /// Every collector spends part of that budget, and the plugin is expected to grow more of them —
-    /// so the cost has to be <b>visible</b>, not assumed. The orchestrator logs these, which means a
+    /// Every collector spends part of that budget, and every collection added spends more — so the
+    /// cost has to be <b>visible</b>, not assumed. The orchestrator logs these, which means a
     /// contributor who adds an expensive collector sees its price in <c>/xllog</c> on the first sweep
     /// rather than discovering it as a stutter report.
     /// </para>
     /// <para>
-    /// Measured here rather than logged here on purpose: this class holds no Dalamud services, which
-    /// is what keeps it unit-testable. It reports the numbers; the caller decides what to do with them.
+    /// The runner only measures them: it holds no Dalamud services, the logger among them.
     /// </para>
     /// </remarks>
     // Not `required`: a snapshot assembled in a test need not care about timings, and an empty
@@ -140,8 +139,7 @@ public sealed record CollectionSnapshot
     /// Facts about the config, not about this pass's scan: a key holds even when the pass ran no
     /// scan for that category at all. Carried here because the orchestrator, which holds the
     /// logger, sees only the snapshot — the runner reports the fact, the caller decides what to
-    /// do with it. Keyed like <see cref="CompleteKeys"/> so a manifest added later needs no new
-    /// member here.
+    /// do with it. A set of keys, so a manifest added later needs no new member here.
     /// </remarks>
     public IReadOnlySet<string> TruncatedManifests { get; init; } = new HashSet<string>();
 }
@@ -158,7 +156,7 @@ public static class CollectorRunner
     /// <summary>Collects from every enabled collector.</summary>
     /// <param name="collectors">
     /// The registered collectors. Passed in rather than constructed here: the real ones hold
-    /// Dalamud services, and building them inside this class would make it impossible to test.
+    /// Dalamud services, and this class holds none.
     /// </param>
     /// <param name="settings">The user's persisted choices.</param>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if not fetched yet.</param>

@@ -46,11 +46,11 @@ public sealed record CategorySettingsRow
     /// badging as "New".
     /// </summary>
     /// <remarks>
-    /// The same shape as <see cref="ItemGroupRow.IsNew"/>, one level up: a collection added in a
-    /// later version is otherwise indistinguishable from one the user has been ignoring since
-    /// install, and the settings' outer header folds, so it could go unnoticed entirely. Defaulted
-    /// rather than required, unlike the group flag, so a caller building rows for a surface that
-    /// does not badge (or a test that does not care) is not forced to answer.
+    /// A collection added in a later version is otherwise indistinguishable from one the user has
+    /// been ignoring since install, and the settings' outer header folds, so it could go unnoticed
+    /// entirely. Defaulted rather than required, unlike <see cref="ItemGroupRow.IsNew"/>, so a
+    /// caller building rows for a surface that does not badge (or a test that does not care) is not
+    /// forced to answer.
     /// </remarks>
     public bool IsNew { get; init; }
 
@@ -304,9 +304,8 @@ public enum CategoryBadgeKind
 /// </summary>
 /// <remarks>
 /// <para>
-/// Pure and Dalamud-free, so the <b>extensibility contract is testable</b>: a fake collector for a
-/// category this plugin has never heard of must flow through here and appear in the list, proving the
-/// settings surface contains no category-name branch.
+/// It reads no game state, and it keeps the <b>extensibility contract</b>: a collector for a category
+/// this plugin has never heard of must flow through here and appear in the list.
 /// </para>
 /// <para>
 /// Note what is absent — there is no table of names, no ordering by category, and no special case for
@@ -324,10 +323,10 @@ public static class CategorySettingsView
     /// state is answered first and the announcement waits for a viewing the user can act on.
     /// </para>
     /// <para>
-    /// Pure so the precedence is testable: a rule stated only inside a draw method is a rule no test
-    /// can reach, and this one is a promise about what the user sees rather than an implementation
-    /// detail. The window supplies the two facts it alone knows — whether this surface badges at all,
-    /// and whether the key is already badged for this session — and turns the answer into a chip.
+    /// The precedence is a rule about what the user sees, not about how a chip is drawn, so it lives
+    /// here rather than in the window. The window supplies the two facts it alone knows — whether
+    /// this surface badges at all, and whether the key is already badged for this session — and
+    /// draws the chip the answer names.
     /// </para>
     /// </remarks>
     /// <param name="row">The row being drawn.</param>
@@ -388,8 +387,7 @@ public static class CategorySettingsView
     /// permits the collection — the second half is what keeps a badge from
     /// vanishing one frame after it appears, since drawing it persists the seen flag and the next
     /// rebuild reports it un-new. The two session sets are parameters rather than state held here:
-    /// they belong to a window's lifetime, and a pure function of its arguments is one the unit
-    /// suite can reach.
+    /// they belong to a window's lifetime.
     /// </remarks>
     /// <param name="rows">The category rows to scan, from <see cref="Build"/>.</param>
     /// <param name="badgedCategories">Category keys whose badge went up this session.</param>
@@ -566,9 +564,8 @@ public static class CategorySettingsView
         {
             // OrdinalIgnoreCase rather than a culture-aware comparison: these labels are English
             // strings authored in this repo, and an ordinal sort gives every user the same order
-            // regardless of their machine's locale — which is also what makes it testable. The
-            // key breaks a tie, so two collections that chose the same display name still land in
-            // a fixed order instead of an arbitrary one.
+            // regardless of their machine's locale. The key breaks a tie, so two collections that
+            // chose the same display name still land in a fixed order instead of an arbitrary one.
             bucketRows.Sort((left, right) =>
             {
                 var byName = string.Compare(
@@ -618,8 +615,8 @@ public static class CategorySettingsView
 
             // A blank key is server data gone wrong, and it can never behave: consent reads treat it
             // as off, seen-marking skips it (so it would wear a "New" badge forever and re-trigger a
-            // config save every frame), and the consent write would throw. Dropping it here, at the
-            // pure boundary, keeps every one of those paths safe — and testable.
+            // config save every frame), and the consent write would throw. Dropping it here, before
+            // it becomes a row, keeps every one of those paths safe.
             if (string.IsNullOrEmpty(group.Key))
                 continue;
 

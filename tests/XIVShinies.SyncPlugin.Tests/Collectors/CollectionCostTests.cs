@@ -6,9 +6,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// What a collection pass cost the frame it ran in. Extracted from the orchestrator precisely because
-// the two things it does — order by duration, and compare against a threshold — are both trivial to
-// get backwards, and the orchestrator cannot be unit-tested.
+// What a collection pass cost the frame it ran in. The two things it does — order by duration, and
+// compare against a threshold — are both trivial to get backwards.
 public class CollectionCostTests
 {
     private static CollectionSnapshot Snapshot(params (string Category, double Milliseconds)[] durations)
