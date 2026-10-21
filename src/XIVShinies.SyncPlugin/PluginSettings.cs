@@ -54,7 +54,8 @@ public class PluginSettings
 
     /// <summary>
     /// True while the user shares their Crucible runs with the website's run companion: what the
-    /// Crucible's windows show out of combat and their character's own HP, plus a regular check-in,
+    /// Crucible's windows show out of combat, their character's own HP, and the HP of the familiar
+    /// they have out, read during fights too and sent once each is over, plus a regular check-in,
     /// which reads nothing, while they are on a board.
     /// </summary>
     /// <remarks>

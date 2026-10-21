@@ -109,7 +109,7 @@ public sealed class CrucibleUploadScheduler
     /// <param name="Observation">The snapshot itself; null for a marker.</param>
     /// <param name="Key">Its kind and territory, the unit change detection and replacement work on.</param>
     /// <param name="Kind">Its kind's wire name.</param>
-    /// <param name="Closed">Whether it is a window's closing snapshot.</param>
+    /// <param name="Final">Whether nothing may replace it (see <see cref="IsFinal"/>).</param>
     /// <param name="WaitingSince">
     /// For a snapshot, when the one it replaced started waiting, or its own queuing; for a marker,
     /// when it was queued.
@@ -124,7 +124,7 @@ public sealed class CrucibleUploadScheduler
         CrucibleObservation? Observation = null,
         string Key = "",
         string Kind = "",
-        bool Closed = false,
+        bool Final = false,
         DateTimeOffset WaitingSince = default,
         DateTimeOffset QueuedAt = default);
 
@@ -208,7 +208,7 @@ public sealed class CrucibleUploadScheduler
 
     /// <summary>
     /// The wire name of an observation's kind (<c>board</c>, <c>team</c>, <c>bag</c>, <c>offer</c>,
-    /// <c>results</c> or <c>self</c>).
+    /// <c>results</c>, <c>self</c> or <c>familiars</c>).
     /// </summary>
     /// <param name="observation">The snapshot.</param>
     // The `=>` after the signature makes the `switch` expression the whole method body. The switch
@@ -224,6 +224,7 @@ public sealed class CrucibleUploadScheduler
             CrucibleOfferObservation => "offer",
             CrucibleResultsObservation => "results",
             CrucibleSelfObservation => "self",
+            CrucibleFamiliarsObservation => "familiars",
             _ => throw new ArgumentException("An unknown observation kind.", nameof(observation)),
         };
 
@@ -274,7 +275,9 @@ public sealed class CrucibleUploadScheduler
         }
     }
 
-    /// <summary>Queues a snapshot read from a window, or the character's own HP.</summary>
+    /// <summary>
+    /// Queues a snapshot read from a window, the character's own HP, or the familiars' HP.
+    /// </summary>
     /// <param name="observation">
     /// The snapshot. One read earlier than a snapshot queued before it starts a new upload (see
     /// <see cref="TakeBatch"/>).
@@ -283,31 +286,25 @@ public sealed class CrucibleUploadScheduler
     /// <param name="now">The current moment.</param>
     /// <remarks>
     /// A snapshot the same as the last one of its kind in the same territory is dropped, except a
-    /// window's closing snapshot, which always goes. Snapshots queue in the order they are handed
-    /// in, except that one for a place the character has just left goes ahead of the unsent markers
-    /// that ended that visit. A newer snapshot replaces an unsent one of its kind in the same
-    /// territory (never a closing one, and never across a marker) and takes the newest place in
-    /// its run.
+    /// final one (see <see cref="IsFinal"/>), which always goes. Snapshots queue in the order they
+    /// are handed in, except that one for a place the character has just left goes ahead of the
+    /// unsent markers that ended that visit. A newer snapshot replaces an unsent one of its kind in
+    /// the same territory (never a final one, and never across a marker) and takes the newest place
+    /// in its run.
     /// </remarks>
     public void Queue(CrucibleObservation observation, uint territoryTypeId, DateTimeOffset now)
     {
         var kind = KindOf(observation);
         var key = $"{kind}@{territoryTypeId}";
         var content = ContentOf(observation);
-
-        // Only the three window kinds that close carry the flag. `is Type { Closed: true }` matches
-        // that type with that value, and `or` joins the three.
-        var closed = observation is CrucibleBoardObservation { Closed: true }
-            or CrucibleTeamObservation { Closed: true }
-            or CrucibleOfferObservation { Closed: true };
+        var final = IsFinal(observation);
 
         lock (gate)
         {
             // Nothing changed since the last snapshot of this kind and territory, so there is
-            // nothing to say. A closing snapshot goes anyway, since it marks the window's final
-            // state. `TryGetValue` returns whether the key is there and, when it is, writes its
-            // value into `last`.
-            if (!closed && lastContent.TryGetValue(key, out var last) && last == content)
+            // nothing to say. A final snapshot goes anyway. `TryGetValue` returns whether the key is
+            // there and, when it is, writes its value into `last`.
+            if (!final && lastContent.TryGetValue(key, out var last) && last == content)
                 return;
 
             lastContent[key] = content;
@@ -336,15 +333,15 @@ public sealed class CrucibleUploadScheduler
             }
 
             // A newer snapshot replaces an unsent one of its kind and territory, searching back
-            // only as far as the marker before it. A closing snapshot is never replaced: it is the
-            // window's final word, and a fresh one after it queues behind it instead.
+            // only as far as the marker before it. A final snapshot is never replaced, and a fresh
+            // one after it queues behind it instead.
             var waitingSince = now;
             for (var index = insertAt - 1; index >= 0 && queue[index].Type == EntryType.Snapshot; index--)
             {
                 if (queue[index].Key != key)
                     continue;
 
-                if (!queue[index].Closed)
+                if (!queue[index].Final)
                 {
                     // The replacement inherits the replaced one's waiting start (see MaxChangeWait).
                     waitingSince = queue[index].WaitingSince;
@@ -356,11 +353,25 @@ public sealed class CrucibleUploadScheduler
             }
 
             var snapshot = new Entry(
-                EntryType.Snapshot, territoryTypeId, observation, key, kind, closed, waitingSince, now);
+                EntryType.Snapshot, territoryTypeId, observation, key, kind, final, waitingSince, now);
             queue.Insert(insertAt, snapshot);
             changeDueAt = now + ChangeDebounce;
         }
     }
+
+    /// <summary>
+    /// True for a snapshot that is the last word on what it shows, which nothing queued after it may
+    /// replace: a window's closing snapshot, which is the window's final state, and the familiars
+    /// snapshot taken as a fight ended, the only one that lists the familiars that left the field
+    /// during that fight.
+    /// </summary>
+    /// <param name="observation">The snapshot.</param>
+    // `is Type { Property: value }` matches that type with that value, and `or` joins the shapes.
+    private static bool IsFinal(CrucibleObservation observation) =>
+        observation is CrucibleBoardObservation { Closed: true }
+            or CrucibleTeamObservation { Closed: true }
+            or CrucibleOfferObservation { Closed: true }
+            or CrucibleFamiliarsObservation { AfterFight: true };
 
     /// <summary>The character left the board: what it left queued goes up, then the leave.</summary>
     /// <param name="now">The current moment.</param>
@@ -777,7 +788,8 @@ public sealed class CrucibleUploadScheduler
 
     /// <summary>
     /// A snapshot's content without its moment, as JSON text: two snapshots read at different
-    /// moments with the same content give the same text.
+    /// moments with the same content give the same text. A familiars snapshot keeps each familiar's
+    /// <c>readAtUtc</c>, so two of those match only when every reading was taken at the same moment.
     /// </summary>
     // `with` copies the snapshot as its own kind, so the copy keeps every field that kind carries;
     // serializing it as the base type adds the `kind` key. `internal` so the feed can compare a

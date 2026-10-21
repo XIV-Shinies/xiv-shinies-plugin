@@ -51,11 +51,11 @@ public sealed record CrucibleObservationsRequest
 }
 
 /// <summary>
-/// One snapshot: what a window showed, or the character's own HP. Each kind below is a record
-/// that inherits this one.
+/// One snapshot: what a window showed, the character's own HP, or the familiars' HP. Each kind below
+/// is a record that inherits this one.
 /// </summary>
 /// <remarks>
-/// <c>JsonPolymorphic</c> and the six <c>JsonDerivedType</c> attributes make the serializer write
+/// <c>JsonPolymorphic</c> and the seven <c>JsonDerivedType</c> attributes make the serializer write
 /// a <c>kind</c> key naming the record's type, as the first key of each snapshot, whenever it
 /// serializes a value declared as this base type (the request's list, for one). It is the same
 /// idea as a discriminated union in TypeScript, where a literal <c>kind</c> field says which shape
@@ -68,7 +68,8 @@ public sealed record CrucibleObservationsRequest
 [JsonDerivedType(typeof(CrucibleOfferObservation), "offer")]
 [JsonDerivedType(typeof(CrucibleResultsObservation), "results")]
 [JsonDerivedType(typeof(CrucibleSelfObservation), "self")]
-// `abstract` means no snapshot is ever just this base: every one is one of the six kinds.
+[JsonDerivedType(typeof(CrucibleFamiliarsObservation), "familiars")]
+// `abstract` means no snapshot is ever just this base: every one is one of the seven kinds.
 public abstract record CrucibleObservation
 {
     /// <summary>When this was observed, as second-exact UTC text (see <see cref="WireTime"/>).</summary>
@@ -316,4 +317,46 @@ public sealed record CrucibleSelfObservation : CrucibleObservation
 {
     /// <summary>The character's current and maximum HP.</summary>
     public required CrucibleHpUpload Hp { get; init; }
+}
+
+/// <summary>
+/// The HP of the familiars the player had out, from the game's record of the player's own pet.
+/// </summary>
+/// <remarks>
+/// Sent as a fight ends, listing each familiar that was out during it: one that left the field with
+/// its HP as it left, and one still out with its HP at the end. Outside a fight, sent when the
+/// familiar that is out changes HP, listing that one.
+/// </remarks>
+public sealed record CrucibleFamiliarsObservation : CrucibleObservation
+{
+    /// <summary>
+    /// True on the snapshot taken as a fight ended, whose familiars carry their final HP for that
+    /// fight; false on one taken outside a fight.
+    /// </summary>
+    public required bool AfterFight { get; init; }
+
+    /// <summary>The familiars, in the order they first came out.</summary>
+    public required IReadOnlyList<CrucibleFieldedFamiliarUpload> Familiars { get; init; }
+}
+
+/// <summary>One familiar's last reading while it was out.</summary>
+public sealed record CrucibleFieldedFamiliarUpload
+{
+    /// <summary>The familiar's <c>XBMPet</c> row id.</summary>
+    public required uint PetId { get; init; }
+
+    /// <summary>Its current and maximum HP at that reading.</summary>
+    public required CrucibleHpUpload Hp { get; init; }
+
+    /// <summary>
+    /// Whether it was out when the snapshot was taken. False does not mean it went down (see
+    /// <see cref="CrucibleFamiliarTracker"/>).
+    /// </summary>
+    public required bool Summoned { get; init; }
+
+    /// <summary>
+    /// When that reading was taken, as second-exact UTC text: for a familiar that left the field,
+    /// about when it left.
+    /// </summary>
+    public required string ReadAtUtc { get; init; }
 }

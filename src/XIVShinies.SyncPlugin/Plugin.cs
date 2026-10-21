@@ -110,9 +110,16 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>
     /// The local character's condition flags. The Crucible run sharing reads only "in combat", and
-    /// reads nothing while it is set.
+    /// while it is set reads no Crucible window and not the character's own HP (the familiar's HP
+    /// still is; see <see cref="BuddyList"/>).
     /// </summary>
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
+
+    /// <summary>
+    /// The game's record of the <b>local</b> player's own companion, pet and allies. The Crucible run
+    /// sharing reads only the pet's data id and HP: the familiar the player has out.
+    /// </summary>
+    [PluginService] internal static IBuddyList BuddyList { get; private set; } = null!;
 
     /// <summary>
     /// Finds a game window by name. The Crucible run sharing uses it to read a Crucible window the
@@ -281,7 +288,7 @@ public sealed class Plugin : IDalamudPlugin
             // until the user opts in. Before that it reads only static game data (see
             // CrucibleManager).
             crucibleManager = new CrucibleManager(
-                Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, Log,
+                Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, BuddyList, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
             // The mascot drawn in the settings header — the same hand-made image the installer

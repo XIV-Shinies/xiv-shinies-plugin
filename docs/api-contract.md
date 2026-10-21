@@ -546,9 +546,9 @@ absent — back off, server-side problem.
 ### POST /api/plugin/v1/crucible/observations
 
 The Crucible run companion's feed: **snapshots**, each of what one Crucible window (or the
-character's own HP) showed at one moment. The server turns them into the companion's run
-events; the client never names an event, so the event model can change without a plugin
-release. Like the occult tracker it is small, frequent and duty-scoped, and it needs its own
+character's own HP, or the familiars' HP) showed at one moment. The server turns them into the
+companion's run events; the client never names an event, so the event model can change without a
+plugin release. Like the occult tracker it is small, frequent and duty-scoped, and it needs its own
 consent toggle (off by default, and outside "Turn on new collections automatically"). A server
 whose `/config` carries no `crucibleRuns` block does not have this endpoint; the client must
 stay silent then. The server's schema is **strict**: a key it does not name fails the whole
@@ -557,15 +557,17 @@ upload with 400 `invalid_payload`, and so does a named key that is missing.
 **What the client may read, and must never read.** Only what the game shows the player, and
 only while the character is out of combat: board progress, the player's own familiars, the
 player's own bag and tokens, treasure, loot and shop offers, the results screen, and the local
-character's own HP. Never the battle log or chat, the object table, statuses, damage, or
-anything about an enemy (its name, stats, weaknesses or state). A client skips the board
+character's own HP. The one exception is the familiar the player has out: its HP is read during
+fights too, from the game's record of the local player's own pet (its data id and HP alone), and
+goes up only once the fight is over. Never the battle log or chat, the object table, statuses,
+damage, or anything about an enemy (its name, stats, weaknesses or state). A client skips the board
 window's enemy rows by their record type, and the results screen's beaten counts are score
 figures, not enemy data.
 
 #### Request
 
-`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). A six-kind
-upload with fifteen familiars is about 6 KB; the cap is 64 KB.
+`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). An upload
+carrying every kind, with fifteen familiars in the team window, is about 6 KB; the cap is 64 KB.
 
 ```jsonc
 {
@@ -595,7 +597,12 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
      "bonuses": [{"bonusId": 7, "points": 250}],
      "familiars": [{"petId": 8, "rankBefore": 7, "rankAfter": 8,
                     "expBefore": 65, "expAfter": 62}]},
-    {"kind": "self", "observedAtUtc": "…", "hp": {"current": 1180, "max": 1300}}
+    {"kind": "self", "observedAtUtc": "…", "hp": {"current": 1180, "max": 1300}},
+    {"kind": "familiars", "observedAtUtc": "…", "afterFight": true,
+     "familiars": [{"petId": 1, "hp": {"current": 386, "max": 608}, "summoned": false,
+                    "readAtUtc": "…"},
+                   {"petId": 13, "hp": {"current": 358, "max": 560}, "summoned": true,
+                    "readAtUtc": "…"}]}
   ]
 }
 ```
@@ -608,12 +615,30 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 | `offer` | `XBMContentsTreasure`, `XBMContentsBooty`, `XBMContentsItemShop` | `source` `treasure`, `loot` or `shop`; `tokens`; `tokensEarned` on loot, else null; `offers[]` each `itemId`, plus `price`, `discounted` and `bought` on the shop only; `closed`. |
 | `results` | `XBMResult` | `degree` 0–3, or null; `rankIndex` 0 (Apprentice) to 8 (Legendary), or null; `score` as the numbers on screen, where `remainingHp` is the HP the run ended on; `bonuses[]` each `bonusId` (an `XBMScoreBonus` row id, or null) with `points`; `familiars[]` each `petId`, `rankBefore`, `rankAfter`, `expBefore`, `expAfter`. |
 | `self` | the local player | `hp`. |
+| `familiars` | the game's record of the local player's own pet | `afterFight`; `familiars[]` each `petId` (the `XBMPet` row, from the pet's `Pet` row through the `XBMPet` sheet's link), `hp` (its max includes feeds, as the team window's does), `summoned`, `readAtUtc`, in the order they first came out. |
 
 - **Null or absent.** `currentNodeIndex`, `itemId`, `tokensEarned`, `degree`, `rankIndex` and
   `bonusId` are always present, as `null` where they do not apply or did not resolve. The three
-  shop fields are absent from a treasure or loot offer, and `closed` from a `bag`, `results` or
-  `self`, not null. Every list is present, empty where it holds nothing (`observations: []` on a
-  heartbeat or a leave, `feedItemIds: []`).
+  shop fields are absent from a treasure or loot offer, and `closed` from a `bag`, `results`,
+  `self` or `familiars`, not null. Every list is present, empty where it holds nothing
+  (`observations: []` on a heartbeat or a leave, `feedItemIds: []`).
+- **`familiars`** carries the HP of the familiars the player had out. The game's record holds only
+  the familiar that is out, updated every three seconds, so the client reads it once a second,
+  fights included, and keeps each familiar's last reading. No `familiars` snapshot is taken during a
+  fight (one queued just before a fight can still go up during it, like any snapshot):
+  - **As the in-combat flag clears**, a snapshot with `afterFight: true` lists every familiar out
+    since the flag set, at most the lineup's three: one that left the field with its HP and
+    `readAtUtc` from its last reading before it left, one still out with its HP at the end and
+    `summoned: true`. A fight with no familiar out sends none. Nothing replaces it once queued: a
+    later `familiars` snapshot goes in the next upload, like a fresh one after a `closed` one.
+  - **Outside a fight**, a snapshot with `afterFight: false` lists the familiar that is out when its
+    HP changes while it stays out (an item used while it is out, or the record catching up with a
+    fight's last hit). Calling a familiar out sends nothing.
+  - **`summoned: false` does not mean downed.** The record drops a familiar that goes down exactly as
+    it drops one called back or swapped out, holding the HP of its last update, so a downed
+    familiar's entry carries that HP. The client never sends a 0 from this record; a down is the
+    team window's 0 HP.
+  - **`readAtUtc` is never later than the snapshot's `observedAtUtc`.**
 - **`closed`** marks a window's last snapshot before it closed: a `board`, `team` or `offer`
   snapshot goes up on each refresh that changed it, and once more with `closed: true` when the
   window closes, whether or not its content changed. The closing snapshot is the window as read

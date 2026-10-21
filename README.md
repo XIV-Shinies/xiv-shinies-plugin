@@ -76,12 +76,14 @@ switch on (the live Occult tracker starts on; everything else starts off):
 - **Crucible runs**, if you switch the sharing on (it starts off, and nothing turns it on but
   you): from the beasts you pick at the Crucible of the Unbroken's entrance until you leave a
   board, what the Crucible's windows show between fights (the board, your beasts, bag, tokens,
-  treasure, loot, shop offers and results) and your own HP, each stamped with when and where it was
-  read or closed, filling in your run on the site. On a board it also checks in regularly, fights
-  included, and says when you leave. No battle data is collected: nothing is read from the
-  Crucible's windows or your HP during a fight, and anything sent then was read before it began.
-  Enemies are skipped: nothing about them is sent beyond how many your run beat and the points they
-  were worth, as the results screen shows them. Nothing about other players is read or sent
+  treasure, loot, shop offers and results), your own HP, and the HP of each beast you call out
+  (fights included, sent once each fight is over), each stamped with when and where it was read or
+  closed, filling in your run on the site. On a board it also checks in regularly, fights included,
+  and says when you leave. During a fight the only thing read about your run is which beast you
+  have out and its HP, sent once the fight is over: nothing is read from the Crucible's windows or
+  your own HP until then, and nothing about damage, actions or the battle log is ever read. Enemies
+  are skipped: nothing about them is sent beyond how many your run beat and the points they were
+  worth, as the results screen shows them. Nothing about other players is read or sent
 
 For a collection the plugin can read end to end, the upload also records that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin

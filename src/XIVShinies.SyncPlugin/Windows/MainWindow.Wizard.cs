@@ -179,8 +179,8 @@ internal sealed partial class MainWindow
     /// <summary>
     /// The welcome screen's Crucible disclosure, flowed as one sentence: a broadcast tower, since it
     /// shares play as it happens rather than adding anything to your collection, then the name and
-    /// copy flowed together, with the what-is-NOT-read reassurance hover trailing. Muted and chipped
-    /// "Off" while the server has the sharing off.
+    /// copy flowed together, with the hover on what is read during a fight and what is never read
+    /// trailing. Muted and chipped "Off" while the server has the sharing off.
     /// </summary>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     private void DrawCrucibleDisclosureLine(ConfigResponse? remoteConfig)

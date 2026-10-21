@@ -39,7 +39,7 @@ public class CrucibleTerritoriesTests
 
     /// <summary>
     /// One snapshot of every in-duty kind: each board view and team mode but the entrance's, each
-    /// offer source, the bag, the results and the character's own HP.
+    /// offer source, the bag, the results, the character's own HP and the familiars' HP.
     /// </summary>
     // `[a, b, ...]` builds an array from the items listed, like an array literal in TypeScript.
     private static CrucibleObservation[] InDuty() =>
@@ -60,6 +60,8 @@ public class CrucibleTerritoriesTests
             new CrucibleOfferReading(CrucibleOfferSource.Shop, 100, null, []), ObservedAt, false),
         Results(),
         CrucibleUploadBuilder.Self(500, 1000, ObservedAt),
+        CrucibleUploadBuilder.Familiars(
+            true, [new CrucibleFieldedFamiliar(13, 358, 560, true, ObservedAt)], ObservedAt),
     ];
 
     // The five boards, in board order. The `u` suffix makes a number a `uint`.

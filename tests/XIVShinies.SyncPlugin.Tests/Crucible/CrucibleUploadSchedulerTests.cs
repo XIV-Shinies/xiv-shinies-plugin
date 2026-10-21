@@ -45,6 +45,15 @@ public class CrucibleUploadSchedulerTests
             At(seconds),
             closed);
 
+    /// <summary>
+    /// A familiars snapshot of one familiar that is out, taken as a fight ended or outside one.
+    /// </summary>
+    // `[new CrucibleFieldedFamiliar(...)]` is a collection expression holding one familiar; the list
+    // type comes from the parameter it fills.
+    private static CrucibleObservation Familiars(bool afterFight, double seconds, int hp = 500) =>
+        CrucibleUploadBuilder.Familiars(
+            afterFight, [new CrucibleFieldedFamiliar(13, hp, 560, true, At(seconds))], At(seconds));
+
     /// <summary>The kinds in an upload, in order, as their wire names.</summary>
     // `Select` maps each observation through `KindOf`, like `.map(kindOf)`; `ToArray` collects the
     // result into an array.
@@ -210,6 +219,39 @@ public class CrucibleUploadSchedulerTests
 
         var second = scheduler.Poll(At(3))!;
         Assert.True(second.Observations.Single() is CrucibleTeamObservation { Closed: false });
+    }
+
+    // The familiars snapshot taken as a fight ended is the only one listing the familiars that left
+    // the field during it, so a later familiars snapshot never replaces it; the two go in two uploads,
+    // the fight's first.
+    [Fact]
+    public void A_familiars_snapshot_after_the_fight_ends_goes_in_the_next_upload()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Familiars(afterFight: true, 0), Board, At(0));
+        scheduler.Queue(Familiars(afterFight: false, 1), Board, At(1));
+
+        var first = scheduler.Poll(At(3))!;
+        Assert.True(first.Observations.Single() is CrucibleFamiliarsObservation { AfterFight: true });
+        scheduler.MarkAccepted(first, At(3));
+
+        var second = scheduler.Poll(At(3))!;
+        Assert.True(second.Observations.Single() is CrucibleFamiliarsObservation { AfterFight: false });
+    }
+
+    // A familiars snapshot taken outside a fight is replaced like any open snapshot: only the
+    // familiar's newest HP needs to go up.
+    [Fact]
+    public void A_familiars_snapshot_outside_a_fight_is_replaced_by_a_newer_one()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Familiars(afterFight: false, 0, hp: 300), Board, At(0));
+        scheduler.Queue(Familiars(afterFight: false, 1, hp: 560), Board, At(1));
+
+        var upload = scheduler.Poll(At(3))!;
+
+        var familiars = Assert.IsType<CrucibleFamiliarsObservation>(upload.Observations.Single());
+        Assert.Equal(560, familiars.Familiars.Single().Hp.Current);
     }
 
     // Snapshots read in different territories go in separate uploads, each with its own territory.
@@ -1077,6 +1119,7 @@ public class CrucibleUploadSchedulerTests
                 new CrucibleOfferReading(CrucibleOfferSource.Shop, 0, null, []), T0, false),
             CrucibleUploadBuilder.Results(results, T0, null, null, _ => null),
             CrucibleUploadBuilder.Self(1, 2, T0),
+            CrucibleUploadBuilder.Familiars(false, [new CrucibleFieldedFamiliar(1, 2, 3, true, T0)], T0),
         ];
 
         foreach (var observation in observations)

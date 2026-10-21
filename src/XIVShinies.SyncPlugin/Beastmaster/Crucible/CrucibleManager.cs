@@ -13,8 +13,8 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
 /// The Crucible run sharing's orchestrator: follows the character in and out of the boards, feeds
-/// what the windows and the character's own HP show into the scheduler, and uploads what the scheduler
-/// hands out.
+/// what the windows, the character's own HP and the familiar's HP show into the scheduler, and uploads
+/// what the scheduler hands out.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,8 +42,8 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 internal sealed class CrucibleManager : IDisposable
 {
     /// <summary>
-    /// How often the character's own HP is read inside a board out of combat, and how often a visit
-    /// still waiting for its bag tries the run HUD again.
+    /// How often the familiar that is out is read inside a board, fights included, and, out of combat,
+    /// the character's own HP; and how often a visit still waiting for its bag tries the run HUD again.
     /// </summary>
     // `static readonly` rather than `const`: a `TimeSpan` (a length of time) is built when the program
     // runs, and `const` only takes values fixed when the code compiles.
@@ -52,6 +52,7 @@ internal sealed class CrucibleManager : IDisposable
     private readonly IFramework framework;
     private readonly IClientState clientState;
     private readonly ICondition condition;
+    private readonly IBuddyList buddyList;
     private readonly IPluginLog log;
     private readonly ApiClient apiClient;
     private readonly PluginSettings settings;
@@ -75,6 +76,15 @@ internal sealed class CrucibleManager : IDisposable
 
     /// <summary>The window listener.</summary>
     private readonly CrucibleObserver observer;
+
+    /// <summary>
+    /// Which familiar each <c>Pet</c> row belongs to, or null when the sheet could not be read, in
+    /// which case no familiar HP is sent.
+    /// </summary>
+    private readonly CrucibleFamiliarLinks? familiarLinks;
+
+    /// <summary>Decides when a snapshot of the familiars' HP is handed out.</summary>
+    private readonly CrucibleFamiliarTracker familiarTracker = new();
 
     /// <summary>Which frame failures have already been reported in full.</summary>
     /// <remarks>
@@ -125,8 +135,16 @@ internal sealed class CrucibleManager : IDisposable
     /// <summary>Whether the character was in combat on the last frame.</summary>
     private bool wasInCombat;
 
-    /// <summary>When the character's own HP and a pending bag are next due to be read.</summary>
+    /// <summary>
+    /// When the familiar, the character's own HP and a pending bag are next due to be read.
+    /// </summary>
     private DateTimeOffset nextReadAt;
+
+    /// <summary>
+    /// Whether a familiar the links could not name has been reported since the sharing last started
+    /// over; later ones are not, since every reading of it would report it again.
+    /// </summary>
+    private bool unnamedFamiliarReported;
 
     /// <summary>Wires the manager to the game. Subscribes only; uploads nothing on its own.</summary>
     // The parameters are the Dalamud services this reads through, the API client and settings it
@@ -139,6 +157,7 @@ internal sealed class CrucibleManager : IDisposable
         IGameGui gameGui,
         IAddonLifecycle addonLifecycle,
         IDataManager dataManager,
+        IBuddyList buddyList,
         IPluginLog log,
         ApiClient apiClient,
         PluginSettings settings,
@@ -149,6 +168,7 @@ internal sealed class CrucibleManager : IDisposable
         this.framework = framework;
         this.clientState = clientState;
         this.condition = condition;
+        this.buddyList = buddyList;
         this.log = log;
         this.apiClient = apiClient;
         this.settings = settings;
@@ -169,6 +189,9 @@ internal sealed class CrucibleManager : IDisposable
         observer = new CrucibleObserver(
             addonLifecycle, gameGui, condition, () => GateOpen(syncManager.RemoteConfig),
             OnWindowRead, OnWindowClosed, CrucibleNameSheets.Load(dataManager, log), log);
+
+        // Game data too, read once for the same reason.
+        familiarLinks = CrucibleFamiliarLinkSheet.Load(dataManager, log);
 
         // `+=` subscribes a handler to a C# event, like `addEventListener`. Every `+=` here has a
         // matching `-=` in Dispose.
@@ -268,6 +291,7 @@ internal sealed class CrucibleManager : IDisposable
         Follow(now);
 
         var inCombat = condition[ConditionFlag.InCombat];
+        var combatChanged = inCombat != wasInCombat;
 
         // The loot window can open a moment before the in-combat flag clears, and is not certain to be
         // redrawn after it does, so it is read once when the flag clears.
@@ -280,15 +304,22 @@ internal sealed class CrucibleManager : IDisposable
         if (nextReadAt > now + ReadInterval)
             nextReadAt = now;
 
-        if (feed.Board is not null && !inCombat && now >= nextReadAt)
+        // Also read on the frame the flag changes, so a fight's familiars go up as it ends and the
+        // familiar out as it begins is its first reading.
+        if (feed.Board is not null && (now >= nextReadAt || combatChanged))
         {
             nextReadAt = now + ReadInterval;
-            ReadOwnHp(now);
+            ReadFamiliar(inCombat, now);
 
-            // The HUD may not exist yet on the frame the character zones in, so a visit still waiting
-            // for its bag tries again (see CrucibleFeed.BagPending).
-            if (feed.BagPending)
-                observer.ReadIfOpen(CrucibleWindows.Hud);
+            if (!inCombat)
+            {
+                ReadOwnHp(now);
+
+                // The HUD may not exist yet on the frame the character zones in, so a visit still
+                // waiting for its bag tries again (see CrucibleFeed.BagPending).
+                if (feed.BagPending)
+                    observer.ReadIfOpen(CrucibleWindows.Hud);
+            }
         }
 
         Send(now);
@@ -344,9 +375,15 @@ internal sealed class CrucibleManager : IDisposable
     private void Follow(DateTimeOffset now)
     {
         var territory = (uint)clientState.TerritoryType;
+        var change = feed.Follow(territory, now);
+
+        // Each visit follows its familiars afresh: a fight cut short by leaving the board never ends
+        // inside it, so what was kept for that fight is dropped rather than sent.
+        if (change != CrucibleVisitChange.None)
+            familiarTracker.Reset();
 
         // A `switch` statement runs the `case` whose value matches, like TypeScript's.
-        switch (feed.Follow(territory, now))
+        switch (change)
         {
             // `$"..."` is an interpolated string, like a template literal: `{territory}` is filled in.
             case CrucibleVisitChange.Entered:
@@ -409,6 +446,50 @@ internal sealed class CrucibleManager : IDisposable
             now);
     }
 
+    /// <summary>
+    /// Reads the familiar that is out, in combat or not, and feeds in the snapshot the reading calls for
+    /// (see <see cref="CrucibleFamiliarTracker"/>).
+    /// </summary>
+    /// <remarks>
+    /// Read from the game's record of the player's own pet, which holds the local player's familiar
+    /// alone. Only its data id and HP are read, never its <c>GameObject</c>, which would look the pet up
+    /// in the object table.
+    /// </remarks>
+    /// <param name="inCombat">Whether the game says the player is in combat.</param>
+    /// <param name="now">The moment of the reading.</param>
+    private void ReadFamiliar(bool inCombat, DateTimeOffset now)
+    {
+        // The links could not be read, so no familiar can be named and none is followed.
+        if (familiarLinks is null)
+            return;
+
+        if (familiarTracker.Observe(SummonedFamiliar(familiarLinks), inCombat, now) is { } observation)
+            feed.Offer(observation, (uint)clientState.TerritoryType, now);
+    }
+
+    /// <summary>
+    /// The familiar that is out, or null when none is, the record holds no reading of one, or it cannot
+    /// be named (see <see cref="CrucibleFamiliarLinks.Summoned"/>).
+    /// </summary>
+    /// <param name="links">Which familiar each <c>Pet</c> row belongs to.</param>
+    private CrucibleSummoned? SummonedFamiliar(CrucibleFamiliarLinks links)
+    {
+        if (buddyList.PetBuddy is not { } pet)
+            return null;
+
+        var summoned = links.Summoned(pet.DataID, pet.CurrentHP, pet.MaxHP);
+
+        // A pet the bestiary does not link is reported once, so a moved sheet column shows in the log.
+        if (summoned is null && pet.DataID != 0 && links.PetIdFor(pet.DataID) is null
+            && !unnamedFamiliarReported)
+        {
+            unnamedFamiliarReported = true;
+            log.Debug($"Crucible run sharing: pet {pet.DataID} is no familiar the bestiary links.");
+        }
+
+        return summoned;
+    }
+
     /// <summary>Feeds in a window reading, filed under the territory the character stands in.</summary>
     private void OnWindowRead(string windowName, CrucibleSnapshot snapshot)
     {
@@ -449,8 +530,10 @@ internal sealed class CrucibleManager : IDisposable
     private void Discard()
     {
         feed.Reset();
+        familiarTracker.Reset();
         wasInCombat = false;
         rejectionReported = false;
+        unnamedFamiliarReported = false;
     }
 
     /// <summary>
