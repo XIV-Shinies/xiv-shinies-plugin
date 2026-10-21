@@ -110,9 +110,9 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.PausedByServer)
         {
-            // The master toggle above still reads ON, which is correct: it reports the user's own
-            // setting, and that setting has not changed. This line is what makes the difference
-            // between "you switched it off" and "we switched it off" legible.
+            // The master toggle above still reads ON, which is correct: it reports the plugin's own
+            // setting, and that setting has not changed. This line is what says the switch that is
+            // off lives on the website, whether it is the website's pause or the user's profile.
             DrawWarning(ServerOffCopy.Paused(BackendHost()));
         }
         else if (status == SyncStatusKind.BlockedPendingUserAction)
@@ -144,9 +144,9 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.NothingPermittedByServer)
         {
-            // Warned rather than stated, unlike the line above: this one is not the user's doing and
-            // there is nothing for them to change, so it belongs with the other states the server
-            // imposed. The rows each wear their own "Off" chip, but they are a fold away.
+            // Warned rather than stated, unlike the line above: this one is not the user's doing,
+            // and nothing in the plugin can change it. The rows each wear their own "Off" chip, but
+            // they are a fold away.
             DrawWarning(ServerOffCopy.EveryCollection(BackendHost()));
         }
         else if (status == SyncStatusKind.WaitingForCharacter)
@@ -494,9 +494,11 @@ internal sealed partial class MainWindow
                 DrawWarning($"Your token was rejected. Generate a new one on {BackendHost()}.");
                 break;
 
-            // The three self-healing outcomes below need no action from the user, so they carry no
+            // The three outcomes below need no action in the plugin, so they carry no
             // warning color — but they are still the sync card's status line, so they draw at full
-            // contrast. Only red says "you have to do something".
+            // contrast. Only red says "you have to do something". A 503 from the account's own
+            // "Sync from the plugin" switch is fixed on the website, and the card's paused line
+            // (ServerOffCopy.Paused) names that fix once the next /config poll reports the switch.
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
                 DrawWrapped(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()), ImGuiCol.Text);

@@ -81,16 +81,16 @@ public sealed record CategorySettingsRow
     public bool UploadsOnUnlock { get; init; }
 
     /// <summary>
-    /// False when the server will not accept this category — either it is switched off for
-    /// everyone, or the server has paused syncing entirely. The checkbox stays visible but
-    /// disabled: the user's own preference is remembered and reapplied when the server allows it
-    /// again.
+    /// False when the server will not accept this category right now: switched off for everyone,
+    /// held back for this account (a feature it cannot see yet), or syncing switched off
+    /// altogether. The checkbox stays visible but disabled: the user's own preference is remembered
+    /// and reapplied when the server allows it again.
     /// </summary>
     public required bool ServerEnabled { get; init; }
 
     /// <summary>
-    /// True when the reason this row cannot be used is the server's <b>global</b> pause rather
-    /// than a decision about this collection.
+    /// True when the reason this row cannot be used is that the server has paused syncing
+    /// altogether (see <see cref="ServerOffCopy.Paused"/>) rather than decided about this collection.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -292,7 +292,10 @@ public enum CategoryBadgeKind
     /// <summary>Nothing to say about this row beyond its own copy.</summary>
     None,
 
-    /// <summary>The server has switched this collection off for everyone.</summary>
+    /// <summary>
+    /// The server will not accept this collection right now (see
+    /// <see cref="CategorySettingsRow.ServerEnabled"/>).
+    /// </summary>
     Off,
 
     /// <summary>This settings window has never shown the collection before.</summary>

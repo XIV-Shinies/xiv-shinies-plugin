@@ -60,13 +60,13 @@ public class ConsentCopyTests
     }
 
     // With nothing the server permits, as during a pause, the sentence says so instead of inviting a
-    // choice the grayed boxes below would refuse.
+    // choice the grayed boxes below would refuse (WizardIntro's remarks say why it names no one).
     [Fact]
     public void With_nothing_to_choose_the_sentence_says_so()
     {
         Assert.Equal(
-            "Nothing about your progress is sent: " + Host + " has everything below switched off " +
-            "for now. Once it allows them, you can choose what to upload in the settings.",
+            "Nothing about your progress is sent: everything below is switched off on " + Host +
+            " for now. Once it is back on, you can choose what to upload in the settings.",
             ConsentCopy.WizardIntro(
                 anythingSwitchedOn: false,
                 trackerOffered: false,

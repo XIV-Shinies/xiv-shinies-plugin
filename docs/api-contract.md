@@ -121,7 +121,7 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "heartbeatSeconds": 60,    // idle upload cadence while inside a board
     "note": "In testing — …"   // optional: present only when the flag alone switched it off
   },
-  "enabled": true,             // global kill switch
+  "enabled": true,             // global kill switch (the account's own switch folded in)
   "intervals": {
     "fullSyncMinutes": 30,     // full-sweep upload cadence
     "unlockDebounceSeconds": 5 // debounce after an Unlock event before uploading
@@ -145,8 +145,10 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
 - **Kill switches.** `enabled` is the global switch; `categories` is per-category. **The
   client must honor both**: stop uploading entirely when `enabled` is false, and skip
   collecting/sending disabled categories. The server enforces them too, but a compliant
-  client saves the round trips. A gated category ships as an explicit `false`, never omitted —
-  an absent key means "the server has never heard of it", which the client reads as enabled.
+  client saves the round trips. `enabled` is also false while the account's owner has turned off
+  "Sync from the plugin" on their profile, and the response does not say which switch is off. A
+  gated category ships as an explicit `false`, never omitted — an absent key means "the server
+  has never heard of it", which the client reads as enabled.
 - **Category notes.** `categoryNotes` is optional, keyed like `categories`, and explains why a
   category is off. It is absent entirely when nothing needs explaining, never an empty map.
   **Presence is the whole signal** — the client prints the sentence verbatim and never parses
@@ -460,7 +462,7 @@ them.
 | **413** | `{"error": "payload_too_large"}`                                | `Content-Length` missing, non-numeric, or over the cap. Don't retry unchanged; split the upload.                    |
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
 | **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent. The plugin treats any other 5xx but 503 the same way, such as the 502, 504 or other 5xx a proxy sends when it cannot reach or hear back from the server. |
-| **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | Global kill switch is off. Back off the full hour.                                                                   |
+| **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | The global kill switch, or the account's "Sync from the plugin" switch, is off. Back off the full hour.              |
 
 ### POST /api/plugin/v1/occult/instance-state
 

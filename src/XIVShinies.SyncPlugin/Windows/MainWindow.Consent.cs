@@ -151,9 +151,9 @@ internal sealed partial class MainWindow
         // flowed description's wrapped lines come home to.
         var labelColumn = ImGui.GetCursorPosX() + checkboxColumn;
 
-        // The server switched this category off for everyone. Show it, disabled, with the
-        // user's own preference intact underneath — flipping it back on later restores what
-        // they chose.
+        // The server will not accept this category right now (see CategorySettingsRow.ServerEnabled).
+        // Show it, disabled, with the user's own preference intact underneath — flipping it back on
+        // later restores what they chose.
         using (ImRaii.Disabled(!row.ServerEnabled))
         {
             // Everything after `##` is hidden from the label but forms part of the widget's

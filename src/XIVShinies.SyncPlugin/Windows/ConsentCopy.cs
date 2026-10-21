@@ -35,7 +35,9 @@ public static class ConsentCopy
     /// "Start switched off" is only said while nothing is chosen on, and the tracker's "starts on"
     /// only while the server offers it and it is chosen on; otherwise the sentence would contradict
     /// the boxes beneath it, or the choices behind them (see <see cref="AnythingChosenOn"/>). With
-    /// nothing to choose, as during a pause, it says so instead of inviting a choice.
+    /// nothing to choose, as during a pause, it says so instead of inviting a choice, and names no
+    /// one as having switched things off: during a pause the switch that is off may be the user's own
+    /// on their profile (see <see cref="ServerOffCopy.Paused"/>).
     /// </remarks>
     public static string WizardIntro(
         bool anythingSwitchedOn, bool trackerOffered, bool trackerOn, bool userHasAChoice, string host)
@@ -43,8 +45,8 @@ public static class ConsentCopy
         if (!userHasAChoice)
         {
             // `$"...{host}..."` is an interpolated string, like a TypeScript template literal.
-            return $"Nothing about your progress is sent: {host} has everything below switched " +
-                "off for now. Once it allows them, you can choose what to upload in the settings.";
+            return $"Nothing about your progress is sent: everything below is switched off on {host} " +
+                "for now. Once it is back on, you can choose what to upload in the settings.";
         }
 
         // `var` lets the compiler infer the type, like an unannotated `let`. `a ? b : c` picks b when a

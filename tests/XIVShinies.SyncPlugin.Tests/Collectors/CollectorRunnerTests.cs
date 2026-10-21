@@ -365,8 +365,7 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Collections.ContainsKey("quests"));
     }
 
-    // Without a fetched config we cannot know the remote switches; the server enforces them anyway
-    // (it strips disabled categories and answers 503 when the global switch is off).
+    // The runner asks CollectorGate, whose IsEnabled explains why a missing config permits collection.
     [Fact]
     public void A_missing_remote_config_falls_back_to_the_local_toggles()
     {

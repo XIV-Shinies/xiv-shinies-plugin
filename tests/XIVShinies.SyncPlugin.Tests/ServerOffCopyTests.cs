@@ -31,11 +31,13 @@ public class ServerOffCopyTests
             ServerOffCopy.EveryCollection(Host));
     }
 
+    // Why the sentence names the profile switch is in ServerOffCopy.Paused's remarks.
     [Fact]
-    public void A_pause_keeps_the_users_choices()
+    public void A_pause_names_the_profile_switch_and_keeps_the_users_choices()
     {
         Assert.Equal(
-            "shinies.example has paused syncing for everyone. Your own choices are unchanged.",
+            "Syncing is off on shinies.example. If you turned off \"Sync from the plugin\" on your "
+            + "profile, turn it back on there. Your own choices are unchanged.",
             ServerOffCopy.Paused(Host));
     }
 }

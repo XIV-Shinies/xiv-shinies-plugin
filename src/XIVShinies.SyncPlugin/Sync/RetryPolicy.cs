@@ -17,8 +17,8 @@ public static class RetryPolicy
     public static readonly TimeSpan DefaultRateLimitBackoff = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// How long to wait after a 503 that carried no <c>Retry-After</c>. Deliberately long: the
-    /// global kill switch usually means the server wants breathing room.
+    /// How long to wait after a 503 that carried no <c>Retry-After</c>: the same hour the website
+    /// sends with <c>sync_disabled</c>, so losing the header never shortens the wait.
     /// </summary>
     public static readonly TimeSpan DefaultSyncDisabledBackoff = TimeSpan.FromHours(1);
 

@@ -17,7 +17,10 @@ public enum SyncStatusKind
     /// <summary>The user's own master switch is off.</summary>
     SwitchedOffByUser,
 
-    /// <summary>The server has paused syncing for everyone.</summary>
+    /// <summary>
+    /// The server has paused syncing: its own pause, or the "Sync from the plugin" switch on the
+    /// user's profile there, which reach the plugin as the same signal.
+    /// </summary>
     PausedByServer,
 
     /// <summary>Syncing has stopped for something only the user can resolve.</summary>

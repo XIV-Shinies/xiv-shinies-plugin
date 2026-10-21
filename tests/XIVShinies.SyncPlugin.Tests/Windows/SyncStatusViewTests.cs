@@ -101,7 +101,8 @@ public class SyncStatusViewTests
     }
 
     // A pause turns every row off, so "nothing is switched on" is true at the same moment — and
-    // must not be what the card says, because it would blame the user for the server's outage.
+    // must not be what the card says, because it would send the user to the plugin's own checkboxes
+    // when the switch that is off is on the website.
     [Fact]
     public void A_paused_server_is_not_reported_as_the_user_having_switched_everything_off()
     {

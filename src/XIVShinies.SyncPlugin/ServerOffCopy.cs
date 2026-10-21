@@ -14,7 +14,7 @@ namespace XIVShinies.SyncPlugin;
 /// </para>
 /// <para>
 /// The distinctions between them are the whole point: one names a decision about a single thing,
-/// one names that decision taken for every collection, one names an outage affecting everything,
+/// one names that decision taken for every collection, one names syncing switched off altogether,
 /// and one names a feature the website does not offer. Saying the first during either of the last
 /// two sends the user looking for a decision nobody made.
 /// </para>
@@ -51,7 +51,7 @@ public static class ServerOffCopy
     /// </summary>
     /// <remarks>
     /// Each row wears its own "Off" chip, but a whole list of them, all grayed, needs one sentence
-    /// above it saying the choice is the website's and the user's own is kept, as during a pause.
+    /// above it saying the choice is the website's and the user's own is kept.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string EveryCollection(string host) =>
@@ -61,11 +61,20 @@ public static class ServerOffCopy
     /// What everything says while the website has paused syncing altogether.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The website sends the same <c>enabled: false</c> for two different switches: its own pause,
+    /// and the "Sync from the plugin" switch on the player's profile there. The plugin cannot tell
+    /// them apart, so the sentence names no audience and points at the one the player can flip.
+    /// </para>
+    /// <para>
     /// Says plainly that the user's own settings survive, because the visible effect of a pause is
     /// every checkbox clearing at once — which looks exactly like the plugin having discarded their
     /// choices. Nothing is written to their stored consent while this is showing.
+    /// </para>
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
+    // `\"` puts a double quote inside a string, the same escape as in TypeScript.
     public static string Paused(string host) =>
-        $"{host} has paused syncing for everyone. Your own choices are unchanged.";
+        $"Syncing is off on {host}. If you turned off \"Sync from the plugin\" on your profile, "
+        + "turn it back on there. Your own choices are unchanged.";
 }
