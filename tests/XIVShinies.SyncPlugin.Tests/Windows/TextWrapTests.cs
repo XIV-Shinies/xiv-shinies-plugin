@@ -12,8 +12,24 @@ public class TextWrapTests
     // `=>` body is a single expression whose value it returns, like an arrow function without braces.
     // `static s => s.Length` is the measuring function: a lambda, like `s => s.length`, whose `static`
     // forbids it from using the local variables, parameters or `this` around it.
+    // `out _` discards the second result, whether every line fits; the tests that check it call
+    // `BreakAtSpaces` directly.
     private static string Break(string text, float width) =>
-        TextWrap.BreakAtSpaces(text, width, static s => s.Length);
+        TextWrap.BreakAtSpaces(text, width, static s => s.Length, out _);
+
+    // A measure in which a space between two words draws one unit wider than a space alone, the way a
+    // kerned font can draw a whole line wider than its words and spaces measured one by one.
+    private static float Kerned(string s)
+    {
+        var width = (float)s.Length;
+        for (var i = 1; i < s.Length - 1; i++)
+        {
+            if (s[i] == ' ' && s[i - 1] != ' ' && s[i + 1] != ' ')
+                width += 1f;
+        }
+
+        return width;
+    }
 
     [Fact]
     public void Text_that_fits_is_left_alone()
@@ -96,5 +112,43 @@ public class TextWrapTests
     {
         Assert.Equal("ab cd", Break("ab cd", 5));
         Assert.Equal("ab cd\nef", Break("ab cd\nef", 5));
+    }
+
+    // Whether every line of the result fits, which tells the drawing code whether ImGui's own
+    // wrapping is still needed. `out var fits` receives a second result through a parameter, like
+    // returning `[text, fits]` from a TypeScript function.
+    [Theory]
+    [InlineData("fill in your run", 40f, true)]
+    [InlineData("fill in your run", 14f, true)]
+    [InlineData("one two\nthree four", 6f, true)]
+    [InlineData("abcde fg", 5f, true)]
+    [InlineData("", 10f, true)]
+    [InlineData("on unbreakablelongword here", 8f, false)]
+    [InlineData("one\nunbreakable", 6f, false)]
+    [InlineData("fill in your run", 0f, false)]
+    [InlineData("fill in your run", -5f, false)]
+    public void It_says_whether_every_line_fits(string text, float width, bool expected)
+    {
+        TextWrap.BreakAtSpaces(text, width, static s => s.Length, out var fits);
+
+        Assert.Equal(expected, fits);
+    }
+
+    // Each finished line is measured whole, so a line whose words and spaces add up to the room but
+    // which draws wider as a whole moves its last word down rather than running past the edge.
+    [Fact]
+    public void A_line_wider_as_a_whole_than_its_parts_moves_its_last_word_down()
+    {
+        var broken = TextWrap.BreakAtSpaces("ab cd ef", 5f, Kerned, out var fits);
+
+        Assert.Equal("ab\ncd\nef", broken);
+        Assert.True(fits);
+    }
+
+    // The word moved down still joins the words after it when they fit together.
+    [Fact]
+    public void A_word_moved_down_starts_the_next_line()
+    {
+        Assert.Equal("ab\ncd e", TextWrap.BreakAtSpaces("ab cd e", 5f, Kerned, out _));
     }
 }

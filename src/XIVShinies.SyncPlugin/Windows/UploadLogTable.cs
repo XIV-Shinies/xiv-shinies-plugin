@@ -21,9 +21,10 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// section draws while expanded; do not copy this pattern into an always-visible path.
 /// </para>
 /// <para>
-/// Wrapped text inside the table breaks at each CELL's edge — which wrap position 0 already
-/// means, because tables clamp the content region per column. That is why every wrapped call
-/// below passes a null wrap edge even when the table sits inside a card: the card-wide limit
+/// Wrapped text inside the table breaks at each CELL's edge — which a null wrap edge means,
+/// because tables clamp the content region per column, and the line breaks are measured to that
+/// region (as is ImGui's own wrapping, for a word wider than the cell). That is why every wrapped
+/// call below passes a null wrap edge even when the table sits inside a card: the card-wide limit
 /// would let one cell's text run underneath its neighbor.
 /// </para>
 /// </remarks>
@@ -101,10 +102,11 @@ internal sealed class UploadLogTable
         // the three gaps take two paddings each.
         var stretchRoom = tableWidth - whenWidth - triggerWidth - (3 * 2f * padding.X);
 
-        // Two scaled pixels over the widest word: one because BreakForWrap breaks a scaled pixel short
-        // of the edge, and one because ImGui rounds a column's width down to a whole pixel.
+        // Over the widest word by a scaled pixel, because BreakForWrap breaks a scaled pixel short of
+        // the edge, and by one more whole pixel, because ImGui rounds a column's width down to a whole
+        // pixel.
         var outcomeWidth =
-            Math.Max(outcomeWord + (2f * ImGuiHelpers.GlobalScale), stretchRoom * (0.8f / 3f));
+            Math.Max(outcomeWord + 1f + ImGuiHelpers.GlobalScale, stretchRoom * (0.8f / 3f));
 
         using var cellPadding = ImRaii.PushStyle(ImGuiStyleVar.CellPadding, padding);
 

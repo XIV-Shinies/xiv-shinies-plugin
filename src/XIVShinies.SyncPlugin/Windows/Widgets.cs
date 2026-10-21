@@ -33,10 +33,12 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// same look without inheriting anything.
 /// </para>
 /// <para>
-/// Colors here come from Dalamud's own palette (and, for muted text, from the active style)
-/// rather than hardcoded literals: the user picks a Dalamud theme, including light ones, and a
-/// hand-picked gray that reads fine on dark is mush on light. Brand accents are the deliberate
-/// exception and live in <see cref="Brand"/>.
+/// Colors here come from Dalamud's own palette (and, for muted text, from the style's own text
+/// colors) rather than hardcoded literals: the user picks a Dalamud theme, including light ones,
+/// and a hand-picked gray that reads fine on dark is mush on light. <see cref="ErrorColor"/> mixes
+/// the palette's red with the style's text color (see there). The deliberate exceptions keep fixed
+/// values whatever the theme: the brand accents in <see cref="Brand"/>, and
+/// <see cref="BrandToggle"/>'s resting gray off-state track and white knob, which carry no text.
 /// </para>
 /// <para>
 /// Muted text (<c>ImGuiCol.TextDisabled</c>, a low-contrast gray in Dalamud's default themes) is
@@ -63,17 +65,31 @@ internal static class Widgets
     internal const float InlineIconScale = 0.82f;
 
     /// <summary>The red for warnings the user should act on.</summary>
-    internal static readonly Vector4 ErrorColor = ImGuiColors.DalamudRed;
+    /// <remarks>
+    /// The palette's <c>DalamudRed</c> moved 40% of the way toward the active style's text color.
+    /// Pure red is hard to read at body-text size, and mixing in the text color keeps the result
+    /// readable on whatever theme is active: with the default white text it is #FF6666, and with a
+    /// light theme's dark text it becomes a darker red. A property rather than a field, so it reads
+    /// the style each time it is drawn; every caller is draw code.
+    /// </remarks>
+    // `=>` after a property's name makes a computed property, like a TypeScript getter.
+    // `Vector4.Lerp(a, b, t)` mixes two colors, `t` of the way from `a` to `b`, channel by channel.
+    internal static Vector4 ErrorColor =>
+        Vector4.Lerp(ImGuiColors.DalamudRed, ImGui.GetStyle().Colors[(int)ImGuiCol.Text], 0.4f);
 
     /// <summary>The green for good news — an accepted upload, a verified token.</summary>
-    internal static readonly Vector4 SuccessColor = ImGuiColors.HealerGreen;
+    /// <remarks>
+    /// A property, like <see cref="ErrorColor"/>, because the palette's colors belong to the active
+    /// style: read each time it is drawn, it follows a theme the user changes while the game runs.
+    /// </remarks>
+    internal static Vector4 SuccessColor => ImGuiColors.HealerGreen;
 
     /// <summary>
     /// The yellow for "working, but worth knowing" states — a cached (possibly-stale) source note,
-    /// for instance. From the Dalamud palette like the other two, so it reads correctly against
-    /// whatever theme — including light ones — the user has chosen.
+    /// for instance.
     /// </summary>
-    internal static readonly Vector4 CautionColor = ImGuiColors.DalamudYellow;
+    /// <remarks>A property for the same reason as <see cref="SuccessColor"/>.</remarks>
+    internal static Vector4 CautionColor => ImGuiColors.DalamudYellow;
 
     /// <summary>A consistent vertical gap between sections — one place to tune the page rhythm.</summary>
     internal static void SectionGap() => ImGui.Dummy(new Vector2(0f, 10f * ImGuiHelpers.GlobalScale));
@@ -120,21 +136,36 @@ internal static class Widgets
     /// <remarks>
     /// Needed because <c>TextWrapped</c> has no colored variant and <c>TextColored</c> does not
     /// wrap — long descriptions would run straight off the window edge. Pushing
-    /// <c>ImGuiCol.Text</c> recolors whatever text is drawn inside the scope. The wrap position is
-    /// pushed by hand so the caller's edge applies whatever encloses the call: <c>TextWrapped</c>
-    /// would keep any wrap position already pushed, such as a card's. A null
-    /// <paramref name="wrapEdge"/> pushes 0, which ImGui reads as the right edge of the current
-    /// content region: the window's, or a table cell's inside a table. Lines break at spaces wherever
-    /// each word fits (see <see cref="BreakForWrap"/>).
+    /// <c>ImGuiCol.Text</c> recolors whatever text is drawn inside the scope. Lines break at spaces
+    /// wherever each word fits (see <see cref="BreakForWrap"/>), measured to the caller's edge rather
+    /// than any wrap position already pushed, such as a card's. A null <paramref name="wrapEdge"/>
+    /// means the right edge of the current content region: the window's, or a table cell's inside a
+    /// table.
     /// </remarks>
     internal static void DrawWrapped(string text, Vector4 color, float? wrapEdge)
     {
+        // `out var everyLineFits` declares the variable that receives the second result, right
+        // where the call hands it back.
+        var broken = BreakForWrap(text, wrapEdge, out var everyLineFits);
+
         using (ImRaii.PushColor(ImGuiCol.Text, color))
-        using (ImRaii.TextWrapPos(wrapEdge ?? 0f))
+        using (ImRaii.TextWrapPos(WrapPosFor(everyLineFits, wrapEdge)))
         {
-            ImGui.TextUnformatted(BreakForWrap(text, wrapEdge));
+            ImGui.TextUnformatted(broken);
         }
     }
+
+    /// <summary>
+    /// The wrap position to push for text <see cref="BreakForWrap"/> has already broken: none when
+    /// every line fits, and otherwise the caller's edge.
+    /// </summary>
+    /// <remarks>
+    /// A negative position turns ImGui's own wrapping off, so the breaks already made are the only
+    /// ones; <see cref="TextWrap"/>'s remarks say why, and which text still needs that wrapping. 0
+    /// means the right edge of the current content region.
+    /// </remarks>
+    private static float WrapPosFor(bool everyLineFits, float? wrapEdge) =>
+        everyLineFits ? -1f : (wrapEdge ?? 0f);
 
     /// <summary>Draws wrapped text in one of the current style's own colors.</summary>
     /// <remarks>
@@ -156,22 +187,25 @@ internal static class Widgets
     /// for the right edge of the current content region (the window's, or a table cell's inside a
     /// table).
     /// </param>
-    private static string BreakForWrap(string text, float? wrapEdge)
+    /// <param name="everyLineFits">
+    /// Whether every line of the result fits (see <see cref="WrapPosFor"/> for what it decides).
+    /// </param>
+    private static string BreakForWrap(string text, float? wrapEdge, out bool everyLineFits)
     {
         var cursorX = ImGui.GetCursorPosX();
         var edge = wrapEdge ?? (cursorX + ImGui.GetContentRegionAvail().X);
 
-        // One scaled pixel short of the edge: ImGui's own wrapping measures the same line with its own
-        // rounding, and a line measured here as exactly filling the room must not be broken again there.
-        return BreakAtSpacesForFont(text, edge - cursorX - ImGuiHelpers.GlobalScale);
+        // One scaled pixel short of the edge, so a line measured here as exactly filling the room keeps
+        // a pixel of slack against ImGui's own rounding where its wrapping is still on.
+        return BreakAtSpacesForFont(text, edge - cursorX - ImGuiHelpers.GlobalScale, out everyLineFits);
     }
 
     /// <summary>Breaks text at spaces for a width, measured in the current font.</summary>
     // `static s => ...` is a lambda, like the arrow function `s => ...`, that may not use the local
     // variables, parameters or `this` around it, though it can still call static methods such as
     // ImGui's, so it carries no closure.
-    private static string BreakAtSpacesForFont(string text, float width) =>
-        TextWrap.BreakAtSpaces(text, width, static s => ImGui.CalcTextSize(s).X);
+    private static string BreakAtSpacesForFont(string text, float width, out bool everyLineFits) =>
+        TextWrap.BreakAtSpaces(text, width, static s => ImGui.CalcTextSize(s).X, out everyLineFits);
 
     /// <summary>
     /// A wrapped paragraph in which some spans carry their own color (null means the default text
@@ -783,8 +817,9 @@ internal static class Widgets
     {
         ImGui.BeginTooltip();
         var wrapEdge = ImGui.GetFontSize() * 24f;
-        ImGui.PushTextWrapPos(wrapEdge);
-        ImGui.TextUnformatted(BreakForWrap(text, wrapEdge));
+        var broken = BreakForWrap(text, wrapEdge, out var everyLineFits);
+        ImGui.PushTextWrapPos(WrapPosFor(everyLineFits, wrapEdge));
+        ImGui.TextUnformatted(broken);
         ImGui.PopTextWrapPos();
         ImGui.EndTooltip();
     }
