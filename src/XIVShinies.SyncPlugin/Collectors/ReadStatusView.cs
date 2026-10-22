@@ -1,4 +1,3 @@
-// StringComparison, for ordering the panel's chips by label.
 using System;
 using System.Collections.Generic;
 using XIVShinies.SyncPlugin.Api;
@@ -6,15 +5,12 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// One assembled "Reading from:" panel: the collection lines and the container lines, kept apart so the
-/// window can head each group with its own label.
+/// One assembled "Reading from:" panel: the collection lines and the container lines, kept apart so
+/// the window can head each group with its own label.
 /// </summary>
 /// <remarks>
-/// The two groups answer different questions, which is why they are two lists and not one. A
-/// <b>collection</b> line answers "can the sync see this collection at all?"; a <b>container</b> line
-/// answers "and where did the item counts come from?". A reader who cannot tell which kind of line they
-/// are looking at cannot act on it, and the shape of this record is what keeps the two apart without
-/// anything downstream having to rely on their order.
+/// A collection line answers "can the sync see this collection at all?"; a container line answers
+/// "where did the item counts come from?". Two lists keep them apart without relying on order.
 /// </remarks>
 public sealed record ReadStatus
 {
@@ -22,40 +18,20 @@ public sealed record ReadStatus
     public required IReadOnlyList<SourceNote> Collections { get; init; }
 
     /// <summary>
-    /// One line per storage container the item pass looked at (inventory, saddlebag, armoire, …), in
-    /// the order the pass reported them.
+    /// One line per storage container the item pass looked at (inventory, saddlebag, armoire and so
+    /// on), in the order the pass reported them.
     /// </summary>
     public required IReadOnlyList<SourceNote> Containers { get; init; }
 }
 
 /// <summary>
-/// Assembles every line of the settings window's "Reading from:" panel: what the sync managed to read
-/// this session, and what it did not.
+/// Assembles every line of the settings window's "Reading from:" panel: what the sync read this
+/// session, and what it missed.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The panel answers one question — "is the plugin actually seeing my collections?" — and that
-/// question has two halves. A <b>collection</b> can fail to be read at all (the game will not answer
-/// for achievements until the player has opened their Achievements window once), and a <b>storage
-/// container</b> the item counts are drawn from can be stale or never opened (the saddlebag, a
-/// never-summoned retainer). Both halves are reported here, as the two lists of
-/// <see cref="SourceNote"/> on a <see cref="ReadStatus"/> which the window prints without interpreting.
-/// </para>
-/// <para>
-/// Pure and Dalamud-free, which is what makes the <b>extensibility contract testable</b>: a row for a
-/// category this plugin has never heard of must flow through and produce a line. There is no table of
-/// category names here and no table of source names — a collection's line is built from the row the
-/// collector produced, and a container's line comes from <see cref="SourceNoteText.Describe"/>.
-/// Adding a collection, or a storage container, must require no change to this file.
-/// </para>
-/// <para>
-/// The two hint helpers this leans on both return null for something not worth saying, and the two
-/// nulls mean different things — which is why they are handled differently below.
-/// <see cref="CollectSkipReasons.Describe"/> returning null means "there is no advice for this reason",
-/// but the collection was still missed, so a line is still owed; the fallback copy supplies it.
-/// <see cref="SourceNoteText.Describe"/> returning null means "there is nothing to report about this
-/// container at all", so that entry is dropped entirely.
-/// </para>
+/// Reads no game state and names no category or source: a collection's line comes from its row and a
+/// container's from <see cref="SourceNoteText.Describe"/>. A new collection or container needs no
+/// change here.
 /// </remarks>
 public static class ReadStatusView
 {
@@ -63,19 +39,18 @@ public static class ReadStatusView
     /// Every line the panel should draw, split into its collection lines and its container lines.
     /// </summary>
     /// <param name="rows">
-    /// The settings window's category rows — the same list the consent card is drawn from
-    /// (see <see cref="CategorySettingsView.Build"/>). Only rows that are
-    /// <see cref="CategorySettingsRow.IsEffectivelyOn"/> produce a line: a collection the user (or the
-    /// server) switched off is not being uploaded by choice, so it has no read status worth reporting,
-    /// and a "not read" line beside it would read as a fault rather than as a decision.
+    /// The settings window's category rows, the list the consent card draws from (see
+    /// <see cref="CategorySettingsView.Build"/>). Only <see cref="CategorySettingsRow.IsEffectivelyOn"/>
+    /// rows produce a line: beside a collection switched off, "not read" would read as a fault rather
+    /// than a decision.
     /// </param>
     /// <param name="sourceNotes">
-    /// Per-container scan status from the most recent item pass, keyed by <see cref="SourceKeys"/>.
-    /// Empty before any pass has looked at the item sources, which simply means no container lines.
+    /// Per-container scan status from the latest item pass, keyed by <see cref="SourceKeys"/>. Empty
+    /// before any pass has looked at the item sources.
     /// </param>
     /// <param name="host">
-    /// The configured website's address. Lines that name the website use it, and a collector's own
-    /// notes have their <see cref="HostPlaceholder.Token"/> filled with it.
+    /// The configured website's address. Lines that name the website use it, and it fills a
+    /// collector's <see cref="HostPlaceholder.Token"/>.
     /// </param>
     public static ReadStatus Build(
         IReadOnlyList<CategorySettingsRow> rows,
@@ -85,10 +60,8 @@ public static class ReadStatusView
         var collections = new List<SourceNote>(rows.Count);
         var containers = new List<SourceNote>(sourceNotes.Count);
 
-        // The containers are only ever looked at on behalf of a manifest-driven collection, so with
-        // every such collection switched off they are not being read at all — and the scan status of a
-        // container nothing consults describes nothing. Left in, those lines would keep urging the user
-        // to open their saddlebag for a scan that is no longer happening.
+        // Containers are read only for a manifest-driven collection. With every such collection off,
+        // their lines would urge the user to open a saddlebag nothing is scanning.
         var anyManifestCollectionOn = false;
         foreach (var row in rows)
         {
@@ -99,18 +72,13 @@ public static class ReadStatusView
             }
         }
 
-        // --- Storage containers ---------------------------------------------------------------
-        // Built FIRST, because the collection lines below need to know whether this group ended up
-        // with anything in it — see DescribeCollection's manifest-driven rule.
-        //
-        // `foreach` over an IReadOnlyDictionary hands back each entry as a KeyValuePair, which
-        // deconstructs straight into (key, value) here.
+        // Containers first: DescribeCollection's manifest-driven rule needs to know if any line resulted.
         if (anyManifestCollectionOn)
         {
             foreach (var (sourceKey, status) in sourceNotes)
             {
-                // `is not { } note` reads as "is null": skip a container this copy set has no line for,
-                // rather than printing a raw wire string such as "unscanned" at the user.
+                // Null means nothing to report, so the container is skipped rather than shown as a raw
+                // wire string such as "unscanned".
                 if (SourceNoteText.Describe(sourceKey, status, host) is not { } note)
                     continue;
 
@@ -118,42 +86,27 @@ public static class ReadStatusView
             }
         }
 
-        // --- Collections ---------------------------------------------------------------------
         foreach (var row in rows)
         {
             if (!row.IsEffectivelyOn)
                 continue;
 
-            // `is { } note` reads as "is not null": a row with nothing to add to the panel is dropped
-            // rather than drawn — see DescribeCollection for the two cases where that happens.
             if (DescribeCollection(row, containers.Count > 0, host) is { } note)
                 collections.Add(note);
         }
 
-        // Alphabetical, matching the consent checklist the user reads these against — the two lists
-        // name the same collections, so a reader comparing them should not have to search.
-        //
-        // OrdinalIgnoreCase for the same reason GroupBySection uses it: these labels are English
-        // strings authored in this repo, and an ordinal sort gives every user the same order
-        // whatever their machine's locale — which is also what makes it testable.
-        //
-        // The CONTAINERS are deliberately left in the order the pass reported them, because that
-        // order groups the sources by how they behave — the ones a user can act on ahead of the one
-        // nothing can change — and alphabetising would scatter that grouping. It is the pass's
-        // emission order rather than a guarantee this type makes: the notes arrive in a dictionary,
-        // whose enumeration order the runtime does not promise, so nothing here can assert where any
-        // particular container lands. Sorting them would trade a helpful order for a merely
-        // different one, which is why it is not worth doing on top of an unpromised order.
+        // Sorted by label, ordinal and case-blind, to match the consent checklist in every locale.
+        // Containers keep the pass's order, which lists the ones a user can act on ahead of the one
+        // nothing can change; that order comes from a dictionary and is not promised.
         collections.Sort(ByLabel);
 
         return new ReadStatus { Collections = collections, Containers = containers };
     }
 
-    /// <summary>Orders two chips by the label the user actually reads.</summary>
-    /// <remarks>
-    /// A label can repeat — two collections may choose the same display name — so the note's own
-    /// text breaks the tie, leaving a fixed order rather than an arbitrary one.
-    /// </remarks>
+    /// <summary>
+    /// Orders two chips by label. Two collections may share a display name, so the note's text breaks
+    /// the tie.
+    /// </summary>
     private static int ByLabel(SourceNote left, SourceNote right)
     {
         var byLabel = string.Compare(left.Label, right.Label, StringComparison.OrdinalIgnoreCase);
@@ -162,58 +115,32 @@ public static class ReadStatusView
             : string.Compare(left.Text, right.Text, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// One collection's note — whether the last pass could read it, and what to do if not — or null
-    /// when this collection has nothing to add to the panel.
-    /// </summary>
+    /// <summary>One collection's note, or null when it adds nothing to the panel.</summary>
     /// <remarks>
-    /// <para>
-    /// A collection that was read in full is a healthy chip: the label is the collection's own
-    /// display name, the chip's green check is the whole message, and the only thing it may add is
-    /// optional hover copy the collector attached. A collection read only in part, or missed
-    /// entirely, is a full line whose text completes the pattern
-    /// "<c>{DisplayName}: {phrase}</c>" — which is why every string in
-    /// <see cref="CollectSkipReasons.Describe"/> is written as a phrase rather than a standalone
-    /// sentence. Nothing here knows which collection it is describing: the name comes from the row
-    /// and the phrase comes from what the collector itself reported.
-    /// </para>
-    /// <para>
-    /// Null for a deliberate skip (see <see cref="CollectSkipReasons.IsDeliberate"/>), and under the
-    /// manifest-driven rule. A manifest-driven collection's facts ARE the item counts read out of the
-    /// containers, so when it has no skip reason its own line says nothing the container group below
-    /// does not already say in more detail — and a line that only repeats its neighbors teaches the
-    /// reader to skim past both. It is dropped only while there is at least one container line to
-    /// stand in for it: no pass has reported yet, or every status it did report was one this copy set
-    /// has no line for, and dropping this line as well would leave the panel silent about a
-    /// collection the user has switched on. A manifest-driven collection <i>missed</i> for any other
-    /// reason is never dropped: why (the server's config has not arrived, the inventory is
-    /// unreadable, no consent group beneath it is switched on) exists nowhere else in the panel, so
-    /// that line is always owed. Keyed on the collector's own
-    /// <see cref="CategorySettingsRow.UsesItemManifest"/> flag, never on a category name — a future
-    /// manifest-driven collection inherits the rule for free.
-    /// </para>
+    /// A full read is a chip; a partial read or a miss is a "<c>{DisplayName}: {phrase}</c>" line (see
+    /// <see cref="CollectSkipReasons.Describe"/>). Null for a deliberate skip (see
+    /// <see cref="CollectSkipReasons.IsDeliberate"/>), and for a healthy manifest-driven collection
+    /// while the panel has a container line, because its facts are the container counts; with no
+    /// container line, dropping it would leave the panel silent about a collection the user switched
+    /// on. A missed manifest-driven collection always keeps its line, because its reason appears
+    /// nowhere else.
     /// </remarks>
     /// <param name="row">The category row this line is about.</param>
     /// <param name="hasContainerLines">
-    /// Whether the panel's container group ended up with at least one line in it — the thing a
-    /// suppressed manifest-driven collection is being suppressed in favor of. Asked about the LINES
-    /// rather than the raw statuses: a status <see cref="SourceNoteText.Describe"/> has no copy for is
-    /// dropped from the panel, so it cannot stand in for anything the reader can actually see.
+    /// Whether the panel's container group has at least one line. Asked of the lines, not the raw
+    /// statuses: a status <see cref="SourceNoteText.Describe"/> has no copy for draws nothing, so it
+    /// cannot stand in for this line.
     /// </param>
     /// <param name="host">The configured website's address (see <see cref="Build"/>).</param>
     private static SourceNote? DescribeCollection(
         CategorySettingsRow row, bool hasContainerLines, string host)
     {
-        // No skip reason means the pass read this collection. Nested beneath that: whether it
-        // read all of it, or only part.
+        // No skip reason: the pass read this collection, in full or in part.
         if (row.SkipReason is not { } reason)
         {
-            // Read, but only partly: the phrase the collector authored names the unread half and
-            // what reads it. Drawn as a Missing line because that is the honest tone for the
-            // unread half — it has contributed nothing yet, and that must stay visible rather than
-            // hide in a hover. Never suppressed for a
-            // manifest-driven row: unlike the healthy chip below, the phrase says something no
-            // container line says.
+            // Read in part. Missing is the honest tone for the unread half, which must stay visible
+            // rather than hide in a hover. Never dropped for a manifest-driven row: no container line
+            // says this.
             if (row.PartialNote is { } partialNote)
             {
                 return new SourceNote
@@ -224,27 +151,21 @@ public static class ReadStatusView
                 };
             }
 
-            // The healthy resting state, with nothing for the user to do, so the note is a chip
-            // carrying only the collection's name — plus whatever optional hover copy the
-            // collector attached (a hover may carry information, never a required action; see
-            // SourceNote.Detail).
+            // Healthy: a chip with the collection's name and any hover copy the collector attached.
+            // A hover may carry information, never a required action (see SourceNote).
             return row.UsesItemManifest && hasContainerLines
                 ? null
                 : new SourceNote
                 {
                     Label = row.DisplayName,
                     Tone = SourceTone.Live,
-                    // `is { } detail` matches a detail that is present and names it, so only a real
-                    // detail is filled; with none, the chip has no hover.
                     Detail = row.CollectedDetail is { } detail ? HostPlaceholder.Fill(detail, host) : null,
                 };
         }
 
-        // A deliberate skip is a decision, not a miss (see IsDeliberate), so it gets no line.
         if (CollectSkipReasons.IsDeliberate(reason))
             return null;
 
-        // A reason with advice: the collection was missed AND the hint says what resolves it.
         if (CollectSkipReasons.Describe(reason, host) is { } hint)
         {
             return new SourceNote
@@ -255,8 +176,8 @@ public static class ReadStatusView
             };
         }
 
-        // A reason with no advice — a collector bug, an unloadable game sheet. The collection was still
-        // missed, so the panel must say so; it just has no action to offer alongside it.
+        // No advice for this reason, such as a collector bug or an unloadable game sheet. The
+        // collection was still missed, so it still gets a line.
         return new SourceNote
         {
             Label = row.DisplayName,

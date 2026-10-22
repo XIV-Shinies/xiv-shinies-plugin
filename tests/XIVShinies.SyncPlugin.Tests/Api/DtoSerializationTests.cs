@@ -7,13 +7,12 @@ using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
-// Pins the DTOs to the exact wire format in docs/api-contract.md. The server owns this shape, so
-// these tests are the tripwire that fires if a field is renamed, a casing slips, or an absent
-// category accidentally starts serializing as an empty array.
+// Pins the DTOs to the wire format in docs/api-contract.md, which the server owns. A renamed field,
+// a casing slip, or an absent category serializing as an empty array fails here.
 public class DtoSerializationTests
 {
-    // Serializes a value and reparses it as a mutable JSON object so tests can ask "is this key
-    // present at all?" — the omitted-vs-empty distinction the monotonic-write rule depends on.
+    // Reparsed so a test can ask whether a key is present at all: the omitted-versus-empty
+    // distinction that monotonic writes depend on.
     private static JsonObject Serialize<T>(T value) =>
         JsonNode.Parse(JsonSerializer.Serialize(value, ApiJson.Options))!.AsObject();
 
@@ -54,8 +53,8 @@ public class DtoSerializationTests
         Assert.False(json.ContainsKey("manifestVersion"));
     }
 
-    // The contract accepts exactly "full" | "partial" (anything else is a 400), and an absent
-    // object means "partial" — so null must serialize as no key at all, not as an empty object.
+    // The contract accepts only "full" or "partial", answering anything else with a 400, and an
+    // absent object means partial.
     [Fact]
     public void SyncRequest_omits_collectionScopes_when_it_is_null()
     {
@@ -86,8 +85,7 @@ public class DtoSerializationTests
         Assert.Equal("a1b2c3d4e5f6", json["manifestVersion"]!.GetValue<string>());
     }
 
-    // The monotonic-write rule: a category that could not be read must be ABSENT, never [].
-    // Absence means "not read this time"; [] means "read, and it was empty".
+    // Monotonic writes: absence means "not read this time", while [] means "read, and empty".
     [Fact]
     public void Unread_collection_categories_are_omitted_entirely()
     {
@@ -144,8 +142,7 @@ public class DtoSerializationTests
         Assert.True(item["fresh"]!.GetValue<bool>());
     }
 
-    // A category the plugin knows nothing about today must ride the wire untouched. The server
-    // strips keys it does not recognize, which is what lets both sides ship independently.
+    // The server strips keys it does not recognize, which lets both sides ship independently.
     [Fact]
     public void An_unknown_category_key_serializes_without_any_special_handling()
     {
@@ -235,8 +232,8 @@ public class DtoSerializationTests
         Assert.Equal(new uint[] { 7851, 7852 }, config.ItemManifest);
         Assert.Equal("a1b2c3d4e5f6", config.ManifestVersion);
 
-        // Optional keys an older server never sends stay null — the omit-when-unseen set is
-        // one of them, and null must read as "omit nothing" downstream.
+        // An optional key an older server never sends stays null. For this set, null means omit
+        // nothing.
         Assert.Null(config.ItemOmitWhenUnseenIds);
     }
 
@@ -255,8 +252,7 @@ public class DtoSerializationTests
         Assert.Equal(new uint[] { 45043, 45044 }, config.ItemOmitWhenUnseenIds);
     }
 
-    // A switch the server has never heard of reads as enabled, so a new collector works before the
-    // server grows its toggle. The server strips payload keys it does not recognize.
+    // Defaulting to enabled lets a new collector work before the server grows its toggle.
     [Fact]
     public void An_unknown_category_switch_defaults_to_enabled()
     {
@@ -276,8 +272,7 @@ public class DtoSerializationTests
     // --- Category notes ------------------------------------------------------------------------
 
     // The server explains a switched-off category in its own words, keyed like the switches. The
-    // plugin prints the sentence and never reads it — no keyword, no parsing — so the two sides
-    // can reword this without a plugin release.
+    // plugin prints the sentence and never parses it, so it can be reworded without a plugin release.
     [Fact]
     public void ConfigResponse_deserializes_a_category_note()
     {
@@ -295,13 +290,11 @@ public class DtoSerializationTests
             "In testing — it switches on once it is ready.",
             config.CategoryNote("orchestrionRolls"));
 
-        // No note for a category the server did not explain, and none for one it never mentioned.
         Assert.Null(config.CategoryNote("quests"));
         Assert.Null(config.CategoryNote("facewear"));
     }
 
-    // The field is additive, so a server that predates it stays a supported peer: no note anywhere
-    // rather than a deserialization failure.
+    // The field is additive: a server without it gives no notes, not a deserialization failure.
     [Fact]
     public void A_config_without_category_notes_reports_none()
     {
@@ -318,9 +311,8 @@ public class DtoSerializationTests
         Assert.Null(config.CategoryNote("orchestrionRolls"));
     }
 
-    // The backend is user-overridable and therefore untrusted, and this text renders in ImGui.
-    // Clamped at the door, like every other adopted server string, and marked so a reader can
-    // tell a cut sentence from one the server wrote that way.
+    // The backend is user-overridable, so untrusted, and this text renders in ImGui. The marker tells
+    // a cut sentence from one the server wrote that way.
     [Fact]
     public void An_overlong_category_note_is_clamped()
     {
@@ -338,9 +330,7 @@ public class DtoSerializationTests
         Assert.Equal(new string('n', ServerText.MaxAdoptedLength) + "...", note);
     }
 
-    // A note exactly at the ceiling is not "too long", so it passes through whole and unmarked.
-    // The boundary is pinned because the marker makes an off-by-one visible to the user: a
-    // sentence that fits would otherwise be reported as truncated.
+    // The marker makes an off-by-one visible: a sentence that fits would show as truncated.
     [Fact]
     public void A_category_note_exactly_at_the_ceiling_is_untouched()
     {
@@ -357,9 +347,9 @@ public class DtoSerializationTests
         Assert.Equal(new string('n', ServerText.MaxAdoptedLength), config.CategoryNote("quests"));
     }
 
-    // The contract says a note is always a non-empty string, and the deserializer does not enforce
-    // the non-nullable declaration — a JSON null lands in the map as one. Reading it must give the
-    // same answer as no note at all, because the alternative is throwing on the draw path.
+    // The contract says a note is a non-empty string, but the deserializer does not enforce the
+    // non-nullable declaration, so a JSON null lands in the map. Reading it must not throw on the
+    // draw path.
     [Fact]
     public void A_null_category_note_reports_none()
     {
@@ -376,7 +366,6 @@ public class DtoSerializationTests
         Assert.Null(config.CategoryNote("quests"));
     }
 
-    // Padding is the server's, not the reader's.
     [Fact]
     public void A_padded_category_note_is_trimmed()
     {
@@ -393,9 +382,8 @@ public class DtoSerializationTests
         Assert.Equal("In testing.", config.CategoryNote("quests"));
     }
 
-    // A length cap does not bound the SHAPE of what is drawn: a note well inside it can still be
-    // hundreds of blank lines, which would bury the rest of the consent list. Folded to one line,
-    // so the server cannot lay out its own copy inside a panel it does not own.
+    // A note within the length cap can still be hundreds of blank lines, burying the rest of the
+    // consent list. One line keeps the server from laying out copy in a panel it does not own.
     [Fact]
     public void A_multi_line_category_note_is_folded_onto_one_line()
     {
@@ -412,8 +400,7 @@ public class DtoSerializationTests
         Assert.Equal("In testing. Switching on soon.", config.CategoryNote("quests"));
     }
 
-    // Pins that a cut landing inside a surrogate pair drops the whole character; ServerText.Clamp
-    // explains why half of one must never survive.
+    // ServerText.Clamp explains why half a surrogate pair must never survive.
     [Fact]
     public void A_category_note_cut_mid_character_drops_the_whole_character()
     {
@@ -434,8 +421,8 @@ public class DtoSerializationTests
         Assert.DoesNotContain(clamped, char.IsSurrogate);
     }
 
-    // A blank note is the server saying nothing in a roundabout way. Treated as nothing, so the
-    // panel falls back to its own line rather than drawing an empty gap where a reason belongs.
+    // Reading a blank note as none makes the panel fall back to its own line rather than draw an
+    // empty gap where a reason belongs.
     [Fact]
     public void A_blank_category_note_reports_none()
     {
@@ -452,7 +439,7 @@ public class DtoSerializationTests
         Assert.Null(config.CategoryNote("quests"));
     }
 
-    // Optional keys are OMITTED rather than null, so the plugin can feature-detect them.
+    // The server omits optional keys rather than sending null, so the plugin can feature-detect them.
     [Fact]
     public void SyncResponse_leaves_omitted_optional_keys_null()
     {
@@ -471,14 +458,12 @@ public class DtoSerializationTests
         Assert.Null(response.ProvenSteps);
         Assert.Null(response.SkippedCategories);
 
-        // A server generation that names fewer categories simply yields fewer keys — an unsent
-        // category is an absent key, and nothing to throw over.
+        // An unsent category is an absent key, not an error.
         Assert.False(response.Written.ContainsKey("tripleTriadCards"));
     }
 
-    // Written counts are keyed, not named, so a category this plugin has never heard of arrives
-    // intact rather than failing the whole response. That is what lets the server add a collection
-    // without waiting for the plugin.
+    // Written counts are a map, so an unknown category arrives intact and the server can add a
+    // collection without waiting for the plugin.
     [Fact]
     public void SyncResponse_reads_written_counts_for_an_unknown_category()
     {
@@ -492,8 +477,7 @@ public class DtoSerializationTests
         Assert.Equal(7, response.Written["facewear"]);
     }
 
-    // A response with no written object at all still deserializes: the field is informational, and
-    // refusing it would turn a successful upload into a reported failure.
+    // The field is informational; refusing the response would report a successful upload as failed.
     [Fact]
     public void SyncResponse_tolerates_a_response_with_no_written_object()
     {
@@ -550,8 +534,8 @@ public class DtoSerializationTests
         Assert.Equal("Excalibur", error.World);
     }
 
-    // A 400 carries the flattened validation issues. Useful for the log; a non-JSON body arrives
-    // in the same shape with the explanation under formErrors.
+    // A 400 carries the flattened validation issues, for the log. A non-JSON body arrives in the same
+    // shape, explained under formErrors.
     [Fact]
     public void ErrorResponse_reads_the_400_validation_issues()
     {
@@ -584,7 +568,6 @@ public class DtoSerializationTests
 
         Assert.Equal("""{"id":7851,"count":5,"hqCount":2,"collectableCount":1,"fresh":true}""", json);
 
-        // Round-trip: deserialize and verify the record equals the original
         var deserialized = JsonSerializer.Deserialize<ItemPossession>(json, ApiJson.Options)!;
         Assert.Equal(possession, deserialized);
     }
@@ -592,9 +575,8 @@ public class DtoSerializationTests
     [Fact]
     public void ItemPossession_omits_quality_count_keys_when_null()
     {
-        // The common case: most relic materials only exist in normal quality. The optional keys
-        // must be ABSENT (WhenWritingNull), not zero — absent keys cost no bytes and can never be
-        // misread as a fact by an older server.
+        // Most relic materials exist only in normal quality. An absent key costs no bytes, and an
+        // older server cannot misread it as a fact the way it could a zero.
         var possession = new ItemPossession { Id = 7851, Count = 0, Fresh = true };
 
         var json = JsonSerializer.Serialize(possession, ApiJson.Options);
@@ -629,8 +611,7 @@ public class DtoSerializationTests
     [Fact]
     public void ConfigResponse_without_groups_leaves_them_null()
     {
-        // A config without groups must deserialize cleanly — an older server is a supported peer,
-        // and null groups is the signal to fall back to the flat manifest.
+        // An older server sends no groups, and null means fall back to the flat manifest.
         const string json = """
             {"categories":{},"enabled":true,
              "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
@@ -662,8 +643,7 @@ public class DtoSerializationTests
     [Fact]
     public void ConfigResponse_without_an_occult_tracker_block_leaves_it_null()
     {
-        // An older server never sends the block. Null is the signal that this server has no
-        // tracker endpoint at all, so the feature stays off (see OccultGate).
+        // Null means this server has no tracker endpoint, so the feature stays off; see OccultGate.
         const string json = """
             {"categories":{},"enabled":true,
              "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
@@ -675,10 +655,9 @@ public class DtoSerializationTests
         Assert.Null(config.OccultTracker);
     }
 
-    // The kill switch is required (guessing it would be trusting a half-parsed block with the
-    // one value that gates uploads), but the cadence is not: the scheduler clamps whatever
-    // arrives, so a block without it must not fail the WHOLE config deserialization — that
-    // would also strand /sync on its last-known manifest.
+    // The kill switch is required: it gates uploads, so it is never guessed. The cadence is not,
+    // since the scheduler clamps whatever arrives, and failing the whole config would strand /sync
+    // on its last-known manifest.
     [Fact]
     public void An_occult_tracker_block_without_a_cadence_still_parses()
     {
@@ -713,7 +692,7 @@ public class DtoSerializationTests
         Assert.Equal("In testing", config.CrucibleRuns.Note);
     }
 
-    // A server without the Crucible endpoint never sends the block, which reads as null.
+    // A server without the Crucible endpoint never sends the block.
     [Fact]
     public void ConfigResponse_without_a_crucible_runs_block_leaves_it_null()
     {
@@ -728,8 +707,7 @@ public class DtoSerializationTests
         Assert.Null(config.CrucibleRuns);
     }
 
-    // The switch is required; the cadence and the note are not, so a block without them still
-    // parses rather than failing the whole config.
+    // The switch is required; the cadence and the note are not.
     [Fact]
     public void A_crucible_runs_block_with_only_its_switch_still_parses()
     {
@@ -765,8 +743,7 @@ public class DtoSerializationTests
     [Fact]
     public void ConfigResponse_without_a_quest_sequence_manifest_leaves_it_null()
     {
-        // An older server never sends the field. Null (rather than a deserialization failure or an
-        // empty default) is the signal that the server is not asking about any quest sequences.
+        // An older server never sends the field. Null means the server asks about no quest sequence.
         const string json = """
             {"categories":{},"enabled":true,
              "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
@@ -778,9 +755,8 @@ public class DtoSerializationTests
         Assert.Null(config.QuestSequenceManifest);
     }
 
-    // Quest sequences travel as an OBJECT keyed by quest id, not an array: the value (which step
-    // the journal is on) belongs to the id, and an object makes that pairing unambiguous on the
-    // wire. JSON object keys are strings, so the uint ids serialize as their decimal strings.
+    // An object, not an array, so each journal step is unambiguously paired with its quest id. JSON
+    // keys are strings, so the ids travel as decimal strings.
     [Fact]
     public void Quest_sequences_serialize_as_an_object_keyed_by_quest_id()
     {
@@ -799,10 +775,9 @@ public class DtoSerializationTests
         Assert.Equal(255, sequences["69208"]!.GetValue<int>());
     }
 
-    // The one nested-object category: a "jobs" map of per-job records plus an optional knowledge
-    // record. OccultProgressionFactsTests pins the node tree itself; this test pins that the tree
-    // survives a full request serialization through ApiJson.Options intact — keys verbatim,
-    // nothing camel-cased or dropped by the serializer.
+    // The one nested-object category: a "jobs" map of per-job records and an optional knowledge
+    // record. OccultProgressionFactsTests pins the tree; this pins that ApiJson.Options keeps its
+    // keys verbatim and drops nothing.
     [Fact]
     public void Occult_progression_serializes_as_nested_objects_with_verbatim_keys()
     {
@@ -849,9 +824,8 @@ public class DtoSerializationTests
     [Fact]
     public void SyncRequest_with_item_sources_carries_them_under_itemSources()
     {
-        // glamourDresser doubles as the proof that a mid-word capital in a source key reaches the
-        // wire verbatim; the state pairings mirror the contract's examples (armoire is the one
-        // source that uses "loaded").
+        // glamourDresser shows a mid-word capital in a source key reaching the wire verbatim. The
+        // states follow the contract's examples; armoire is the one source that uses "loaded".
         var request = MinimalRequest() with
         {
             ItemSources = new Dictionary<string, ItemSourceStatus>
@@ -880,9 +854,8 @@ public class DtoSerializationTests
         Assert.False(json.ContainsKey("itemSources"));
     }
 
-    // An explicit JSON null gets past `required` (see ApiJson), and this lookup runs once per
-    // row per frame — so a backend sending null must read as "the server named nothing", the
-    // same answer as a key the map does not carry, rather than throwing.
+    // An explicit JSON null gets past `required` (see ApiJson), and this lookup runs per row per
+    // frame, so a null map must read as one that names nothing rather than throw.
     [Fact]
     public void A_null_categories_map_reads_as_every_category_enabled()
     {

@@ -7,16 +7,15 @@ using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Tests.Occult;
 
-// Pins the occult upload to the exact wire format in docs/api-contract.md § occult/instance-state.
-// The subtle parts are deliberate departures from the /sync serializer defaults: sinceUtc must
-// appear EXPLICITLY as null (the contract's zod schema is .nullable(), not .nullish()), and
-// timestamps must be second-exact UTC strings ending in "Z" (a "+00:00" offset is rejected).
+// Pins the occult upload to docs/api-contract.md § occult/instance-state. Two rules depart from
+// the /sync serializer: sinceUtc is written as an explicit null, because the contract's zod schema
+// is .nullable(), not .nullish(); and timestamps are whole-second UTC ending in "Z", since
+// "+00:00" is rejected.
 public class OccultUploadBuilderTests
 {
     private static readonly DateTimeOffset Since = DateTimeOffset.FromUnixTimeSeconds(1786465621);
 
-    // Serializes with the shared wire policy and reparses so tests can ask "is this key present
-    // at all?" — the omitted-vs-null distinction both matter here.
+    // Reparsed so a test can tell an omitted key from a null one.
     private static JsonObject Serialize<T>(T value) =>
         JsonNode.Parse(JsonSerializer.Serialize(value, ApiJson.Options))!.AsObject();
 
@@ -40,8 +39,8 @@ public class OccultUploadBuilderTests
         ushort id, OccultEncounterStatus status, DateTimeOffset? since = null) =>
         new() { IsFate = true, Id = id, Status = status, SinceUtc = since };
 
-    // Values, not just key presence: Build takes four consecutive strings, so a swapped
-    // argument pair would keep every key intact while binding the wrong character.
+    // Values, not just keys: Build takes four strings in a row, so a swapped pair would keep every
+    // key while binding the wrong character.
     [Fact]
     public void The_request_carries_the_identity_values_under_the_contract_field_names()
     {
@@ -56,7 +55,7 @@ public class OccultUploadBuilderTests
         Assert.True(json.ContainsKey("encounters"));
     }
 
-    // All four contract words, not a sample — the server rejects anything else.
+    // Every contract word, because the server rejects anything else.
     [Theory]
     [InlineData(OccultTrigger.Enter, "enter")]
     [InlineData(OccultTrigger.Change, "change")]
@@ -68,10 +67,8 @@ public class OccultUploadBuilderTests
         Assert.Equal(expected, json["trigger"]!.GetValue<string>());
     }
 
-    // Without a readable current world, the instance identity is the territory alone — the
-    // worldId key must be OMITTED (the server reads an absent key as "un-scoped"), and
-    // nothing else may ride along: the tracker is resolved by fingerprint, so extra fields
-    // would imply an identity that does not exist.
+    // The server reads an absent worldId as unscoped. Nothing else may ride along: the tracker is
+    // resolved by fingerprint, so extra fields would imply an identity that does not exist.
     [Fact]
     public void The_instance_object_carries_only_the_territory_when_no_world_is_known()
     {
@@ -81,8 +78,7 @@ public class OccultUploadBuilderTests
         Assert.Single(instance);
     }
 
-    // A readable current world rides along as worldId, which is what scopes the tracker to a
-    // data center server-side.
+    // worldId is what scopes the tracker to a data center on the server.
     [Fact]
     public void The_instance_object_carries_the_current_world_when_known()
     {
@@ -122,7 +118,7 @@ public class OccultUploadBuilderTests
         Assert.False(row.ContainsKey("dynamicEventId"));
     }
 
-    // All three contract words — the vocabulary is closed.
+    // Every contract word, because the vocabulary is closed.
     [Theory]
     [InlineData(OccultEncounterStatus.Preparing, "preparing")]
     [InlineData(OccultEncounterStatus.Active, "active")]
@@ -135,8 +131,6 @@ public class OccultUploadBuilderTests
         Assert.Equal(expected, row["status"]!.GetValue<string>());
     }
 
-    // The contract's example is "2026-08-11T16:02:15Z": whole seconds, UTC, trailing Z — never
-    // a "+00:00" numeric offset.
     [Fact]
     public void SinceUtc_serializes_as_a_second_exact_utc_string_with_a_trailing_Z()
     {
@@ -146,8 +140,6 @@ public class OccultUploadBuilderTests
         Assert.Equal("2026-08-11T16:27:01Z", row["sinceUtc"]!.GetValue<string>());
     }
 
-    // "null entries carry state but never identity" — the key must be PRESENT with a JSON null,
-    // not omitted the way the /sync serializer treats null properties.
     [Fact]
     public void A_null_sinceUtc_is_written_explicitly_not_omitted()
     {
@@ -170,14 +162,13 @@ public class OccultUploadBuilderTests
 
         Assert.Equal(3, rows.Count);
 
-        // Order and identity both: the rows come out exactly as the tracker reported them.
         Assert.Equal(48, rows[0]!["dynamicEventId"]!.GetValue<int>());
         Assert.Equal(46, rows[1]!["dynamicEventId"]!.GetValue<int>());
         Assert.Equal(1972, rows[2]!["fateId"]!.GetValue<int>());
     }
 
-    // A leave from an instance with nothing tracked (or reset moments earlier) still carries
-    // the key: an ABSENT encounters array is a 400, an empty one is a valid snapshot.
+    // A leave with nothing tracked still carries the key: an absent encounters array is a 400, an
+    // empty one a valid snapshot.
     [Fact]
     public void An_empty_snapshot_serializes_as_an_empty_array_not_an_omitted_key()
     {

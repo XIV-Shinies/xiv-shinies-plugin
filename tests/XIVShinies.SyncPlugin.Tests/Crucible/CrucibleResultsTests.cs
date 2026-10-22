@@ -36,8 +36,6 @@ public class CrucibleResultsTests
     private const int FirstRankBefore = 121;
     private const int FirstRankAfter = 137;
 
-    // Board 1's results screen: one bonus, eight familiars brought. Records compare by their
-    // values, so each `Assert.Equal` on a record checks every field.
     [Fact]
     public void Reads_a_board_one_results_screen()
     {
@@ -61,9 +59,7 @@ public class CrucibleResultsTests
         Assert.Equal(new CrucibleResultFamiliar(16, 9, 9, 20, 41), reading.Familiars[0]);
     }
 
-    // A familiar that ranked up reads both ranks and its EXP toward the next rank before and after
-    // the run. The `!` after `reading` tells the compiler it is not null here, like TypeScript's
-    // `!`; `Single` returns the one familiar that matches and throws unless exactly one does.
+    // EXP is toward the next rank, read before and after the run.
     [Fact]
     public void A_familiar_that_ranked_up_reads_both_ranks()
     {
@@ -74,7 +70,6 @@ public class CrucibleResultsTests
             reading!.Familiars.Single(familiar => familiar.PetId == 40));
     }
 
-    // Board 2's results screen, twelve familiars brought.
     [Fact]
     public void Reads_a_board_two_results_screen()
     {
@@ -87,8 +82,7 @@ public class CrucibleResultsTests
         Assert.Equal(7875, reading.TotalScore);
     }
 
-    // A familiar's id is its icon minus 242000, and item icons start at 243000; an icon at or below
-    // 242000, or at or above 243000, is not a familiar's.
+    // A familiar's id is its icon minus 242000, and item icons start at 243000.
     [Theory]
     [InlineData(43u)]
     [InlineData(242000u)]
@@ -143,7 +137,7 @@ public class CrucibleResultsTests
         Assert.Null(CrucibleResults.Read(values));
     }
 
-    // Every value the screen is read for has to be there; one missing means the layout has moved.
+    // One missing value means the layout has moved.
     [Theory]
     [InlineData(Mode)]
     [InlineData(BaseScore)]
@@ -173,7 +167,7 @@ public class CrucibleResultsTests
         Assert.Null(CrucibleResults.Read(values));
     }
 
-    // A number too large for an int is refused rather than turned negative, whichever field it is.
+    // A value past int.MaxValue is refused rather than turned negative.
     [Theory]
     [InlineData(TotalScore)]
     [InlineData(FirstExpAfter)]

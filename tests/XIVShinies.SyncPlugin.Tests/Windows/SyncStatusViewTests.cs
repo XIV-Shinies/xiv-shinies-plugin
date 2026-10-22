@@ -11,20 +11,15 @@ namespace XIVShinies.SyncPlugin.Tests.Windows;
 /// The sync card's precedence ladder: which single fact the card states when several are true.
 /// </summary>
 /// <remarks>
-/// Most cases here pin an <b>override</b> rather than a lone state, because the ladder's whole job
-/// is deciding what to say when more than one thing is true at once, and a test per state in
-/// isolation would pass against almost any ordering. The two healthy-pipeline cases and the
-/// empty-list case are the exceptions: they pin the ladder's floor and its one boundary.
+/// Most cases pin an override rather than a lone state: a test per state in isolation would pass
+/// against almost any ordering. The two healthy-pipeline cases and the empty-list case pin the
+/// ladder's floor and its one boundary.
 /// </remarks>
 public class SyncStatusViewTests
 {
-    // The website address the card's sentences name. `const` fixes the value when the code compiles,
-    // which is also what lets it appear inside an [InlineData] row. A made-up address, so a test can
-    // tell one that was passed in from one written into the copy.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
-    // `bool userEnabled = true` gives the parameter a default, so a call may leave it out, like
-    // `userEnabled = true` in a TypeScript parameter list.
     private static CategorySettingsRow Row(
         bool userEnabled = true,
         bool serverEnabled = true,
@@ -47,10 +42,6 @@ public class SyncStatusViewTests
     private static IReadOnlyList<CategorySettingsRow> Paused() =>
         new[] {Row(serverEnabled: false, serverGloballyOff: true)};
 
-    /// <summary>
-    /// The ladder, logged in, with reading the character not given up and no sharing unless a test
-    /// says otherwise.
-    /// </summary>
     private static SyncStatusKind Select(
         bool masterEnabled,
         IReadOnlyList<CategorySettingsRow> rows,
@@ -80,8 +71,8 @@ public class SyncStatusViewTests
             Select(true, Running(), false, hasCharacter: true, hasUploaded: false));
     }
 
-    // The user's own switch beats everything: reporting the last upload's "will try again" would
-    // be a lie, because the plugin will not try again until they switch it back.
+    // The last upload's "will try again" would be false: nothing tries until the user switches it back
+    // on.
     [Fact]
     public void The_users_own_switch_outranks_every_other_state()
     {
@@ -90,8 +81,7 @@ public class SyncStatusViewTests
             Select(false, Paused(), true, hasCharacter: false, hasUploaded: true));
     }
 
-    // A paused server explains the silence completely, and the actions the blocked state asks for
-    // would not restart anything while the pause holds.
+    // The fixes the blocked state asks for would restart nothing while the pause holds.
     [Fact]
     public void A_paused_server_outranks_a_block_the_user_could_otherwise_fix()
     {
@@ -100,8 +90,8 @@ public class SyncStatusViewTests
             Select(true, Paused(), true, hasCharacter: true, hasUploaded: true));
     }
 
-    // A pause turns every row off, so "nothing is switched on" is true at the same moment — and
-    // must not be what the card says, because it would blame the user for the server's outage.
+    // A pause also turns every row off, and "nothing is switched on" would blame the user for the
+    // server's outage.
     [Fact]
     public void A_paused_server_is_not_reported_as_the_user_having_switched_everything_off()
     {
@@ -110,8 +100,7 @@ public class SyncStatusViewTests
             Select(true, Paused(), false, hasCharacter: true, hasUploaded: true));
     }
 
-    // A real fault outranks an idle pipeline: the user can fix the token, and being told about
-    // empty checkboxes instead would hide the thing that actually needs doing.
+    // The user can fix the token, and talk of empty checkboxes would hide what needs doing.
     [Fact]
     public void A_block_outranks_nothing_being_switched_on()
     {
@@ -122,8 +111,7 @@ public class SyncStatusViewTests
             Select(true, nothingOn, true, hasCharacter: true, hasUploaded: true));
     }
 
-    // Nothing switched on is the user's own doing and is worth saying before the card falls
-    // through to a character or upload state that would imply work is pending.
+    // A character or upload state would imply work is pending.
     [Fact]
     public void Nothing_switched_on_outranks_waiting_for_a_character()
     {
@@ -142,8 +130,8 @@ public class SyncStatusViewTests
             Select(true, Running(), false, hasCharacter: false, hasUploaded: true));
     }
 
-    // With nobody logged in there is no character to wait for: logging in is what starts syncing.
-    // The last upload outcome is cleared at logout; here it is set, to pin the order.
+    // Logging in is what starts syncing. The last outcome is cleared at logout; it is set here to pin
+    // the order.
     [Fact]
     public void Nobody_logged_in_is_not_a_wait_for_a_character()
     {
@@ -152,8 +140,7 @@ public class SyncStatusViewTests
             Select(true, Running(), false, hasCharacter: false, hasUploaded: true, loggedIn: false));
     }
 
-    // Logged out with nothing switched on, or with every collection switched off by the server, the
-    // line saying why nothing is collected is still the truer one.
+    // The line saying why nothing is collected stays the truer one while logged out.
     [Fact]
     public void Nothing_switched_on_outranks_nobody_being_logged_in()
     {
@@ -168,9 +155,8 @@ public class SyncStatusViewTests
             Select(true, serverOff, false, hasCharacter: false, hasUploaded: false, loggedIn: false));
     }
 
-    // The switch, a pause and a halt all hold while nobody is logged in (the master switch is a
-    // setting, and /config is polled at the title screen too), and each outranks it. The halt
-    // matters most: its fix is a press, which LoggedOut would refuse.
+    // All three hold while logged out: the switch is a setting, and /config is polled at the title
+    // screen too. The halt matters most: its fix is a press, which LoggedOut would refuse.
     [Fact]
     public void The_switch_a_pause_and_a_halt_outrank_nobody_being_logged_in()
     {
@@ -203,8 +189,7 @@ public class SyncStatusViewTests
         Assert.Equal("Log in to a character to start syncing.", SyncStatusView.LoggedOutSentence);
     }
 
-    // An empty list is nobody's decision, so it must not draw the sentence blaming the server —
-    // there is no collection for a server to have refused.
+    // An empty list is nobody's decision: there is no collection for the server to have refused.
     [Fact]
     public void No_rows_at_all_is_not_blamed_on_the_server()
     {
@@ -215,9 +200,8 @@ public class SyncStatusViewTests
                 hasUploaded: true));
     }
 
-    // The server can switch every collection off one by one without pausing. That is not the
-    // user's doing, so the card must not say they switched everything off — and the per-row "Off"
-    // chips that would explain it sit inside a card they can collapse.
+    // The server can switch every collection off without pausing, and the per-row "Off" chips that
+    // show it sit in a card the user can collapse.
     [Fact]
     public void Every_collection_switched_off_by_the_server_is_not_blamed_on_the_user()
     {
@@ -228,8 +212,6 @@ public class SyncStatusViewTests
             Select(true, serverOff, false, hasCharacter: true, hasUploaded: true));
     }
 
-    // The mirror of the case above: the server permits it and the user declined, which is theirs
-    // to see in their own empty checkboxes.
     [Fact]
     public void Every_collection_switched_off_by_the_user_is_not_blamed_on_the_server()
     {
@@ -240,11 +222,10 @@ public class SyncStatusViewTests
             Select(true, userOff, false, hasCharacter: true, hasUploaded: true));
     }
 
-    // --- A character the plugin stopped trying to read -------------------------------------------
+    // --- A character the plugin stopped trying to read ---
 
-    // Nothing uploads until a Sync now press or the next login reads the character again, so with a
-    // collection on this outranks the ordinary wait for a character, whose promise of a start would be
-    // false.
+    // Nothing uploads until Sync now or the next login reads the character again, so the ordinary
+    // wait's promise of a start would be false.
     [Fact]
     public void A_character_that_could_not_be_read_outranks_waiting_for_one()
     {
@@ -253,8 +234,8 @@ public class SyncStatusViewTests
             Select(true, Running(), false, hasCharacter: false, hasUploaded: false, characterNotRead: true));
     }
 
-    // A player who only shares reads the sync card too, and the Collections section holding the
-    // sharing cards can be collapsed, so the card names the character rather than the empty boxes.
+    // A player who only shares reads this card too, and the section holding the sharing cards can be
+    // collapsed.
     [Fact]
     public void A_character_a_sharing_waits_on_outranks_nothing_switched_on()
     {
@@ -269,8 +250,7 @@ public class SyncStatusViewTests
             Select(true, serverOff, false, false, false, characterNotRead: true, sharingCanRun: true));
     }
 
-    // With nothing collected and nothing shared, the character holds nothing back, and "nothing is
-    // switched on" is the truer line.
+    // With nothing collected or shared, the character holds nothing back.
     [Fact]
     public void A_character_nothing_waits_on_is_not_named()
     {
@@ -281,8 +261,7 @@ public class SyncStatusViewTests
             Select(true, nothingOn, false, false, false, characterNotRead: true, sharingCanRun: false));
     }
 
-    // The states above it in the ladder still win: the switch, a pause, and a halt, whose press
-    // clears this too.
+    // A halt's press also clears a character that could not be read.
     [Fact]
     public void The_switch_a_pause_and_a_halt_outrank_a_character_not_read()
     {
@@ -305,11 +284,10 @@ public class SyncStatusViewTests
             SyncStatusView.CharacterNotReadSentence);
     }
 
-    // --- What the card may promise, and what the button may offer -----------------------------
+    // --- What the card may promise, and what the button may offer ---
 
-    // The cadence promise holds only where nothing is stopping the pipeline. Derived from the
-    // status rather than re-asked of the facts, so a card cannot state a pause and promise a
-    // cadence beneath it.
+    // Derived from the status, not the facts, so a card cannot state a pause and promise a cadence
+    // under it.
     [Theory]
     [InlineData(SyncStatusKind.WaitingForCharacter, true)]
     [InlineData(SyncStatusKind.LastUploadOutcome, true)]
@@ -327,12 +305,9 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.CadenceHolds(kind));
     }
 
-    // Sync now is refused only where pressing it would add no upload while the button still
-    // played its "Syncing" flash — two states the upload gate refuses, two that collect nothing
-    // for it to send, and nobody logged in, where the login brings its own sync. Waiting for a
-    // character adds no upload either, but stays out of this set so a server wait keeps its own line;
-    // SyncNowOffered refuses the press there instead. The halt and a character that could not be read
-    // deliberately keep it live: each state's own copy tells the user to press it.
+    // Refused where a press would flash "Syncing" and add no upload; logged out, the login brings its
+    // own sync. WaitingForCharacter stays out so a server wait keeps its own line, and SyncNowOffered
+    // refuses the press there. The halt and CharacterNotRead stay live: their own copy says to press.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
     [InlineData(SyncStatusKind.PausedByServer, true)]
@@ -350,11 +325,11 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.ManualSyncWouldDoNothing(kind));
     }
 
-    // --- Whether the card offers "Sync now" --------------------------------------------------------
+    // --- Whether the card offers "Sync now" ---
 
-    // Every status, with and without a server-requested wait. The sentences invite a press only where
-    // one uploads something now; a halt is the exception, since the press itself is what lifts it.
-    // While the character is still being read, a press brings nothing sooner.
+    // backingOff is a server-requested wait, during which a press uploads nothing. A halt still
+    // invites one, since the press lifts it. While the character is still being read, a press brings
+    // nothing sooner.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
@@ -382,8 +357,8 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.SyncNowOffered(kind, backingOff));
     }
 
-    // The button follows the sentences, plus a character that could not be read during a wait, where
-    // a press starts reading it again, which the wait does not hold back.
+    // The button follows the sentences, plus CharacterNotRead during a wait: a press restarts the read,
+    // which the wait does not hold back.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
@@ -411,9 +386,9 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.SyncNowEnabled(kind, backingOff));
     }
 
-    // --- The wait line ---------------------------------------------------------------------------------
+    // --- The wait line ---
 
-    // The refused upload's own outcome states the wait, so no second line is added under it.
+    // The refused upload's own outcome states the wait.
     [Theory]
     [InlineData(ApiStatus.RateLimited)]
     [InlineData(ApiStatus.SyncDisabled)]
@@ -423,10 +398,8 @@ public class SyncStatusViewTests
             SyncStatusView.NeedsWaitLine(SyncStatusKind.LastUploadOutcome, lastStatus, backingOff: true));
     }
 
-    // A wait outlives the outcome that started it: after a relog the card states "nothing uploaded
-    // yet", a wait for a character, or a character that could not be read, and the wait line is what
-    // says uploads are held back. Every row has no last outcome, so the null is written once, in the
-    // call.
+    // A wait outlives the outcome that started it: after a relog, only the wait line says uploads are
+    // held back.
     [Theory]
     [InlineData(SyncStatusKind.NothingUploadedYet)]
     [InlineData(SyncStatusKind.WaitingForCharacter)]
@@ -436,7 +409,6 @@ public class SyncStatusViewTests
         Assert.True(SyncStatusView.NeedsWaitLine(kind, lastStatus: null, backingOff: true));
     }
 
-    // An outcome other than the wait's, still on the line while a wait holds, does not state the wait.
     [Fact]
     public void A_different_outcome_on_the_line_still_gets_the_wait_line()
     {
@@ -444,8 +416,8 @@ public class SyncStatusViewTests
             SyncStatusKind.LastUploadOutcome, ApiStatus.NetworkError, backingOff: true));
     }
 
-    // No wait, no line; and the states where nothing uploads when the wait ends either, whose own line
-    // already says so, or a halt, need none.
+    // Without a wait there is no line. A halt and each state where a press does nothing already say
+    // why nothing uploads (see NeedsWaitLine).
     [Theory]
     [InlineData(SyncStatusKind.LastUploadOutcome, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
@@ -460,19 +432,15 @@ public class SyncStatusViewTests
         Assert.False(SyncStatusView.NeedsWaitLine(kind, lastStatus: null, backingOff));
     }
 
-    // --- The cadence sentence ------------------------------------------------------------------------
+    // --- The cadence sentence ---
 
     /// <summary>A switched-on collection that does, or does not, upload as soon as it unlocks.</summary>
-    // `with { ... }` copies the record with one property changed, like `{ ...row, uploadsOnUnlock }`.
     private static CategorySettingsRow Announced(bool uploadsOnUnlock) =>
         Row() with { UploadsOnUnlock = uploadsOnUnlock };
 
-    /// <summary>How often the scheduled sweep runs in these tests.</summary>
-    // `static readonly` builds the value once, before the class is first used.
     private static readonly TimeSpan HalfHour = TimeSpan.FromMinutes(30);
 
-    // Collections the game announces upload within seconds, so the sentence may say so while one of
-    // them is switched on, not skipped on the last pass, and not held back by a wait.
+    // Collections the game announces upload within seconds of an unlock.
     [Fact]
     public void The_cadence_promises_seconds_while_an_announced_collection_is_on()
     {
@@ -483,9 +451,8 @@ public class SyncStatusViewTests
                 new[] { Announced(true) }, HalfHour, syncNowOffered: true, backingOff: false));
     }
 
-    // Without an announced collection that counts, only the schedule is promised. An announced one does
-    // not count when the user switched it off, the server switched it off, or it was not read on the
-    // last pass (it sends nothing on an unlock until it is).
+    // An announced collection does not count when the user or the server switched it off, or the last
+    // pass did not read it, since it sends nothing on an unlock until read.
     [Fact]
     public void The_cadence_promises_only_the_schedule_when_no_announced_collection_counts()
     {
@@ -502,7 +469,6 @@ public class SyncStatusViewTests
             SyncStatusView.CadenceSentence(rows, HalfHour, syncNowOffered: true, backingOff: false));
     }
 
-    // While "Sync now" is not on offer, the sentence does not invite a press, whichever opening it has.
     [Theory]
     [InlineData(
         true, "Most new unlocks upload within seconds. Everything else syncs automatically every 1 hour.")]
@@ -518,7 +484,7 @@ public class SyncStatusViewTests
                 backingOff: false));
     }
 
-    // A wait holds back unlock uploads as well as sweeps, so "within seconds" is not promised during one.
+    // A wait holds back unlock uploads as well as sweeps.
     [Fact]
     public void The_cadence_promises_no_seconds_during_a_wait()
     {
@@ -528,8 +494,8 @@ public class SyncStatusViewTests
                 new[] { Announced(true) }, HalfHour, syncNowOffered: false, backingOff: true));
     }
 
-    // The line beneath the read-status panel tells the user what picks up a fix made in game. It
-    // speaks only of the lines that name an action: some unread lines have none to name.
+    // The line under the read-status panel says what picks up a fix made in game. It speaks only of
+    // lines that name an action: some unread lines have none.
     [Theory]
     [InlineData(true, "Where a line above names an action, do it in game, then press Sync now.")]
     [InlineData(false, "Where a line above names an action, do it in game, and the next sync picks it up.")]
@@ -538,11 +504,10 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.MissingFollowUp(syncNowOffered));
     }
 
-    // --- The deferred upload's status line -----------------------------------------------------------
+    // --- The deferred upload's status line ---
 
-    // While the wait holds, the line says so; once it has ended, the same outcome no longer means
-    // waiting, so the line says what happens next instead. Both name the website by the address
-    // passed in.
+    // Once the wait ends, the same outcome no longer means waiting. Both lines name the website by the
+    // address passed in.
     [Theory]
     [InlineData(true, "Waiting before the next upload, as " + Host + " asked.")]
     [InlineData(

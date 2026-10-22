@@ -16,7 +16,6 @@ public class CrucibleHudTests
     private const int FirstGearFlag = 60;
     private const int FirstGearId = 63;
 
-    // The HUD fixture: 225 tokens, three items (78, 130, 138) and two pieces of gear (2, 45).
     [Fact]
     public void Reads_the_balance_items_and_gear_from_the_hud()
     {
@@ -28,8 +27,6 @@ public class CrucibleHudTests
         Assert.Equal(new uint[] { 2, 45 }, reading.GearIds);
     }
 
-    // The item list has one entry per slot, so an item in two slots is listed twice. The `!` after
-    // `Read(values)` tells the compiler the result is not null here, like TypeScript's `!`.
     [Fact]
     public void A_repeated_item_is_listed_once_per_slot()
     {
@@ -39,8 +36,8 @@ public class CrucibleHudTests
         Assert.Equal(new uint[] { 78, 78, 138 }, CrucibleHud.Read(values)!.ItemIds);
     }
 
-    // A balance that does not read as a number means the window is not the one this reader knows,
-    // so the whole reading is refused rather than returned without its tokens.
+    // A HUD whose balance is not a number is not the one this reader knows, so the reading is refused
+    // rather than returned without its tokens.
     [Fact]
     public void An_unreadable_balance_refuses_the_reading()
     {
@@ -50,8 +47,6 @@ public class CrucibleHudTests
         Assert.Null(CrucibleHud.Read(values));
     }
 
-    // A slot holding the wrong kind of value refuses the reading. Each row is a slot's flag or its
-    // id, in the item slots and in the gear slots.
     [Theory]
     [InlineData(FirstItemFlag)]
     [InlineData(FirstItemId)]
@@ -65,8 +60,7 @@ public class CrucibleHudTests
         Assert.Null(CrucibleHud.Read(values));
     }
 
-    // A window handed fewer values than the layout needs is refused, not read short. `GetRange`
-    // copies a stretch of the list, like `slice` in TypeScript.
+    // The reading is refused rather than cut short at the last value.
     [Fact]
     public void A_short_value_list_refuses_the_reading()
     {

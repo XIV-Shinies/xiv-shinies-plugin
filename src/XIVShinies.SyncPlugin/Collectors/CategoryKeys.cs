@@ -1,13 +1,12 @@
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// The category keys the server contract defines. A collector announces one of these as its
-/// <see cref="ICollector.CategoryKey"/>, and the same string is used for the user's opt-in toggle,
-/// the server's kill switch, and the payload key.
+/// The category keys the server contract defines. A collector announces one as its
+/// <see cref="ICollector.CategoryKey"/>; the same string keys the user's opt-in, the server's kill
+/// switch and the payload.
 /// </summary>
 /// <remarks>
-/// Naming keys here is not a category-name branch: nothing reads these constants to decide
-/// behavior. Only the collectors themselves use them, to say what they are.
+/// Not a category-name branch: only the collectors read these, to say what they are.
 /// </remarks>
 public static class CategoryKeys
 {
@@ -38,7 +37,7 @@ public static class CategoryKeys
     /// <summary>Defeated Triple Triad NPC IDs.</summary>
     public const string TripleTriadNpcs = "tripleTriadNpcs";
 
-    /// <summary>Phantom job levels/EXP and the optional knowledge-level sighting.</summary>
+    /// <summary>Phantom job levels and EXP, and the optional knowledge-level sighting.</summary>
     public const string OccultProgression = "occultProgression";
 
     /// <summary>Discovered occult record IDs.</summary>

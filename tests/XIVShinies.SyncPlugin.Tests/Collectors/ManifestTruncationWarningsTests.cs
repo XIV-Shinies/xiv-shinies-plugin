@@ -4,10 +4,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// What identifies "the same clip" differs per manifest: the item manifest's content is what
-// manifestVersion hashes, so a new version is a new clip; the quest-sequence manifest sits
-// deliberately outside that hash (docs/api-contract.md), so it can only honestly promise one
-// line per session.
+// manifestVersion hashes the item manifest, so a new version is a new clip. The quest-sequence
+// manifest sits outside that hash (docs/api-contract.md), so it warns once per session.
 public class ManifestTruncationWarningsTests
 {
     private static IReadOnlySet<string> Truncated(params string[] keys) => new HashSet<string>(keys);
@@ -39,8 +37,7 @@ public class ManifestTruncationWarningsTests
         Assert.Single(warnings.LinesFor(Truncated(CategoryKeys.Items), "v2"));
     }
 
-    // A config carrying no version cannot distinguish one clip from the next, but it must still
-    // say something the first time rather than staying silent about a real clip.
+    // Without a version one clip cannot be told from the next, but a real clip still gets its line.
     [Fact]
     public void A_null_manifest_version_still_warns_once()
     {
@@ -50,8 +47,7 @@ public class ManifestTruncationWarningsTests
         Assert.Empty(warnings.LinesFor(Truncated(CategoryKeys.Items), null));
     }
 
-    // The quest-sequence manifest is outside the version hash, so a version bump is not evidence
-    // its content changed — re-warning on one would be noise about a manifest nobody touched.
+    // A version bump is no evidence this manifest changed.
     [Fact]
     public void A_manifest_outside_the_version_hash_warns_only_once_per_session()
     {
@@ -62,7 +58,6 @@ public class ManifestTruncationWarningsTests
         Assert.Empty(warnings.LinesFor(Truncated(CategoryKeys.QuestSequences), "v3"));
     }
 
-    // Each category keeps its own latch: reporting one must not mark another as said.
     [Fact]
     public void Each_category_is_latched_on_its_own()
     {
@@ -88,9 +83,8 @@ public class ManifestTruncationWarningsTests
         Assert.Contains("quest-sequence manifest", lines[1]);
     }
 
-    // The snapshot's key set is an init-only property any producer can populate, so a key the
-    // catalog has no wording for must be passed over rather than logged as a bare key — and it
-    // must not latch, because nothing was said.
+    // Any producer can fill the snapshot's key set, so a key the catalog has no wording for is
+    // passed over, not logged bare. It does not latch, since nothing was said.
     [Fact]
     public void A_key_with_no_manifest_is_passed_over()
     {

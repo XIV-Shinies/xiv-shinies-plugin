@@ -3,57 +3,40 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Api;
 
 /// <summary>
-/// The 200 body of <c>GET /api/plugin/v1/config</c> — remote kill switches, sync cadence, and the
-/// item manifest. The client must honor the kill switches even though the server enforces them
-/// too; obeying them locally saves pointless round trips.
+/// The 200 body of <c>GET /api/plugin/v1/config</c>: kill switches, sync cadence, and the item
+/// manifest. The server enforces the kill switches too; honoring them here saves round trips.
 /// </summary>
+/// <remarks>
+/// A member that is not <c>required</c> is one the server may omit; a missing required member fails
+/// the whole <c>/config</c> and leaves the plugin on its last known config.
+/// </remarks>
 public sealed record ConfigResponse
 {
     /// <summary>
-    /// Per-category kill switches keyed by category (<c>"quests"</c>, …). False means "do not
-    /// collect or send this". A dictionary rather than named properties, so a collector can look
-    /// up its own switch by its <c>CategoryKey</c> without anyone branching on category names.
+    /// Per-category kill switches keyed by category key, such as <c>"quests"</c>. False means do not
+    /// collect or send it. A collector looks up its own switch, so nothing branches on category names.
     /// </summary>
     public required Dictionary<string, bool> Categories { get; init; }
 
     /// <summary>
-    /// Server-authored copy explaining why a switched-off category is off, keyed the same way as
+    /// Server-authored copy explaining why a switched-off category is off, keyed like
     /// <see cref="Categories"/>. Null when the server sends none.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A category can be off for two unlike reasons, and the difference matters to the person
-    /// reading the row. A kill switch turns it off for everyone, usually while something is
-    /// wrong — and carries <b>no</b> note, because during an outage any specific explanation is a
-    /// guess the plugin would be making on the server's behalf. A category still being tested
-    /// carries one, because "it is off" alone invites the reader to conclude something is broken.
-    /// A category off for both reasons carries no note: the louder signal wins.
-    /// </para>
-    /// <para>
-    /// The plugin never interprets the text — no keywords, no parsing, no deciding when it
-    /// applies. The server chooses whether to send a note at all, and the presence of one is the
-    /// entire signal. That keeps the two sides free to disagree about wording without a release.
-    /// </para>
+    /// A kill switch carries no note, since any explanation during an outage would be a guess; a
+    /// category in testing carries one, so "off" does not read as broken. A category off for both
+    /// reasons carries none. The plugin never interprets the text: a note's presence is the signal.
     /// </remarks>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups below.
     public Dictionary<string, string>? CategoryNotes { get; init; }
 
     /// <summary>
-    /// The note for a category as it should be drawn, or null when there is nothing to draw.
+    /// The note for a category as it should be drawn, or null when there is nothing to draw: no note,
+    /// or one that is empty or whitespace.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Null for a category the server did not explain, and equally for one it "explained" with
-    /// nothing — a missing value, an empty string, or only whitespace. <see cref="ServerText"/>
-    /// does the bounding and folding, which is also what makes this safe to call from the draw
-    /// path: it is reached once per row per frame.
-    /// </para>
-    /// <para>
-    /// A <b>null</b> value inside the map is reachable despite the non-nullable declaration —
-    /// the deserializer does not enforce nullable reference annotations, so a map entry written
-    /// as JSON <c>null</c> arrives as one. The contract says the server never sends that; the
-    /// backend being user-overridable is what makes the contract insufficient on its own.
-    /// </para>
+    /// <see cref="ServerText"/> bounds and folds the text, which keeps this cheap enough for the draw
+    /// path, once per row per frame. A map value sent as JSON <c>null</c> arrives as null despite the
+    /// declaration; the contract forbids it, but the backend is user-overridable.
     /// </remarks>
     public string? CategoryNote(string categoryKey) =>
         CategoryNotes is not null && CategoryNotes.TryGetValue(categoryKey, out var note)
@@ -70,77 +53,60 @@ public sealed record ConfigResponse
     public required IReadOnlyList<uint> ItemManifest { get; init; }
 
     /// <summary>
-    /// A content hash of the manifest, not a counter — compare it for equality only. When it is
+    /// A content hash of the manifest, not a counter: compare it for equality only. While it is
     /// unchanged the plugin can skip re-scanning the inventory.
     /// </summary>
     public required string ManifestVersion { get; init; }
 
     /// <summary>
-    /// The manifest split into named consent groups, or null when the server does not send them.
-    /// Null means: fall back to <see cref="ItemManifest"/> as one implicit group covered by the
-    /// existing items consent — an older server is a supported peer.
+    /// The manifest split into named consent groups, or null when the server sends none. Null or empty
+    /// means <see cref="ItemManifest"/> is one implicit group under the existing items consent.
     /// </summary>
-    // NOT `required`: a required property makes deserialization of older configs throw,
-    // and an older server is a supported peer, not an error.
     public IReadOnlyList<ItemManifestGroup>? ItemManifestGroups { get; init; }
 
     /// <summary>
-    /// Manifest ids to OMIT from an upload when no scan source resolved a value, instead of
-    /// reporting the explicit <c>count: 0</c>. Null when the server does not send the field.
+    /// Manifest ids to omit from an upload when no scan source resolved a value, rather than report an
+    /// explicit <c>count: 0</c>. Null when the server does not send the field.
     /// </summary>
     /// <remarks>
-    /// The server lists its content-bound currencies here (Occult Crescent's pieces, for
-    /// example): the game only exposes their counts while the character is inside that content,
-    /// so out-of-zone their absence from every source means "not visible from here" — an
-    /// explicit zero would overwrite the real count the server already holds. Which ids behave
-    /// this way is the server's catalog knowledge; the plugin applies the set generically and
-    /// never hardcodes an id.
+    /// These are content-bound currencies, such as Occult Crescent's pieces, whose counts the game
+    /// exposes only inside that content; out of zone, a zero would overwrite the real count the server
+    /// holds. The set is the server's catalog knowledge, and the plugin never hardcodes an id.
     /// </remarks>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
     public IReadOnlyList<uint>? ItemOmitWhenUnseenIds { get; init; }
 
     /// <summary>
-    /// The live occult instance tracker's switches, or null when the server does not send the
-    /// block. Null means the server has no tracker endpoint, so the tracker stays off (see
-    /// <see cref="Occult.OccultGate"/> for the reasoning and the rest of the gate ladder).
+    /// The live occult instance tracker's switches, or null when the server has no tracker endpoint,
+    /// which keeps the tracker off (see <see cref="Occult.OccultGate"/> for the full gate).
     /// </summary>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
     public OccultTrackerConfig? OccultTracker { get; init; }
 
     /// <summary>
-    /// The Crucible run sharing's switches, or null when the server does not send the block. Null
-    /// means the server has no Crucible endpoint, and nothing may be sent there.
+    /// The Crucible run sharing's switches, or null when the server has no Crucible endpoint, and
+    /// nothing may be sent there.
     /// </summary>
-    // NOT `required`: a server without the Crucible endpoint omits the block, and a missing
-    // required member would fail the whole /config.
     public CrucibleRunsConfig? CrucibleRuns { get; init; }
 
     /// <summary>
-    /// Quest ids whose journal sequence the server wants reported — quests with several
-    /// sequential turn-ins, where knowing which step the journal is on lets the server credit
-    /// the batches already handed over. Null when the server does not send the field.
+    /// Quest ids whose journal sequence the server wants reported, or null when it omits the field.
     /// </summary>
     /// <remarks>
-    /// The ids are Quest Excel row ids, the same id space the <c>quests</c> category uploads.
-    /// Which quests qualify is the server's catalog knowledge; the plugin reads the sequences
-    /// generically and never hardcodes a quest id.
+    /// The server names quests with several sequential turn-ins, where the step tells it which batches
+    /// were handed over; the plugin never hardcodes a quest id. The ids are Quest Excel row ids, the
+    /// same id space the <c>quests</c> category uploads.
     /// </remarks>
-    // NOT `required`, for the same older-server reason as ItemManifestGroups above.
     public IReadOnlyList<uint>? QuestSequenceManifest { get; init; }
 
     /// <summary>
     /// Whether the server permits this category right now.
     /// </summary>
     /// <remarks>
-    /// A category the server has never heard of reads as <b>enabled</b>. That lets a plugin ship a
-    /// new collector before the server grows the matching switch: the server strips payload keys it
-    /// does not recognize, so sending one costs a few bytes and breaks nothing. Defaulting to
-    /// disabled instead would silently withhold facts until both sides shipped in lockstep.
+    /// A category the server has never heard of reads as enabled, so a new collector can ship before
+    /// the server's switch: the server strips payload keys it does not recognize. Defaulting to
+    /// disabled would withhold facts until both sides shipped in lockstep.
     /// </remarks>
-    // `Categories is null` catches an explicit JSON null, which gets past `required` (see
-    // ApiJson). This is asked once per row per frame, so a throw here would take the settings
-    // window down with it; a null map reads as "the server named nothing", the same answer as a
-    // key the map does not carry.
+    // `Categories is null` catches an explicit JSON null (see ApiJson) and reads as "the server named
+    // nothing"; a throw here would take down the settings window, which asks once per row per frame.
     public bool IsCategoryEnabled(string categoryKey) =>
         Categories is null || !Categories.TryGetValue(categoryKey, out var enabled) || enabled;
 }
@@ -151,19 +117,18 @@ public sealed record ConfigResponse
 public sealed record OccultTrackerConfig
 {
     /// <summary>
-    /// The tracker's kill switch. The server folds the global, per-user, and category switches into
-    /// this one value, so honoring it is enough against a compliant backend. The client checks the
-    /// global switch alongside it anyway (see <c>OccultGate</c>), because the backend URL is
-    /// user-overridable and the gate does not rely on a server keeping its side of the bargain.
+    /// The tracker's kill switch, with the global, per-user, and category switches folded in.
     /// </summary>
+    /// <remarks>
+    /// The client checks the global switch too (see <c>OccultGate</c>), because the backend is
+    /// user-overridable.
+    /// </remarks>
     public required bool Enabled { get; init; }
 
     /// <summary>Idle re-upload cadence while inside an instance (clamped client-side).</summary>
     /// <remarks>
-    /// NOT <c>required</c>, unlike <see cref="Enabled"/>: a required member missing from the
-    /// wire fails the WHOLE <c>/config</c> deserialization — which would also strand /sync on
-    /// its last-known manifest — and the scheduler clamps whatever value arrives into a sane
-    /// range anyway, so a defaulted cadence is strictly safe where a guessed kill switch is not.
+    /// Not <c>required</c>, unlike <see cref="Enabled"/>: the scheduler clamps whatever arrives, so a
+    /// default cadence is safe where a guessed kill switch is not.
     /// </remarks>
     public int HeartbeatSeconds { get; init; } = 60;
 }
@@ -180,8 +145,7 @@ public sealed record CrucibleRunsConfig
     public required bool Enabled { get; init; }
 
     /// <summary>The idle upload cadence while inside a board.</summary>
-    // NOT `required`: a missing required member would fail the whole /config, and the scheduler
-    // holds any cadence within its bounds, so the default is safe.
+    // Not `required`: the scheduler holds any cadence within its bounds, so the default is safe.
     public int HeartbeatSeconds { get; init; } = 60;
 
     /// <summary>
@@ -205,20 +169,16 @@ public sealed record ConfigIntervals
 /// One named slice of the item manifest, carrying its own user consent.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The plugin never hardcodes a group key and interprets exactly one flag: <see cref="Legacy"/>.
-/// Everything else (which ids, what the group means) is the server's business.
-/// </para>
-/// <para>
-/// <see cref="Key"/>, <see cref="Label"/>, and <see cref="Ids"/> are <c>required</c> on purpose:
-/// one malformed group fails the whole <c>/config</c> deserialization rather than being partially
-/// trusted — the same all-or-nothing stance every other required config field takes. The plugin
-/// then keeps its last known config until the next poll.
-/// </para>
+/// The plugin never hardcodes a group key and interprets one flag, <see cref="Legacy"/>; the rest is
+/// the server's business. <see cref="Key"/>, <see cref="Label"/>, and <see cref="Ids"/> are
+/// <c>required</c>, so one malformed group fails the whole <c>/config</c> rather than being partly
+/// trusted (see <see cref="ConfigResponse"/>).
 /// </remarks>
 public sealed record ItemManifestGroup
 {
-    /// <summary>Stable consent identifier. A server-side RENAME is a new group (re-consent).</summary>
+    /// <summary>
+    /// Stable consent identifier. A server-side rename is a new group that needs new consent.
+    /// </summary>
     public required string Key { get; init; }
 
     /// <summary>User-facing label, shown beside the group's opt-in checkbox.</summary>
@@ -228,8 +188,8 @@ public sealed record ItemManifestGroup
     public required IReadOnlyList<uint> Ids { get; init; }
 
     /// <summary>
-    /// True when this group's scope was already covered by pre-group items consent — the
-    /// one-time migration opts existing users into exactly these groups and nothing else.
+    /// True when pre-group items consent already covered this group. The one-time migration opts
+    /// existing users into exactly these groups.
     /// </summary>
     public bool Legacy { get; init; }
 }

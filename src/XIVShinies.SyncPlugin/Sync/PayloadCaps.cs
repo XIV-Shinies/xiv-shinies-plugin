@@ -8,28 +8,12 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// Enforces the server contract's payload caps client-side, before an upload is built.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The contract caps id-list categories at 50,000 ids and object-entry categories (items)
-/// at 10,000 entries; an over-cap payload is rejected whole (400), losing every category in
-/// it. Truncating client-side keeps the rest of the upload alive, and monotonic writes make
-/// the loss safe: a dropped id or entry is simply re-sent by a later full sweep.
-/// </para>
-/// <para>
-/// Truncation is detected by SHAPE (an array of numbers vs an array of objects), never by
-/// category name — the extensibility contract forbids category-name branches, and a future
-/// category gets the right cap by looking like one shape or the other.
-/// </para>
-/// <para>
-/// Never silent: every truncation is reported to the caller, which decides what to log. A
-/// silently capped payload would read as "covered everything" when it did not.
-/// </para>
-/// <para>
-/// These entry caps are also the client's only defense against the contract's 1 MiB body
-/// limit — no serialized byte size is measured. Real payloads sit far below both ceilings
-/// (a few thousand ids, a manifest in the low thousands), and if a body ever did exceed
-/// the limit, the server's 413 is handled as a terminal drop and the next full sweep
-/// re-sends everything, which monotonic writes make safe.
-/// </para>
+/// The contract caps id lists at 50,000 ids and entry lists (items) at 10,000, and rejects an over-cap
+/// payload whole with a 400; truncating keeps the rest alive, and under monotonic writes a later full
+/// sweep re-sends what was dropped. The cap is chosen by shape, never by category name, and every cut
+/// is reported, since a silent cap would read as complete. No byte size is measured, so these caps
+/// are the only guard against the 1 MiB body limit; real payloads sit far below it, and an upload
+/// refused with a 413 is dropped as terminal.
 /// </remarks>
 public static class PayloadCaps
 {
@@ -41,25 +25,17 @@ public static class PayloadCaps
 
     /// <summary>Caps every over-limit category, returning what was dropped.</summary>
     /// <param name="collections">
-    /// The snapshot's collections, keyed by category — the same shape that becomes the sync
-    /// payload's <c>collections</c> object.
+    /// The snapshot's collections, keyed by category, shaped like the payload's <c>collections</c>.
     /// </param>
     /// <returns>
-    /// <c>Bounded</c> is the capped dictionary — the very same instance as <paramref
-    /// name="collections"/> when nothing needed truncating, so a compliant payload is never
-    /// copied. <c>Dropped</c> is one <see cref="PayloadCapDrop"/> per category that was cut, empty
-    /// when nothing was.
+    /// <c>Bounded</c> is the capped dictionary, the same instance when nothing was cut.
+    /// <c>Dropped</c> has one <see cref="PayloadCapDrop"/> per cut category.
     /// </returns>
     /// <remarks>
-    /// <b>Not for the upload path.</b> Capping a bare dictionary cannot retract the completeness
-    /// claim of a category it truncates, because the claim lives on the snapshot — so a payload
-    /// built from this would ship a shortened list still declared complete. The snapshot overload
-    /// exists to make that impossible; this one exists so the shape rules can be exercised alone.
+    /// <b>Not for the upload path:</b> it cannot retract the completeness claim, which lives on the
+    /// snapshot, so its output would ship a shortened list declared complete. Only
+    /// <c>PayloadCapsTests</c> calls it.
     /// </remarks>
-    // The return type is a named TUPLE: one value carrying two named parts, which the caller
-    // takes apart with `var (bounded, dropped) = ...`. The closest JS/TS analog is returning
-    // an object and destructuring it — `const { bounded, dropped } = ...` — but a C# tuple is
-    // a lightweight value type, not an allocated object.
     internal static (Dictionary<string, JsonNode> Bounded, IReadOnlyList<PayloadCapDrop> Dropped)
         Bound(Dictionary<string, JsonNode> collections)
     {
@@ -72,13 +48,12 @@ public static class PayloadCaps
     /// of every category it had to cut</b>.
     /// </summary>
     /// <returns>
-    /// <c>Bounded</c> is the capped snapshot — the very same instance when nothing needed
-    /// truncating. <c>Dropped</c> is one <see cref="PayloadCapDrop"/> per category that was cut.
+    /// <c>Bounded</c> is the capped snapshot, the same instance when nothing was cut.
+    /// <c>Dropped</c> has one <see cref="PayloadCapDrop"/> per cut category.
     /// </returns>
     /// <remarks>
-    /// Capping and retracting live in one function because they must never drift apart: a
-    /// truncated list is no longer the character's complete set, so it cannot carry the claim
-    /// described on <see cref="Collectors.CollectResult.CompleteEnumeration"/>. Dropping ids is
+    /// Capping and retracting share one function so they cannot drift apart: a truncated list cannot
+    /// carry the claim on <see cref="Collectors.CollectResult.CompleteEnumeration"/>. Dropping ids is
     /// safe under monotonic writes; declaring a shortened list complete is not.
     /// </remarks>
     public static (CollectionSnapshot Bounded, IReadOnlyList<PayloadCapDrop> Dropped)
@@ -86,13 +61,10 @@ public static class PayloadCaps
     {
         var (bounded, dropped, truncatedKeys) = BoundCore(snapshot.Collections);
 
-        // Nothing was over a cap, so the snapshot already is what ships — returned as the same
-        // instance, so neither the record nor its key set is rebuilt.
         if (dropped.Count == 0)
             return (snapshot, dropped);
 
-        // Copied before subtracting: CompleteKeys is exposed as a read-only set, and the snapshot
-        // is a record other code may already hold, so the original set is left untouched.
+        // Copied, because other code may already hold the snapshot and its set.
         var completeKeys = new HashSet<string>(snapshot.CompleteKeys);
         completeKeys.ExceptWith(truncatedKeys);
 
@@ -109,24 +81,20 @@ public static class PayloadCaps
         var dropped = new List<PayloadCapDrop>();
         var truncatedKeys = new List<string>();
 
-        // Rebuilt lazily: only allocated the first time a category actually needs truncating,
-        // so a compliant payload (the overwhelmingly common case) returns the original
-        // dictionary instance unchanged.
+        // Allocated only on the first cut, so a compliant payload returns the original instance.
         Dictionary<string, JsonNode>? bounded = null;
 
         foreach (var (key, value) in collections)
         {
-            // Only a JsonArray can be over a count cap; a category could in principle carry
-            // some other JSON shape in the future, and that shape is left untouched here.
+            // Only an array can be over a count cap; any other shape is left untouched.
             if (value is not JsonArray array)
                 continue;
 
             if (array.Count == 0)
                 continue;
 
-            // Shape, not name, decides which cap applies: a JsonValue element (a bare number)
-            // is an id list, a JsonObject element is an entry list. The first element stands in
-            // for the whole array — collectors never mix element shapes within one category.
+            // Shape, not name, picks the cap: object elements make an entry list, bare numbers an id
+            // list. The first element speaks for the array, since collectors never mix shapes.
             var cap = array[0] is JsonObject ? MaxEntriesPerCategory : MaxIdsPerCategory;
 
             if (array.Count <= cap)
@@ -137,18 +105,13 @@ public static class PayloadCaps
             var truncated = new JsonArray();
             for (var i = 0; i < cap; i++)
             {
-                // A JsonNode already parented to `array` cannot simply be moved into a second
-                // array — JsonNode tracks a single parent, and re-adding it as-is throws.
-                // DeepClone hands back a detached copy that `truncated` can own instead.
-                // The null test guards a JSON `null` element: the collectors never produce one,
-                // but a JsonArray can represent it, and cloning it would crash the whole pass.
+                // A JsonNode has one parent, so adding `array`'s element as-is throws; the clone is
+                // detached. A JSON null element, which collectors never produce, has no node and is skipped.
                 if (array[i] is { } element)
                     truncated.Add(element.DeepClone());
             }
 
-            // First truncation seen: copy the dictionary once, so untouched categories keep
-            // sharing their original JsonNode instances (Assert.Same territory) and only the
-            // capped one gets a fresh value.
+            // Copied once, on the first cut; untouched categories keep their original nodes.
             bounded ??= new Dictionary<string, JsonNode>(collections);
             bounded[key] = truncated;
 

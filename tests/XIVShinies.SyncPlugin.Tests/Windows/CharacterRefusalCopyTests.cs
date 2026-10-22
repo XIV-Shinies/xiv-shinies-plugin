@@ -5,10 +5,8 @@ using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
-// What the plugin tells a player whose upload the server refused because it could not match
-// their character. Each refusal has a different fix, so each sentence names that fix,
-// and the exact strings are pinned: a sentence that named the wrong fix would still look plausible
-// on screen.
+// Each character refusal has its own fix. The exact strings are pinned because a sentence naming the
+// wrong fix would still look plausible on screen.
 public class CharacterRefusalCopyTests
 {
     private const string Host = "xiv-shinies.com";
@@ -30,8 +28,7 @@ public class CharacterRefusalCopyTests
         Assert.Equal(expected, CharacterRefusalCopy.For(status, "Some Name", "Excalibur", Host));
     }
 
-    // The character can be unknown to the window (a frame drawn while a logout is clearing the
-    // session), so every sentence has a form that reads naturally without a name.
+    // A frame drawn while a logout clears the session has no character name.
     [Theory]
     [InlineData(ApiStatus.CharacterNotClaimed,
         "Claim this character on xiv-shinies.com, then press Sync now.")]
@@ -49,7 +46,6 @@ public class CharacterRefusalCopyTests
         Assert.Equal(expected, CharacterRefusalCopy.For(status, null, null, Host));
     }
 
-    // An empty name is no name: the sentence says "this character", never a blank.
     [Fact]
     public void An_empty_name_reads_as_this_character()
     {
@@ -58,7 +54,6 @@ public class CharacterRefusalCopyTests
             CharacterRefusalCopy.For(ApiStatus.CharacterNotClaimed, "", "Excalibur", Host));
     }
 
-    // Without a world, the duplicate-claim sentence names the character alone.
     [Fact]
     public void The_duplicate_claim_sentence_leaves_out_a_missing_world()
     {
@@ -68,8 +63,7 @@ public class CharacterRefusalCopyTests
             CharacterRefusalCopy.For(ApiStatus.CharacterAmbiguous, "Some Name", "", Host));
     }
 
-    // A world with no name to attach it to is left out too: "this character (Excalibur)" would
-    // read as if the world were the character's name.
+    // "this character (Excalibur)" would read as if the world were the character's name.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -81,15 +75,12 @@ public class CharacterRefusalCopyTests
             CharacterRefusalCopy.For(ApiStatus.CharacterAmbiguous, characterName, "Excalibur", Host));
     }
 
-    // Every status, not a hand-picked few: a sentence exists exactly for the statuses the status
-    // map calls character refusals. The sync card relies on this to find the refusals, so a new
-    // refusal added to the map without a sentence fails here rather than being drawn as a rejected
-    // token in the banner and as a self-healing failure in the status line.
+    // The sync card treats a status as a character refusal when CharacterRefusalCopy.For returns a
+    // sentence. A refusal added to ApiStatusMap without one fails here, instead of drawing as a rejected
+    // token in the banner and a self-healing failure in the status line.
     [Fact]
     public void A_sentence_exists_exactly_for_the_character_refusals()
     {
-        // Enum.GetValues<T>() returns every member of the enum as an array, as Object.values does
-        // for a TS string enum.
         foreach (var status in Enum.GetValues<ApiStatus>())
         {
             var sentence = CharacterRefusalCopy.For(status, "Some Name", "Excalibur", Host);

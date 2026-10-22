@@ -7,11 +7,10 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// Decides *when* to upload, never *how*. No clock, no game, no network: every method takes the
-// current time as an argument, so these tests run instantly instead of sleeping.
+// Decides when to upload, never how.
 public class SyncSchedulerTests
 {
-    // An arbitrary fixed instant. Tests move time by adding to it, never by waiting.
+    // Every scheduler method takes the time as an argument; tests move it by adding to this instant.
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
     private static SyncScheduler NewScheduler() => new();
@@ -36,7 +35,7 @@ public class SyncSchedulerTests
         Assert.Null(due.Categories);
     }
 
-    // Poll hands the work out exactly once. Without this the caller would upload in a tight loop.
+    // Poll hands out each piece of work once, or the caller would upload in a tight loop.
     [Fact]
     public void Polling_consumes_the_pending_work()
     {
@@ -61,8 +60,8 @@ public class SyncSchedulerTests
         Assert.Equal(SyncTrigger.Unlock, due.Trigger);
     }
 
-    // A quest turn-in can fire several unlocks a second apart. Each one restarts the window so the
-    // whole burst rides in a single upload.
+    // A quest turn-in can fire several unlocks a second apart. Restarting the window sends the whole
+    // burst in one upload.
     [Fact]
     public void A_second_unlock_restarts_the_debounce_window()
     {
@@ -70,13 +69,12 @@ public class SyncSchedulerTests
         scheduler.NotifyUnlock(CategoryKeys.Mounts, T0);
         scheduler.NotifyUnlock(CategoryKeys.Minions, T0 + TimeSpan.FromSeconds(3));
 
-        // 5s after the first unlock, but only 2s after the second.
+        // Five seconds after the first unlock, but two after the second.
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromSeconds(5)));
         Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromSeconds(8)));
     }
 
-    // Every category that genuinely unlocked during the burst rides along, and nothing else does.
-    // Each one really was acquired just now, so dating them all is correct.
+    // Each named category was acquired just now, so the upload dating them all is correct.
     [Fact]
     public void An_unlock_upload_names_only_the_categories_that_unlocked()
     {
@@ -107,26 +105,24 @@ public class SyncSchedulerTests
         Assert.Null(due.Categories);
     }
 
-    // The interval clock is anchored when a sweep is ISSUED, not when its upload succeeds. Otherwise
-    // one transient 500 during the login sweep would leave the clock unset — and since only a full
-    // sweep ever sets it, periodic syncing would be silently dead for the rest of the session.
+    // The interval clock starts when a sweep is issued, not when its upload succeeds. Only a full
+    // sweep sets it, so one failed login upload would otherwise stop periodic syncing for the session.
     [Fact]
     public void A_login_sweep_whose_upload_never_succeeds_still_starts_the_interval_clock()
     {
         var scheduler = NewScheduler();
         scheduler.Request(SyncTrigger.Login, T0);
 
-        // The sweep is handed out, then its upload fails: MarkUploaded is never called.
+        // Handed out, then the upload fails: MarkUploaded is never called.
         Assert.Equal(SyncTrigger.Login, scheduler.Poll(T0)!.Trigger);
 
-        // Syncing must recover on its own at the next interval rather than stopping forever.
         var due = scheduler.Poll(T0 + TimeSpan.FromMinutes(30));
         Assert.NotNull(due);
         Assert.Equal(SyncTrigger.Interval, due.Trigger);
     }
 
-    // An unlock upload carried one category, so it is not a full sweep and must not pretend to be
-    // one. Letting it reset the clock would let a steadily-unlocking player never sweep at all.
+    // An unlock upload is not a full sweep. If it reset the clock, a player who unlocks steadily
+    // would never sweep.
     [Fact]
     public void An_unlock_upload_does_not_postpone_the_interval_sweep()
     {
@@ -147,8 +143,7 @@ public class SyncSchedulerTests
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(4)));
     }
 
-    // What the sync card asks before offering "Sync now": true from the server's instruction until the
-    // moment it expires, and never before one arrives.
+    // The sync card asks this before offering "Sync now".
     [Fact]
     public void The_scheduler_reports_a_wait_until_it_expires()
     {
@@ -174,8 +169,7 @@ public class SyncSchedulerTests
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(4)));
     }
 
-    // Backoff defers work; it never throws it away. A 429 during a login sync must not cost the user
-    // that sync entirely.
+    // A 429 during a login sync defers it; it must not cost the user that sync.
     [Fact]
     public void Work_deferred_by_a_backoff_survives_it()
     {
@@ -189,8 +183,8 @@ public class SyncSchedulerTests
         Assert.Equal(SyncTrigger.Login, due.Trigger);
     }
 
-    // The user pressing "Sync now" is the strongest signal there is, so it outranks a queued unlock.
-    // It still waits out a backoff: a button must not become a way to hammer a server that said stop.
+    // "Sync now" is the strongest signal, so it outranks a queued unlock. It still waits out a
+    // backoff, so a button cannot hammer a server that said stop.
     [Fact]
     public void A_manual_request_outranks_a_pending_unlock()
     {
@@ -228,8 +222,7 @@ public class SyncSchedulerTests
         Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromSeconds(20)));
     }
 
-    // A misconfigured or hostile /config must not turn the plugin into a request flood, nor stall it
-    // forever. The plugin honors the server's cadence only within sane bounds.
+    // A misconfigured or hostile /config must not make the plugin flood requests or stall forever.
     [Theory]
     [InlineData(0, 0)]
     [InlineData(-5, -5)]
@@ -247,8 +240,8 @@ public class SyncSchedulerTests
         Assert.InRange(scheduler.FullSyncInterval, SyncScheduler.MinFullSyncInterval, SyncScheduler.MaxFullSyncInterval);
     }
 
-    // Logging out must discard queued work. An unlock earned on one character, uploaded after
-    // switching to another, would file that character's mount under the wrong ContentId hash.
+    // An unlock earned on one character and uploaded after a switch would file it under the wrong
+    // character's ContentId hash.
     [Fact]
     public void Reset_discards_queued_work()
     {
@@ -261,8 +254,8 @@ public class SyncSchedulerTests
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(1)));
     }
 
-    // A backoff is the server talking to the token, not to the character. Switching characters must
-    // not be a way to shake off a 429.
+    // A backoff applies to the token, not the character, so switching characters must not shake off
+    // a 429.
     [Fact]
     public void Reset_keeps_a_backoff_in_force()
     {
@@ -276,8 +269,7 @@ public class SyncSchedulerTests
         Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(5)));
     }
 
-    // Reset also forgets when the last sweep happened, so the next login sweeps immediately rather
-    // than waiting out an interval measured against the previous character.
+    // The next login sweeps at once rather than waiting out the previous character's interval.
     [Fact]
     public void Reset_does_not_leave_an_interval_pending_from_the_previous_character()
     {
@@ -289,8 +281,8 @@ public class SyncSchedulerTests
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromHours(1)));
     }
 
-    // Clocks move backwards: NTP corrections, and a laptop resuming from sleep. A negative elapsed
-    // time must not make a debounce window that never closes.
+    // Clocks move backwards, through NTP corrections or a laptop waking from sleep. A negative
+    // elapsed time must not hold the debounce window open forever.
     [Fact]
     public void A_clock_that_jumps_backwards_still_lets_the_debounce_close()
     {

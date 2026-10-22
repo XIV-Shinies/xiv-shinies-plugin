@@ -5,28 +5,13 @@ namespace XIVShinies.SyncPlugin;
 /// offer.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Every surface that reports a server-side "off" reaches for one of these, and they sit here,
-/// owned by no single feature, because the collections, the live tracker and the Crucible run
-/// sharing all use them. Their rows are drawn on the same screen, so two copies of these strings
-/// would let a reword leave them saying different things about the same state, in view of each
-/// other.
-/// </para>
-/// <para>
-/// The distinctions between them are the whole point: one names a decision about a single thing,
-/// one names that decision taken for every collection, one names an outage affecting everything,
-/// and one names a feature the website does not offer. Saying the first during either of the last
-/// two sends the user looking for a decision nobody made.
-/// </para>
-/// <para>
-/// Each names the website by its address, passed in as <c>host</c> (see
-/// <see cref="HostPlaceholder"/> for why an address rather than a generic word).
-/// </para>
+/// The collections, the live tracker and the Crucible run sharing draw these on one screen, so one
+/// copy keeps a reword from making them disagree. The four differ on purpose: a decision about one
+/// thing, that decision for every collection, an outage affecting everything, and a feature not
+/// offered; saying the first during either of the last two sends the user looking for a decision
+/// nobody made. Each names the website by its address (see <see cref="HostPlaceholder"/>).
 /// </remarks>
-// A `static class` holds only shared members and is never instantiated: a module of functions.
-// Each member is a method rather than a `const`, because a `const` is fixed when the code compiles
-// and the address is only known once the plugin runs. `$"...{host}..."` is an interpolated string,
-// like a TypeScript template literal.
+// Methods rather than consts, because the address is known only once the plugin runs.
 public static class ServerOffCopy
 {
     /// <summary>
@@ -50,8 +35,8 @@ public static class ServerOffCopy
     /// collection one by one, without pausing syncing.
     /// </summary>
     /// <remarks>
-    /// Each row wears its own "Off" chip, but a whole list of them, all grayed, needs one sentence
-    /// above it saying the choice is the website's and the user's own is kept, as during a pause.
+    /// Each row wears its own "Off" chip, but a whole grayed list needs one sentence above it saying
+    /// the choice is the website's and the user's own is kept, as during a pause.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string EveryCollection(string host) =>
@@ -61,9 +46,9 @@ public static class ServerOffCopy
     /// What everything says while the website has paused syncing altogether.
     /// </summary>
     /// <remarks>
-    /// Says plainly that the user's own settings survive, because the visible effect of a pause is
-    /// every checkbox clearing at once — which looks exactly like the plugin having discarded their
-    /// choices. Nothing is written to their stored consent while this is showing.
+    /// A pause clears every checkbox at once, which looks like the plugin discarded the user's
+    /// choices, so this says plainly that they survive. Nothing is written to their stored consent
+    /// while it shows.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string Paused(string host) =>

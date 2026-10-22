@@ -3,11 +3,9 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// The guard that stops a half-loaded character from being cached. A blank name or home world violates
-// the contract's 1-100 character constraint, so the server rejects the upload with a 400 — which the
-// plugin classifies as its own bug rather than something the user can fix, so it does NOT halt
-// syncing. A blank identity, once cached, would therefore re-fail silently on every upload for the
-// rest of the session.
+// Stops a half-loaded character from being cached. A blank name or home world breaks the contract's
+// 1-100 character rule, and the plugin treats the server's 400 as its own bug and does not halt, so
+// a cached blank identity would fail every upload silently for the rest of the session.
 public class CharacterIdentityTests
 {
     [Fact]
@@ -16,9 +14,8 @@ public class CharacterIdentityTests
         Assert.True(CharacterIdentity.IsUsable("Some Name", "Excalibur"));
     }
 
-    // The home world is a lazy reference into a game data sheet. It resolves to null — and so to an
-    // empty string — while the sheet is still loading, or for a world newer than the installed game
-    // data.
+    // The home world is a lazy game-sheet reference. It reads as empty while the sheet loads, or for a
+    // world newer than the installed game data.
     [Theory]
     [InlineData(null, "Excalibur")]
     [InlineData("", "Excalibur")]
@@ -32,17 +29,15 @@ public class CharacterIdentityTests
         Assert.False(CharacterIdentity.IsUsable(name, homeWorld));
     }
 
-    // Whitespace-only is treated as absent, not as a one-character name: the server trims before it
-    // length-checks, so "   " would arrive as "" and fail validation anyway.
+    // The server trims the name before it length-checks, so whitespace alone would arrive empty and fail.
     [Fact]
     public void Whitespace_is_not_a_name()
     {
         Assert.False(CharacterIdentity.IsUsable("\t\n ", "Excalibur"));
     }
 
-    // The contract's other edge: 100 characters is the maximum the server accepts. Real names and
-    // worlds are far shorter, so this guards a theoretical bad read the same way the blank check
-    // guards a real one — either would 400 every upload for the session if cached.
+    // The server accepts at most 100 characters. Real names and worlds are far shorter, so this guards
+    // a bad read, which would 400 every upload for the session if cached.
     [Fact]
     public void The_contract_length_bound_is_enforced_on_both_ends()
     {
@@ -53,7 +48,7 @@ public class CharacterIdentityTests
         Assert.False(CharacterIdentity.IsUsable(hundredAndOne, "Excalibur"));
         Assert.False(CharacterIdentity.IsUsable("Some Name", hundredAndOne));
 
-        // Trimming happens before the length check, matching the server's order of operations.
+        // Trimmed before the length check, as the server does.
         Assert.True(CharacterIdentity.IsUsable($"  {hundred}  ", "Excalibur"));
     }
 }

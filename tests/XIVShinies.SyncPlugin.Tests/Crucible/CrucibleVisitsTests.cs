@@ -3,12 +3,9 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
-// When the character enters and leaves a board, from the territory it stands in on each tick. Each
-// `[Fact]` is one test, like `it(...)` in Jest.
+// When the character enters and leaves a board, from the territory it stands in on each tick.
 public class CrucibleVisitsTests
 {
-    // `uint` is a whole number that can never be negative (an unsigned integer), the type of a
-    // territory id; `const` fixes the value when the code compiles.
     private const uint FirstBoard = CrucibleTerritories.FirstBoard;
     private const uint SecondBoard = 1340;
     private const uint Entrance = 148;
@@ -34,8 +31,7 @@ public class CrucibleVisitsTests
         Assert.Equal(FirstBoard, visits.Board);
     }
 
-    // On the first tick seen, a character already standing in a board was there before the plugin
-    // started, or before the sharing was switched on.
+    // The character was there before the plugin started, or before the sharing was switched on.
     [Fact]
     public void A_board_on_the_first_tick_is_already_inside()
     {
@@ -66,8 +62,7 @@ public class CrucibleVisitsTests
         Assert.Null(visits.Board);
     }
 
-    // Moving straight from one board to another is a fresh entry into the second; the scheduler
-    // closes the first visit on its own when it hears of it.
+    // The scheduler closes the first visit on its own when it hears of the entry.
     [Fact]
     public void Moving_straight_to_another_board_is_a_fresh_entry()
     {
@@ -79,7 +74,6 @@ public class CrucibleVisitsTests
         Assert.Equal(SecondBoard, visits.Board);
     }
 
-    // Leaving and coming back to the same board is a new visit, seen zoning in.
     [Fact]
     public void Coming_back_to_the_same_board_is_a_fresh_entry()
     {
@@ -100,8 +94,7 @@ public class CrucibleVisitsTests
         Assert.Equal(CrucibleVisitChange.None, visits.Update(FirstBoard));
     }
 
-    // A reset outside a board, followed by a tick there and then a board, is a fresh entry: the tick
-    // outside is the one seen first.
+    // The tick outside is the one seen first.
     [Fact]
     public void After_a_reset_outside_a_board_zoning_in_is_a_fresh_entry()
     {

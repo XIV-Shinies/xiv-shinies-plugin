@@ -8,26 +8,17 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
-// The body of POST /api/plugin/v1/crucible/observations. The server's schema is strict: a key it
-// does not name fails the whole upload, and so does a named key that is missing. So each snapshot
-// and request shape test compares the whole JSON object, key for key, against the contract's own
-// shape.
+// The body of POST /api/plugin/v1/crucible/observations. The server's schema is strict: an unknown
+// key or a missing one fails the whole upload, so each shape test compares the whole object.
 public class CrucibleUploadBuilderTests
 {
-    // `static readonly` is a value built once and never reassigned; `const` is one fixed when the
-    // code compiles, which only simple values such as strings and numbers can be.
-
     /// <summary>A moment with a fraction of a second, which the wire format drops.</summary>
     private static readonly DateTimeOffset ObservedAt =
         new DateTimeOffset(2026, 9, 28, 12, 0, 0, TimeSpan.Zero).AddMilliseconds(750);
 
-    /// <summary>How <see cref="ObservedAt"/> reads on the wire.</summary>
     private const string ObservedAtText = "2026-09-28T12:00:00Z";
 
-    // A board in the whole-board view names no current piece, and the key is still sent, as null.
-    // `CurrentNodeIndex: null` names the argument it fills, which reads like an object literal's
-    // key. A `"""` string is a raw string: everything up to the closing `"""` is literal text, so
-    // the JSON needs no escaping.
+    // The currentNodeIndex key is still sent, as null.
     [Fact]
     public void A_whole_board_snapshot_sends_every_piece_and_a_null_current_piece()
     {
@@ -51,7 +42,6 @@ public class CrucibleUploadBuilderTests
             CrucibleUploadBuilder.Board(reading, ObservedAt, closed: false));
     }
 
-    // Every view goes out as the window's own number, never as the enum's name.
     [Theory]
     [InlineData(CrucibleBoardView.PreEntry, 0)]
     [InlineData(CrucibleBoardView.WholeBoard, 1)]
@@ -60,12 +50,10 @@ public class CrucibleUploadBuilderTests
     {
         var reading = new CrucibleBoardReading(view, [], CurrentNodeIndex: null, ModeText: null);
 
-        // `GetValue<int>()` reads the JSON value as the type named in the angle brackets.
         Assert.Equal(number, Serialize(CrucibleUploadBuilder.Board(reading, ObservedAt, false))
             ["view"]!.GetValue<int>());
     }
 
-    // The scoped view carries the piece being played, and a closing window says so.
     [Fact]
     public void A_scoped_board_snapshot_sends_its_current_piece_and_whether_it_closed()
     {
@@ -155,8 +143,7 @@ public class CrucibleUploadBuilderTests
             CrucibleUploadBuilder.Bag(reading, ObservedAt));
     }
 
-    // A treasure or loot offer carries its item id alone; the shop's three fields are left out,
-    // not sent as null.
+    // The shop's three offer fields are left out, not sent as null.
     [Fact]
     public void A_treasure_snapshot_sends_item_ids_alone_and_a_null_payout()
     {
@@ -204,14 +191,9 @@ public class CrucibleUploadBuilderTests
             CrucibleUploadBuilder.Offer(reading, ObservedAt, closed: false));
     }
 
-    // The mode, the rank and each bonus go out as the ids they resolved to, and the score keys are
-    // the contract's. Every number in the sample differs from the others, so a field written under
-    // the wrong key cannot pass.
     [Fact]
     public void A_results_snapshot_sends_the_resolved_ids_and_the_score()
     {
-        // A `Dictionary` maps keys to values, like a TypeScript `Map`; `["key"] = value` adds an
-        // entry while it is being built.
         var bonusIds = new Dictionary<string, uint> { ["Willing Sacrifice I"] = 17 };
 
         AssertJson(
@@ -228,7 +210,7 @@ public class CrucibleUploadBuilderTests
                 SampleResults(), ObservedAt, degree: 2, rankIndex: 4, Resolve(bonusIds)));
     }
 
-    // Text the plugin could not resolve goes out as null, never as a guess, and the key stays.
+    // Text that does not resolve goes out as null, never a guess, and the key stays.
     [Fact]
     public void Unresolved_mode_rank_and_bonus_names_are_sent_as_null()
     {
@@ -257,8 +239,7 @@ public class CrucibleUploadBuilderTests
             CrucibleUploadBuilder.Self(1180, 1300, ObservedAt));
     }
 
-    // The envelope carries the identity fields /sync uses, the trigger word and the territory,
-    // and the observations in the order given.
+    // The identity fields are the ones /sync uses.
     [Fact]
     public void A_request_carries_the_identity_trigger_territory_and_observations_in_order()
     {
@@ -271,8 +252,6 @@ public class CrucibleUploadBuilderTests
             ]);
 
         AssertJson(
-            // `$$$"""` marks an interpolated raw string whose holes are written `{{{ }}}`, so the
-            // JSON's own `{` and `}}` stay plain text.
             $$$"""
             {"characterContentIdHash":"{{{new string('a', 64)}}}","characterName":"Some Name",
              "homeWorld":"Excalibur","pluginVersion":"0.9.0","trigger":"change",
@@ -286,8 +265,6 @@ public class CrucibleUploadBuilderTests
             request);
     }
 
-    // The request keeps its own copy of the list, so clearing the caller's list leaves the request
-    // unchanged.
     [Fact]
     public void A_request_keeps_its_own_copy_of_the_observations()
     {
@@ -316,12 +293,9 @@ public class CrucibleUploadBuilderTests
         Assert.Empty(json["observations"]!.AsArray());
     }
 
-    // Every list a kind defines goes up even when it holds nothing, as an empty array.
     [Fact]
     public void An_empty_list_is_sent_as_an_empty_array()
     {
-        // Each case is a snapshot and the list keys it must carry. `(Type Name, Type Name)[]` is an
-        // array of tuples with named parts, like TypeScript's `[snapshot: X, lists: string[]][]`.
         (CrucibleObservation Snapshot, string[] Lists)[] cases =
         [
             (CrucibleUploadBuilder.Board(
@@ -335,8 +309,6 @@ public class CrucibleUploadBuilderTests
             (CrucibleUploadBuilder.Offer(
                 new CrucibleOfferReading(CrucibleOfferSource.Treasure, 0, null, []), ObservedAt, false),
              ["offers"]),
-            // `with { ... }` copies a record with the listed properties replaced, like
-            // `{ ...SampleResults(), bonuses: [], familiars: [] }`.
             (CrucibleUploadBuilder.Results(
                 SampleResults() with { Bonuses = [], Familiars = [] },
                 ObservedAt,
@@ -346,22 +318,19 @@ public class CrucibleUploadBuilderTests
              ["bonuses", "familiars"]),
         ];
 
-        // `var (snapshot, lists)` takes each tuple apart into two variables, by position, like
-        // `for (const [snapshot, lists] of cases)`.
         foreach (var (snapshot, lists) in cases)
         {
             var json = Serialize(snapshot);
 
-            // `Assert.IsType<JsonArray>` fails on a missing key or a non-array, and hands back the
-            // array when it passes.
+            // A missing key or a non-array fails the test.
             foreach (var list in lists)
                 Assert.Empty(Assert.IsType<JsonArray>(json[list]));
         }
     }
 
-    /// <summary>A results reading whose numbers all differ from one another.</summary>
-    // `new(...)` with no type name builds the type the method returns, here with every argument
-    // named.
+    /// <summary>
+    /// A results reading whose numbers all differ, so a field written under the wrong key cannot pass.
+    /// </summary>
     private static CrucibleResultsReading SampleResults() =>
         new(
             ModeText: "Standard",
@@ -378,17 +347,11 @@ public class CrucibleUploadBuilderTests
             Bonuses: [new CrucibleResultBonus("Willing Sacrifice I", 240)],
             Familiars: [new CrucibleResultFamiliar(12, 7, 8, 65, 61)]);
 
-    /// <summary>A bonus-name lookup over a fixed table; a name the table lacks resolves to null.</summary>
-    // `TryGetValue(name, out var id)` returns whether the key is there and, when it is, writes its
-    // value into the new variable `id`: an `out` argument is how a method hands back a second
-    // value beside its return value.
     private static Func<string, uint?> Resolve(Dictionary<string, uint> table) =>
         name => table.TryGetValue(name, out var id) ? id : null;
 
-    /// <summary>Serializes a value with the plugin's own wire settings.</summary>
-    // `<T>` makes this generic: it serializes as `T`, the type the argument is declared as, like a
-    // TypeScript function with a type parameter. The builder hands each observation back as the base
-    // `CrucibleObservation`, and serializing as that base is what writes its "kind" key.
+    // Serializes as the declared type T. The builder returns each observation as the base
+    // CrucibleObservation, and serializing as that base is what writes its "kind" key.
     private static JsonObject Serialize<T>(T value) =>
         JsonNode.Parse(JsonSerializer.Serialize(value, ApiJson.Options))!.AsObject();
 
@@ -397,9 +360,7 @@ public class CrucibleUploadBuilderTests
     {
         var actual = Serialize(value);
 
-        // DeepEquals compares every key and value, ignoring the order of an object's keys but not
-        // of an array's items, like a deep equality matcher. The `$"..."` message fills its `{ }`
-        // holes with values, like a TypeScript template literal.
+        // Key order is free; array order, such as the observations', must match.
         Assert.True(
             JsonNode.DeepEquals(JsonNode.Parse(expected), actual),
             $"Expected {JsonNode.Parse(expected)!.ToJsonString()}\nActual   {actual.ToJsonString()}");

@@ -6,9 +6,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// Which expensive passes are worth a warning. A pass that overruns the frame budget usually
-// overruns it for a reason that outlasts the pass — a slow machine, a large manifest — so the
-// warning describes a standing condition and must not arrive on every sweep.
+// An overrun usually has a lasting cause, such as a slow machine or a large manifest, so the warning
+// describes a standing condition and must not repeat every sweep.
 public class FrameBudgetWarningsTests
 {
     private static CollectionCost Cost(
@@ -46,8 +45,8 @@ public class FrameBudgetWarningsTests
         Assert.False(warnings.ShouldReport(Cost([("items", 20.0)], isFirstPassOfSession: false)));
     }
 
-    // The cost of the pass is not part of the identity — only the culprit is. A machine that gets
-    // slower still has the same thing to say about it.
+    // Only the culprit identifies a warning, not the cost: a machine that gets slower has nothing
+    // new to say.
     [Fact]
     public void The_same_culprit_at_a_different_cost_is_not_reported_again()
     {
@@ -58,8 +57,7 @@ public class FrameBudgetWarningsTests
         Assert.False(warnings.ShouldReport(Cost([("items", 60.0)], isFirstPassOfSession: false)));
     }
 
-    // A pass that is expensive for a NEW reason is news. Silencing it because something else was
-    // reported earlier would hide exactly the regression the warning exists to catch.
+    // Silencing a new culprit would hide the regression the warning exists to catch.
     [Fact]
     public void A_new_culprit_earns_its_own_warning()
     {
@@ -70,8 +68,8 @@ public class FrameBudgetWarningsTests
         Assert.True(warnings.ShouldReport(Cost([("quests", 20.0)], isFirstPassOfSession: false)));
     }
 
-    // The warm-up exemption still holds, and it must not spend the culprit's one report: the same
-    // collector being genuinely slow on a later pass has to still be reportable.
+    // A warm-up pass must not spend the culprit's one report, or a genuinely slow later pass would
+    // go unreported.
     [Fact]
     public void A_first_pass_is_not_reported_and_does_not_spend_the_culprits_warning()
     {
@@ -89,8 +87,7 @@ public class FrameBudgetWarningsTests
         Assert.False(warnings.ShouldReport(Cost([("items", 1.0)], isFirstPassOfSession: false)));
     }
 
-    // A cheap pass must not spend the culprit's warning either, or the collector going genuinely
-    // slow later would be silent.
+    // A cheap pass must not spend the culprit's report either.
     [Fact]
     public void A_cheap_pass_leaves_its_culprit_reportable()
     {
@@ -109,10 +106,8 @@ public class FrameBudgetWarningsTests
         Assert.False(warnings.ShouldReport(Cost([], isFirstPassOfSession: false)));
     }
 
-    // The key is the SLOWEST collector, not merely some name the pass happened to contain. Two
-    // collectors swapping places is a different condition and earns its own warning — and a pass
-    // built from more than one collector is the only shape that can tell the two ends of the sort
-    // apart.
+    // The key is the slowest collector, not any name in the pass. Only a pass of several
+    // collectors can tell the two ends of the sort apart.
     [Fact]
     public void A_pass_whose_culprit_changed_is_reported_again()
     {

@@ -4,29 +4,16 @@ using Lumina.Excel;
 
 namespace XIVShinies.SyncPlugin.Beastmaster;
 
-/// <summary>
-/// Reads how many beasts the Master's Bestiary holds, from the game's own data.
-/// </summary>
+/// <summary>Reads how many beasts the Master's Bestiary holds, from the game's data.</summary>
 /// <remarks>
-/// <para>
-/// One number, and it is the one number that cannot come from the bestiary window. Every other
-/// figure the completeness test weighs is the window's own, so a total that came back short — from
-/// a list still loading, or from a view this code does not recognize — would have nothing to
-/// contradict it, and a window naming twelve as the whole bestiary would agree with itself
-/// perfectly. This is the outside opinion that check needs; see
-/// <see cref="TamedBeastLedger.IsComplete"/>.
-/// </para>
-/// <para>
-/// Read through <see cref="RawRow"/>, which asks for rows without asking for columns. The generated
-/// binding for this sheet pins a hash of the column layout it was built against, and the live
-/// game's layout does not match it, so requesting the typed sheet throws rather than returning
-/// rows. Counting rows needs no column at all, so nothing here can be thrown off by a layout that
-/// moves.
-/// </para>
+/// The completeness test checks the window's own total against this figure, so a short total, from a
+/// list still loading or an unrecognized view, cannot pass a slice off as the whole (see
+/// <see cref="TamedBeastLedger.IsComplete"/>). It reads through <see cref="RawRow"/>, rows without
+/// columns, because the typed sheet's binding pins a column-layout hash the live game does not match,
+/// and throws. Counting rows needs no column, so a moved layout cannot throw it off.
 /// </remarks>
 public static class BestiaryReader
 {
-    /// <summary>The bestiary sheet's name in the game data.</summary>
     private const string BestiarySheetName = "XBMPet";
 
     /// <summary>
@@ -34,9 +21,8 @@ public static class BestiaryReader
     /// </summary>
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <remarks>
-    /// Null rather than zero on failure, because the two mean opposite things: zero would claim the
-    /// game has no bestiary, and a completeness check comparing against it would agree with an
-    /// empty read. Null withholds the claim instead.
+    /// Null rather than zero on failure: zero would claim the game has no bestiary, and a completeness
+    /// check comparing against it would agree with an empty read.
     /// </remarks>
     public static int? CountBeasts(IDataManager dataManager)
     {
@@ -46,9 +32,8 @@ public static class BestiaryReader
             if (bestiary is null)
                 return null;
 
-            // Row 0 is the sheets' blank padding rather than a beast, so it is not counted.
-            // Counting the rows that carry a real bestiary number is what makes this comparable
-            // with the numbers the window lists.
+            // Row 0 is blank padding, not a beast. Counting only rows with a real bestiary number
+            // keeps this comparable with the numbers the window lists.
             var beasts = 0;
             foreach (var row in bestiary)
             {
@@ -60,10 +45,8 @@ public static class BestiaryReader
         }
         catch (Exception)
         {
-            // The walk is inside the guard as well as the lookup. A sheet the game data cannot
-            // supply is reported by throwing, and so is a row it cannot decode partway through —
-            // letting the second escape would surface a bestiary-sheet fault as a failure to read
-            // the window, and leave the caller retrying it on every refresh.
+            // The walk is guarded too: a row that cannot decode throws partway through, and letting
+            // it escape would report a sheet fault as a window read failure, retried every refresh.
             return null;
         }
     }

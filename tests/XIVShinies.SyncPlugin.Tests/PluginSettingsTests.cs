@@ -8,15 +8,12 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests;
 
-// PluginSettings holds every user-facing setting and is deliberately Dalamud-free, so the suite
-// can construct it directly. Its persistence shell (Configuration) implements a Dalamud interface
-// and therefore cannot be instantiated outside the game — that part is covered by in-game QA.
+// Configuration implements a Dalamud interface and cannot be built outside the game, so these tests
+// cover PluginSettings, which holds every setting.
 public class PluginSettingsTests
 {
-    // The collection pass reads the enabled groups on the framework thread while the user can be ticking
-    // a checkbox on the draw thread, and a list cannot be walked and added to at once — so what the pass
-    // gets is a COPY, taken while the settings are held still. Handing back the live list instead would
-    // leave the two threads sharing one collection, and the pass would throw the moment they met.
+    // The collection pass walks the enabled groups on the framework thread while the user ticks boxes on
+    // the draw thread, so it gets a copy: sharing the live list would throw when the two meet.
     [Fact]
     public void The_enabled_group_snapshot_does_not_change_underneath_its_reader()
     {
@@ -33,8 +30,7 @@ public class PluginSettingsTests
         Assert.DoesNotContain("materials", snapshot);
     }
 
-    // The hook the config save uses to serialize these collections without another thread writing to them
-    // mid-walk. Nothing to observe from outside but that the work runs, which is what this pins.
+    // Configuration.Save serializes inside this lock. From outside, only the run itself is observable.
     [Fact]
     public void Running_locked_runs_the_work()
     {
@@ -58,32 +54,26 @@ public class PluginSettingsTests
         Assert.Equal(BackendUrl.Default, settings.BaseUrl);
         Assert.Equal(string.Empty, settings.Token);
 
-        // The one default that IS true still sends nothing on a fresh install, because everything
-        // above gates it (see OccultGateTests); its box is visible and ticked on the wizard's
-        // consent step before any upload can happen.
+        // The one default-on setting still sends nothing, because everything above gates it (see
+        // OccultGateTests). The wizard shows its box ticked before any upload.
         Assert.True(settings.ShareOccultInstanceState);
 
-        // The standing answer about collections added later is deliberately NOT ticked by
-        // default — see PluginSettings.AutoEnableNewFeatures.
+        // See PluginSettings.AutoEnableNewFeatures for why this starts off.
         Assert.False(settings.AutoEnableNewFeatures);
 
-        // Sharing Crucible runs waits for the user to tick it themselves, and its card starts unseen
-        // (see PluginSettings.CrucibleSharingSeen for what records it).
+        // Only the user's own tick enables Crucible sharing, and its card starts unseen.
         Assert.False(settings.ShareCrucibleRuns);
         Assert.False(settings.CrucibleSharingSeen);
     }
 
-    // The upgrade migration: a version-0 config whose onboarding already ran belongs to a user the
-    // wizard will never show the occult toggle to, so leaving it on would be consent by omission —
-    // it starts OFF and the settings screen is where that user opts in. The standing answer about
-    // collections is cleared here too, by the version-3 rule.
+    // An onboarded version-0 user never saw the occult toggle in the wizard, so leaving it on would be
+    // consent by omission; they opt in on the settings screen. The version-3 rule clears the standing
+    // answer too.
     [Fact]
     public void Migrating_an_onboarded_version0_config_switches_the_new_sharing_defaults_off()
     {
-        // Seeded true rather than left at the default: an assertion that something is false is
-        // worth nothing when false is what it started as, and the rule that clears this one spans
-        // every version below 3 — so without a value that could differ, narrowing its lower bound
-        // would pass every test in this file.
+        // Seeded true so the assertion can fail: otherwise narrowing the version-3 rule's lower bound
+        // would pass every test here.
         var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
 
         Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 0));
@@ -91,20 +81,17 @@ public class PluginSettingsTests
         Assert.False(settings.ShareOccultInstanceState);
         Assert.False(settings.AutoEnableNewFeatures);
 
-        // A version-0 config predates the seen-set too, so the later rule applies as well. This is
-        // the only case where both fire, so without these two lines a rule that had drifted to
-        // `fromVersion >= 1 && fromVersion < 2` would pass every test in the file.
+        // The version-2 rule fires too. This is the only test where both fire, so these lines catch
+        // that rule drifting to `fromVersion >= 1 && fromVersion < 2`.
         Assert.True(settings.SeenCategoriesInitialized);
         Assert.True(settings.IsCategorySeen(CategoryKeys.Quests));
 
-        // No migration records the Crucible card as seen: an existing install's card announcing
-        // itself is the point of its badge.
+        // No migration marks the Crucible card seen: its badge exists to announce it to existing
+        // installs.
         Assert.False(settings.CrucibleSharingSeen);
     }
 
-    // An install still ahead of its wizard keeps the default: the wizard is about to put the box
-    // in front of them, which is exactly the consent surface the migration exists to substitute
-    // for.
+    // The wizard is about to show the box, which is the consent the migration stands in for.
     [Fact]
     public void Migrating_a_config_that_never_finished_onboarding_keeps_the_defaults()
     {
@@ -115,8 +102,8 @@ public class PluginSettingsTests
         Assert.True(settings.ShareOccultInstanceState);
     }
 
-    // Read from the constant rather than a literal, so bumping the schema cannot leave this test
-    // quietly asserting that an OLD version is not migrated — which is the opposite of its point.
+    // Reads the constant, not a literal, so a schema bump cannot leave this asserting that an old version
+    // is not migrated.
     [Fact]
     public void A_current_version_config_is_not_migrated()
     {
@@ -134,7 +121,7 @@ public class PluginSettingsTests
         var settings = new PluginSettings();
 
         Assert.False(settings.IsCategoryEnabled("quests"));
-        // An unknown key is simply "not opted in" — a future collector needs no settings migration.
+        // An unknown key reads as not opted in, so a future collector needs no settings migration.
         Assert.False(settings.IsCategoryEnabled("facewear"));
     }
 
@@ -170,7 +157,7 @@ public class PluginSettingsTests
         var settings = new PluginSettings();
 
         Assert.False(settings.IsItemGroupEnabled("never-seen"));
-        // An unknown key is simply "not opted in" — a future item group needs no settings migration.
+        // An unknown key reads as not opted in, so a future item group needs no settings migration.
         Assert.False(settings.IsItemGroupEnabled("future-category"));
     }
 
@@ -179,7 +166,7 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // Reading tolerates blank keys (returns false); writing one is always a caller bug.
+        // Reads tolerate a blank key; a write with one is a caller bug.
         Assert.False(settings.IsItemGroupEnabled(null!));
         Assert.False(settings.IsItemGroupEnabled(""));
     }
@@ -205,7 +192,6 @@ public class PluginSettingsTests
         settings.SetItemGroupEnabled("cosmetics", true);
         settings.SetItemGroupEnabled("cosmetics", true);
 
-        // The list should contain exactly one entry for "cosmetics".
         Assert.Single(settings.EnabledItemGroupKeys, "cosmetics");
     }
 
@@ -214,10 +200,8 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // Empty string should throw ArgumentException.
         Assert.Throws<ArgumentException>(() => settings.SetItemGroupEnabled("", true));
 
-        // Null should throw ArgumentNullException, which derives from ArgumentException.
         Assert.Throws<ArgumentNullException>(() => settings.SetItemGroupEnabled(null!, true));
     }
 
@@ -256,9 +240,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsItemGroupEnabled("new"));
         Assert.True(settings.ItemGroupConsentMigrated);
 
-        // Seen-marking is unconditional: a legacy group is not new to this user even when their
-        // items consent was off, so it must never earn a "New" badge. The non-legacy group IS
-        // new and stays unseen.
+        // A legacy group is never new to this user, whatever their Items consent, so it never wears a
+        // "New" badge.
         Assert.True(settings.IsItemGroupSeen("old"));
         Assert.False(settings.IsItemGroupSeen("new"));
     }
@@ -272,22 +255,19 @@ public class PluginSettingsTests
             new ItemManifestGroup { Key = "old", Label = "x", Ids = Array.Empty<uint>(), Legacy = true },
         };
 
-        // First call should return true and mark the flag.
         var changed = settings.MigrateItemGroupConsent(groups, itemsCategoryEnabled: true);
         Assert.True(changed);
         Assert.True(settings.ItemGroupConsentMigrated);
 
-        // Second call should return false and change nothing.
         var groups2 = new[]
         {
             new ItemManifestGroup { Key = "different", Label = "y", Ids = Array.Empty<uint>(), Legacy = true },
         };
         var changed2 = settings.MigrateItemGroupConsent(groups2, itemsCategoryEnabled: true);
         Assert.False(changed2);
-        // The original group should still be enabled, the new one should not have been added.
         Assert.True(settings.IsItemGroupEnabled("old"));
         Assert.False(settings.IsItemGroupEnabled("different"));
-        // The early return must touch nothing — the seen list included.
+        // The early return touches nothing, the seen list included.
         Assert.False(settings.IsItemGroupSeen("different"));
     }
 
@@ -303,14 +283,11 @@ public class PluginSettingsTests
 
         settings.MigrateItemGroupConsent(groups, itemsCategoryEnabled: true);
 
-        // Legacy groups should be marked as seen — they are not new to this user.
         Assert.True(settings.IsItemGroupSeen("old"));
-        // Non-legacy groups arriving at migration time are new — not seen.
         Assert.False(settings.IsItemGroupSeen("new"));
     }
 
-    // The category-level twin of the group seen-tracking below. Same contract, one level up: the
-    // settings badge a collection the install has never shown.
+    // The settings window badges a collection this install has never shown.
     [Fact]
     public void Seen_tracking_marks_categories_and_tolerates_duplicates()
     {
@@ -340,14 +317,14 @@ public class PluginSettingsTests
         Assert.True(settings.IsCategorySeen("mounts"));
         Assert.Equal(2, settings.SeenCategoryKeys.Count);
 
-        // An unrecorded or blank key reads as unseen, the same fail-safe direction
-        // IsCategoryEnabled takes — an unknown collection gets its badge rather than missing one.
+        // An unknown or blank key reads unseen, so an unknown collection gets its badge rather than
+        // missing it.
         Assert.False(settings.IsCategorySeen(""));
         Assert.False(settings.IsCategorySeen("orchestrionRolls"));
     }
 
-    // The version-2 migration. An onboarded config written before the seen-set gets the era's
-    // collections marked seen, so anything added since is the first thing to wear a badge.
+    // Version 2: an onboarded config from before the seen-set gets that era's collections marked seen,
+    // so only later additions wear a badge.
     [Fact]
     public void Migrating_an_onboarded_pre_seen_tracking_config_marks_the_collections_of_that_era()
     {
@@ -355,7 +332,7 @@ public class PluginSettingsTests
 
         Assert.True(settings.ApplyUpgradeMigrations(fromVersion: 1));
 
-        // The version-3 rule spans this version too, so the standing answer is cleared here as well.
+        // The version-3 rule fires here too.
         Assert.False(settings.AutoEnableNewFeatures);
 
         Assert.True(settings.SeenCategoriesInitialized);
@@ -363,12 +340,11 @@ public class PluginSettingsTests
             PluginSettings.CategoriesPresentBeforeSeenTracking,
             key => Assert.True(settings.IsCategorySeen(key)));
 
-        // The whole point: a collection added after that baseline is new to this user.
+        // A collection added after the baseline is new to this user.
         Assert.False(settings.IsCategorySeen(CategoryKeys.OrchestrionRolls));
     }
 
-    // An install still ahead of its wizard is left alone — the wizard marks what it shows, so
-    // pre-marking here would retire badges for collections it is about to display.
+    // The wizard marks what it shows, so pre-marking here would retire badges it is about to display.
     [Fact]
     public void Migrating_a_pre_seen_tracking_config_that_never_onboarded_marks_nothing()
     {
@@ -381,7 +357,7 @@ public class PluginSettingsTests
     }
 
     // Guards the freeze documented on CategoriesPresentBeforeSeenTracking. If this fails because a
-    // collection was added, the fix is to leave the list alone, not to update it.
+    // collection was added, leave the list alone; do not update it.
     [Fact]
     public void The_pre_seen_tracking_baseline_never_grows()
     {
@@ -391,18 +367,16 @@ public class PluginSettingsTests
             "occultRecords", "questSequences", "quests", "tripleTriadCards", "tripleTriadNpcs",
         };
 
-        // Compared order-insensitively: order means nothing to MarkCategoriesSeen, so a re-sort
-        // should not fail here and send the next reader hunting for a problem that is not there.
-        // The count is asserted first so an addition fails as a plain count mismatch rather than a
-        // sequence diff.
+        // Order means nothing to MarkCategoriesSeen, so a re-sort must not fail this. The count comes
+        // first so an addition fails as a plain count mismatch.
         Assert.Equal(expected.Length, PluginSettings.CategoriesPresentBeforeSeenTracking.Count);
         Assert.Equal(
             expected.OrderBy(key => key, StringComparer.Ordinal),
             PluginSettings.CategoriesPresentBeforeSeenTracking.OrderBy(key => key, StringComparer.Ordinal));
     }
 
-    // A fresh install pre-marks nothing: the wizard is about to show every collection and marks
-    // each one as it draws. Pre-marking would claim they were shown before they were.
+    // The wizard is about to show every collection and marks each as it draws, so pre-marking would
+    // claim they were shown before they were.
     [Fact]
     public void The_seen_baseline_marks_nothing_before_onboarding()
     {
@@ -414,8 +388,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategorySeen("mounts"));
     }
 
-    // Onboarding complete with no baseline recorded: nothing says which categories the wizard
-    // showed, so today's list is the only baseline this entry point can build from.
+    // Nothing records which categories the wizard showed, so today's list is the only baseline
+    // available.
     [Fact]
     public void The_seen_baseline_takes_todays_categories_as_seen_after_onboarding()
     {
@@ -430,8 +404,8 @@ public class PluginSettingsTests
         Assert.False(settings.CrucibleSharingSeen);
     }
 
-    // The baseline is one-shot. Were it to re-run, it would swallow every collection added since —
-    // exactly the badge the mechanism exists to show.
+    // A re-run would mark every collection added since as seen, swallowing the badges it exists to
+    // show.
     [Fact]
     public void The_seen_baseline_is_established_only_once()
     {
@@ -444,17 +418,16 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategorySeen("orchestrionRolls"));
     }
 
-    // The sequence a fresh install actually walks, across the one transition the guard exists to
-    // survive: baseline before onboarding, the wizard marking rows as it draws them, then
-    // onboarding completing. A later launch must NOT re-baseline over a collection added since —
-    // if it did, no addition would ever badge for anyone who installed fresh.
+    // A fresh install's real sequence: baseline before onboarding, the wizard marking rows, then
+    // onboarding completing. A later launch must not re-baseline, or no addition would ever badge for
+    // a fresh install.
     [Fact]
     public void The_seen_baseline_survives_onboarding_completing_after_it_ran()
     {
         var settings = new PluginSettings { OnboardingComplete = false };
         Assert.True(settings.InitializeSeenCategories(new[] { "quests" }));
 
-        // The wizard draws the collections it offers, which is what marks them.
+        // The wizard marks what it draws.
         settings.MarkCategoriesSeen(new[] { "quests" });
         settings.OnboardingComplete = true;
 
@@ -465,10 +438,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategorySeen("orchestrionRolls"));
     }
 
-    // --- Auto-enabling a collection the install has never been shown -------------------------
+    // --- Auto-enabling a collection the install has never shown ---
 
-    // The feature itself: a user who asked not to be asked again gets a newly added collection
-    // switched on, while the collections they have already judged are left exactly as they are.
     [Fact]
     public void An_unseen_category_is_switched_on_for_a_user_who_asked_for_that()
     {
@@ -481,13 +452,11 @@ public class PluginSettingsTests
         Assert.Equal(new[] { "orchestrionRolls" }, enabled);
         Assert.True(settings.IsCategoryEnabled("orchestrionRolls"));
 
-        // A collection they were shown and switched off stays off — being seen is what makes
-        // their answer theirs, and nothing here may overturn it.
+        // Shown and switched off stays off: once seen, the answer is the user's.
         Assert.False(settings.IsCategoryEnabled("mounts"));
     }
 
-    // The standing answer is the whole license for switching anything on without a click. Without
-    // it there is no consent to lean on, so nothing happens.
+    // The standing answer is the only license to switch anything on without a click.
     [Fact]
     public void Nothing_is_switched_on_when_the_user_did_not_ask_for_that()
     {
@@ -499,10 +468,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
-    // An install still ahead of its wizard has given no standing answer yet, even with the flag
-    // set: ticking the box in the wizard persists it immediately, so a load that happens before
-    // onboarding finishes must not act on it. The wizard is that user's consent surface, and it
-    // puts every collection in front of them.
+    // Ticking the box in the wizard persists it at once, so a load before onboarding finishes sees the
+    // flag set. The wizard, which shows every collection, is still that user's consent surface.
     [Fact]
     public void Nothing_is_switched_on_before_onboarding_is_complete()
     {
@@ -514,16 +481,15 @@ public class PluginSettingsTests
         Assert.Empty(settings.EnabledCategories);
     }
 
-    // Reports only what it changed. A collection already switched on was the user's own doing, and
-    // saying otherwise would put a change in the log that never happened.
+    // A collection already on was the user's doing; reporting it would log a change that never
+    // happened.
     [Fact]
     public void A_category_already_switched_on_is_not_reported_as_changed()
     {
         var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
 
-        // A baseline that does NOT cover orchestrionRolls, so it really is judged unseen and the
-        // already-on skip is what returns nothing. Without this the empty-baseline floor would
-        // short-circuit first and the assertion would pass without reaching the skip at all.
+        // A baseline without orchestrionRolls, so the already-on skip is what returns nothing.
+        // Without it the empty-baseline floor would return first.
         settings.MarkCategoriesSeen(new[] { "quests" });
         settings.SetCategoryEnabled("orchestrionRolls", true);
 
@@ -531,31 +497,29 @@ public class PluginSettingsTests
         Assert.True(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
-    // The un-overturn guarantee reads the stored answer itself, so it holds even for a config
-    // whose seen-set does not list the category — an entry of "no" is an answer, and no later
-    // load may reverse it.
+    // The guard reads the stored answer itself, so it holds even when the seen-set does not list the
+    // category: a stored "no" is an answer no later load may reverse.
     [Fact]
     public void A_category_answered_no_is_never_switched_back_on()
     {
         var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
         settings.MarkCategoriesSeen(new[] { "quests" });
 
-        // Answered, and answered NO — but never announced, so it is absent from the seen-set.
+        // Answered no but never announced, so absent from the seen-set.
         settings.SetCategoryEnabled("orchestrionRolls", false);
 
         Assert.Empty(settings.AutoEnableUnseenCategories(new[] { "orchestrionRolls" }));
         Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
-    // Called at load with the registered collectors, so it takes the same best-effort line the
-    // other bulk writers do rather than throwing into the plugin's constructor.
+    // Called at load, so it skips what it cannot use rather than throw into the plugin's constructor.
     [Fact]
     public void Auto_enabling_tolerates_a_null_sequence_and_skips_blanks()
     {
         var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
 
-        // A baseline has to exist for anything to be judged new against — see
-        // Nothing_is_switched_on_when_the_seen_baseline_is_missing.
+        // Without a baseline nothing counts as new (see
+        // Nothing_is_switched_on_when_the_seen_baseline_is_missing).
         settings.MarkCategoriesSeen(new[] { "quests" });
 
         Assert.Empty(settings.AutoEnableUnseenCategories(null!));
@@ -565,16 +529,13 @@ public class PluginSettingsTests
             settings.AutoEnableUnseenCategories(new[] { "", "orchestrionRolls" }));
     }
 
-    // The user's answer survives. Once a collection has been drawn it is seen, so switching it
-    // back off sticks across every later load rather than being undone on the next launch.
+    // Drawing a collection marks it seen, so the user's switch-off sticks across later loads.
     [Fact]
     public void Switching_an_auto_enabled_category_back_off_survives_the_next_load()
     {
         var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
 
-        // A baseline from an earlier load, so the collection below is genuinely judged unseen and
-        // the first call really does switch it on — otherwise the empty-baseline floor stops it
-        // and the sequence never gets started.
+        // A baseline from an earlier load, so the empty-baseline floor does not stop the first call.
         settings.MarkCategoriesSeen(new[] { "quests" });
 
         Assert.Equal(
@@ -589,8 +550,8 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
-    // The version-3 rule: an onboarded config's standing answer is cleared, so the user re-answers
-    // against copy that names collections. See the rule itself for why.
+    // Version 3 clears the standing answer, so the user re-answers against copy that names collections.
+    // ApplyUpgradeMigrations says why.
     [Fact]
     public void Migrating_an_onboarded_pre_collection_config_switches_the_standing_answer_off()
     {
@@ -611,13 +572,11 @@ public class PluginSettingsTests
 
         Assert.False(settings.AutoEnableNewFeatures);
 
-        // The occult toggle's own rule IS gated on onboarding, and stays that way — the wizard is
-        // about to put that box in front of them.
         Assert.True(settings.ShareOccultInstanceState);
     }
 
-    // Nothing to clear means nothing changed. The caller saves regardless (the version bump has to
-    // persist), but the return value is a contract and should not claim a write that did not happen.
+    // The caller saves anyway to persist the version bump, but the return value must not claim a write
+    // that did not happen.
     [Fact]
     public void Migrating_a_config_whose_standing_answer_is_already_off_reports_no_change()
     {
@@ -626,8 +585,7 @@ public class PluginSettingsTests
         Assert.False(settings.ApplyUpgradeMigrations(fromVersion: 2));
     }
 
-    // The floor under a lost baseline: an empty seen-set switches nothing on. See
-    // AutoEnableUnseenCategories for why an empty one means the record was lost.
+    // AutoEnableUnseenCategories says why an empty seen-set means the record was lost.
     [Fact]
     public void Nothing_is_switched_on_when_the_seen_baseline_is_missing()
     {
@@ -644,8 +602,7 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("mounts"));
     }
 
-    // The load sequence Plugin.cs runs, in its order: the baseline first, so an onboarded install
-    // has every collection marked seen by the time auto-enable looks, and it finds nothing to do.
+    // Plugin.cs's load order: the baseline first, so auto-enable finds every collection already seen.
     [Fact]
     public void The_load_sequence_switches_nothing_on_for_an_install_with_no_new_collections()
     {
@@ -658,10 +615,7 @@ public class PluginSettingsTests
         Assert.Empty(settings.EnabledCategories);
     }
 
-    // The full load sequence in order: migrate, baseline, auto-enable. Only the collection added
-    // after the frozen pre-tracking list is switched on; every collection on that list is left
-    // off. The standing answer is re-ticked after the migration, because the version-3 rule
-    // clears it.
+    // The full load order: migrate, baseline, auto-enable.
     [Fact]
     public void The_upgrade_sequence_switches_on_only_the_collection_added_since_the_baseline()
     {
@@ -673,7 +627,7 @@ public class PluginSettingsTests
 
         settings.ApplyUpgradeMigrations(fromVersion: 1);
 
-        // The user re-opts in on the settings screen, where the copy names collections.
+        // The version-3 rule cleared it; the user re-opts in on the settings screen.
         settings.AutoEnableNewFeatures = true;
         settings.InitializeSeenCategories(registered);
 
@@ -685,9 +639,8 @@ public class PluginSettingsTests
             key => Assert.False(settings.IsCategoryEnabled(key)));
     }
 
-    // The baseline runs unconditionally at plugin load, with no user present. Consent is
-    // ban-enforced by Dalamud, so "it only touches the seen-set" gets a guard rather than resting
-    // on a reading of the code.
+    // The baseline runs at every load with no user present, and breaking Dalamud's consent rule can
+    // mean rejection or a ban, so a test guards that it touches only the seen-set.
     [Fact]
     public void The_seen_baseline_grants_no_consent()
     {
@@ -712,7 +665,6 @@ public class PluginSettingsTests
         Assert.True(settings.IsItemGroupSeen("b"));
         Assert.False(settings.IsItemGroupSeen("c"));
 
-        // Calling again with "a" should not duplicate the list entry.
         settings.MarkItemGroupsSeen(new[] { "a" });
         Assert.Single(settings.SeenItemGroupKeys, "a");
     }
@@ -722,12 +674,10 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // A null sequence is a no-op — seen keys come from server-supplied group data during UI
-        // rendering, so malformed input must degrade gracefully rather than throw mid-draw.
+        // Seen keys come from server data while the window draws, so bad input must not throw.
         settings.MarkItemGroupsSeen(null!);
         Assert.Empty(settings.SeenItemGroupKeys);
 
-        // A blank key in the middle of a batch is skipped; its valid neighbors are still marked.
         settings.MarkItemGroupsSeen(new[] { "a", "", "b" });
         Assert.True(settings.IsItemGroupSeen("a"));
         Assert.True(settings.IsItemGroupSeen("b"));
@@ -739,7 +689,6 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // Reading tolerates blank keys (returns false), mirroring IsItemGroupEnabled.
         Assert.False(settings.IsItemGroupSeen(null!));
         Assert.False(settings.IsItemGroupSeen(""));
     }
@@ -749,10 +698,8 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // Group data comes from the server, so a malformed group must degrade gracefully: the
-        // blank key is skipped while its valid sibling is still enabled and marked seen. Without
-        // the skip, SetItemGroupEnabled would throw mid-migration and strand the run-once flag
-        // with only part of the work done.
+        // Group data comes from the server. Without the skip, SetItemGroupEnabled would throw
+        // mid-migration and leave the run-once flag set with the work half done.
         var groups = new[]
         {
             new ItemManifestGroup { Key = "", Label = "broken", Ids = Array.Empty<uint>(), Legacy = true },
@@ -773,8 +720,6 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // An empty (non-null) groups list is a valid migration: the flag flips so it never runs
-        // again, but there is nothing to enable or mark seen.
         var changed = settings.MigrateItemGroupConsent(
             Array.Empty<ItemManifestGroup>(), itemsCategoryEnabled: true);
 
@@ -794,8 +739,7 @@ public class PluginSettingsTests
         Assert.True(changed);
         Assert.True(settings.ItemGroupConsentMigrated);
 
-        // Settling records that there is nothing to carry over — it never grants consent of its
-        // own. The user's choices are exactly what they ticked in the wizard.
+        // Settling never grants consent; the user's choices are what they ticked in the wizard.
         Assert.Empty(settings.EnabledItemGroupKeys);
     }
 
@@ -804,10 +748,8 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // The wizard never drew a group checkbox: the config it waited for carried no groups, whether
-        // because the server sent none or because the poll failed outright. Either way the user made no
-        // group-level choice, so the migration is still the only thing that can speak for them — and
-        // burning the run-once flag here would silence it forever.
+        // No group checkbox was drawn, because the server sent no groups or the poll failed. The user
+        // made no group choice, so the migration must keep its run-once flag to speak for them later.
         Assert.False(settings.SettleItemGroupConsent(groupsWereShown: false));
         Assert.False(settings.ItemGroupConsentMigrated);
     }
@@ -817,8 +759,7 @@ public class PluginSettingsTests
     {
         var settings = new PluginSettings();
 
-        // The user saw the groups in the wizard and deliberately left the legacy one off, while
-        // opting the items category itself in.
+        // The user saw the groups and left the legacy one off, while opting Items in.
         var shown = new[]
         {
             new ItemManifestGroup { Key = "old", Label = "x", Ids = Array.Empty<uint>(), Legacy = true },
@@ -826,18 +767,16 @@ public class PluginSettingsTests
         settings.SetCategoryEnabled("items", true);
         settings.SettleItemGroupConsent(groupsWereShown: true);
 
-        // The first /config poll after onboarding must NOT resurrect the group they turned down:
-        // the migration exists to carry a PRE-GROUP user's category consent onto the legacy group,
-        // and this user's choice was explicit.
+        // The migration carries a pre-group user's Items consent onto the legacy group. This user
+        // chose explicitly, so the first /config poll must not re-enable the group they turned down.
         var migrated = settings.MigrateItemGroupConsent(shown, itemsCategoryEnabled: true);
 
         Assert.False(migrated);
         Assert.False(settings.IsItemGroupEnabled("old"));
     }
 
-    // The other half of that rule, and the one that keeps a user who was shown no group checkboxes from
-    // being stranded: nothing was settled, so the first poll to arrive carrying groups migrates their
-    // category-level items consent onto the legacy group.
+    // A user shown no group checkboxes settled nothing, so the first poll carrying groups migrates their
+    // Items consent onto the legacy group.
     [Fact]
     public void An_unsettled_install_still_migrates_afterwards()
     {
@@ -863,13 +802,13 @@ public class PluginSettingsTests
 
         Assert.True(settings.SettleItemGroupConsent(groupsWereShown: true));
 
-        // Already settled — the second call has nothing to write, so the caller is told not to save.
+        // Nothing to write, so the caller is told not to save.
         Assert.False(settings.SettleItemGroupConsent(groupsWereShown: true));
         Assert.True(settings.ItemGroupConsentMigrated);
     }
 
-    // The tracker is the one sharing control that starts ON, so a wizard that could not offer the
-    // choice must not leave the default standing: the user never got to decline it.
+    // The tracker starts on, so a wizard that could not offer the choice must record it off: the user
+    // never got to decline it.
     [Fact]
     public void A_wizard_that_could_not_offer_the_tracker_records_it_off()
     {
@@ -880,8 +819,7 @@ public class PluginSettingsTests
         Assert.False(settings.ShareOccultInstanceState);
     }
 
-    // The ordinary path: the box was there, ticked, and left alone. That IS the user's answer, so
-    // settling must not overwrite it.
+    // A box shown ticked and left alone is the user's answer.
     [Fact]
     public void A_wizard_that_offered_the_tracker_leaves_the_users_answer_alone()
     {
@@ -891,8 +829,7 @@ public class PluginSettingsTests
         Assert.True(settings.ShareOccultInstanceState);
     }
 
-    // An install that already has it off — the user unticked the live box before the server
-    // withdrew it — has nothing to write, so the caller is told not to spend a save.
+    // The user unticked the box before the server withdrew it, so there is nothing to save.
     [Fact]
     public void Settling_tracker_consent_that_is_already_off_reports_no_change()
     {
@@ -913,14 +850,13 @@ public class PluginSettingsTests
 
         settings.MigrateItemGroupConsent(groups, itemsCategoryEnabled: true);
 
-        // The two share one flag, so a migration that has already run leaves nothing to settle.
+        // Migrating and settling share one flag.
         Assert.False(settings.SettleItemGroupConsent(groupsWereShown: true));
     }
 
-    // Brackets Configuration.CurrentVersion against the newest migration arm: at the constant
-    // nothing fires (asserted elsewhere), and one version below it the newest arm does. Whoever
-    // adds a migration arm updates this test to target that arm's state — the pair is what keeps
-    // a new arm from being born dead behind an unbumped constant.
+    // With A_current_version_config_is_not_migrated, this brackets Configuration.CurrentVersion: one
+    // version below it, the newest arm fires. Whoever adds an arm retargets this test at that arm's
+    // state, so the pair keeps a new arm from shipping dead behind an unbumped constant.
     [Fact]
     public void The_newest_migration_fires_one_version_below_the_constant()
     {

@@ -4,33 +4,26 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// One server-supplied manifest: the category it belongs to, how to read it out of a
+/// One server-supplied manifest: the category it feeds, how to read it from a
 /// <see cref="CollectContext"/>, and the words the orchestrator uses when it is clipped.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The two <c>Func</c> members are the C# equivalent of storing a function in an object — the
-/// closest TypeScript analog is <c>{ read: (ctx) =&gt; number[] }</c>. They live in the table
-/// rather than in a <c>switch</c> so that the code reading manifests never names a category:
-/// it walks <see cref="ManifestCatalog.All"/> and calls whatever it finds.
-/// </para>
-/// <para>
-/// <paramref name="Truncated"/> cannot be derived from <paramref name="Read"/>, because
-/// <c>Read</c> already returns the clipped list — by then the evidence of clipping is gone. Each
-/// manifest therefore states both, side by side, where a reader can check they agree.
-/// </para>
+/// The <c>Func</c> members sit in the table rather than a <c>switch</c>, so code reading manifests
+/// never names a category. <paramref name="Truncated"/> cannot come from <paramref name="Read"/>,
+/// which already returns the clipped list, so each manifest states both side by side.
 /// </remarks>
-/// <param name="CategoryKey">The collector category this manifest feeds (see <see cref="CategoryKeys"/>).</param>
-/// <param name="Noun">Names the manifest in the warning, e.g. <c>"item"</c>.</param>
-/// <param name="Unit">What the manifest's entries are, e.g. <c>"ids"</c>.</param>
-/// <param name="Verb">What the plugin does with an entry, e.g. <c>"scanned"</c>.</param>
+/// <param name="CategoryKey">
+/// The collector category this manifest feeds (see <see cref="CategoryKeys"/>).
+/// </param>
+/// <param name="Noun">Names the manifest in the warning, for example <c>"item"</c>.</param>
+/// <param name="Unit">What the manifest's entries are, for example <c>"ids"</c>.</param>
+/// <param name="Verb">What the plugin does with an entry, for example <c>"scanned"</c>.</param>
 /// <param name="Read">Returns the manifest's ids, already bounded to the ceiling.</param>
 /// <param name="Truncated">True when the server asked about more than the ceiling allows.</param>
 /// <param name="CoveredByManifestVersion">
-/// Whether <c>/config</c>'s <c>manifestVersion</c> hash changes when this manifest's content
-/// does. True for the item manifest, whose content the hash is computed from; false for the
-/// quest-sequence manifest, which the contract places deliberately outside it. Anything that
-/// wants to notice "this manifest changed" has to know which of the two it is holding.
+/// Whether <c>/config</c>'s <c>manifestVersion</c> hash changes when this manifest's content does:
+/// true for the item manifest, false for the quest-sequence manifest, which the contract leaves
+/// outside the hash. Anything that watches for a changed manifest must check it.
 /// </param>
 internal sealed record ManifestDescriptor(
     string CategoryKey,
@@ -41,27 +34,19 @@ internal sealed record ManifestDescriptor(
     Func<CollectContext, bool> Truncated,
     bool CoveredByManifestVersion);
 
-/// <summary>
-/// Every manifest the server can send, in one table.
-/// </summary>
+/// <summary>Every manifest the server can send, in one table.</summary>
 /// <remarks>
-/// <para>
-/// This is the single place that knows a manifest exists. <see cref="CollectContext"/> reads
-/// through it and the truncation warning is generated from it, so the code that consumes
-/// manifests never changes when one is added — a new descriptor is how they discover it.
-/// </para>
-/// <para>
-/// It is a table and not a dictionary keyed by the wire because the server names each manifest
-/// as its own field on <c>/config</c> (<c>itemManifest</c>, <c>questSequenceManifest</c>, …).
-/// Until the contract carries manifests keyed by category, projecting those named fields into
-/// keyed entries is work that has to happen somewhere; doing it here confines it to one place.
-/// </para>
+/// The single place that ties a manifest to its category: <see cref="CollectContext"/> reads through it
+/// and the truncation warning comes from it, so the code that consumes manifests never changes when
+/// one is added. A table, not a dictionary keyed off the wire, because <c>/config</c> names each
+/// manifest as its own field (<c>itemManifest</c>, <c>questSequenceManifest</c>), and this keeps
+/// mapping those to categories in one place.
 /// </remarks>
 internal static class ManifestCatalog
 {
     /// <summary>
-    /// Every known manifest. Anything walking the whole table sees them in this order, which is
-    /// what makes a pass that clips two manifests log them in a stable order.
+    /// Every known manifest. A walk of the table sees this order, so a pass that clips two manifests
+    /// logs them in a stable order.
     /// </summary>
     public static IReadOnlyList<ManifestDescriptor> All { get; } =
     [
@@ -96,8 +81,8 @@ internal static class ManifestCatalog
     }
 
     /// <summary>
-    /// The log line for a clipped manifest, or null for a category with no manifest. Built here
-    /// so the orchestrator can warn about a manifest it knows nothing about beyond its key.
+    /// The log line for a clipped manifest, or null for a category with no manifest. Built here so
+    /// the orchestrator can warn about a manifest it knows only by key.
     /// </summary>
     public static string? TruncationWarning(string categoryKey)
     {

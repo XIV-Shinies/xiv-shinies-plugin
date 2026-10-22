@@ -6,10 +6,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// Decides whether a category may be collected and uploaded at all.
 /// </summary>
 /// <remarks>
-/// Four switches must all be on, and any one of them off wins. Two belong to the user (the master
-/// switch and their per-category opt-in) and two to the server (the global kill switch and its
-/// per-category switch). Keeping this in one pure function — rather than a method on each
-/// collector — means every category is gated identically and no collector can forget a check.
+/// Onboarding must be complete and four switches on: the user's master switch and per-category
+/// opt-in, and the server's global kill switch and per-category switch. One function gates every
+/// category, so no collector can forget a check.
 /// </remarks>
 public static class CollectorGate
 {
@@ -21,18 +20,15 @@ public static class CollectorGate
     /// </param>
     public static bool IsEnabled(string categoryKey, PluginSettings settings, ConfigResponse? remoteConfig)
     {
-        // The user's own switches come first. Nothing is ever collected before the user has been
-        // shown what gets sent and has explicitly opted in — a Dalamud compliance rule.
+        // Nothing is collected before the user has seen what gets sent and opted in (a Dalamud rule).
         if (!settings.MasterEnabled || !settings.OnboardingComplete)
             return false;
 
         if (!settings.IsCategoryEnabled(categoryKey))
             return false;
 
-        // Without a fetched config we cannot know the server's switches. Proceeding is safe: the
-        // server enforces them regardless, stripping disabled categories and answering 503 when its
-        // global switch is off. Refusing to collect would instead strand the plugin whenever
-        // /config is unreachable.
+        // Proceed without /config: the server strips disabled categories and answers 503 when switched
+        // off anyway, and refusing would strand the plugin whenever /config is unreachable.
         if (remoteConfig is null)
             return true;
 
@@ -48,19 +44,10 @@ public static class CollectorGate
     /// <param name="categoryKey">The collection asking.</param>
     /// <param name="settings">The user's own switches.</param>
     /// <remarks>
-    /// <para>
-    /// Most collections read the game when a pass runs, so <see cref="IsEnabled"/> is the only gate
-    /// they need. A collection whose source is a window the player opens is different: the read
-    /// happens on the game's schedule rather than the pass's, so something has to decide whether to
-    /// take it long before a pass would ask. This is that decision, and it holds the user's
-    /// switches to the same meaning — switched off collects nothing, not even into memory.
-    /// </para>
-    /// <para>
-    /// The server's switches are deliberately absent. A category the server has turned off never
-    /// reaches a payload anyway — <see cref="IsEnabled"/> refuses to collect it, and the server
-    /// strips it on arrival regardless. Consent is the user's answer, and only the user's answer
-    /// belongs in a decision made this early.
-    /// </para>
+    /// For a collection whose source is a window the player opens: the read happens when the game fills
+    /// that window, not during a pass. A collection the user switched off captures nothing, not even
+    /// into memory. The server's switches are left out: consent is the user's answer, and
+    /// <see cref="IsEnabled"/> and the server both keep a server-disabled category out of the payload.
     /// </remarks>
     public static bool IsCapturePermitted(string categoryKey, PluginSettings settings) =>
         settings.MasterEnabled

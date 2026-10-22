@@ -4,8 +4,7 @@ using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
-// The "last synced …" wording. Pinning the boundaries here means "59 seconds" vs "1 minute" is a
-// decision, not an accident.
+// The "last synced …" wording, with its boundaries pinned so each one is a decision.
 public class TimeTextTests
 {
     [Theory]
@@ -17,8 +16,7 @@ public class TimeTextTests
         Assert.Equal("just now", TimeText.Ago(TimeSpan.FromSeconds(seconds)));
     }
 
-    // Clocks jump backwards (NTP corrections, laptops waking). "Just now" is the honest rendering
-    // of an elapsed time we cannot actually compute.
+    // Clocks jump backwards, and "just now" is the honest reading of an elapsed time we cannot compute.
     [Fact]
     public void A_negative_duration_reads_as_just_now()
     {
@@ -40,8 +38,7 @@ public class TimeTextTests
         Assert.Equal(expected, TimeText.Ago(TimeSpan.FromMinutes(minutes)));
     }
 
-    // 90 seconds is "1 minute ago", not "2": truncation, never rounding up — the sync did not
-    // happen further back than it did.
+    // Never round up: the sync did not happen further back than it did.
     [Fact]
     public void Partial_minutes_truncate_down()
     {
@@ -54,7 +51,6 @@ public class TimeTextTests
         Assert.Equal("1 hour ago", TimeText.Ago(TimeSpan.FromHours(1)));
     }
 
-    // Same truncation rule as minutes: 90 minutes is "1 hour ago", never rounded up to 2.
     [Fact]
     public void Partial_hours_truncate_down()
     {
@@ -69,8 +65,8 @@ public class TimeTextTests
         Assert.Equal(expected, TimeText.Ago(TimeSpan.FromHours(hours)));
     }
 
-    // The sync cadence shown in the settings ("syncs automatically every 30 minutes"). The server
-    // tunes the interval at runtime, so the wording must survive any value the clamp allows.
+    // The settings' cadence wording. The server tunes the interval at runtime, so the wording must
+    // survive any value the clamp allows.
     [Theory]
     [InlineData(5, "5 minutes")]
     [InlineData(30, "30 minutes")]
@@ -80,7 +76,7 @@ public class TimeTextTests
         Assert.Equal(expected, TimeText.Interval(TimeSpan.FromMinutes(minutes)));
     }
 
-    // Whole hours read as hours: "every 120 minutes" is technically true but nobody says it.
+    // Nobody says "every 120 minutes".
     [Theory]
     [InlineData(1, "1 hour")]
     [InlineData(2, "2 hours")]
@@ -96,16 +92,14 @@ public class TimeTextTests
         Assert.Equal("1 minute", TimeText.Interval(TimeSpan.FromMinutes(1)));
     }
 
-    // Defensive floor: an interval this small never reaches the UI (the scheduler clamps at five
-    // minutes), but the formatter should still say something sane rather than "0 minutes".
+    // The scheduler clamps at five minutes, so this never reaches the UI; the formatter still avoids
+    // "0 minutes".
     [Fact]
     public void Intervals_below_a_minute_read_as_one_minute()
     {
         Assert.Equal("1 minute", TimeText.Interval(TimeSpan.FromSeconds(10)));
     }
 
-    // Same floor from further below: a negative interval is nonsense the scheduler never
-    // produces, but the formatter must not render nonsense of its own ("-5 minutes").
     [Fact]
     public void Negative_intervals_also_floor_to_one_minute()
     {

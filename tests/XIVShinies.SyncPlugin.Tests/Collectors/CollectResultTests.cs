@@ -8,15 +8,15 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// CollectResult is the boundary every collector's output passes through, so the contract's
-// "IDs are positive integers" rule is enforced here once rather than in each game-touching class.
+// Every collector's output passes through CollectResult, so the contract's positive-id rule is
+// enforced here once.
 public class CollectResultTests
 {
     private static uint[] IdsOf(CollectResult result) =>
         result.Facts!.AsArray().GetValues<uint>().ToArray();
 
-    // The game's sheets start with a blank row 0. A single zero on the wire makes the server reject
-    // the ENTIRE upload, so it must never leave this method.
+    // Sheets start with a blank row 0, and one zero on the wire makes the server reject the whole
+    // upload.
     [Fact]
     public void Ids_drops_zero_because_the_server_requires_positive_integers()
     {
@@ -44,7 +44,6 @@ public class CollectResultTests
         Assert.Empty(result.Facts!.AsArray());
     }
 
-    // ...and a list that was ONLY padding collapses to an empty array, not to a skip.
     [Fact]
     public void A_list_of_only_zeroes_becomes_an_empty_array_not_a_skip()
     {
@@ -54,9 +53,8 @@ public class CollectResultTests
         Assert.Empty(result.Facts!.AsArray());
     }
 
-    // Getting this claim wrong is asymmetric: false only withholds evidence, while true makes an
-    // id's absence count as evidence server-side. So it defaults to false and a collector has to
-    // ask for it.
+    // A wrong false only withholds evidence; a wrong true makes an id's absence count as evidence on
+    // the server. So the claim defaults to false.
     [Fact]
     public void Ids_does_not_claim_a_complete_enumeration_unless_asked()
     {
@@ -69,8 +67,8 @@ public class CollectResultTests
         Assert.True(CollectResult.Ids(new uint[] { 5 }, completeEnumeration: true).CompleteEnumeration);
     }
 
-    // "I own nothing" and "the game had not filled this in yet" read identically from here, and an
-    // empty list declared complete would contradict every entry the user marked by hand at once.
+    // "I own nothing" and "the game has not filled this in yet" look the same here, and an empty
+    // list declared complete would contradict every hand-made mark at once.
     [Fact]
     public void An_empty_list_never_claims_a_complete_enumeration()
     {
@@ -80,8 +78,7 @@ public class CollectResultTests
         Assert.False(result.CompleteEnumeration);
     }
 
-    // The same guard applies after the zero filter: a list of nothing but sheet padding collapses to
-    // empty, and an empty list is exactly what must not be declared complete.
+    // The guard applies after the zero filter.
     [Fact]
     public void A_list_of_only_padding_never_claims_a_complete_enumeration()
     {
@@ -91,8 +88,8 @@ public class CollectResultTests
         Assert.False(result.CompleteEnumeration);
     }
 
-    // Both of these belong to manifest-scoped collections: their scope is whatever the server asked
-    // about, never the whole domain, so there is deliberately no way for them to claim completeness.
+    // Manifest-scoped: they cover what the server asked about, never the whole domain, so neither
+    // factory takes the claim.
     [Fact]
     public void Item_and_sequence_facts_cannot_claim_a_complete_enumeration()
     {
@@ -103,7 +100,6 @@ public class CollectResultTests
         Assert.False(sequences.CompleteEnumeration);
     }
 
-    // A skip read nothing, so there is nothing for it to have read completely.
     [Fact]
     public void A_skip_never_claims_a_complete_enumeration()
     {
@@ -120,8 +116,8 @@ public class CollectResultTests
         Assert.Null(result.Facts);
     }
 
-    // An item COUNT of zero is legitimate per the contract, so Items must not filter the way Ids
-    // does. (In practice the collector only reports positives, but the boundary must not lie.)
+    // A count of zero is legal per the contract, and the collector sends one for an unheld manifest id
+    // (see ItemTallies), so Items must not filter the way Ids does.
     [Fact]
     public void Items_does_not_filter_and_preserves_a_zero_count()
     {
@@ -173,8 +169,7 @@ public class CollectResultTests
         Assert.Equal(3, result.Facts!.AsObject()["70562"]!.GetValue<int>());
     }
 
-    // "Every manifested quest was checked and none is in the journal" is a real fact, distinct
-    // from a skip — the same collected-vs-skipped line the Ids and Items factories draw.
+    // "Every manifested quest was checked and none is in the journal" is a real fact, not a skip.
     [Fact]
     public void An_empty_sequence_map_is_still_a_collected_fact()
     {
@@ -185,8 +180,6 @@ public class CollectResultTests
         Assert.Empty(result.Facts!.AsObject());
     }
 
-    // The same positive-integer defense Ids applies: the server rejects the whole upload over an
-    // invalid id, and this boundary is the one funnel where no collector can forget the rule.
     [Fact]
     public void Sequences_drops_a_zero_quest_id()
     {

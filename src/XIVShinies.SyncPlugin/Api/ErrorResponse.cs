@@ -3,8 +3,8 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Api;
 
 /// <summary>
-/// The error body every non-2xx response shares. Only <see cref="Error"/> is always present; the
-/// rest appear for specific statuses, so they are nullable.
+/// The error body a non-2xx response carries when it has one. Only <see cref="Error"/> is always
+/// present; the rest appear for specific statuses, so they are nullable.
 /// </summary>
 public sealed record ErrorResponse
 {
@@ -16,10 +16,9 @@ public sealed record ErrorResponse
     /// <c>character_bound_elsewhere</c>).
     /// </summary>
     /// <remarks>
-    /// Server-supplied, so it is never displayed or logged. On a 403 it is compared exactly against
-    /// the four character-refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), and on a
-    /// Crucible upload that is to be sent again against <c>busy</c> (see
-    /// <c>CrucibleOutcomePolicy.IsBusy</c>); on any other answer it is unused.
+    /// Server-supplied, so never displayed or logged. It is only compared exactly: on a 403 against
+    /// the four refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), and on a Crucible
+    /// upload to be resent against <c>busy</c> (see <c>CrucibleOutcomePolicy.IsBusy</c>).
     /// </remarks>
     public required string Error { get; init; }
 
@@ -30,8 +29,9 @@ public sealed record ErrorResponse
     /// </remarks>
     public string? Name { get; init; }
 
-    /// <summary>On a 403, the upload's home world echoed back; parsed but not drawn, like
-    /// <see cref="Name"/>.</summary>
+    /// <summary>
+    /// On a 403, the upload's home world echoed back; parsed but not drawn, like <see cref="Name"/>.
+    /// </summary>
     public string? World { get; init; }
 
     /// <summary>On a 400, the flattened validation failures.</summary>
@@ -45,7 +45,6 @@ public sealed record ErrorResponse
 public sealed record ValidationIssues
 {
     /// <summary>Errors keyed by the field that failed.</summary>
-    // A Dictionary maps keys to values, like a JS object used as a lookup or a `Map`.
     public Dictionary<string, string[]>? FieldErrors { get; init; }
 
     /// <summary>Errors that apply to the request as a whole rather than one field.</summary>

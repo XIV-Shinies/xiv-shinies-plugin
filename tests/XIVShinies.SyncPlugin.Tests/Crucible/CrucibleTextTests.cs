@@ -4,18 +4,13 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
 // The Crucible windows draw numbers as text: token balances with thousands separators, prices with
-// a discount note, HP as "current/max", ranks behind a glyph. These pin how each is read, from the
-// raw text the client hands over, formatting codes included.
-//
-// Characters outside ASCII are written as `\uXXXX` escapes so each one can be told apart in
-// source: \u00A0 is a no-break space, \u202F a narrow no-break space, \uE036 the paw glyph,
-// \uE0BC the rank-sync glyph, \uFFFD the replacement character UTF-8 decoding leaves inside a
-// formatting code's payload, and \u00D7 a multiplication sign.
+// a discount note, HP as "current/max", ranks behind a glyph. Each is read from the raw text,
+// formatting codes included. Non-ASCII characters are escaped so each can be told apart: \u00A0 is a
+// no-break space, \u202F a narrow no-break space, \uE036 the paw glyph, \uE0BC the rank-sync glyph,
+// \uFFFD the replacement character UTF-8 decoding leaves inside a formatting code's payload, and
+// \u00D7 a multiplication sign.
 public class CrucibleTextTests
 {
-    // A `[Theory]` runs once per `[InlineData]` row, with the row's values as the arguments, like
-    // `test.each` in Jest.
-    //
     // A formatting code runs from \u0002 to the next \u0003. The first row is the game's color wrap
     // around an item's name; each code's payload holds \u0002 bytes, which do not start a new code.
     [Theory]
@@ -30,9 +25,7 @@ public class CrucibleTextTests
         Assert.Equal(expected, CrucibleText.StripCodes(raw));
     }
 
-    // A `[Fact]` is a single test with no arguments, like a plain `test(...)` in Jest.
-    //
-    // A code with no end is cut at its start rather than kept, so its payload never reads as text.
+    // An unterminated code's payload must never read as text.
     [Fact]
     public void An_unterminated_code_is_cut_at_its_start()
     {
@@ -55,7 +48,7 @@ public class CrucibleTextTests
         Assert.Equal(expected, CrucibleText.ReadNumber(text));
     }
 
-    // Nothing to read, or text that does not start with a number, reads as no number, not zero.
+    // A missing number reads as none, not zero, so it never passes for a drawn 0.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -66,14 +59,13 @@ public class CrucibleTextTests
         Assert.Null(CrucibleText.ReadNumber(text));
     }
 
-    // A number too long for an int reads as none rather than wrapping.
     [Fact]
     public void A_number_too_long_for_an_int_reads_as_none()
     {
         Assert.Null(CrucibleText.ReadNumber("99999999999"));
     }
 
-    // A count drawn after a sign ("x 3") is found wherever its first digit is.
+    // ReadFirstNumber reads a count drawn after a sign, such as "x 3".
     [Theory]
     [InlineData("x 3", 3)]
     [InlineData("\u00D712", 12)]

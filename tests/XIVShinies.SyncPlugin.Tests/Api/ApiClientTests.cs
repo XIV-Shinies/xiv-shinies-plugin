@@ -17,15 +17,12 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
-// Exercises ApiClient against a fake HTTP transport. This is legitimate unit testing, not a faked
-// game service: HttpMessageHandler is the documented seam for substituting the network, so the
-// client's real header, URL, and status-handling code runs — only the socket is replaced.
+// A fake HttpMessageHandler replaces only the socket, so the client's real header, URL and status
+// handling runs.
 public class ApiClientTests
 {
     private const string ValidToken = "xvs_0123456789012345678901234567890123456789abc";
 
-    // A stand-in for the network. It records what the client sent, and replies with whatever the
-    // test dictates. `HttpMessageHandler` is the abstract base every HttpClient sends through.
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> respond;
@@ -113,7 +110,8 @@ public class ApiClientTests
         Assert.Equal("https://xiv-shinies.com/api/plugin/v1/config", handler.LastRequest!.RequestUri!.ToString());
     }
 
-    // The contract REQUIRES a Content-Length header; a chunked body is rejected with 413.
+    // The contract requires a Content-Length on every upload; the server rejects a chunked body with
+    // 413.
     [Fact]
     public async Task PostSync_sends_json_with_a_content_length()
     {
@@ -146,12 +144,11 @@ public class ApiClientTests
         Assert.NotNull(handler.LastContentLength);
         Assert.Contains("\"trigger\":\"manual\"", handler.LastBody);
         Assert.Contains("\"quests\":[65575]", handler.LastBody);
-        // The monotonic rule survives the wire: unread categories never appear.
+        // Monotonic writes: an unread category never appears.
         Assert.DoesNotContain("achievements", handler.LastBody);
     }
 
-    // The occult upload rides the same guarded POST path as /sync; this pins its URL and that
-    // the response's outcome/trackerId survive the trip.
+    // The occult upload shares the guarded POST path with /sync.
     [Fact]
     public async Task PostOccultInstanceState_posts_to_the_contract_url()
     {
@@ -210,7 +207,6 @@ public class ApiClientTests
             "https://xiv-shinies.com/api/plugin/v1/crucible/observations",
             handler.LastRequest.RequestUri!.ToString());
 
-        // The contract requires a Content-Length on every upload.
         Assert.NotNull(handler.LastContentLength);
         Assert.Contains("\"trigger\":\"enter\"", handler.LastBody);
     }
@@ -264,8 +260,8 @@ public class ApiClientTests
         Assert.Equal("Excalibur", response.Error.World);
     }
 
-    // The client reads the 403's body before deciding what it means, so each refusal reaches the
-    // sync card and the upload log as its own status.
+    // The client reads a 403's body before deciding what it means, so each refusal reaches the sync
+    // card and the upload log as its own status.
     [Theory]
     [InlineData("character_not_verified", ApiStatus.CharacterNotVerified)]
     [InlineData("character_ambiguous", ApiStatus.CharacterAmbiguous)]
@@ -283,8 +279,7 @@ public class ApiClientTests
         Assert.Equal(errorCode, response.Error!.Error);
     }
 
-    // A 403 whose body is not the contract's JSON still means a failed character match; it falls
-    // back to the not-claimed wording rather than to an unknown failure.
+    // A 403 is a failed character match even when its body is not the contract's JSON.
     [Fact]
     public async Task A_403_without_a_readable_body_reads_as_not_claimed()
     {
@@ -295,8 +290,8 @@ public class ApiClientTests
         Assert.Equal(ApiStatus.CharacterNotClaimed, response.Status);
     }
 
-    // The two ways a JSON body can carry no code: an explicit null, and no `error` field at all
-    // (which fails the DTO's `required` member, so no error body is parsed). Both fall back.
+    // Two bodies with no code: an explicit null, and no `error` field at all, which fails the DTO's
+    // required member so no error body parses.
     [Theory]
     [InlineData("""{"error": null, "name": "Some Name", "world": "Excalibur"}""")]
     [InlineData("""{"name": "Some Name", "world": "Excalibur"}""")]
@@ -309,9 +304,8 @@ public class ApiClientTests
         Assert.Equal(ApiStatus.CharacterNotClaimed, response.Status);
     }
 
-    // An endpoint that really answers with these refusals (the tests above stub /me, which never
-    // sends a 403). Every call shares one send path, and this pins it on the upload the player's
-    // sync card reports on.
+    // The tests above stub /me, which never sends a 403. Every call shares one send path; this pins
+    // it on /sync, the upload the sync card reports on.
     [Fact]
     public async Task PostSync_reports_the_character_refusal_the_server_named()
     {
@@ -382,11 +376,8 @@ public class ApiClientTests
         Assert.True(ApiStatusMap.IsRetryable(response.Status));
     }
 
-    // A proxy that cannot reach the server answers with its own 5xx and an HTML page, sometimes with
-    // a code outside the standard list, such as 530. The page is not an error body the plugin can
-    // read, but the status still has to come through as a retryable server error, with the real
-    // number kept for diagnostics. `(HttpStatusCode)530` is a cast: it turns the number into the
-    // enum type even though the enum has no named member for 530.
+    // A proxy that cannot reach the server answers with an HTML page and its own 5xx, sometimes a
+    // nonstandard one such as 530. The real number is kept for diagnostics.
     [Fact]
     public async Task A_proxy_5xx_with_an_html_body_is_a_retryable_server_error()
     {
@@ -418,8 +409,7 @@ public class ApiClientTests
         Assert.Null(response.HttpStatusCode);
     }
 
-    // A timeout surfaces as TaskCanceledException while the CALLER's token is not canceled. The
-    // exception filter must classify that as a network error rather than let it escape.
+    // A timeout surfaces as TaskCanceledException while the caller's token is not canceled.
     [Fact]
     public async Task A_timeout_becomes_a_network_error()
     {
@@ -431,7 +421,6 @@ public class ApiClientTests
         Assert.Null(response.HttpStatusCode);
     }
 
-    // ...but a genuine caller cancellation is NOT an error and must propagate to the caller.
     [Fact]
     public async Task A_real_cancellation_propagates_instead_of_being_swallowed()
     {
@@ -444,7 +433,6 @@ public class ApiClientTests
             () => client.GetMeAsync(cts.Token));
     }
 
-    // A 200 we cannot parse is not a success. It must not surface as Ok with a null Value.
     [Fact]
     public async Task A_200_with_an_unparseable_body_is_not_treated_as_success()
     {
@@ -457,8 +445,8 @@ public class ApiClientTests
         Assert.False(response.IsSuccess);
     }
 
-    // A stray path in the user's base URL must never rewrite the endpoint. This is the sole
-    // defense against a configured base URL redirecting requests somewhere unintended.
+    // Building the URL from the base's scheme, host and port alone is the sole defense against a
+    // configured base URL redirecting requests somewhere unintended.
     [Fact]
     public async Task A_stray_path_in_the_base_url_cannot_rewrite_the_endpoint()
     {
@@ -472,8 +460,8 @@ public class ApiClientTests
             handler.LastRequest!.RequestUri!.ToString());
     }
 
-    // Retry-After is legal as an absolute HTTP-date as well as a delta. Both must be understood,
-    // or a proxy rewriting the header would silently strip the backoff.
+    // Retry-After may be an HTTP-date or a delta. Missing the date form would drop the backoff
+    // whenever a proxy rewrites the header.
     [Fact]
     public async Task Retry_after_is_understood_in_its_http_date_form()
     {
@@ -489,12 +477,12 @@ public class ApiClientTests
 
         Assert.Equal(ApiStatus.RateLimited, response.Status);
         Assert.NotNull(response.RetryAfter);
-        // Allow slack for the clock ticking between building the header and reading it.
+        // Slack for the clock ticking between building the header and reading it.
         Assert.InRange(response.RetryAfter!.Value, TimeSpan.FromSeconds(50), TimeSpan.FromSeconds(60));
     }
 
-    // The token goes to whatever host is configured, so a non-default backend must be explicitly
-    // acknowledged first. Enforced in the send path, not just the UI.
+    // The token goes to whatever host is configured, so a custom backend must be acknowledged first.
+    // Enforced in the send path, not just the UI.
     [Fact]
     public async Task An_unacknowledged_custom_backend_never_receives_the_token()
     {
@@ -525,7 +513,6 @@ public class ApiClientTests
             handler.LastRequest!.RequestUri!.ToString());
     }
 
-    // The official server needs no acknowledgment.
     [Fact]
     public async Task The_default_backend_needs_no_acknowledgment()
     {
@@ -539,8 +526,8 @@ public class ApiClientTests
         Assert.Equal(1, handler.CallCount);
     }
 
-    // Unloading the plugin cancels in-flight work. A request that starts after disposal must come
-    // back as a network error, never as an ObjectDisposedException escaping into the game.
+    // Unloading the plugin cancels in-flight work. An ObjectDisposedException must never escape into
+    // the game.
     [Fact]
     public async Task A_request_after_dispose_is_a_network_error_not_an_exception()
     {
@@ -552,7 +539,6 @@ public class ApiClientTests
         Assert.Equal(ApiStatus.NetworkError, response.Status);
     }
 
-    // A Retry-After date already in the past means "retry now", never a negative wait.
     [Fact]
     public async Task A_retry_after_date_in_the_past_clamps_to_zero()
     {
@@ -569,13 +555,12 @@ public class ApiClientTests
         Assert.Equal(TimeSpan.Zero, response.RetryAfter);
     }
 
-    // Mirrors ApiClient.MaxResponseBytes (private there on purpose — the cap is an internal
-    // defense, not part of the public surface). Real responses are kilobytes; the cap exists so
-    // a hostile backend (the URL is user-overridable) cannot exhaust the game's memory.
+    // Mirrors ApiClient.MaxResponseBytes, which stays private. Real responses are kilobytes; the cap
+    // keeps a hostile backend from exhausting the game's memory.
     private const int ResponseByteCap = 4 * 1024 * 1024;
 
-    // A response body that advertises no Content-Length and just streams — how a hostile or
-    // chunked-transfer server delivers a body the client cannot pre-check from the headers.
+    // A body with no Content-Length, as a hostile or chunked-transfer server sends one, so the client
+    // cannot check its size from the headers.
     private sealed class UnadvertisedStreamingContent : HttpContent
     {
         private readonly int totalBytes;
@@ -584,7 +569,7 @@ public class ApiClientTests
 
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
-            // Written in transport-sized chunks, like a real socket would deliver it.
+            // Transport-sized chunks, as a socket delivers them.
             var chunk = new byte[81920];
             var remaining = totalBytes;
             while (remaining > 0)
@@ -595,7 +580,7 @@ public class ApiClientTests
             }
         }
 
-        // Returning false is what omits the Content-Length header — the point of this stub.
+        // False omits the Content-Length header.
         protected override bool TryComputeLength(out long length)
         {
             length = 0;
@@ -603,14 +588,10 @@ public class ApiClientTests
         }
     }
 
-    // A response body whose connection breaks after the headers arrive. It either drops, so every
-    // read fails the way a broken socket's does, with an IOException, or stalls, so an async read
-    // never finishes until it is canceled (the synchronous Read, which the client never calls,
-    // always throws). A `Stream` subclass must answer every abstract member, and
-    // `override` marks each as this class's version of one the base class declares. The ones a
-    // read-only, unseekable body never needs throw NotSupportedException, except Flush, which is
-    // empty because flushing a read-only stream is legal and does nothing. ReadAsync is not
-    // abstract; it is overridden because it is the read the client actually makes.
+    // A body whose connection breaks after the headers arrive. It either drops, failing every read
+    // with an IOException as a broken socket does, or stalls until the client's async read is
+    // canceled. Members an unseekable read-only body never needs throw, except Flush, which is legal
+    // on one and does nothing.
     private sealed class BrokenBodyStream : Stream
     {
         private readonly bool stalls;
@@ -635,17 +616,13 @@ public class ApiClientTests
         public override int Read(byte[] buffer, int offset, int count) =>
             throw new IOException("The connection was reset.");
 
-        // `ValueTask<int>` is a lighter Task for a result that is often ready at once.
-        // `Memory<byte>` is a span-like view of bytes that, unlike a span, can be held across an
-        // `await`. `= default` makes the token optional; a default CancellationToken never cancels.
         public override async ValueTask<int> ReadAsync(
             Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
             if (!stalls)
                 throw new IOException("The connection was reset.");
 
-            // `Timeout.Infinite` waits forever, so only the token can end the wait, as only a
-            // deadline or a cancellation can end a read from a connection that went silent.
+            // As on a silent connection, only a deadline or a cancellation ends the wait.
             await Task.Delay(Timeout.Infinite, cancellationToken);
             return 0;
         }
@@ -657,9 +634,8 @@ public class ApiClientTests
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    // The read of a body whose connection dropped fails with an IOException, which is not an
-    // HttpRequestException. It still has to come back as a network error, keeping the status code
-    // that did arrive, since nothing may throw out of the client's methods.
+    // A dropped body read throws IOException, not HttpRequestException, and nothing may throw out of
+    // the client's methods. The status code that did arrive is kept.
     [Fact]
     public async Task A_connection_dropped_mid_body_is_a_network_error_not_an_exception()
     {
@@ -674,8 +650,7 @@ public class ApiClientTests
         Assert.Equal(200, response.HttpStatusCode);
     }
 
-    // A body that stalls after the headers arrive is held to the request's deadline, so the request
-    // ends as a network error rather than waiting on a connection that went silent.
+    // The request's deadline covers the body, so a silent connection cannot hold the request open.
     [Fact]
     public async Task A_body_that_stalls_past_the_deadline_is_a_network_error()
     {
@@ -692,15 +667,13 @@ public class ApiClientTests
         Assert.Equal(200, response.HttpStatusCode);
     }
 
-    // The caller canceling while the body is read is not an error, as it is not before the headers:
-    // the cancellation propagates to the caller.
     [Fact]
     public async Task A_caller_cancellation_during_the_body_read_propagates()
     {
         using var cts = new CancellationTokenSource();
         var (client, _) = Build(_ =>
         {
-            // Canceled once the headers are on their way back, so the body read is what it ends.
+            // Canceled after the headers return, so it ends the body read.
             cts.CancelAfter(TimeSpan.FromMilliseconds(100));
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -711,8 +684,7 @@ public class ApiClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetMeAsync(cts.Token));
     }
 
-    // An honest hostile server: the oversized body is advertised in the headers, so the client
-    // must refuse it there — before a single body byte is read into memory.
+    // The oversized body is advertised, so the client refuses it before reading a body byte.
     [Fact]
     public async Task A_response_advertising_an_oversized_body_is_refused_from_its_headers()
     {
@@ -722,8 +694,7 @@ public class ApiClientTests
             {
                 Content = new StreamContent(new MemoryStream(new byte[16])),
             };
-            // A lying header is enough — the body itself stays tiny, proving the refusal came
-            // from the advertised length, not from reading.
+            // The body stays tiny, so the refusal can only come from the header.
             response.Content.Headers.ContentLength = ResponseByteCap + 1L;
             return response;
         });
@@ -734,8 +705,7 @@ public class ApiClientTests
         Assert.Equal(200, response.HttpStatusCode);
     }
 
-    // A dishonest hostile server: no Content-Length at all, the body just streams past the cap.
-    // The capped read must stop and refuse it rather than buffering whatever arrives.
+    // With no Content-Length, the capped read must stop rather than buffer whatever arrives.
     [Fact]
     public async Task A_response_streaming_past_the_cap_without_a_length_is_refused()
     {

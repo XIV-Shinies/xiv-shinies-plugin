@@ -5,31 +5,24 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
-/// Turns the window readings into the snapshots and request of
-/// <c>POST /api/plugin/v1/crucible/observations</c>. The readings and their moments are handed
-/// in; it reads neither the game nor the clock.
+/// Turns window readings into the snapshots and request of
+/// <c>POST /api/plugin/v1/crucible/observations</c>. It reads neither the game nor the clock.
 /// </summary>
 /// <remarks>
 /// Each snapshot method returns the base <see cref="CrucibleObservation"/>, the type the request's
-/// list holds, which is also what makes the serializer write the snapshot's <c>kind</c> key.
+/// list holds, which also makes the serializer write the snapshot's <c>kind</c> key.
 /// </remarks>
-// A `static class` holds only shared members and is never instantiated: a module of functions.
 public static class CrucibleUploadBuilder
 {
     /// <summary>A board window snapshot.</summary>
-    /// <param name="reading">What the board reader returned.</param>
-    /// <param name="observedAt">When the window showed it.</param>
     /// <param name="closed">Whether this is the last snapshot before the window closed.</param>
     public static CrucibleObservation Board(
         CrucibleBoardReading reading, DateTimeOffset observedAt, bool closed)
     {
-        // The number given to `new List<T>(...)` is how much room to set aside, not its contents:
-        // the list starts empty, sized for the pieces about to be added.
         var pieces = new List<CruciblePieceUpload>(reading.Pieces.Count);
         foreach (var piece in reading.Pieces)
         {
-            // An enum's number is the window's own number for the progress (see CrucibleProgress),
-            // and `(int)` reads it, so the wire carries 0, 1 or 2 rather than the enum's name.
+            // The wire carries the window's own progress number, not the enum's name.
             pieces.Add(new CruciblePieceUpload
             {
                 NodeIndex = piece.NodeIndex,
@@ -48,8 +41,6 @@ public static class CrucibleUploadBuilder
     }
 
     /// <summary>A team window snapshot.</summary>
-    /// <param name="reading">What the team reader returned.</param>
-    /// <param name="observedAt">When the window showed it.</param>
     /// <param name="closed">Whether this is the last snapshot before the window closed.</param>
     public static CrucibleObservation Team(
         CrucibleTeamReading reading, DateTimeOffset observedAt, bool closed)
@@ -80,9 +71,6 @@ public static class CrucibleUploadBuilder
     }
 
     /// <summary>A run HUD snapshot.</summary>
-    /// <param name="reading">What the HUD reader returned.</param>
-    /// <param name="observedAt">When the HUD showed it.</param>
-    // `=>` makes the expression after it the whole method body, like an arrow function.
     public static CrucibleObservation Bag(CrucibleBagReading reading, DateTimeOffset observedAt) =>
         new CrucibleBagObservation
         {
@@ -93,8 +81,6 @@ public static class CrucibleUploadBuilder
         };
 
     /// <summary>A treasure, loot or shop snapshot.</summary>
-    /// <param name="reading">What an offer reader returned.</param>
-    /// <param name="observedAt">When the window showed it.</param>
     /// <param name="closed">Whether this is the last snapshot before the window closed.</param>
     public static CrucibleObservation Offer(
         CrucibleOfferReading reading, DateTimeOffset observedAt, bool closed)
@@ -128,20 +114,15 @@ public static class CrucibleUploadBuilder
     /// A results screen snapshot, with its drawn text resolved to ids: the mode and rank by the
     /// caller, each bonus name through <paramref name="bonusId"/>.
     /// </summary>
-    /// <param name="reading">What the results reader returned.</param>
-    /// <param name="observedAt">When the screen showed it.</param>
     /// <param name="degree">The board's Degree the drawn mode resolved to, or null.</param>
     /// <param name="rankIndex">The rank the drawn rank resolved to, or null.</param>
     /// <param name="bonusId">
-    /// Looks up a bonus's <c>XBMScoreBonus</c> row id by its drawn name, or returns null when the
-    /// name is not one it knows.
+    /// Looks up a bonus's <c>XBMScoreBonus</c> row id by its drawn name; null for a name it does not
+    /// know.
     /// </param>
     /// <remarks>
-    /// A name that does not resolve is sent as null, never as a guess; its points are sent either
-    /// way.
+    /// A name that does not resolve is sent as null, never as a guess; its points are sent either way.
     /// </remarks>
-    // `Func<string, uint?>` is a function value taking a string and returning a `uint?`, like the
-    // TypeScript type `(name: string) => number | null`.
     public static CrucibleObservation Results(
         CrucibleResultsReading reading,
         DateTimeOffset observedAt,
@@ -192,9 +173,6 @@ public static class CrucibleUploadBuilder
     }
 
     /// <summary>A snapshot of the character's own HP.</summary>
-    /// <param name="currentHp">The character's current HP.</param>
-    /// <param name="maxHp">The character's maximum HP.</param>
-    /// <param name="observedAt">When it was read.</param>
     public static CrucibleObservation Self(int currentHp, int maxHp, DateTimeOffset observedAt) =>
         new CrucibleSelfObservation
         {
@@ -204,10 +182,8 @@ public static class CrucibleUploadBuilder
 
     /// <summary>One upload request.</summary>
     /// <param name="characterContentIdHash">SHA-256 of the character's ContentId, lowercase hex.</param>
-    /// <param name="characterName">The character's name (binding identity, as on /sync).</param>
+    /// <param name="characterName">The character's name, part of the binding identity as on /sync.</param>
     /// <param name="homeWorld">The character's home world name.</param>
-    /// <param name="pluginVersion">This plugin's version string.</param>
-    /// <param name="trigger">What prompted this upload.</param>
     /// <param name="territoryTypeId">
     /// The territory the upload concerns (see <see cref="CrucibleObservationsRequest.TerritoryTypeId"/>).
     /// </param>
@@ -220,7 +196,6 @@ public static class CrucibleUploadBuilder
         CrucibleTrigger trigger,
         uint territoryTypeId,
         IReadOnlyList<CrucibleObservation> observations) =>
-        // `new()` with no type name builds the type the method returns.
         new()
         {
             CharacterContentIdHash = characterContentIdHash,
@@ -230,9 +205,8 @@ public static class CrucibleUploadBuilder
             Trigger = trigger,
             TerritoryTypeId = territoryTypeId,
 
-            // A copy (`[.. list]` spreads it into a new one, like `[...list]`), so the request
-            // cannot change after it is built, even if the caller's list does (the contract requires
-            // a retry to carry the same content).
+            // A copy, so the request cannot change after it is built: the contract requires a retry
+            // to carry the same content.
             Observations = [.. observations],
         };
 }

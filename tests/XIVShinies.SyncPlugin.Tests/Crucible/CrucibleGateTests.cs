@@ -7,23 +7,16 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
 // The Crucible run sharing's consent gate. Whatever drives the uploads must ask it before each one,
-// so each refusal here guarantees that flipping that switch stops the sharing. Each `[Fact]` is one
-// test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
+// so each refusal here guarantees that flipping that switch stops the sharing.
 public class CrucibleGateTests
 {
-    // A token whose shape passes the local validity check: xvs_ + exactly 43 base64url characters
-    // (see TokenFormat).
+    // Passes TokenFormat's shape check: "xvs_" and exactly 43 base64url characters.
     private const string UsableToken = "xvs_" + "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
 
-    // The website address the chip's sentences name. A made-up one, so a test can tell an address
-    // that was passed in from one written into the copy. `const` fixes the value when the code
-    // compiles. An attribute's arguments must be fixed then too, so the [InlineData] rows below spell
-    // each sentence out rather than calling ServerOffCopy.
+    // A made-up website address, so a test can tell an address passed in from one written into the
+    // copy. The rows below spell each sentence out rather than call ServerOffCopy.
     private const string Host = "shinies.example";
 
-    /// <summary>Settings for a user who has opted in to everything, Crucible sharing included.</summary>
-    // `=> new() { ... }` builds a PluginSettings and sets these properties on it, like an object
-    // literal; every property it leaves out keeps its default.
     private static PluginSettings OptedIn() => new()
     {
         MasterEnabled = true,
@@ -32,10 +25,6 @@ public class CrucibleGateTests
         ShareCrucibleRuns = true,
     };
 
-    /// <summary>
-    /// A config advertising the Crucible endpoint, with both switches on unless an argument turns
-    /// one off.
-    /// </summary>
     private static ConfigResponse ConfigWithCrucible(
         bool sharingEnabled = true, bool globallyEnabled = true, string? note = null) => new()
     {
@@ -82,9 +71,7 @@ public class CrucibleGateTests
         Assert.False(CrucibleGate.CanShare(settings, ConfigWithCrucible()));
     }
 
-    // Turning on new collections automatically is a separate choice that does not reach this one:
-    // running the auto-enable, whatever keys it is handed, and every upgrade rule on an install
-    // that answered yes to it leaves the sharing off.
+    // Neither the auto-enable, whatever keys it is handed, nor any upgrade rule turns the sharing on.
     [Fact]
     public void Turning_on_new_collections_automatically_does_not_share_crucible_runs()
     {
@@ -94,7 +81,6 @@ public class CrucibleGateTests
         settings.InitializeSeenCategories(["quests"]);
 
         settings.AutoEnableUnseenCategories(["quests", "mounts", "crucibleRuns"]);
-        // `fromVersion: 0` names the parameter it fills, so the call says what the 0 means.
         settings.ApplyUpgradeMigrations(fromVersion: 0);
 
         Assert.False(settings.ShareCrucibleRuns);
@@ -110,7 +96,6 @@ public class CrucibleGateTests
         Assert.False(CrucibleGate.CanShare(settings, ConfigWithCrucible()));
     }
 
-    // No config yet, or a config without the block, means no sharing.
     [Fact]
     public void No_config_yet_means_no_sharing()
     {
@@ -120,8 +105,6 @@ public class CrucibleGateTests
     [Fact]
     public void A_config_without_the_crucibleRuns_block_means_no_sharing()
     {
-        // `with` copies the record and replaces one property, since an `init` property can only be
-        // set while the object is being built.
         var config = ConfigWithCrucible() with { CrucibleRuns = null };
 
         Assert.False(CrucibleGate.CanShare(OptedIn(), config));
@@ -168,8 +151,6 @@ public class CrucibleGateTests
         Assert.False(CrucibleGate.ServerHasSwitchedOff(null));
     }
 
-    // The control and the gate must refuse on the same terms, checked as an equivalence over every
-    // pair of server switches.
     [Theory]
     [InlineData(true, true)]
     [InlineData(false, true)]
@@ -185,7 +166,6 @@ public class CrucibleGateTests
             !CrucibleGate.CanShare(OptedIn(), config));
     }
 
-    // The chip names a pause before the feature's own switch.
     [Theory]
     [InlineData(true, true, null)]
     [InlineData(true, false, "Temporarily switched off by " + Host + ".")]
@@ -201,7 +181,6 @@ public class CrucibleGateTests
             CrucibleGate.ServerHasSwitchedOff(config), CrucibleGate.ServerOffText(config, Host) is not null);
     }
 
-    // The server's own note replaces the generic line, folded to a single line.
     [Fact]
     public void A_switched_off_sharing_with_a_note_shows_the_note()
     {
@@ -210,7 +189,6 @@ public class CrucibleGateTests
         Assert.Equal("In testing. Soon.", CrucibleGate.ServerOffText(config, Host));
     }
 
-    // A pause outranks a note as well.
     [Fact]
     public void A_paused_server_shows_the_pause_even_with_a_note()
     {
@@ -219,7 +197,6 @@ public class CrucibleGateTests
         Assert.Equal(ServerOffCopy.Paused(Host), CrucibleGate.ServerOffText(config, Host));
     }
 
-    // A switched-off block with a blank note shows the feature's generic line.
     [Fact]
     public void A_blank_note_shows_the_generic_line()
     {
@@ -228,8 +205,7 @@ public class CrucibleGateTests
         Assert.Equal(ServerOffCopy.Feature(Host), CrucibleGate.ServerOffText(blankNote, Host));
     }
 
-    // A server whose /config carries no block does not offer the sharing, so nothing was switched
-    // off: the chip says so rather than describing a decision that was never made.
+    // Nothing was switched off, so the chip must not describe a decision that was never made.
     [Fact]
     public void No_block_says_the_server_does_not_offer_the_sharing()
     {
@@ -238,7 +214,7 @@ public class CrucibleGateTests
         Assert.Equal(ServerOffCopy.NotOffered(Host), CrucibleGate.ServerOffText(noBlock, Host));
     }
 
-    // A pause outranks a missing block too: it stops every upload, whatever the server offers.
+    // A pause stops every upload, whatever the server offers.
     [Fact]
     public void A_paused_server_with_no_block_shows_the_pause()
     {
@@ -247,7 +223,7 @@ public class CrucibleGateTests
         Assert.Equal(ServerOffCopy.Paused(Host), CrucibleGate.ServerOffText(config, Host));
     }
 
-    // A note beside a switch that is on is ignored: there is nothing switched off to explain.
+    // Nothing is switched off for the note to explain.
     [Fact]
     public void A_note_on_enabled_sharing_shows_nothing()
     {
@@ -263,7 +239,6 @@ public class CrucibleGateTests
 
     // --- When the card names the master switch ---------------------------------------------------
 
-    /// <summary>An opted-in user who has since switched syncing off.</summary>
     private static PluginSettings SwitchedOff()
     {
         var settings = OptedIn();
@@ -329,7 +304,7 @@ public class CrucibleGateTests
         Assert.False(CrucibleGate.StoppedBySyncSwitch(settings, ConfigWithCrucible()));
     }
 
-    // The switch is the only thing stopping the sharing: turning it on lets the sharing run.
+    // Naming the switch claims it is the only thing stopping the sharing.
     [Fact]
     public void Turning_the_switch_on_is_all_the_sharing_needs()
     {

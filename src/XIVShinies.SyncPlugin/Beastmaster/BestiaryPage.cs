@@ -8,8 +8,7 @@ namespace XIVShinies.SyncPlugin.Beastmaster;
 /// <param name="Seen">Every bestiary number the page listed, whether held or not.</param>
 /// <param name="Captured">The numbers the page marked as held.</param>
 /// <param name="CapturedTotal">
-/// How many beasts the character holds altogether, as the window's own tally reports it, or null
-/// when that tally could not be read.
+/// How many beasts the character holds altogether, by the window's own tally, or null when unread.
 /// </param>
 /// <param name="BeastTotal">How many beasts the bestiary has altogether, or null when unread.</param>
 public sealed record BestiaryPageReading(
@@ -18,30 +17,15 @@ public sealed record BestiaryPageReading(
     int? CapturedTotal,
     int? BeastTotal);
 
-/// <summary>
-/// Reads which beasts a page of the Master's Bestiary says the character holds.
-/// </summary>
+/// <summary>Reads which beasts a page of the Master's Bestiary says the character holds.</summary>
 /// <remarks>
-/// <para>
-/// The window is handed a flat list of values to draw itself from, and the part of it that matters
-/// is a run of fixed-size records — one per tile on the page — each carrying the bestiary number,
-/// a flag saying whether the beast is held, the tile's caption, and slots this reader has no use
-/// for. The window also carries its own tally of how many beasts are held out of how many exist,
-/// which is what makes reading it worth more than the sum of the pages.
-/// </para>
-/// <para>
-/// The page is only what is on screen, so one read is a fragment. The tally is what lets fragments
-/// add up — but it is the window's own figure, and a filtered view keeps the bestiary's true size
-/// while shrinking the held count beside it, so the tally alone never says whether the window is
-/// showing everything. The ledger weighs it against the game's own bestiary size and against the
-/// numbers actually listed before any claim is made. See <see cref="TamedBeastLedger.IsComplete"/>.
-/// </para>
-/// <para>
-/// Nothing here knows the game. The layout is expressed as offsets and checked against the shape
-/// of what arrives, so a patch that moves the records makes the read stop rather than hand back
-/// numbers from the wrong slots — which, for a collection nothing can unmark, is the failure worth
-/// engineering for.
-/// </para>
+/// The window's values hold a run of fixed-size records, one per tile, each with the bestiary number,
+/// a held flag and the tile's caption, plus a "held out of total" tally. A page is only what is on
+/// screen, and the tally alone cannot say the window shows everything, since a filtered view keeps
+/// the true size while shrinking the held count; <see cref="TamedBeastLedger.IsComplete"/> weighs it
+/// before any claim. The layout is checked against the shape of what arrives, so a patch that moves
+/// the records stops the read instead of returning numbers from the wrong slots, which matters for a
+/// collection nothing can unmark.
 /// </remarks>
 public static class BestiaryPage
 {
@@ -54,18 +38,15 @@ public static class BestiaryPage
     /// <summary>How many slots each record occupies.</summary>
     private const int RecordStride = 8;
 
-    // Offsets within one record. The slots between them hold things this reader has no use for.
+    // Offsets within one record; the slots between hold nothing this reader uses.
     private const int NumberOffset = 0;
     private const int CapturedOffset = 2;
     private const int CaptionOffset = 5;
 
-    /// <summary>
-    /// A ceiling on bestiary numbers for when the window's tally could not be read.
-    /// </summary>
+    /// <summary>A ceiling on bestiary numbers for when the window's tally is unreadable.</summary>
     /// <remarks>
-    /// Deliberately far above the bestiary's real size: its job is to stop a misread from
-    /// producing an absurd number, not to encode how many beasts the game has. The tally supplies
-    /// the real bound whenever it is readable, so this only applies when it is not.
+    /// Far above the bestiary's real size: it only stops a misread from producing an absurd number,
+    /// and does not encode how many beasts the game has.
     /// </remarks>
     private const uint UnboundedNumberCeiling = 1000;
 
@@ -74,8 +55,7 @@ public static class BestiaryPage
     {
         var (capturedTotal, beastTotal) = ReadTally(values);
 
-        // The tally bounds the numbers when it is readable, which is the tightest honest bound
-        // available: a record claiming a beast beyond the bestiary's own size is a misread.
+        // A record claiming a beast beyond the bestiary's own size is a misread.
         var ceiling = beastTotal is > 0 ? (uint)beastTotal.Value : UnboundedNumberCeiling;
 
         var seen = new List<int>();
@@ -87,17 +67,16 @@ public static class BestiaryPage
             var isCaptured = values[index + CapturedOffset].Flag;
             var caption = values[index + CaptionOffset].Text;
 
-            // The run of records ends where the window's other data begins, and that shows up as a
-            // slot not holding what a record holds. Stopping is the whole check: everything after
-            // this point belongs to something else and must not be read as beasts.
+            // The records end where the window's other data begins, which shows as a slot not
+            // holding what a record holds. Nothing after that point may be read as beasts.
             if (number is null || isCaptured is null || caption is null)
                 break;
 
             if (number is 0 || number > ceiling)
                 break;
 
-            // The caption names the beast's number, so it proves the record is aligned — a run of
-            // slots that merely looks like a record will not also caption itself correctly.
+            // The caption names the beast's number, which proves the record is aligned: slots that
+            // merely look like a record will not also caption themselves correctly.
             if (!CaptionNames(caption, number.Value))
                 break;
 
@@ -119,8 +98,8 @@ public static class BestiaryPage
         if (string.IsNullOrWhiteSpace(text))
             return (null, null);
 
-        // Written as one over the other. Split rather than pattern-matched, so the separator is the
-        // only thing assumed about how the game spells it.
+        // Split, not pattern-matched, so the separator is all that is assumed about the game's
+        // wording.
         var parts = text.Split('/');
         if (parts.Length != 2)
             return (null, null);
@@ -131,7 +110,7 @@ public static class BestiaryPage
             return (null, null);
         }
 
-        // A tally that claims more held than exist is not a tally this reader understands.
+        // A tally that claims more held than exist is not one this reader understands.
         if (total <= 0 || held < 0 || held > total)
             return (null, null);
 
@@ -140,9 +119,8 @@ public static class BestiaryPage
 
     /// <summary>Whether a tile's caption names this bestiary number.</summary>
     /// <remarks>
-    /// Compared by digits alone, because the words around them are the client's language and the
-    /// digits are not. A caption with no digits fails, which fails the record, which stops the
-    /// read — the safe direction.
+    /// Compared by digits alone, since the words around them are in the client's language. A caption
+    /// with no digits fails the record, which stops the read: the safe direction.
     /// </remarks>
     private static bool CaptionNames(string caption, uint number)
     {

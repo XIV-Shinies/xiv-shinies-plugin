@@ -9,15 +9,13 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The extensibility gate. Everything here uses a FAKE collector announcing a category this plugin
-// has never heard of ("facewear"). If any of these tests need changing to add a real collection,
-// the runner has grown a category-name branch and the contract is broken.
+// The payload half of the extensibility gate: every test uses a fake collector for "facewear", a
+// category the plugin has never heard of. A test that must change to add a real collection means the
+// runner has grown a category-name branch.
 public class CollectorRunnerTests
 {
     private const string UnknownCategory = "facewear";
 
-    // A collector is just a category key plus a Collect() that returns facts or a skip reason.
-    // It touches no game service, which is exactly why the runner is unit-testable.
     private sealed class FakeCollector : ICollector
     {
         private readonly Func<CollectResult> collect;
@@ -30,19 +28,15 @@ public class CollectorRunnerTests
 
         public string CategoryKey { get; }
 
-        // The user-facing copy. Its content is irrelevant to the runner, which is the point: the
-        // runner never reads it.
+        // The runner never reads the user-facing copy.
         public string DisplayName => CategoryKey;
 
         public string Section => "Fakes";
 
         public string WhatGetsSent => $"Facts about {CategoryKey}.";
 
-        // Optional self-description; the runner never reads it, which is the point.
         public string? Details { get; init; }
 
-        // The runner copies this self-description into the snapshot (the upload log uses it to
-        // pick a category's change signal); fixed-scope is the default, tests opt in per fake.
         public bool UsesItemManifest { get; init; }
 
         public int CollectCallCount { get; private set; }
@@ -78,7 +72,7 @@ public class CollectorRunnerTests
         ManifestVersion = "abc",
     };
 
-    // THE extensibility gate: a category nobody wrote code for flows straight through.
+    // The gate itself.
     [Fact]
     public void A_collector_for_an_unknown_category_flows_through_untouched()
     {
@@ -90,8 +84,7 @@ public class CollectorRunnerTests
         Assert.Empty(snapshot.Skipped);
     }
 
-    // The snapshot records which categories are manifest-driven so the upload log can pick each
-    // category's change signal without ever comparing keys against a hardcoded name.
+    // The upload log picks each category's change signal from this set, never from a hardcoded name.
     [Fact]
     public void A_manifest_driven_collectors_key_is_marked_in_the_snapshot()
     {
@@ -115,9 +108,7 @@ public class CollectorRunnerTests
         Assert.DoesNotContain(UnknownCategory, snapshot.ManifestDrivenKeys);
     }
 
-    // A collector that enumerated its entire domain says so through its result, and the runner
-    // records the key — the payload builder later turns that into a `collectionScopes` "full"
-    // declaration. Generic like everything else here: the fake announces an unknown category.
+    // The payload builder turns this set into `collectionScopes` "full" declarations.
     [Fact]
     public void A_complete_enumerations_key_is_marked_in_the_snapshot()
     {
@@ -139,8 +130,7 @@ public class CollectorRunnerTests
         Assert.DoesNotContain(UnknownCategory, snapshot.CompleteKeys);
     }
 
-    // A skip carries no facts at all, so it can never carry a completeness claim — even from a
-    // collector that would have enumerated everything had it been able to read.
+    // A skip carries no facts, so it can never carry a completeness claim.
     [Fact]
     public void A_skipped_collectors_key_is_not_marked_complete()
     {
@@ -152,9 +142,7 @@ public class CollectorRunnerTests
         Assert.DoesNotContain(UnknownCategory, snapshot.CompleteKeys);
     }
 
-    // The context's truncation verdict must reach the snapshot, because the orchestrator (which
-    // holds the logger) sees only the snapshot — the runner reports the fact, the caller decides
-    // what to do with it, the same handoff the snapshot uses for durations.
+    // The orchestrator, which holds the logger, sees only the snapshot, so the verdict must reach it.
     [Fact]
     public void The_snapshot_carries_the_manifest_truncation_verdict()
     {
@@ -179,7 +167,6 @@ public class CollectorRunnerTests
         Assert.Empty(snapshot.TruncatedManifests);
     }
 
-    // The quest-sequence clip takes the same runner-to-orchestrator handoff as the item clip.
     [Fact]
     public void The_snapshot_carries_the_quest_sequence_truncation_verdict()
     {
@@ -196,9 +183,8 @@ public class CollectorRunnerTests
         Assert.False(snapshot.TruncatedManifests.Contains(CategoryKeys.Items)); // the two clips report independently
     }
 
-    // Facts shaped as a JSON OBJECT (quest id → sequence) must ride the same generic path as
-    // arrays. This is the shape guard: a runner regression that assumed AsArray() would pass
-    // every array-based test in this file and still crash the first object category in game.
+    // The shape guard: a runner that assumed AsArray() would pass every array test here and still
+    // crash on the first object-shaped category in game.
     [Fact]
     public void Object_shaped_facts_flow_through_untouched()
     {
@@ -212,8 +198,8 @@ public class CollectorRunnerTests
             3, snapshot.Collections[UnknownCategory].AsObject()["70562"]!.GetValue<int>());
     }
 
-    // The extensibility gate for partial notes: a collector's phrase lands in the snapshot under
-    // its own key, the runner none the wiser about which collection is partially read.
+    // The gate for partial notes: the runner files the phrase by key without knowing which collection
+    // wrote it.
     [Fact]
     public void A_collectors_partial_note_lands_in_the_snapshot_under_its_key()
     {
@@ -229,8 +215,7 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Collections.ContainsKey(UnknownCategory));
     }
 
-    // A whole read says nothing partial: the snapshot carries no entry, which is what clears
-    // any note the category was remembered with.
+    // No entry is what clears a remembered note.
     [Fact]
     public void A_collector_without_a_partial_note_leaves_none_in_the_snapshot()
     {
@@ -240,8 +225,7 @@ public class CollectorRunnerTests
         Assert.Empty(snapshot.PartialNotes);
     }
 
-    // "I read none of what I am about" rides the same generic route: the runner files the key
-    // without knowing which collection said it, and the upload log reads the set.
+    // Filed by key like the partial note; the upload log reads the set.
     [Fact]
     public void A_collector_that_read_nothing_lands_in_the_snapshots_nothing_read_keys()
     {
@@ -258,8 +242,7 @@ public class CollectorRunnerTests
         Assert.DoesNotContain(UnknownCategory, snapshot.FactCounts.Keys);
     }
 
-    // A collector that read its collection reports a count and no unmeasured key, so a category is
-    // never both measured and unmeasured.
+    // A category is never both measured and unmeasured.
     [Fact]
     public void A_collector_that_read_its_collection_leaves_no_unmeasured_key()
     {
@@ -277,7 +260,7 @@ public class CollectorRunnerTests
         Assert.Equal(1, snapshot.FactCounts[UnknownCategory]);
     }
 
-    // The healthy-chip hover copy rides the same generic route as the partial note.
+    // The healthy chip's hover copy, filed like the partial note.
     [Fact]
     public void A_collectors_chip_detail_lands_in_the_snapshot_under_its_key()
     {
@@ -292,7 +275,7 @@ public class CollectorRunnerTests
         Assert.Equal("Optional hover copy.", snapshot.CollectedDetails[UnknownCategory]);
     }
 
-    // A pass with no hover copy leaves no entry — the absence is what clears a remembered one.
+    // No entry is what clears remembered hover copy.
     [Fact]
     public void A_collector_without_a_chip_detail_leaves_none_in_the_snapshot()
     {
@@ -324,7 +307,6 @@ public class CollectorRunnerTests
         var snapshot = CollectorRunner.Run(new[] { collector }, settings, RemoteConfig());
 
         Assert.Empty(snapshot.Collections);
-        // Never even asked the game for the facts.
         Assert.Equal(0, collector.CollectCallCount);
     }
 
@@ -365,8 +347,7 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Collections.ContainsKey("quests"));
     }
 
-    // Without a fetched config we cannot know the remote switches; the server enforces them anyway
-    // (it strips disabled categories and answers 503 when the global switch is off).
+    // Proceeding without /config is safe (see CollectorGate.IsEnabled).
     [Fact]
     public void A_missing_remote_config_falls_back_to_the_local_toggles()
     {
@@ -376,8 +357,7 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Collections.ContainsKey(UnknownCategory));
     }
 
-    // A collector that could not read its source omits the key and explains why. The UI surfaces
-    // the reason; the runner never interprets it.
+    // The UI surfaces the reason; the runner never interprets it.
     [Fact]
     public void A_collector_that_skips_omits_its_key_and_reports_the_reason()
     {
@@ -390,8 +370,8 @@ public class CollectorRunnerTests
         Assert.Equal("list_not_loaded", snapshot.Skipped[UnknownCategory]);
     }
 
-    // "Read it, and it was empty" is a legitimate fact and must survive as [] — distinct from
-    // "could not read it", which is absence. This is the monotonic-write rule at the source.
+    // The monotonic-write rule at the source: "read, and empty" goes out as [], while "could not read"
+    // is absence.
     [Fact]
     public void An_empty_but_readable_category_is_sent_as_an_empty_array()
     {
@@ -417,8 +397,8 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Collections.ContainsKey("quests"));
     }
 
-    // Collectors that need outside data (the item manifest) get it from the context, so the runner
-    // never has to ask "is this the items collector?".
+    // Outside data such as the item manifest comes through the context, so the runner never asks which
+    // collector it is running.
     [Fact]
     public void The_context_carries_the_remote_config_and_item_manifest_to_every_collector()
     {
@@ -457,9 +437,8 @@ public class CollectorRunnerTests
         Assert.Equal(7u, snapshot.Collections["quests"].AsArray()[0]!.GetValue<uint>());
     }
 
-    // Collection runs on the game's framework thread, which has ~16ms to draw a frame. The runner
-    // measures what each collector spends so the orchestrator can report it; the plugin is expected
-    // to grow more collectors, and an unmeasured cost is one nobody notices until it stutters.
+    // Collection runs on the framework thread, which has about 16 ms per frame. An unmeasured cost goes
+    // unnoticed until the game stutters.
     [Fact]
     public void Every_collector_that_runs_is_timed()
     {
@@ -473,16 +452,14 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Durations.ContainsKey("mounts"));
     }
 
-    // The test above would still pass an implementation that recorded a hardcoded zero for every
-    // collector. This one would not: a collector that demonstrably takes time must report time.
+    // Catches a runner that records zero for every collector.
     [Fact]
     public void A_collector_that_takes_time_reports_a_nonzero_duration()
     {
         var slow = new FakeCollector(UnknownCategory, () =>
         {
-            // Busy-wait rather than Thread.Sleep: sleeping yields a duration the OS scheduler chose,
-            // while spinning guarantees the stopwatch observes real elapsed work. A few milliseconds
-            // is far above any timer resolution concern.
+            // Spins rather than sleeps: a sleep lasts as long as the scheduler chooses, while spinning
+            // guarantees elapsed work. A few milliseconds is far above timer resolution.
             var until = Stopwatch.GetTimestamp() + (Stopwatch.Frequency / 500); // ~2ms
             while (Stopwatch.GetTimestamp() < until)
             {
@@ -496,8 +473,7 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Durations[UnknownCategory] > TimeSpan.Zero);
     }
 
-    // A collector that is slow AND throws is precisely the one worth seeing in the log, so the
-    // failure path is timed too.
+    // A slow collector that throws is the one most worth seeing in the log.
     [Fact]
     public void A_collector_that_throws_is_still_timed()
     {
@@ -509,8 +485,7 @@ public class CollectorRunnerTests
         Assert.False(snapshot.Collections.ContainsKey(UnknownCategory));
     }
 
-    // A disabled category never runs, so it has no cost to report. Recording a zero would imply it
-    // was measured, which would be a lie.
+    // A zero would claim a measurement that never happened.
     [Fact]
     public void A_category_the_user_disabled_is_not_timed_because_it_never_ran()
     {
@@ -522,8 +497,8 @@ public class CollectorRunnerTests
         Assert.Empty(snapshot.Durations);
     }
 
-    // A snapshot built by hand (in a test, or by a future caller) need not carry timings, so the
-    // dictionary defaults to empty rather than null. Callers can enumerate it unconditionally.
+    // A hand-built snapshot need not carry timings, and callers enumerate the default without a null
+    // check.
     [Fact]
     public void Durations_default_to_empty_rather_than_null()
     {
@@ -537,8 +512,7 @@ public class CollectorRunnerTests
         Assert.Empty(snapshot.Durations);
     }
 
-    // The payload builder enumerates this set without a null guard on every non-unlock upload, so
-    // the default has to be an empty set — a hand-built snapshot must be safe to enumerate.
+    // The payload builder enumerates this set without a null check on every non-unlock upload.
     [Fact]
     public void Complete_keys_default_to_empty_rather_than_null()
     {
@@ -587,9 +561,8 @@ public class CollectorRunnerTests
     [Fact]
     public void Run_ignores_a_skipped_collector_when_merging_source_notes()
     {
-        // A skip carries no source notes (a collector that could not read its source has nothing
-        // to say about any storage location), so the snapshot holds only the collected results'
-        // notes. This pins the merge to the collected branch of the runner.
+        // A skip carries no source notes, so only collected results contribute. This pins the merge
+        // to the runner's collected branch.
         var notes = new Dictionary<string, ItemSourceStatus>
         {
             ["inventory"] = new ItemSourceStatus { State = SourceStates.Live },
@@ -636,7 +609,6 @@ public class CollectorRunnerTests
             OptedIn("achievements", "items", "mounts"),
             RemoteConfig());
 
-        // collector3's notes2 should have overwritten inventory state from collector2
         Assert.Equal(SourceStates.Cached, snapshot.SourceNotes["inventory"].State);
         Assert.Equal(SourceStates.Unscanned, snapshot.SourceNotes["saddlebag"].State);
     }

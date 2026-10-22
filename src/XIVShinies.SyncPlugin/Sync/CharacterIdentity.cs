@@ -6,15 +6,11 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// Who the upload is about: the local character, identified the way the server knows it.
 /// </summary>
 /// <remarks>
-/// Note this holds the <b>hash</b>, never the raw ContentId. Hashing happens at the edge, the moment
-/// the id is read from the game, so the raw value never reaches the payload, the log, or the disk.
-/// The name and world are carried only for the server's first-upload binding and to name the
-/// character when an upload is refused; the hash is the durable identity, which is what lets a
-/// character survive a rename or a world transfer.
+/// Holds the <b>hash</b>, never the raw ContentId (see <see cref="Sync.ContentIdHash"/>). The hash is
+/// the durable identity, which lets a character survive a rename or a world transfer. The name and
+/// world serve only the server's first-upload binding and naming the character when an upload is
+/// refused.
 /// </remarks>
-// `required` forces the caller to set the property in the object initializer; the compiler refuses to
-// build the object otherwise. `init` means it can be set only at construction, never reassigned. Both
-// together give a record that cannot be built half-populated and cannot be mutated afterwards.
 public sealed record CharacterIdentity
 {
     /// <summary>Lowercase-hex SHA-256 of the character's ContentId.</summary>
@@ -26,27 +22,15 @@ public sealed record CharacterIdentity
     /// <summary>The character's home world name. The server requires 1-100 characters.</summary>
     public required string HomeWorld { get; init; }
 
-    /// <summary>
-    /// True when this identity can produce a payload the server will accept.
-    /// </summary>
+    /// <summary>True when this identity can produce a payload the server will accept.</summary>
     /// <remarks>
-    /// <para>
-    /// The game does not always have the character fully populated the instant it says it is loaded,
-    /// and the home world is a lazy reference into a data sheet that can fail to resolve. Either can
-    /// yield a blank string.
-    /// </para>
-    /// <para>
-    /// A blank — or absurdly long — name or world violates the contract's 1-100 character
-    /// constraint, so the server rejects the whole upload with a 400. That rejection is classified
-    /// as a plugin bug rather than something the user can fix, so it does not halt syncing —
-    /// meaning a bad identity, once cached, would quietly re-fail every upload for the rest of the
-    /// session. Checking before caching is what prevents that. (Real names and worlds are nowhere
-    /// near 100 characters; the upper bound is defensive, so the guard fully matches the
-    /// constraint it exists to satisfy.)
-    /// </para>
+    /// The game can say the character is loaded before it is fully populated, and the home world is a
+    /// lazy sheet reference that can fail to resolve, so either can be blank. A blank or over-long
+    /// value earns a 400, which counts as a plugin bug and does not halt syncing, so a cached bad
+    /// identity would quietly re-fail every upload of the session. Real names and worlds are far under
+    /// 100 characters; the upper bound keeps the guard matching the contract.
     /// </remarks>
-    // A static method rather than an instance one, so the caller can test the raw values it read from
-    // the game before it commits them to a CharacterIdentity.
+    // Static, so the caller can test the values it read before committing them to a CharacterIdentity.
     public static bool IsUsable(string? name, string? homeWorld) =>
         IsWithinContract(name) && IsWithinContract(homeWorld);
 

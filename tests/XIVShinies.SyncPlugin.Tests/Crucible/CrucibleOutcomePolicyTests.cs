@@ -8,19 +8,14 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
 // What the Crucible sharing does with each answer to an upload: settle it as accepted, send it again
-// later, let it go, or stop until the player fixes something. Each `[Fact]` is one test, like `it(...)`
-// in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
+// later, let it go, or stop until the player fixes something.
 public class CrucibleOutcomePolicyTests
 {
-    // `new(...)` with no type name builds the declared type: here a DateTimeOffset, and below each
-    // dictionary value, a CrucibleOutcome.
     private static readonly DateTimeOffset Now = new(2026, 10, 5, 12, 0, 0, TimeSpan.Zero);
 
-    /// <summary>How long a refused payload holds everything back.</summary>
     private static readonly TimeSpan RejectionHold = CrucibleOutcomePolicy.RejectionHold;
 
     /// <summary>The outcome every status the client knows must have, with no Retry-After.</summary>
-    // `new() { [key] = value, ... }` builds the dictionary with these entries, like an object literal.
     private static readonly Dictionary<ApiStatus, CrucibleOutcome> Expected = new()
     {
         [ApiStatus.Ok] = new(CrucibleOutcomeKind.Accepted),
@@ -41,9 +36,8 @@ public class CrucibleOutcomePolicyTests
         [ApiStatus.PayloadTooLarge] = new(CrucibleOutcomeKind.Drop, Now + RejectionHold),
     };
 
-    // Every status has the outcome the table names, and the table names every status, so a status
-    // added later fails here until its outcome is decided. `Enum.GetValues<T>()` lists every value an
-    // enum defines.
+    // The table must name every status, so a status added later fails here until its outcome is
+    // decided.
     [Fact]
     public void Every_status_has_the_outcome_its_meaning_calls_for()
     {
@@ -53,7 +47,6 @@ public class CrucibleOutcomePolicyTests
             Assert.Equal(Expected[status], CrucibleOutcomePolicy.Classify(status, retryAfter: null, Now));
     }
 
-    // A server that asks for quiet gets it, for as long as it asked.
     [Theory]
     [InlineData(ApiStatus.RateLimited)]
     [InlineData(ApiStatus.SyncDisabled)]
@@ -64,8 +57,8 @@ public class CrucibleOutcomePolicyTests
             CrucibleOutcomePolicy.Classify(status, TimeSpan.FromSeconds(90), Now));
     }
 
-    // A busy 503 that lost its Retry-After asks for no wait of its own, so the scheduler's doubling
-    // wait decides when it goes again (see CrucibleOutcomePolicy.Classify).
+    // The scheduler's doubling wait then decides when the upload goes again (see
+    // CrucibleOutcomePolicy.Classify).
     [Fact]
     public void A_busy_503_without_a_wait_asks_for_no_wait_of_its_own()
     {
@@ -75,7 +68,6 @@ public class CrucibleOutcomePolicyTests
                 ApiStatus.SyncDisabled, retryAfter: null, Now, CrucibleOutcomePolicy.BusyErrorCode));
     }
 
-    // A busy 503 that keeps its Retry-After waits for as long as the server asked, like any other.
     [Fact]
     public void A_busy_503_with_a_wait_keeps_the_servers_wait()
     {
@@ -85,8 +77,6 @@ public class CrucibleOutcomePolicyTests
                 ApiStatus.SyncDisabled, TimeSpan.FromSeconds(3), Now, CrucibleOutcomePolicy.BusyErrorCode));
     }
 
-    // Any other 503 without a wait gets the long wait a switched-off 503 gets. `string?` may be
-    // null, like `string | null`, so a row can pass no code at all.
     [Theory]
     [InlineData("sync_disabled")]
     [InlineData(null)]
@@ -97,8 +87,6 @@ public class CrucibleOutcomePolicyTests
             CrucibleOutcomePolicy.Classify(ApiStatus.SyncDisabled, retryAfter: null, Now, errorCode));
     }
 
-    // The busy code matters only on a 503: on every other status the outcome is the one the table
-    // names.
     [Fact]
     public void The_busy_code_on_another_status_changes_nothing()
     {
@@ -114,7 +102,6 @@ public class CrucibleOutcomePolicyTests
         }
     }
 
-    // Only the exact code is busy: the match is case-sensitive, and no code at all is not busy.
     [Theory]
     [InlineData("busy", true)]
     [InlineData("Busy", false)]
@@ -127,7 +114,7 @@ public class CrucibleOutcomePolicyTests
         Assert.Equal(busy, CrucibleOutcomePolicy.IsBusy(errorCode));
     }
 
-    // A refused payload holds everything back for a minute, in case every upload is being refused.
+    // The hold keeps everything back in case every upload is being refused.
     [Fact]
     public void A_refused_payload_holds_for_a_minute()
     {

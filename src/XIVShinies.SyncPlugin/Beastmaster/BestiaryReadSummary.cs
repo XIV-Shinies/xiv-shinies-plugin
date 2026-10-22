@@ -8,15 +8,9 @@ namespace XIVShinies.SyncPlugin.Beastmaster;
 /// <param name="Ledger">What the ledger held once the page was recorded.</param>
 /// <param name="SheetSize">The bestiary's size from the game's data, or null when unread.</param>
 /// <remarks>
-/// <para>
-/// What the observer compares against the last read it logged, to decide whether a redraw is worth
-/// a log line; see <see cref="TamedBeastObserver"/>'s bestiary handler for when it writes one.
-/// </para>
-/// <para>
-/// A <c>readonly record struct</c>, so two summaries compare equal exactly when every field matches,
-/// including each field of the nested <see cref="LedgerReport"/>, which is a record struct too.
-/// Comparing two of them allocates nothing.
-/// </para>
+/// The observer compares this with the last read it logged to decide whether a redraw earns a log
+/// line (see <see cref="TamedBeastObserver"/>'s bestiary handler). Equality covers every field,
+/// including each field of the nested <see cref="LedgerReport"/>, and allocates nothing.
 /// </remarks>
 public readonly record struct BestiaryReadSummary(
     int Listed,

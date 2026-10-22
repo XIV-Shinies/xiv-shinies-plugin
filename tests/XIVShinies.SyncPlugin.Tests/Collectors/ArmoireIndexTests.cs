@@ -4,14 +4,12 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The armoire lookup is one of the pure parts of item collection (alongside MirageSetIndex and
-// ItemTallies), so it is unit-tested here. Reading the game's containers is verified by in-game QA.
+// Which armoire row, from the Cabinet sheet, holds each item.
 public class ArmoireIndexTests
 {
     [Fact]
     public void Maps_each_item_to_the_row_that_stores_it()
     {
-        // Both elements must name their fields, or C# infers an unnamed tuple for the whole array.
         var index = ArmoireIndex.Build(
             new[] { (CabinetId: 5u, ItemId: 7851u), (CabinetId: 9u, ItemId: 7852u) });
 
@@ -30,7 +28,7 @@ public class ArmoireIndexTests
         Assert.Equal(2u, index[7851]);
     }
 
-    // Deterministic rather than throwing, should the sheet ever list an item twice.
+    // Deterministic rather than throwing if the sheet ever lists an item twice.
     [Fact]
     public void Keeps_the_first_row_when_an_item_appears_more_than_once()
     {

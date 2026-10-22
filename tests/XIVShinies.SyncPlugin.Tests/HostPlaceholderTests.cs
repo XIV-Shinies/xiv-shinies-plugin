@@ -6,14 +6,12 @@ using XIVShinies.SyncPlugin.Tests.Collectors;
 namespace XIVShinies.SyncPlugin.Tests;
 
 // The placeholder a collection's own copy uses for the website's address, and the rule that fills it
-// in. Each `[Fact]` is one test, like `it(...)` in Jest.
+// in.
 public class HostPlaceholderTests
 {
-    // A made-up address, so a test can tell one that was passed in from one written into the copy.
-    // `const` fixes the value when the code compiles.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
-    // Every placeholder in the text is replaced, not just the first.
     [Fact]
     public void Every_placeholder_becomes_the_address()
     {
@@ -28,12 +26,8 @@ public class HostPlaceholderTests
         Assert.Equal("Nothing to fill.", HostPlaceholder.Fill("Nothing to fill.", Host));
     }
 
-    // A collection's disclosure is drawn after Fill, so any brace left over afterwards is a placeholder
-    // misspelled (say "{Host}") that would reach the player as written; and none calls the website
-    // "server". Every collection is checked, including one added later, through the registry itself.
-    // `foreach` walks every item in turn, like `for (const info of ...)` in TypeScript;
-    // `new[] { a, b }` is an array of the two, like `[a, b]`; `?? ""` uses an empty string when there
-    // are no details; `StringComparison.OrdinalIgnoreCase` matches whatever the letter case.
+    // A brace left after Fill is a misspelled placeholder, such as "{Host}", that would reach the
+    // player. No disclosure calls the website "server". The registry scan covers later collections.
     [Fact]
     public void Every_collection_disclosure_fills_to_plain_text_without_server()
     {
@@ -50,8 +44,7 @@ public class HostPlaceholderTests
         }
     }
 
-    // A collection's name and section heading are drawn as written, never filled, so neither may
-    // carry a placeholder at all.
+    // Names and section headings are drawn as written, never filled.
     [Fact]
     public void No_collection_name_or_section_carries_a_placeholder()
     {
@@ -62,8 +55,7 @@ public class HostPlaceholderTests
         }
     }
 
-    // The tamed-beasts hover is written by its collector, not its registry entry, so it is checked
-    // here by name.
+    // The tamed-beasts hover lives on its collector, not its registry entry, so the scan misses it.
     [Fact]
     public void The_whole_bestiary_note_fills_to_the_website()
     {

@@ -18,7 +18,7 @@ public class CrucibleOffersTests
     private const int LootFirstShown = 6;
     private const int LootFirstId = 9;
 
-    // Positions in the shop's values: the balance, the count, then the first offer's five values.
+    // Positions in the shop's values. Each offer spans five values.
     private const int ShopBalance = 1;
     private const int ShopCount = 2;
     private const int ShopFirstShown = 3;
@@ -27,7 +27,6 @@ public class CrucibleOffersTests
     private const int ShopFirstDiscounted = 6;
     private const int ShopFirstBought = 7;
 
-    // A coffer: 450 tokens, four offers.
     [Fact]
     public void Reads_a_treasure_coffer()
     {
@@ -38,13 +37,11 @@ public class CrucibleOffersTests
         Assert.Equal(450, reading.Tokens);
         Assert.Null(reading.TokensEarned);
 
-        // `Select` maps each offer to its id, like `Array.map` in TypeScript.
         Assert.Equal(new uint[] { 12, 53, 140, 37 }, reading.Offers.Select(offer => offer.ItemId));
         Assert.All(reading.Offers, offer => Assert.Null(offer.Price));
     }
 
-    // A loot window: the fight paid 225 tokens onto a balance of 0, and three offers are shown; the
-    // fourth place is flagged unshown and carries no id.
+    // The fixture's fourth place is flagged unshown and carries no id.
     [Fact]
     public void Reads_a_loot_window_with_the_tokens_it_paid()
     {
@@ -57,8 +54,6 @@ public class CrucibleOffersTests
         Assert.Equal(new uint[] { 63, 133, 138 }, reading.Offers.Select(offer => offer.ItemId));
     }
 
-    // A shop: 1,328 tokens and sixteen offers, some discounted, one already bought. Records compare
-    // by their values, so one `Assert.Equal` checks every field of an offer.
     [Fact]
     public void Reads_a_shop_with_prices_discounts_and_purchases()
     {
@@ -76,7 +71,6 @@ public class CrucibleOffersTests
         Assert.Equal(new CrucibleOffer(64, 564, false, false), reading.Offers[15]);
     }
 
-    // A count of 0 is a shelf with nothing on it, read as such.
     [Fact]
     public void A_shop_count_of_zero_reads_an_empty_shelf()
     {
@@ -89,8 +83,7 @@ public class CrucibleOffersTests
         Assert.Empty(reading.Offers);
     }
 
-    // The shop's own count is the number of offers to read. A count beyond the window's thirty
-    // places is not a count this reader understands.
+    // The window has thirty places.
     [Fact]
     public void A_shop_count_beyond_its_places_refuses_the_reading()
     {
@@ -100,8 +93,7 @@ public class CrucibleOffersTests
         Assert.Null(CrucibleOffers.ReadShop(values));
     }
 
-    // Each of a shown offer's five values has to be the kind the layout puts there; one that is not
-    // means the offer's slots have moved.
+    // A value of the wrong kind means the offer's slots have moved.
     [Theory]
     [InlineData(ShopFirstShown)]
     [InlineData(ShopFirstId)]
@@ -126,8 +118,7 @@ public class CrucibleOffersTests
         Assert.Null(CrucibleOffers.ReadShop(values));
     }
 
-    // A balance that does not read refuses each window's reading: the token balance is part of what
-    // every offer window is read for.
+    // The token balance is part of what every offer window is read for.
     [Theory]
     [InlineData("treasure.json", ChestBalance)]
     [InlineData("booty.json", ChestBalance)]
@@ -140,7 +131,7 @@ public class CrucibleOffersTests
         Assert.Null(Read(fixture, values));
     }
 
-    // The tokens a fight paid are the loot window's own fact; without them the reading is refused.
+    // The tokens a fight paid are the loot window's own fact.
     [Fact]
     public void An_unreadable_loot_payout_refuses_the_reading()
     {
@@ -150,8 +141,7 @@ public class CrucibleOffersTests
         Assert.Null(CrucibleOffers.ReadLoot(values));
     }
 
-    // A "shown" flag or a shown offer's id holding the wrong kind of value means the layout has
-    // moved, in the treasure and loot windows alike.
+    // A value of the wrong kind means the layout has moved.
     [Theory]
     [InlineData("treasure.json", TreasureFirstShown)]
     [InlineData("treasure.json", TreasureFirstId)]
@@ -178,7 +168,7 @@ public class CrucibleOffersTests
         Assert.Null(Read(fixture, values));
     }
 
-    // A window handed too few values for its layout is refused, not read short.
+    // Each reading is refused rather than cut short at the last value.
     [Fact]
     public void A_short_value_list_refuses_each_reading()
     {
@@ -188,9 +178,6 @@ public class CrucibleOffersTests
         Assert.Null(CrucibleOffers.ReadShop(WindowFixture.Load("shop.json").GetRange(0, 2)));
     }
 
-    /// <summary>Reads a fixture with the reader for its window.</summary>
-    // A `switch` expression picks a value by matching, like a lookup table of arrow functions; `_`
-    // is the fallback arm.
     private static CrucibleOfferReading? Read(string fixture, List<AddonValue> values) =>
         fixture switch
         {

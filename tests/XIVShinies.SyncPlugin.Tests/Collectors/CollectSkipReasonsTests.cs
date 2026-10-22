@@ -3,21 +3,14 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// Turns a collector's skip reason into advice for the settings window. Note what it switches on: a
-// REASON, never a category. That is what lets the "open your Achievements window" hint exist without
-// anyone writing `if (key == "achievements")` anywhere in the plugin.
-//
-// Every described reason is drawn after its category's display name, as "{DisplayName}: {phrase}" (see
-// ReadStatusViewTests), so each string is asserted whole: it has to READ correctly in that position,
-// not merely contain the right keyword.
+// Settings advice keys on a skip reason, never a category, so the Achievements hint needs no
+// category-name branch. Each phrase is drawn as "{DisplayName}: {phrase}" (see ReadStatusViewTests),
+// so each string is asserted whole: it must read correctly there.
 public class CollectSkipReasonsTests
 {
-    // The website address the copy names. `const` fixes the value when the code compiles.
-    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
-    // The hint the extensibility contract names explicitly as the thing that must NOT be a special
-    // case in the settings UI.
     [Fact]
     public void An_unloaded_achievement_list_becomes_advice_the_user_can_act_on()
     {
@@ -27,10 +20,8 @@ public class CollectSkipReasonsTests
             "not read yet — open your Achievements window in game once.", hint);
     }
 
-    // The whole string is asserted, not just a keyword: a keyword check would still pass if two
-    // messages were swapped, and would tell the user to log in when the manifest is what is
-    // missing. The string names no category-specific noun — see CollectSkipReasons.Describe for
-    // why the reason is shared.
+    // A keyword check would still pass with two messages swapped. The string names no category's
+    // noun; CollectSkipReasons.Describe explains why the reason is shared.
     [Fact]
     public void A_missing_manifest_explains_that_we_are_waiting_on_the_server()
     {
@@ -40,8 +31,7 @@ public class CollectSkipReasonsTests
             "not read yet — waiting for " + Host + " to say what to look for.", hint);
     }
 
-    // A category switched off, or one the server answered without asking for, was skipped by a
-    // decision rather than a failure: there is no advice to give and nothing went wrong.
+    // Switched off, or not asked for by the server: a decision, not a failure.
     [Theory]
     [InlineData(CollectSkipReasons.Disabled)]
     [InlineData(CollectSkipReasons.ManifestNotOffered)]
@@ -51,7 +41,6 @@ public class CollectSkipReasonsTests
         Assert.Null(CollectSkipReasons.Describe(reason, Host));
     }
 
-    // Every other reason means the collection was missed, whether or not there is advice for it.
     [Theory]
     [InlineData(CollectSkipReasons.NoRemoteConfig)]
     [InlineData(CollectSkipReasons.CollectorError)]
@@ -75,10 +64,8 @@ public class CollectSkipReasonsTests
             "not read yet — log in to a character so your inventory can be read.", hint);
     }
 
-    // A collection whose consent groups are all switched off looks up nothing at all. The advice has to
-    // name the one thing that resolves it, because nothing else will: the plugin cannot tick the boxes
-    // for the user, and a collection that quietly uploads nothing forever is the failure this line
-    // exists to prevent.
+    // With every group off the collection reads nothing, and only the user can tick a box. Without
+    // this line it would upload nothing forever, silently.
     [Fact]
     public void A_collection_with_no_groups_enabled_asks_the_user_to_tick_one()
     {
@@ -108,8 +95,8 @@ public class CollectSkipReasonsTests
         Assert.Null(CollectSkipReasons.Describe(CollectSkipReasons.Disabled, Host));
     }
 
-    // Bugs and transient game states are not things the user can act on, and the raw wire string
-    // would mean nothing to them.
+    // The user cannot act on a bug or a passing game state, and the raw wire string means nothing
+    // to them.
     [Theory]
     [InlineData(CollectSkipReasons.CollectorError)]
     [InlineData(CollectSkipReasons.SheetUnavailable)]
@@ -118,7 +105,6 @@ public class CollectSkipReasonsTests
         Assert.Null(CollectSkipReasons.Describe(reason, Host));
     }
 
-    // A reason invented by a future collector must not surface a raw code like "facewear_locked".
     [Fact]
     public void An_unrecognized_reason_produces_no_advice_rather_than_its_raw_code()
     {

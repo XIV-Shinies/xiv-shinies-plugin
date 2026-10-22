@@ -4,9 +4,8 @@ using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
-// The backend URL is user-overridable (Dalamud recommends offering a user-defined server), but
-// an override must never silently downgrade the connection to plaintext. Rule: https:// always,
-// except http:// is tolerated for loopback so local development works.
+// The backend URL is user-overridable, as Dalamud recommends, but an override must never downgrade
+// to plaintext: https:// always, except http:// for loopback so local development works.
 public class BackendUrlTests
 {
     [Fact]
@@ -39,7 +38,6 @@ public class BackendUrlTests
         Assert.False(BackendUrl.IsDefault(other!));
     }
 
-    // Lookalike hosts must never be mistaken for loopback and allowed over plaintext.
     [Theory]
     [InlineData("http://localhost.evil.com")]
     [InlineData("http://127.0.0.1.evil.com")]
@@ -75,8 +73,8 @@ public class BackendUrlTests
         Assert.NotNull(error);
     }
 
-    // Dalamud requires a backend be reached by DNS hostname, never a raw IP address, and states
-    // no exemption — so even loopback IPs are refused. Use "localhost" instead of 127.0.0.1.
+    // Dalamud requires a DNS hostname, never a raw IP, and states no exemption for loopback. Use
+    // "localhost" instead of 127.0.0.1.
     [Theory]
     [InlineData("https://203.0.113.5")]      // remote IPv4
     [InlineData("https://203.0.113.5:8443")]
@@ -91,9 +89,8 @@ public class BackendUrlTests
         Assert.NotNull(error);
     }
 
-    // The obscure single-number spellings of an IPv4 address: Uri classifies these as DNS names,
-    // but the OS resolver treats them as addresses — both are 127.0.0.1 here. "Raw IP refused"
-    // must hold for every spelling of an address, not just the dotted one.
+    // Uri classifies these single-number spellings of an IPv4 address as DNS names, but the OS
+    // resolver treats them as addresses.
     [Theory]
     [InlineData("https://2130706433")]  // 127.0.0.1 as one decimal number
     [InlineData("https://0x7f000001")]  // 127.0.0.1 in hex
@@ -106,7 +103,7 @@ public class BackendUrlTests
 
     // --- The host named in an unreachable message -----------------------------------------------
 
-    // Every sentence naming the service names the configured one — see BackendUrl.DisplayHost.
+    // Every sentence naming the service names the configured one; see BackendUrl.DisplayHost.
 
     [Fact]
     public void The_official_backend_is_named_by_its_host()
@@ -121,16 +118,15 @@ public class BackendUrlTests
             "dev.example.com", BackendUrl.DisplayHost("https://dev.example.com/api"));
     }
 
-    // The host alone, because this lands mid-sentence — a scheme, a port and a path read as debris
-    // there, and the host is the part that identifies the server.
+    // The host lands mid-sentence, where a scheme, port and path read as debris.
     [Fact]
     public void Only_the_host_is_named_not_the_whole_url()
     {
         Assert.Equal("localhost", BackendUrl.DisplayHost("https://localhost:5173/api/plugin/v1"));
     }
 
-    // A stored value too malformed to parse has no host to show. Naming the official server is the
-    // honest fallback: printing raw config text would put unparsed settings on screen.
+    // An unparsable value has no host to show, and printing raw config text would put unparsed
+    // settings on screen.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -142,10 +138,9 @@ public class BackendUrlTests
         Assert.Equal("xiv-shinies.com", BackendUrl.DisplayHost(raw));
     }
 
-    // The values that PARSE but are refused, which is the class a "does it parse" check would let
-    // through. Naming one of these would promise a destination the client will not send to: a
-    // refused address means every request answers NotConfigured, so the privacy cards would state
-    // a recipient that never receives anything.
+    // Values that parse but are refused, which a parse-only check would let through. A refused
+    // address makes every request answer NotConfigured, so naming it would make the privacy cards
+    // state a recipient that never receives anything.
     [Theory]
     [InlineData("http://example.com")]
     [InlineData("https://127.0.0.1")]
@@ -158,8 +153,8 @@ public class BackendUrlTests
         Assert.Equal("xiv-shinies.com", BackendUrl.DisplayHost(raw));
     }
 
-    // The named host and the opened link answer to one gate, so the sentence and the button beneath
-    // it can never describe different servers.
+    // One gate decides the named host and the profile link, so the sentence and the button beneath it
+    // never name different servers.
     [Theory]
     [InlineData("https://dev.example.com")]
     [InlineData("http://localhost:5173")]
@@ -168,11 +163,10 @@ public class BackendUrlTests
     [InlineData("not a url")]
     public void The_named_host_and_the_profile_link_always_agree(string raw)
     {
-        // Whichever server DisplayHost names is the one ProfileUrl opens, fallback included.
         Assert.Equal(BackendUrl.DisplayHost(raw), new Uri(BackendUrl.ProfileUrl(raw)).IdnHost);
     }
 
-    // An international host is named in the punycode form, which cannot impersonate another domain.
+    // The punycode form cannot impersonate another domain the way lookalike Unicode letters can.
     [Fact]
     public void An_international_host_is_named_in_punycode()
     {
@@ -183,7 +177,7 @@ public class BackendUrlTests
 
     // --- Credentials in the URL ------------------------------------------------------------------
 
-    // A URL carrying credentials is refused outright — see the userinfo gate in TryNormalize.
+    // See the userinfo gate in TryNormalize.
     [Fact]
     public void A_url_carrying_credentials_is_refused()
     {
@@ -193,8 +187,7 @@ public class BackendUrlTests
         Assert.NotNull(error);
     }
 
-    // The impersonation this closes: the official name sits where the eye lands first, while the
-    // host that would actually be opened is something else entirely.
+    // The official name sits where the eye lands first, while the host actually opened is another.
     [Fact]
     public void A_url_impersonating_the_official_host_through_credentials_is_refused()
     {
@@ -207,7 +200,7 @@ public class BackendUrlTests
 
     // --- Where the Open profile button goes -----------------------------------------------------
 
-    // The link follows the configured backend, and is validated before it is opened — see ProfileUrl.
+    // The link follows the configured backend and is validated before it opens; see ProfileUrl.
 
     [Fact]
     public void The_profile_page_is_on_the_official_server_by_default()
@@ -222,8 +215,7 @@ public class BackendUrlTests
             "https://dev.example.com/profile", BackendUrl.ProfileUrl("https://dev.example.com"));
     }
 
-    // A base URL carrying a path is still only a server address here — the profile page lives at
-    // the root, so an api prefix must not end up inside the link.
+    // The profile page lives at the server root, so an api prefix on the base URL stays out of it.
     [Fact]
     public void A_base_url_with_a_path_still_points_at_the_profile_root()
     {
@@ -238,9 +230,8 @@ public class BackendUrlTests
         Assert.Equal("http://localhost:5173/profile", BackendUrl.ProfileUrl("http://localhost:5173"));
     }
 
-    // The stored setting can be hand-edited and so need never have passed validation. Anything that
-    // fails the scheme and hostname rules falls back to the official site rather than being opened:
-    // this value is handed to the operating system, so a non-web scheme must never reach it.
+    // A hand-edited setting may never have passed validation. This value goes to the operating
+    // system, so a non-web scheme must never reach it.
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -256,11 +247,10 @@ public class BackendUrlTests
 
     // --- Why a configured server cannot be contacted ---------------------------------------------
 
-    // Two different settings produce the same refusal and need opposite actions, so the sentence has
-    // to tell them apart — see BackendUrl.DescribeUnusableSetting.
+    // Two different settings produce the same refusal and need opposite actions, so the sentence
+    // tells them apart; see BackendUrl.DescribeUnusableSetting.
 
-    // A broken address borrows TryNormalize's own complaint, so the user reads the rule they broke
-    // rather than a generic one.
+    // Quoting TryNormalize's complaint shows the user the rule they broke, not a generic one.
     [Fact]
     public void A_malformed_address_is_explained_by_the_rule_it_breaks()
     {
@@ -271,8 +261,8 @@ public class BackendUrlTests
         Assert.Contains(rule, sentence);
     }
 
-    // The case a developer actually hits: the address is fine and the acknowledgment is missing.
-    // Telling them to fix the address would send them looking for a fault that is not there.
+    // The case a developer hits. Telling them to fix the address would send them hunting a fault
+    // that is not there.
     [Fact]
     public void An_unacknowledged_custom_server_is_not_reported_as_a_bad_address()
     {
@@ -282,7 +272,7 @@ public class BackendUrlTests
         Assert.DoesNotContain("cannot be used", sentence);
     }
 
-    // The official server needs no acknowledgment, so the flag cannot be the explanation there.
+    // The official server needs no acknowledgment.
     [Fact]
     public void The_official_server_is_never_reported_as_unacknowledged()
     {
@@ -290,7 +280,7 @@ public class BackendUrlTests
             "acknowledged", BackendUrl.DescribeUnusableSetting(BackendUrl.Default, false));
     }
 
-    // Neither setting explains it, so the sentence claims only what is certain rather than guessing.
+    // Neither setting explains it, so the sentence claims only what is certain.
     [Fact]
     public void A_usable_acknowledged_setting_gets_no_invented_cause()
     {
@@ -300,9 +290,8 @@ public class BackendUrlTests
         Assert.DoesNotContain("cannot be used", sentence);
     }
 
-    // The window's cached copy of this answer uses "empty" to mean "not yet asked", which is only
-    // sound while no input can produce an empty answer — pinned here so the two files cannot
-    // drift apart silently.
+    // The window's cached copy of this answer uses empty to mean "not yet asked", which holds only
+    // while no input produces an empty answer.
     [Theory]
     [InlineData(BackendUrl.Default)]
     [InlineData("https://dev.example.com")]

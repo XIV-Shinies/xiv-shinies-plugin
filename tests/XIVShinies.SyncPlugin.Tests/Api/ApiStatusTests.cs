@@ -3,9 +3,8 @@ using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
-// Maps raw HTTP status codes onto the meanings the server contract assigns them, and classifies
-// how the client must react. Getting this table right is what keeps the plugin from hammering a
-// server that told it to stop (401 never heals; 429/503 mean back off).
+// The status map keeps the plugin from hammering a server that told it to stop: a 401 never heals,
+// and 429 and 503 mean back off.
 public class ApiStatusTests
 {
     [Theory]
@@ -24,8 +23,8 @@ public class ApiStatusTests
         Assert.Equal(expected, ApiStatusMap.FromHttpStatusCode(httpStatus));
     }
 
-    // Every 5xx but 503 reads as a 500 does, including the codes a proxy sends when it cannot reach
-    // the server (ApiStatus.ServerError lists them and says why a retry is safe).
+    // Every 5xx but 503 is a server error, including the codes a proxy sends when it cannot reach the
+    // server. ApiStatus.ServerError lists them and says why a retry is safe.
     [Theory]
     [InlineData(501)]
     [InlineData(502)]
@@ -38,7 +37,6 @@ public class ApiStatusTests
         Assert.Equal(ApiStatus.ServerError, ApiStatusMap.FromHttpStatusCode(httpStatus));
     }
 
-    // The edges of the 5xx range: the codes either side of it do not read as server errors.
     [Theory]
     [InlineData(499)]
     [InlineData(600)]
@@ -47,9 +45,9 @@ public class ApiStatusTests
         Assert.Equal(ApiStatus.Unknown, ApiStatusMap.FromHttpStatusCode(httpStatus));
     }
 
-    // A 403 is always a failed character match, and the body's error code says which of four it
-    // is. Each needs a different fix, so each gets its own status. An unknown or missing code takes
-    // the not-claimed fallback (ApiStatusMap.FromCharacterRefusalCode says why).
+    // A 403 is always a failed character match, and its error code names which of four; each needs a
+    // different fix. ApiStatusMap.FromCharacterRefusalCode says why an unknown or missing code falls
+    // back to not-claimed.
     [Theory]
     [InlineData("character_not_claimed", ApiStatus.CharacterNotClaimed)]
     [InlineData("character_not_verified", ApiStatus.CharacterNotVerified)]
@@ -63,8 +61,8 @@ public class ApiStatusTests
         Assert.Equal(expected, ApiStatusMap.FromHttpStatusCode(403, errorCode));
     }
 
-    // Codes match exactly. The server sends them lowercase, and a near miss is a code this plugin
-    // does not know, which takes the fallback above rather than a guess.
+    // Codes are compared exactly, and the server sends them lowercase, so a near miss is an unknown
+    // code and takes the fallback.
     [Fact]
     public void A_403_error_code_that_differs_only_in_case_takes_the_fallback()
     {
@@ -73,8 +71,6 @@ public class ApiStatusTests
             ApiStatusMap.FromHttpStatusCode(403, "CHARACTER_NOT_VERIFIED"));
     }
 
-    // The error code refines a 403 only. Every other status means what its number means, whatever
-    // the body says.
     [Theory]
     [InlineData(401, ApiStatus.InvalidToken)]
     [InlineData(429, ApiStatus.RateLimited)]
@@ -84,8 +80,6 @@ public class ApiStatusTests
         Assert.Equal(expected, ApiStatusMap.FromHttpStatusCode(httpStatus, "character_not_verified"));
     }
 
-    // The four character refusals are one family: the helper that names the family must cover
-    // every member and nothing else.
     [Theory]
     [InlineData(ApiStatus.CharacterNotClaimed, true)]
     [InlineData(ApiStatus.CharacterNotVerified, true)]
@@ -99,7 +93,7 @@ public class ApiStatusTests
         Assert.Equal(expected, ApiStatusMap.IsCharacterRefusal(status));
     }
 
-    // "Terminal" = retrying the identical request cannot help; stop and surface it to the user.
+    // Terminal: retrying the same request cannot help, so stop and show the user.
     [Theory]
     [InlineData(ApiStatus.InvalidToken)]             // 401 never heals on retry
     [InlineData(ApiStatus.CharacterNotClaimed)]      // user must claim the character on the website
@@ -116,8 +110,7 @@ public class ApiStatusTests
         Assert.False(ApiStatusMap.IsRetryable(status));
     }
 
-    // NotConfigured is produced by the client before any request leaves the machine, so no HTTP
-    // status code may ever map onto it.
+    // The client produces NotConfigured before any request is sent, so no HTTP status may map to it.
     [Theory]
     [InlineData(200)]
     [InlineData(401)]
@@ -128,7 +121,7 @@ public class ApiStatusTests
         Assert.NotEqual(ApiStatus.NotConfigured, ApiStatusMap.FromHttpStatusCode(httpStatus));
     }
 
-    // "Back off" = the server explicitly told us to wait (it sends Retry-After).
+    // Back off: the server said to wait, and sends Retry-After.
     [Theory]
     [InlineData(ApiStatus.RateLimited)]
     [InlineData(ApiStatus.SyncDisabled)]
@@ -139,7 +132,7 @@ public class ApiStatusTests
         Assert.False(ApiStatusMap.IsRetryable(status));
     }
 
-    // Transient failures we may retry once with backoff.
+    // Transient: retried once, with backoff.
     [Theory]
     [InlineData(ApiStatus.ServerError)]
     [InlineData(ApiStatus.NetworkError)]

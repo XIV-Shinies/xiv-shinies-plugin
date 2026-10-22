@@ -6,9 +6,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// Pins the occultProgression payload to the contract: the jobs map's key and value shape,
-// the exp ceiling's omission gate, and the optional knowledge block's level and timestamp
-// format. SyncFacts.Progression documents why each rule is what it is.
+// Pins the occultProgression payload to the contract. SyncFacts.Progression documents why each rule
+// holds.
 public class OccultProgressionFactsTests
 {
     private static readonly DateTimeOffset ObservedAt =
@@ -32,7 +31,7 @@ public class OccultProgressionFactsTests
         Assert.Equal(2, jobs["11"]!["level"]!.GetValue<int>());
     }
 
-    // Freelancer is MKDSupportJob row 0 and a real job, so the map must carry key "0".
+    // Freelancer is MKDSupportJob row 0, a real job.
     [Fact]
     public void Job_zero_is_real_and_survives()
     {
@@ -42,9 +41,7 @@ public class OccultProgressionFactsTests
         Assert.Equal(13, jobs["0"]!["level"]!.GetValue<int>());
     }
 
-    // The schema's exp ceiling is 100,000,000, and a value beyond it takes the job off the wire
-    // entirely (SyncFacts.Progression explains why omission beats clamping). Other jobs in the
-    // same pass are unaffected.
+    // The schema caps exp at 100,000,000. SyncFacts.Progression explains why omission beats clamping.
     [Fact]
     public void A_job_whose_exp_exceeds_the_ceiling_is_omitted_not_clamped()
     {
@@ -56,7 +53,6 @@ public class OccultProgressionFactsTests
         Assert.Equal(1840, jobs["4"]!["exp"]!.GetValue<int>());
     }
 
-    // The ceiling itself is a legal value — the omission gate is strictly "beyond", never "at".
     [Fact]
     public void An_exp_exactly_at_the_ceiling_survives_unchanged()
     {
@@ -65,8 +61,7 @@ public class OccultProgressionFactsTests
         Assert.Equal(100_000_000, result.Facts!["jobs"]!["7"]!["exp"]!.GetValue<int>());
     }
 
-    // The contract wants the key PRESENT only when an observation exists — the serializer's
-    // null-omission is not in play here because the node is built by hand.
+    // The node is built by hand, so the serializer's null omission cannot drop the key for it.
     [Fact]
     public void Knowledge_is_omitted_when_never_observed()
     {
@@ -86,8 +81,7 @@ public class OccultProgressionFactsTests
         Assert.Equal("2026-08-12T20:00:00Z", knowledge["observedAt"]!.GetValue<string>());
     }
 
-    // The server rejects numeric-offset timestamp forms, so an observation carrying a local
-    // offset must be CONVERTED to UTC on the wire, not stamped with its offset digits.
+    // The server rejects a timestamp with a numeric offset.
     [Fact]
     public void A_non_UTC_observation_time_is_converted_to_UTC_on_the_wire()
     {
@@ -104,7 +98,6 @@ public class OccultProgressionFactsTests
             result.Facts!["knowledge"]!["observedAt"]!.GetValue<string>());
     }
 
-    // A fractional observation time must not leak sub-second precision into the stamp.
     [Fact]
     public void The_knowledge_stamp_truncates_to_whole_seconds()
     {
@@ -127,11 +120,11 @@ public class OccultProgressionFactsTests
 
         Assert.True(result.WasCollected);
         Assert.Null(result.SkipReason);
-        // The category is a map, not an id list; the scopes vocabulary does not apply to it.
+        // A map, not an id list, so the scopes vocabulary does not apply.
         Assert.False(result.CompleteEnumeration);
     }
 
-    // The partial phrase is for the settings panel alone — it rides the result, never the wire.
+    // The partial note and the chip's hover copy are for the settings panel only.
     [Fact]
     public void A_partial_note_rides_the_result_and_never_reaches_the_facts()
     {
@@ -142,7 +135,6 @@ public class OccultProgressionFactsTests
         Assert.False(result.Facts!.AsObject().ContainsKey("partialNote"));
     }
 
-    // As is the chip's hover copy.
     [Fact]
     public void A_chip_detail_rides_the_result_and_never_reaches_the_facts()
     {
@@ -153,8 +145,8 @@ public class OccultProgressionFactsTests
         Assert.False(result.Facts!.AsObject().ContainsKey("collectedDetail"));
     }
 
-    // A knowledge sighting captured outside an instance travels alone: the jobs key is still
-    // present — the contract requires it — but empty, and the server's empty map writes nothing.
+    // A knowledge sighting from outside the instance travels alone. The contract requires the jobs
+    // key, and the server writes nothing for an empty map.
     [Fact]
     public void A_knowledge_only_payload_carries_an_empty_jobs_map()
     {
@@ -180,9 +172,8 @@ public class OccultProgressionFactsTests
 
     // --- What the pass counted ---------------------------------------------------------------
 
-    // These facts wrap two unrelated things, so their shape cannot be counted: 24 jobs beside a
-    // two-field knowledge sighting would add up to 26. The jobs are what the collection is about,
-    // so the result carries their number itself.
+    // The result counts the jobs alone. Counting the facts' shape would add the knowledge
+    // sighting's two fields.
     [Fact]
     public void Read_jobs_are_counted_without_the_knowledge_sighting()
     {
@@ -194,10 +185,9 @@ public class OccultProgressionFactsTests
         Assert.False(result.NothingReadThisPass);
     }
 
-    // Outside the instance the jobs are unreadable, while a knowledge sighting remembered from
-    // earlier still travels — so the facts go out with an empty jobs map. Reporting that as a
-    // count of zero would say the character holds no phantom job progress, which is a loss that
-    // cannot happen; the result reports the state instead and lets the log name it.
+    // Outside the instance the jobs are unreadable, but a remembered knowledge sighting still
+    // travels. A count of zero would claim the character lost all phantom job progress, which
+    // cannot happen.
     [Fact]
     public void An_empty_jobs_map_reports_nothing_read_rather_than_a_count_of_zero()
     {
@@ -210,8 +200,7 @@ public class OccultProgressionFactsTests
         Assert.Null(result.FactCount);
     }
 
-    // The count follows the wire, not the jobs handed in: a job dropped at the exp ceiling never
-    // reached the server, so counting it would make the log claim more than it sent.
+    // The count follows the wire: counting a dropped job would make the log claim more than it sent.
     [Fact]
     public void A_job_omitted_at_the_exp_ceiling_is_not_counted()
     {
@@ -221,10 +210,9 @@ public class OccultProgressionFactsTests
         Assert.Equal(1, result.FactCount);
     }
 
-    // The corner the wire-derived count exists for: if the game's memory layout shifts under a
-    // patch, every job can read as garbage and be dropped, leaving a payload identical to the
-    // one sent from outside the instance. Counting the jobs handed in would print a confident
-    // full total for an upload that carried nothing — exactly when an honest log matters most.
+    // Why the count follows the wire: a patch that shifts the game's memory layout can make every
+    // job read as garbage and be dropped. Counting the jobs handed in would then print a full total
+    // for an upload that carried nothing.
     [Fact]
     public void A_pass_whose_every_job_was_dropped_reports_nothing_read()
     {
