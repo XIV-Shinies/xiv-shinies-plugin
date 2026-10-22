@@ -37,8 +37,8 @@ public sealed record CrucibleObservationsRequest
     public required uint TerritoryTypeId { get; init; }
 
     /// <summary>
-    /// The snapshots, at most one per kind, in the order they were observed. Empty on a heartbeat
-    /// or a leave, and still sent as an empty list.
+    /// The snapshots, at most one per kind, in the order they were observed. Empty on a heartbeat, a
+    /// leave, or an enter with nothing read, and still sent as an empty list.
     /// </summary>
     public required IReadOnlyList<CrucibleObservation> Observations { get; init; }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using XIVShinies.SyncPlugin.Api;
 
@@ -188,6 +189,10 @@ public sealed class CrucibleUploadScheduler
             CrucibleFamiliarsObservation => "familiars",
             _ => throw new ArgumentException("An unknown observation kind.", nameof(observation)),
         };
+
+    /// <summary>An upload's kinds in its order, for the log, or "no snapshots" when it has none.</summary>
+    public static string KindsOf(IReadOnlyList<CrucibleObservation> observations) =>
+        observations.Count == 0 ? "no snapshots" : string.Join(", ", observations.Select(KindOf));
 
     /// <summary>Adopts the server's heartbeat cadence from <c>/config</c>, held within its bounds.</summary>
     public void ApplyHeartbeat(int heartbeatSeconds)

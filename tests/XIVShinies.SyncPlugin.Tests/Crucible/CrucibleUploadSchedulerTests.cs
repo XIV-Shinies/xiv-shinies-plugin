@@ -1046,4 +1046,19 @@ public class CrucibleUploadSchedulerTests
             Assert.Equal(json["kind"]!.GetValue<string>(), CrucibleUploadScheduler.KindOf(observation));
         }
     }
+
+    // No sort by name or by declared order, ascending or descending, gives this order.
+    [Fact]
+    public void An_uploads_kinds_are_listed_in_its_order()
+    {
+        Assert.Equal(
+            "familiars, team, bag",
+            CrucibleUploadScheduler.KindsOf([Familiars(false, 0), Team(false, 0), Bag(1, 0)]));
+    }
+
+    [Fact]
+    public void An_upload_with_no_snapshots_says_so()
+    {
+        Assert.Equal("no snapshots", CrucibleUploadScheduler.KindsOf([]));
+    }
 }

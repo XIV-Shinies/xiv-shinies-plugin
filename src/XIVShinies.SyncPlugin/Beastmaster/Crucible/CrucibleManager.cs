@@ -1,9 +1,11 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using Serilog.Events;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Diagnostics;
 using XIVShinies.SyncPlugin.Sync;
@@ -492,6 +494,20 @@ internal sealed class CrucibleManager : IDisposable
 
         try
         {
+            var kinds = CrucibleUploadScheduler.KindsOf(upload.Observations);
+            var label = $"Crucible {upload.Trigger} upload ({kinds})";
+
+            // Verbose: a run sends many snapshots, and a full team one is about two kilobytes. Logging the
+            // snapshots alone keeps the character's name, world and id hash out of the log.
+            if (log.MinimumLogLevel <= LogEventLevel.Verbose)
+            {
+                foreach (var observation in upload.Observations)
+                {
+                    var json = JsonSerializer.Serialize(observation, ApiJson.Options);
+                    log.Verbose($"Crucible {upload.Trigger} snapshot: {json}");
+                }
+            }
+
             // Nothing below touches the game, so the method may resume on any thread.
             var response = await apiClient
                 .PostCrucibleObservationsAsync(request, lifetimeToken)
@@ -509,7 +525,7 @@ internal sealed class CrucibleManager : IDisposable
                     scheduler.MarkAccepted(upload, now);
                     syncWait.UploadAccepted();
                     settled = true;
-                    LogAccepted(response.Value, upload.Trigger);
+                    LogAccepted(response.Value, label);
                     break;
 
                 // syncWait.Arm decides whether Tick may end the wait early. It runs before the
@@ -526,14 +542,13 @@ internal sealed class CrucibleManager : IDisposable
                     // The note is the plugin's own text, chosen by matching the code, so no
                     // server-supplied text reaches the log.
                     var busyNote = CrucibleOutcomePolicy.IsBusy(errorCode) ? " (busy)" : string.Empty;
-                    log.Debug(
-                        $"Crucible {upload.Trigger} upload will be sent again: {response.Status}{busyNote}.");
+                    log.Debug($"{label} will be sent again: {response.Status}{busyNote}.");
                     break;
 
                 case CrucibleOutcomeKind.Drop:
                     scheduler.MarkDropped(upload, now, outcome.Until);
                     settled = true;
-                    LogRejected(upload.Trigger, response);
+                    LogRejected(label, response);
                     break;
 
                 // The halt names the fix on the sync card and each sharing card it stops, and keeps the
@@ -576,14 +591,15 @@ internal sealed class CrucibleManager : IDisposable
 
     /// <summary>Logs an accepted upload with what the server made of it.</summary>
     /// <param name="value">The 200 body, when one was parsed.</param>
-    private void LogAccepted(CrucibleObservationsResponse? value, CrucibleTrigger trigger)
+    /// <param name="label">The upload's trigger and kinds, as the log names it.</param>
+    private void LogAccepted(CrucibleObservationsResponse? value, string label)
     {
         // Server strings are clamped: the log is durable, and the backend is user-overridable.
         var outcome = ServerText.Clamp(value?.Outcome ?? "ok");
         var run = value?.RunId is { } id ? $" run={ServerText.Clamp(id)}" : string.Empty;
         var events = value?.Events is { } count ? $" events={count}" : string.Empty;
 
-        log.Debug($"Crucible {trigger} upload: {outcome}{run}{events}.");
+        log.Debug($"{label}: {outcome}{run}{events}.");
     }
 
     /// <summary>Logs an upload the server refused as a payload it will not take.</summary>
@@ -591,9 +607,10 @@ internal sealed class CrucibleManager : IDisposable
     /// The first since the sharing last started over is a warning, since the plugin and the server
     /// disagree about the contract; the rest are debug lines, so a run of refusals does not fill the log.
     /// </remarks>
-    private void LogRejected(CrucibleTrigger trigger, ApiResponse<CrucibleObservationsResponse> response)
+    /// <param name="label">The upload's trigger and kinds, as the log names it.</param>
+    private void LogRejected(string label, ApiResponse<CrucibleObservationsResponse> response)
     {
-        var message = $"Crucible {trigger} upload refused: {response.Status} ({response.HttpStatusCode}).";
+        var message = $"{label} refused: {response.Status} ({response.HttpStatusCode}).";
 
         if (rejectionReported)
         {
