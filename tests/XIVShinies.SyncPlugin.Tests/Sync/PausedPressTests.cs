@@ -5,11 +5,9 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
 // A "Sync now" press made while the website has syncing off: the plugin asks /config once, and
-// syncs if the answer says syncing is back on. Polls are numbered as they start; each `[Fact]` is
-// one test, like `it(...)` in Jest.
+// syncs if the answer says syncing is back on. Polls are numbered as they start.
 public class PausedPressTests
 {
-    // An arbitrary fixed instant. Tests move time by adding to it, never by waiting.
     private static readonly DateTimeOffset T0 = new(2026, 10, 20, 20, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -50,8 +48,7 @@ public class PausedPressTests
         Assert.True(press.PollDue(3, pollInFlight: false, T0));
     }
 
-    // A press after an answered one waits out the floor: presses start at most one poll every ten
-    // seconds, however fast the button goes.
+    // Presses start at most one poll per floor, however fast the button goes.
     [Fact]
     public void Presses_poll_at_most_once_per_floor()
     {
@@ -88,7 +85,7 @@ public class PausedPressTests
         Assert.True(press.Settle(pollNumber: 4, syncEnabled: true));
     }
 
-    // Either way the press is answered: it asks for no further poll.
+    // An off answer or no answer still settles the press, so it asks for no further poll.
     [Theory]
     [InlineData(false)]
     [InlineData(null)]
@@ -113,9 +110,8 @@ public class PausedPressTests
         Assert.True(press.PollDue(3, false, T0));
     }
 
-    // A second press while the first's poll is on its way takes its place: the player may have turned
-    // the switch back on in between, so that poll's answer does not settle it, and a poll of its own
-    // goes once the floor has passed.
+    // A second press while the first's poll is on its way waits for a poll of its own, after the
+    // floor: the player may have turned syncing back on in between.
     [Fact]
     public void A_later_press_waits_for_a_poll_started_after_it()
     {

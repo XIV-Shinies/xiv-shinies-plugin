@@ -10,15 +10,14 @@ namespace XIVShinies.SyncPlugin.Tests.Crucible;
 // piece being played.
 public class CrucibleBoardTests
 {
-    // Positions in the window's values: its view and count, the mode text, and where the records
-    // start and how many values each spans.
+    // Positions in the window's values.
     private const int View = 1;
     private const int Count = 5;
     private const int ModeText = 40047;
     private const int FirstRecord = 6;
     private const int RecordStride = 40;
 
-    // Offsets within one record: its type, its piece's node, and the piece's progress.
+    // Offsets within one record.
     private const int Type = 0;
     private const int Node = 1;
     private const int Progress = 6;
@@ -26,9 +25,7 @@ public class CrucibleBoardTests
     /// <summary>The record type of an enemy row.</summary>
     private const uint EnemyRow = 3;
 
-    // Before entering, the whole board is listed and nothing has been reached. The window lists the
-    // pieces from node 12 down: `Enumerable.Range(1, 12)` counts 1 to 12, `Reverse` flips it around,
-    // and `Select` maps each number, like `Array.map` in TypeScript.
+    // The window lists the pieces from node 12 down.
     [Fact]
     public void The_pre_entry_board_lists_every_piece_unreached()
     {
@@ -44,8 +41,6 @@ public class CrucibleBoardTests
         Assert.Null(reading.ModeText);
     }
 
-    // Mid-run, each piece carries its progress: cleared, the branch not taken, or not reached.
-    // `ToDictionary` builds a lookup from node to progress, like `Object.fromEntries` in TypeScript.
     [Fact]
     public void Board_layout_mid_run_reads_each_pieces_progress()
     {
@@ -62,8 +57,6 @@ public class CrucibleBoardTests
         Assert.Equal(CrucibleProgress.NotReached, progress[12]);
     }
 
-    // Mode text made only of formatting codes is no mode at all. The `!` after `Read(values)` tells
-    // the compiler the result is not null here, like TypeScript's `!`.
     [Fact]
     public void Mode_text_of_only_formatting_codes_reads_as_none()
     {
@@ -73,8 +66,8 @@ public class CrucibleBoardTests
         Assert.Null(CrucibleBoard.Read(values)!.ModeText);
     }
 
-    // The whole-board view names no current piece: its selection follows whichever card is open,
-    // which here is the boss while the shop before it is still unvisited.
+    // The whole-board view's selection follows whichever card is open: here the boss, while the shop
+    // before it is still unvisited.
     [Fact]
     public void The_whole_board_view_names_no_current_piece()
     {
@@ -84,9 +77,7 @@ public class CrucibleBoardTests
         Assert.Null(reading.CurrentNodeIndex);
     }
 
-    // An expanded fight card is followed by its enemy rows, which are skipped by their record type:
-    // the reading lists the twelve pieces and nothing else. `Distinct` drops repeats, like spreading
-    // into a `Set`.
+    // An expanded fight card is followed by its enemy rows, told apart by their record type.
     [Fact]
     public void Enemy_rows_are_skipped_and_never_read_as_pieces()
     {
@@ -97,7 +88,6 @@ public class CrucibleBoardTests
         Assert.Equal(12, reading.Pieces.Select(piece => piece.NodeIndex).Distinct().Count());
     }
 
-    // Only an enemy row's record type is looked at. Whatever else it holds, the reading is the same.
     [Fact]
     public void Nothing_in_an_enemy_row_but_its_type_is_read()
     {
@@ -110,12 +100,10 @@ public class CrucibleBoardTests
         for (var offset = 1; offset < RecordStride; offset++)
             values[enemyRow + offset] = AddonValue.FromText("not read");
 
-        // Records compare by their values, so this checks every piece's node and progress.
         Assert.Equal(before!.Pieces, CrucibleBoard.Read(values)!.Pieces);
     }
 
-    // Board 2's random piece reads like any other once resolved. `Single` returns the one piece that
-    // matches and throws unless exactly one does.
+    // Board 2's random piece reads like any other once resolved.
     [Fact]
     public void Board_two_reads_its_thirteen_pieces()
     {
@@ -128,7 +116,7 @@ public class CrucibleBoardTests
             reading.Pieces.Single(piece => piece.NodeIndex == 10).Progress);
     }
 
-    // Scoped to a lineup, the window lists the one piece being played: that is where the player is.
+    // Scoped to a lineup, the window lists only the piece being played, which is where the player is.
     [Fact]
     public void The_scoped_view_names_the_piece_being_played()
     {
@@ -140,9 +128,8 @@ public class CrucibleBoardTests
         Assert.Equal(1u, reading.CurrentNodeIndex);
     }
 
-    // A scoped view that lists anything but exactly one piece is not the view this reader knows.
-    // The scoped-view fixture lists its piece and two enemy rows; the first enemy row becomes a
-    // second piece here.
+    // The scoped view this reader knows lists exactly one piece. The fixture's piece is followed by
+    // two enemy rows, and the first becomes a second piece here.
     [Fact]
     public void A_scoped_view_with_two_pieces_refuses_the_reading()
     {
@@ -155,7 +142,7 @@ public class CrucibleBoardTests
         Assert.Null(CrucibleBoard.Read(values));
     }
 
-    // The same view with its one piece made an enemy row lists no piece at all.
+    // Making the one piece an enemy row leaves no piece.
     [Fact]
     public void A_scoped_view_with_no_piece_refuses_the_reading()
     {
@@ -214,7 +201,7 @@ public class CrucibleBoardTests
         Assert.Null(CrucibleBoard.Read(values));
     }
 
-    // A count whose records would run past the values handed is refused, not read short.
+    // The reading is refused rather than cut short at the last value.
     [Fact]
     public void A_count_beyond_the_values_refuses_the_reading()
     {
@@ -223,9 +210,8 @@ public class CrucibleBoardTests
         Assert.Null(CrucibleBoard.Read(values));
     }
 
-    // The mode text sits past the last record the window holds. A count whose records would reach
-    // it is refused, so the mode is never read out of a record. This test builds the window itself:
-    // every record an enemy row, and text at the mode's place that would otherwise read as the mode.
+    // The mode text sits past the last record, so a count that reaches it would read the mode out of
+    // a record. The window is built here: every record an enemy row, and text at the mode's place.
     [Fact]
     public void A_count_whose_records_reach_the_mode_text_refuses_the_reading()
     {

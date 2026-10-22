@@ -9,9 +9,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The tamedBeasts category carries objects rather than bare ids, because a pact is more than its
-// existence — the contract also accepts a rank and a battlehorn slot per beast. These pin the shape
-// that leaves the plugin: the number always, the rank once it has been read, the battlehorn never.
+// tamedBeasts carries objects, not bare ids: the contract also accepts a rank and a battlehorn slot
+// per beast. The plugin sends the number always, the rank once read, the battlehorn never.
 public class TamedBeastFactsTests
 {
     private static JsonArray ArrayOf(CollectResult result) => result.Facts!.AsArray();
@@ -25,8 +24,7 @@ public class TamedBeastFactsTests
         Assert.Equal(30u, entry["number"]!.GetValue<uint>());
     }
 
-    // With no rank read, a beast carries its number alone. A stray key here would be a claim the
-    // plugin cannot support.
+    // A stray key would be a claim the plugin cannot support.
     [Fact]
     public void A_beast_with_no_rank_read_carries_only_its_number()
     {
@@ -36,7 +34,6 @@ public class TamedBeastFactsTests
         Assert.Equal(new[] { "number" }, entry.Select(pair => pair.Key).ToArray());
     }
 
-    // `new Dictionary<int, int> { [30] = 9 }` builds a map with one entry, like `new Map([[30, 9]])`.
     [Fact]
     public void A_read_rank_travels_beside_its_beast()
     {
@@ -47,8 +44,8 @@ public class TamedBeastFactsTests
         Assert.Equal(9, entries[1]["rank"]!.GetValue<int>());
     }
 
-    // The list is what says a beast is held. A rank for a beast it does not name would claim a pact
-    // nothing has shown, so it is not sent.
+    // The list is what says a beast is held, so a rank for an unlisted beast would claim a pact
+    // nothing has shown.
     [Fact]
     public void A_rank_for_a_beast_not_listed_is_not_sent()
     {
@@ -59,8 +56,8 @@ public class TamedBeastFactsTests
         Assert.Null(entry["rank"]);
     }
 
-    // The contract accepts 1–25. A rank outside it would reject the whole upload, so it is dropped
-    // and the beast goes up without one.
+    // The contract accepts 1 to 25, and a rank outside it would make the server reject the whole
+    // upload. The beast goes up without one.
     [Theory]
     [InlineData(0)]
     [InlineData(26)]
@@ -81,8 +78,7 @@ public class TamedBeastFactsTests
         Assert.Equal(3, ArrayOf(result).Count);
     }
 
-    // The same floor the id-list factory enforces: one invalid id makes the server reject the whole
-    // upload, every category with it, so a non-positive number can never leave this method.
+    // One invalid id makes the server reject the whole upload, every category with it.
     [Fact]
     public void A_non_positive_number_never_reaches_the_wire()
     {
@@ -92,8 +88,8 @@ public class TamedBeastFactsTests
         Assert.Equal(30u, entry["number"]!.GetValue<uint>());
     }
 
-    // "The bestiary has not been read yet" is a real answer, and distinct from a skip: a skip would
-    // claim the source could not be read.
+    // "The bestiary has not been read yet" is a real answer. A skip would claim the source could not
+    // be read.
     [Fact]
     public void An_empty_session_is_still_a_collected_fact()
     {
@@ -118,7 +114,6 @@ public class TamedBeastFactsTests
         Assert.False(CollectResult.TamedBeasts(new[] { 30 }).NothingReadThisPass);
     }
 
-    // A list that was ONLY padding is the same story as an empty one, not a different one.
     [Fact]
     public void A_list_of_only_invalid_numbers_reports_nothing_read()
     {
@@ -129,8 +124,7 @@ public class TamedBeastFactsTests
         Assert.Empty(ArrayOf(result));
     }
 
-    // The claim is the collector's to make, and it only makes it once the whole bestiary has been
-    // read. A caller that does not ask gets the safe answer.
+    // The collector asks for the claim only once the whole bestiary has been read.
     [Fact]
     public void The_claim_is_withheld_unless_the_collector_asks_for_it()
     {
@@ -146,8 +140,8 @@ public class TamedBeastFactsTests
         Assert.Equal("Counts what it saw.", result.CollectedDetail);
     }
 
-    // The serializer's camelCase policy is what turns the C# property into the contract's key, so
-    // this pins the policy rather than the property name.
+    // The serializer's camelCase policy makes the contract's key, so this pins the policy, not the
+    // property name.
     [Fact]
     public void The_wire_key_is_camel_cased_by_the_shared_serializer_policy()
     {
@@ -165,7 +159,6 @@ public class TamedBeastFactsTests
         Assert.Equal("[{\"number\":30,\"rank\":9}]", json);
     }
 
-    // Both ends of the contract's range reach the wire.
     [Theory]
     [InlineData(TamedBeast.MinRank)]
     [InlineData(TamedBeast.MaxRank)]

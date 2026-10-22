@@ -6,27 +6,23 @@ using Xunit;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Sync;
-// CategoryKeyReflection, for checking the seed's figures still cover every declared category.
 using XIVShinies.SyncPlugin.Tests.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// The screenshot seed exists so the upload log's interesting states can be photographed without
-// waiting on real syncs. Its one real failure mode is quiet: a seeded row that CLAIMS a state the
-// window then declines to draw — a "(changed)" mark the diff does not agree with, a proof note
-// that does not appear. So the tests that check a claimed state run the seeded entries through
-// the same pure rules the window uses (UploadLogDiff, UploadLogText); the rest read the records.
+// The screenshot seed stages the upload log's states without waiting on real syncs. It fails
+// quietly: a seeded row claims a state the window then declines to draw. So the tests of a claimed
+// state run the seed through the window's own rules (UploadLogDiff, UploadLogText).
 //
-// Compiled only into DEBUG builds, like the seed itself — `dotnet test -c Release` excludes this
-// whole file, which is why CI builds and tests both configurations.
+// DEBUG only, like the seed: `dotnet test -c Release` skips this file, which is why CI builds and
+// tests both configurations.
 public class UploadLogSeedTests
 {
     private static readonly DateTimeOffset Now =
         new(2026, 8, 27, 18, 0, 0, TimeSpan.Zero);
 
-    // The seed asks a collector only for its key and its manifest flag; the rest of ICollector is
-    // implemented because the interface requires it. Using a fake rather than the real registry
-    // keeps these tests Dalamud-free and pins the seed's promise that it reads what it is GIVEN.
+    // The seed reads only a collector's key and manifest flag; the rest satisfies the interface. A
+    // fake keeps these tests free of Dalamud and pins that the seed reads what it is given.
     private sealed class FakeCollector : ICollector
     {
         public FakeCollector(string categoryKey) => CategoryKey = categoryKey;
@@ -46,8 +42,7 @@ public class UploadLogSeedTests
         public CollectResult Collect(CollectContext context) => CollectResult.Ids([1u]);
     }
 
-    // Stands in for the real registry: the three collections the seed names explicitly, the
-    // manifest-driven one, and a collection this seed has never heard of.
+    // The three collections the seed names, the manifest-driven one, and one the seed does not know.
     private static IReadOnlyList<ICollector> Collectors() =>
     [
         new FakeCollector(CategoryKeys.Mounts),
@@ -57,15 +52,14 @@ public class UploadLogSeedTests
         new FakeCollector("facewear"),
     ];
 
-    // The window reads the log newest first; Build returns oldest first, because Record pushes
-    // each entry to the front. Reversing here is what the plugin's seeding loop does in effect.
+    // Newest first, as the window reads the log. Build returns oldest first because Record pushes
+    // each entry to the front.
     private static IReadOnlyList<UploadLogEntry> AsDisplayed() =>
         UploadLogSeed.Build(Collectors(), Now).Reverse().ToList();
 
     // --- The order the log is built in -------------------------------------------------------
 
-    // Oldest first out of Build, so the entries come out newest first once recorded. Backwards,
-    // the log would show a login sync as the most recent thing after an unlock.
+    // Built backwards, the log would show a login sync as newer than an unlock.
     [Fact]
     public void The_entries_are_built_oldest_first()
     {
@@ -75,10 +69,8 @@ public class UploadLogSeedTests
             Assert.True(built[i - 1].At < built[i].At);
     }
 
-    // Recording the seed into a real log, rather than trusting the order it was built in. The
-    // handoff is where the two halves could disagree — Build returns oldest first and Record
-    // pushes to the front — and every test below reads the log the way the window does, so an
-    // inverted log would quietly invalidate all of them.
+    // Checks the handoff from Build to Record in a real log. Every test below reads the log as the
+    // window does, so an inverted log would quietly invalidate them all.
     [Fact]
     public void Recording_the_seed_into_a_log_puts_the_newest_upload_first()
     {
@@ -90,8 +82,7 @@ public class UploadLogSeedTests
         Assert.Equal(SyncTrigger.Login, log.Entries[^1].Trigger);
     }
 
-    // Every seeded upload has to look like one that succeeded: the point is to photograph the
-    // ordinary log, and a failure row would put a red status in a gallery screenshot.
+    // A failure row would put a red status in a gallery screenshot.
     [Fact]
     public void Every_seeded_upload_succeeded()
     {
@@ -100,8 +91,7 @@ public class UploadLogSeedTests
 
     // --- The states each row exists to show --------------------------------------------------
 
-    // The newest row is an unlock, which carries only the collection that changed — and the diff
-    // must agree, or the row shows a lone category with no mark and the screenshot is pointless.
+    // If the diff disagreed, the row would show a lone category with no mark.
     [Fact]
     public void The_unlock_row_carries_one_category_and_the_diff_marks_it_changed()
     {
@@ -113,9 +103,7 @@ public class UploadLogSeedTests
         Assert.Contains(category.Key, UploadLogDiff.ChangedCategories(displayed, 0));
     }
 
-    // The scheduled sync sweeps everything with exactly one collection moved, so the screenshot
-    // shows a single "(changed)" mark among steady counts. More than one and the mark stops
-    // reading as "this is the thing that moved".
+    // One "(changed)" mark among steady counts reads as "this is what moved"; more would not.
     [Fact]
     public void The_scheduled_row_sweeps_everything_and_marks_exactly_one_category()
     {
@@ -126,8 +114,8 @@ public class UploadLogSeedTests
         Assert.Single(UploadLogDiff.ChangedCategories(displayed, index));
     }
 
-    // The manual row exists to show the server's proof note, which only appears when the entry
-    // reports proved steps. Asserted through ProofText, the same rule the window prints.
+    // The proof note appears only when the entry reports proved steps. ProofText is the rule the
+    // window prints.
     [Fact]
     public void The_manual_row_shows_the_servers_proof_note()
     {
@@ -136,9 +124,8 @@ public class UploadLogSeedTests
         Assert.Equal("2 new steps proven", UploadLogText.ProofText(manual));
     }
 
-    // The login row exists to show the "Could not read:" line, which is driven by the skip map.
-    // The skipped collection must also be absent from the categories, since a category cannot
-    // have been both sent and unreadable in the same pass.
+    // The skip map drives the "Could not read:" line. A category cannot be both sent and unreadable
+    // in one pass.
     [Fact]
     public void The_login_row_reports_a_category_it_could_not_read()
     {
@@ -152,10 +139,9 @@ public class UploadLogSeedTests
 
     // --- Staying honest as collections are added ---------------------------------------------
 
-    // The seed reads the collectors it is given, so a collection added later appears in the
-    // screenshot without anyone editing the seed — the same promise the runner and settings UI
-    // make. A collection with no figure on file still gets a plausible count rather than zero,
-    // which would photograph as "this collection synced nothing".
+    // A collection added later appears without editing the seed, as it does in the runner and the
+    // settings UI. With no figure on file it still gets a plausible count; zero would photograph as
+    // "this collection synced nothing".
     [Fact]
     public void A_collection_the_seed_has_never_heard_of_still_gets_a_count()
     {
@@ -165,8 +151,7 @@ public class UploadLogSeedTests
         Assert.True(unknown.Count > 0);
     }
 
-    // A manifest-driven collection is compared on its owned-entry count, so it needs one — with
-    // none, the window can say nothing about it and the "(changed)" logic has nothing to read.
+    // The window and the "(changed)" logic compare a manifest-driven collection on its owned count.
     [Fact]
     public void The_manifest_driven_collection_carries_an_owned_count()
     {
@@ -177,8 +162,7 @@ public class UploadLogSeedTests
         Assert.NotNull(items.OwnedCount);
     }
 
-    // Nothing here may invent a number a real character could not show. The counts are fabricated
-    // but must stay in believable ranges, and a zero or a negative would photograph as a bug.
+    // The counts are made up but must be believable; a zero or a negative would photograph as a bug.
     [Fact]
     public void Every_seeded_count_is_a_believable_positive_number()
     {
@@ -192,9 +176,7 @@ public class UploadLogSeedTests
         }
     }
 
-    // A manifest asks about items the character does not have, so the number owned is always the
-    // smaller of the two. Equal or larger would photograph as a character who owns more of a list
-    // than the list contains.
+    // A manifest asks about items the character does not have, so the owned count is always smaller.
     [Fact]
     public void The_owned_count_is_smaller_than_the_number_of_items_asked_about()
     {
@@ -204,14 +186,13 @@ public class UploadLogSeedTests
         Assert.True(items.OwnedCount < items.Count);
     }
 
-    // The manifest-driven collection is compared on its owned-entry count, so moving it has to
-    // move THAT number — moving the fact count would leave the row unmarked. Covered separately
-    // because the rows above all move an ordinary collection, leaving this branch unexercised.
+    // Moving the fact count rather than the owned count would leave the row unmarked. The rows above
+    // all move an ordinary collection, so this branch needs its own test.
     [Fact]
     public void Moving_a_manifest_driven_collection_marks_it_changed()
     {
-        // Only the manifest-driven collection is registered, so it is the one the scheduled row
-        // moves — the seed falls back to the first collection when the key it names is absent.
+        // Only the items collector is registered, so the scheduled row moves it: the seed falls back to
+        // the first collection when the key it names is absent.
         var collectors = new List<ICollector>
         {
             new FakeCollector(CategoryKeys.Items) { UsesItemManifest = true },
@@ -223,13 +204,12 @@ public class UploadLogSeedTests
         Assert.Contains(CategoryKeys.Items, UploadLogDiff.ChangedCategories(displayed, index));
     }
 
-    // Pins that a collection absent from the seeded list takes its skip reason with it, rather
-    // than the reason landing on another collection. Build explains why that matters.
+    // The skip reason must leave with its collection rather than land on another; Build says why.
     [Fact]
     public void The_unreadable_row_is_dropped_when_its_collection_is_not_seeded()
     {
-        // No occult progression collector: exactly what the gate filter produces when the user or
-        // the server has that collection switched off.
+        // No occult progression collector, as the gate filter leaves it when the user or the server
+        // switches that collection off.
         var collectors = new List<ICollector>
         {
             new FakeCollector(CategoryKeys.Mounts),
@@ -238,25 +218,20 @@ public class UploadLogSeedTests
 
         var login = UploadLogSeed.Build(collectors, Now).Single(e => e.Trigger == SyncTrigger.Login);
 
-        // Nothing blamed, and nothing withheld from the sent list to match a blame that was
-        // never made.
         Assert.Empty(login.Skipped);
         Assert.Equal(collectors.Count, login.Categories.Count);
     }
 
-    // The seed reads the collectors it is given, so an empty list means there is nothing to
-    // photograph, and an empty log is the honest answer. The guard is also what makes the
-    // collectors[0] fallback inside the builder safe.
+    // Every row needs a collection, so an empty registry seeds nothing. Returning early also keeps the
+    // builder's collectors[0] fallback safe.
     [Fact]
     public void An_empty_registry_produces_an_empty_log()
     {
         Assert.Empty(UploadLogSeed.Build(Array.Empty<ICollector>(), Now));
     }
 
-    // The fallback keeps a screenshot possible, but it cannot keep the numbers sensible: a
-    // collection with no figure on file photographs at the fallback, which is believable for a
-    // small collection and absurd for a quest-sized one. This fails the moment a collection is
-    // added, which is exactly when someone should be choosing its number.
+    // The fallback count is believable for a small collection and absurd for a quest-sized one. This
+    // fails when a collection is added, which is when someone should choose its number.
     [Fact]
     public void Every_declared_category_has_a_figure_on_file()
     {

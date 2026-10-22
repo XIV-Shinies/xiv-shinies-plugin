@@ -12,67 +12,42 @@ using XIVShinies.SyncPlugin.Diagnostics;
 namespace XIVShinies.SyncPlugin.Sync;
 
 /// <summary>
-/// The orchestrator: listens to the game, decides nothing itself, and does the work.
+/// The orchestrator: listens to the game and does the work, but decides nothing itself.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Every policy question this class faces is answered somewhere else, by a class with no game and no
-/// network in it: <see cref="UploadGate"/> says whether an upload is allowed, <see cref="SyncScheduler"/>
-/// says when and what, <see cref="RetryPolicy"/> says what to do about a failure,
-/// <see cref="CollectorSelection"/> says which collectors run, and <see cref="SyncPayloadBuilder"/>
-/// says what the body looks like. That is what makes those parts unit-testable, and it is why this
-/// class cannot be — it holds Dalamud services, so merely constructing it requires the game process.
-/// It is verified by in-game QA instead.
-/// </para>
-/// <para>
-/// <b>Threading.</b> Two worlds meet here. Game state may only be read on the framework thread, and
-/// HTTP may never run on it. So collection happens inside the per-frame <c>Update</c> handler, and
-/// the resulting payload — a plain object with no game handles left in it — is uploaded on a
-/// background task. Nothing ever blocks the framework thread waiting for a response.
-/// </para>
-/// <para>
-/// <b>Nothing here fires on its own before the user opts in.</b> The constructor subscribes to game
-/// events, but every path out of them runs through <see cref="UploadGate"/> first.
-/// </para>
+/// Each policy lives in a class with no game or network in it: <see cref="UploadGate"/> (whether),
+/// <see cref="SyncScheduler"/> (when and what), <see cref="RetryPolicy"/> (failures),
+/// <see cref="CollectorSelection"/> (which collectors) and <see cref="SyncPayloadBuilder"/> (the body).
+/// Every path out of the game events runs through <see cref="UploadGate"/> first, so nothing here
+/// contacts the server before the user opts in except <see cref="RequestOnboardingConfigPoll"/>, on
+/// the user's Verify press. The threading rules sit with the fields below.
 /// </remarks>
 internal sealed class SyncManager : IDisposable
 {
-    /// <summary>How often to re-fetch <c>/config</c>, per the contract's "roughly every 30 minutes".</summary>
+    /// <summary>
+    /// How often to re-fetch <c>/config</c>, per the contract's "roughly every 30 minutes".
+    /// </summary>
     private static readonly TimeSpan ConfigPollInterval = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// How long to wait before retrying a <c>/config</c> poll that did not answer, and before asking
-    /// again after a 503 saying syncing is switched off (see <see cref="BringConfigPollForward"/>).
+    /// again after a 503 <c>sync_disabled</c> (see <see cref="BringConfigPollForward"/>).
     /// </summary>
     /// <remarks>
-    /// A failed poll must not cost a full interval. Without a config the plugin does not know which
-    /// items the server asks about, so a first-run user whose poll happened to meet a network blip would
-    /// otherwise sit for half an hour with the item collection unread and no way to hurry it along. Long
-    /// enough that a server having a bad minute is not hammered; short enough that the user is unlikely
-    /// to notice the gap.
+    /// Without a config the plugin does not know which items to read, so a failed first poll must not
+    /// leave the item collection unread for a full interval. Two minutes spares a struggling server and
+    /// is short enough that the user is unlikely to notice.
     /// </remarks>
     private static readonly TimeSpan ConfigPollRetryDelay = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// How long to wait after the login event before reading the character.
-    /// </summary>
+    /// <summary>How long to wait after the login event before reading the character.</summary>
     /// <remarks>
-    /// <para>
-    /// The <c>Login</c> event fires early. Unlock bitmaps, the achievement list, and inventory all
-    /// stream in over the following seconds, so collecting immediately would read a half-populated
-    /// world and report far less than the character owns.
-    /// </para>
-    /// <para>
-    /// The wait is load-bearing. Most sheet-backed collections declare their read a
-    /// <b>complete</b> enumeration (<see cref="Collectors.CollectResult.CompleteEnumeration"/>,
-    /// declared per collection on <see cref="Collectors.CategoryInfo.EnumeratesCompleteDomain"/>),
-    /// which the upload passes to the server — and a declared-complete list makes every id it
-    /// lacks count as evidence of absence. Reading before the game has finished populating those
-    /// bitmaps would therefore not just under-report; it would assert that the missing entries are
-    /// genuinely unowned, and the site would question the user's own manual marks on the strength
-    /// of it. Shortening or removing this wait needs a readiness gate in its place (the
-    /// achievements collector's <c>precondition</c> is the model).
-    /// </para>
+    /// The <c>Login</c> event fires before unlock bitmaps, the achievement list and inventory have
+    /// loaded. Most sheet-backed collections declare their read complete
+    /// (<see cref="Collectors.CategoryInfo.EnumeratesCompleteDomain"/>), so an early read would tell the
+    /// server the missing ids are unowned, and the site would question the user's own manual marks.
+    /// Shortening this wait needs a readiness gate in its place, like the achievements collector's
+    /// <c>precondition</c>.
     /// </remarks>
     private static readonly TimeSpan LoginSettleDelay = TimeSpan.FromSeconds(10);
 
@@ -93,57 +68,51 @@ internal sealed class SyncManager : IDisposable
     private readonly ApiClient apiClient;
     private readonly PluginSettings settings;
 
-    /// <summary>
-    /// Persists the settings object; invoked after this class mutates settings. Injected as a
-    /// callback so this class needs no reference to the Dalamud config shell.
-    /// </summary>
-    // `Action` is the built-in type for a parameterless, void-returning function value — the
-    // closest React analog is a `() => void` callback handed down as a prop: the caller decides
-    // what "persist" concretely does, and this class just calls it.
+    /// <summary>Saves the settings. A callback, so this class needs no Dalamud config reference.</summary>
     private readonly Action saveSettings;
 
     private readonly IReadOnlyList<ICollector> collectors;
     private readonly string pluginVersion;
 
-    /// <summary>The source of "now". Injected so the schedule never depends on the wall clock in tests.</summary>
     private readonly TimeProvider timeProvider;
 
     private readonly SyncScheduler scheduler = new();
 
-    // What each recent upload sent and how the server answered — the settings window's upload
-    // log. In memory only; see UploadLog for why it is deliberately not persisted.
+    // The settings window's upload log. In memory only; see UploadLog for why.
     private readonly UploadLog uploadLog = new();
 
-    // True once the FIRST /config poll of this plugin load has answered, successfully or not.
-    // Sweeps are held until then (see DispatchDueWork): the item manifest lives only in memory,
-    // so without the hold the session's first sweep races the fetch and runs manifest-less.
-    // Volatile: written by the poll task, read by the framework tick.
+    // True once this load's first /config poll has answered, successfully or not. Sweeps wait for
+    // it; see OnFrameworkUpdate.
     private volatile bool firstConfigAnswerSeen;
 
-    /// <summary>
-    /// Canceled on unload, so an upload in flight when the plugin is torn down stops rather than
-    /// completing against disposed state.
-    /// </summary>
+    /// <summary>Canceled on unload, so work in flight stops instead of using disposed state.</summary>
     private readonly CancellationTokenSource lifetime = new();
 
-    /// <summary>
-    /// A copy of <see cref="lifetime"/>'s token, taken before it can ever be disposed.
-    /// </summary>
+    /// <summary>A copy of <see cref="lifetime"/>'s token, taken before it can be disposed.</summary>
     /// <remarks>
-    /// Reading <c>lifetime.Token</c> after the source is disposed throws. Background work started
-    /// before <see cref="Dispose"/> may still be running when that happens, so the token is captured
-    /// once here. A token whose source was canceled and then disposed is still safe to observe.
+    /// Reading <c>lifetime.Token</c> after Dispose throws, and background work may still be running
+    /// then. A token whose source was canceled and disposed is still safe to observe.
     /// </remarks>
     private readonly CancellationToken lifetimeToken;
 
-    // `volatile` on the next six fields is not decoration. Each is written on one thread and read on
-    // another (the background task writes, the framework or UI thread reads, or vice versa). Without
-    // it the compiler or CPU may keep a stale copy in a register and never observe the update.
+    // Threading rules, referred to throughout this class. Game state is read only on the framework
+    // thread and HTTP never runs there: a collection pass runs in the Update handler, and a background
+    // task uploads what it built.
+    // - A framework-thread field is written only on that thread: by the Update handler, the Login,
+    //   Logout and Unlock events, and delegates queued with RunOnFrameworkThread. One writer needs no
+    //   lock. The window's draw call may run on another thread, so a call from it marshals.
+    // - A volatile field crosses threads. The window reads these, and the plain identity reference,
+    //   from its draw call, at worst one frame stale. An int stands in for a nullable enum and a box
+    //   for a struct, because neither can be volatile.
+    // - The status dictionaries are replaced whole and never mutated once handed out, so a reader sees
+    //   the old map or the new one.
+    // - A queued delegate still runs after Dispose has begun, so each checks lifetimeToken first.
+    //   Nothing awaits the queued and background tasks, and none lets an exception escape.
 
     /// <summary>The most recent <c>/config</c>, or null until the first poll succeeds.</summary>
     private volatile ConfigResponse? remoteConfig;
 
-    /// <summary>True while an upload is in flight, so the framework thread never starts a second one.</summary>
+    /// <summary>True while an upload is in flight, so the framework thread never starts a second.</summary>
     private volatile bool uploadInFlight;
 
     /// <summary>True while a <c>/config</c> poll is in flight.</summary>
@@ -154,35 +123,29 @@ internal sealed class SyncManager : IDisposable
     /// press can note how many had started before it (see <see cref="ConfigPollsStarted"/>).
     /// </summary>
     /// <remarks>
-    /// Written only on the framework thread, where every poll starts; read from the upload tasks, so
-    /// volatile for the same reason as the flags above.
+    /// Written only on the framework thread, where every poll starts, and read from the upload tasks.
     /// </remarks>
     private volatile int configPollsStarted;
 
     /// <summary>
-    /// The number of the poll <see cref="remoteConfig"/> came from, or 0 until a poll has brought a
-    /// config back. Written by the poll task right after <see cref="remoteConfig"/>; see
-    /// <see cref="ConfigAnsweredPoll"/> for the read order.
+    /// Backs <see cref="ConfigAnsweredPoll"/>, which gives the read order. The poll task writes it
+    /// right after <see cref="remoteConfig"/>.
     /// </summary>
     private volatile int configAnsweredPoll;
 
     /// <summary>
-    /// True while the wizard is owed a config answer: set when it asks for one, cleared the moment any
-    /// poll answers.
+    /// True while the wizard is owed a config answer: set when it asks for one, cleared when any poll
+    /// answers.
     /// </summary>
     /// <remarks>
-    /// Distinct from <see cref="firstConfigAnswerSeen"/>, which latches true for the rest of the load. A
-    /// wizard that waited on the latch would wait only once, and a second Verify press — perfectly
-    /// ordinary, after pasting a different token — would sail straight past the wait it exists for.
-    /// Volatile: raised on the draw thread when the wizard asks for a config, lowered by whichever thread
-    /// answers (the poll task, or the framework-thread marshal when teardown beat it to the request), and
-    /// read by the draw thread on every frame.
+    /// Separate from <see cref="firstConfigAnswerSeen"/>, which latches for the whole load, so a second
+    /// Verify press after pasting a different token still waits.
     /// </remarks>
     private volatile bool onboardingConfigPending;
 
     /// <summary>
-    /// The collections upload's wait after a 503 saying syncing is switched off, which the website
-    /// saying syncing is back on ends early (see <see cref="SyncResumeWait"/>). It takes its own lock.
+    /// The collections upload's wait after a 503 <c>sync_disabled</c>, which can end early once the
+    /// website says syncing is back on (see <see cref="SyncResumeWait"/>). It takes its own lock.
     /// </summary>
     private readonly SyncResumeWait syncWait = new();
 
@@ -192,162 +155,101 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     private readonly PausedPress pausedPress = new();
 
-    /// <summary>
-    /// True once a collection pass has run for the character currently logged in.
-    /// </summary>
+    /// <summary>True once a collection pass has run for the character currently logged in.</summary>
     /// <remarks>
-    /// The settings window's read-status panel reports, per enabled collection, whether the pass could
-    /// read it — and "no skip reason" is what it reads as "read". Before any pass has run there are no
-    /// skip reasons yet, so without this flag every enabled collection would claim to have been read
-    /// when nothing had been. Cleared on logout with the rest of the character-scoped snapshots, since
-    /// a pass for the character who just left says nothing about the next one.
-    /// <para>
-    /// The source notes cannot stand in for this flag: a user who has switched the item category off
-    /// produces no source notes at all, yet their other collections have still been read and have a
-    /// status worth showing.
-    /// </para>
-    /// <para><c>volatile</c>: written by the framework thread, read by the window's draw call.</para>
+    /// The read-status panel reads "no skip reason" as "read", so before any pass every enabled
+    /// collection would claim to be read. Source notes cannot stand in: a user with items switched off
+    /// has none, yet their other collections were read. Cleared on logout.
     /// </remarks>
     private volatile bool hasCollected;
 
+    // Which warnings and failures have already been logged. The first four are framework-thread
+    // fields; the last three belong to the upload and poll tasks, which run one at a time behind
+    // uploadInFlight and configPollInFlight.
+
     /// <summary>Decides which manifest truncation warnings this pass should log.</summary>
-    /// <remarks>Framework thread only, driven from inside the collection pass.</remarks>
     private readonly ManifestTruncationWarnings truncationWarnings = new();
 
     /// <summary>Decides which payload-cap warnings this pass should log.</summary>
-    /// <remarks>
-    /// Written on the game's main thread only: the collection pass, and the reset in
-    /// <see cref="OnLogout"/>.
-    /// </remarks>
     private readonly PayloadCapWarnings capWarnings = new();
 
     /// <summary>Decides which frame-budget overruns this pass should warn about.</summary>
-    /// <remarks>Framework thread only, driven from inside the collection pass.</remarks>
     private readonly FrameBudgetWarnings budgetWarnings = new();
 
     /// <summary>Which collection-pass failures have already been reported in full.</summary>
-    /// <remarks>
-    /// Written on the game's main thread only: the collection pass, and the reset in
-    /// <see cref="OnLogout"/>.
-    /// </remarks>
     private readonly RepeatedFailures assembleFailures = new();
 
     /// <summary>Which failed upload outcomes have already been reported.</summary>
-    /// <remarks>
-    /// Written on the thread pool from the upload path, one at a time behind
-    /// <see cref="uploadInFlight"/>.
-    /// </remarks>
     private readonly SyncOutcomeWarnings outcomeWarnings = new();
 
     /// <summary>Which upload failures have already been reported in full.</summary>
-    /// <remarks>
-    /// The upload runs on the thread pool, one at a time behind <see cref="uploadInFlight"/>.
-    /// </remarks>
     private readonly RepeatedFailures uploadFailures = new();
 
     /// <summary>Which config-poll failures have already been reported in full.</summary>
     /// <remarks>
-    /// The poll runs on the thread pool, one at a time behind <see cref="configPollInFlight"/>.
-    /// A memory of its own rather than sharing <see cref="uploadFailures"/>, because a poll and an
-    /// upload can be in flight at the same time and neither holds the other's gate.
+    /// Separate from <see cref="uploadFailures"/>, because a poll and an upload can be in flight at
+    /// once and neither holds the other's flag.
     /// </remarks>
     private readonly RepeatedFailures configPollFailures = new();
 
     /// <summary>
-    /// True once a pass in which at least one collector actually ran has completed, since the
-    /// plugin loaded.
+    /// True once a pass in which at least one collector ran has completed since the plugin loaded.
     /// </summary>
     /// <remarks>
-    /// Read only by the cost report, which exempts the session's first pass from the alarm — see
-    /// <see cref="CollectionCost.IsAlarming"/> for why. Tied to the plugin's lifetime rather than
-    /// the character's: the warm-up it stands for survives a logout.
-    /// <para>
-    /// Framework thread only, like the pass it counts, so it needs no <c>volatile</c> — unlike the
-    /// flags the settings window reads from its draw call.
-    /// </para>
+    /// Lets the cost report exempt the session's first pass (see <see cref="CollectionCost.IsAlarming"/>).
+    /// Scoped to the plugin, not the character, because the warm-up survives a logout. A
+    /// framework-thread field the window never reads, so it is not volatile.
     /// </remarks>
     private bool anyPassHasRun;
 
     /// <summary>
-    /// Set when the server reported a failure only the user can fix. Suppresses collecting and
-    /// uploading until the user intervenes, rather than looping against a server that will keep
-    /// refusing. The config poll is the one exception, and only for the halts it can see past —
-    /// see <see cref="SyncTickPlan.PollSurvivesHalt"/>.
+    /// Set when the server reported a failure only the user can fix. Halts collecting and uploading
+    /// until the user acts, rather than looping against a server that will keep refusing.
     /// </summary>
+    /// <remarks>
+    /// The config poll still runs through the halts it can see past; see
+    /// <see cref="SyncTickPlan.PollSurvivesHalt"/>.
+    /// </remarks>
     private volatile bool blockedPendingUserAction;
 
     /// <summary>
-    /// The status that raised the halt <see cref="blockedPendingUserAction"/> is holding, cast to
-    /// int, or -1 before any halt. Only meaningful while that flag is set.
+    /// The status that raised the current halt, cast to int, or -1 before any halt. Meaningful only
+    /// while <see cref="blockedPendingUserAction"/> is set.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Written at every place a halt is raised (the upload, the config poll, and the live tracker and
-    /// Crucible sharing through <see cref="HaltFromLiveUpload"/>), always before the flag, so a reader
-    /// that sees the flag set also sees the status that set it. An int for the same reason as
-    /// <see cref="lastStatusCode"/>: <c>volatile</c> cannot hold a nullable enum.
-    /// </para>
-    /// <para>
-    /// Two things read it, through <see cref="HaltStatus"/>: the window, to name the fix for
-    /// exactly this halt, and the frame tick, which asks <see cref="SyncTickPlan.PollSurvivesHalt"/>
-    /// whether the config poll survives it. <c>LastStatus</c> cannot stand in for it, because only
-    /// the /sync upload writes it, so a halt raised by the poll, the live tracker or the Crucible
-    /// sharing would leave it describing an earlier upload, often a success, or nothing at all.
-    /// </para>
+    /// Every place that raises a halt writes this before the flag, so a reader that sees the flag also
+    /// sees its status. The window reads it through <see cref="HaltStatus"/> to name the fix, and the
+    /// frame tick to ask <see cref="SyncTickPlan.PollSurvivesHalt"/>. <c>LastStatus</c> cannot stand
+    /// in, because only the /sync upload writes it.
     /// </remarks>
     private volatile int haltStatusCode = -1;
 
-    /// <summary>
-    /// How many times "Sync now" has been pressed this plugin session: see <see cref="HaltEpoch"/>.
-    /// </summary>
-    /// <remarks>
-    /// Volatile for reads from the live upload paths; its one writer uses
-    /// <c>Interlocked.Increment</c>, which a <c>ref</c> to a volatile field is safe to pass to.
-    /// </remarks>
+    /// <summary>The "Sync now" press count; see <see cref="HaltEpoch"/>.</summary>
     private volatile int haltEpoch;
 
     /// <summary>
     /// The last outcome as an <see cref="ApiStatus"/> cast to int, or -1 when nothing has completed.
     /// </summary>
-    /// <remarks>
-    /// An int rather than an <c>ApiStatus?</c> because <c>volatile</c> cannot be applied to a
-    /// nullable enum. Written by the background task, read by the UI thread.
-    /// </remarks>
     private volatile int lastStatusCode = -1;
 
     /// <summary>
     /// When the last successful upload completed, boxed, or null if none has this session.
     /// </summary>
-    /// <remarks>
-    /// A boxed <see cref="DateTimeOffset"/> rather than a plain field because <c>volatile</c> cannot
-    /// be applied to a struct type — but a reference write is atomic, so boxing buys a safe
-    /// cross-thread handoff. Written by the background task, read by the UI.
-    /// </remarks>
     private volatile object? lastSyncedAtBox;
 
     /// <summary>
-    /// Bumped on logout, so a response that arrives for a character who already left can be
-    /// recognized and discarded.
+    /// Bumped on logout, so a response for a character who already left is recognized and discarded.
     /// </summary>
     /// <remarks>
-    /// A request in flight cannot be recalled: logout does not cancel it (only plugin unload does),
-    /// so its answer can land seconds later — and without this counter that late answer would write
-    /// the <i>previous</i> character's status, or worse a halt, onto the next one's session. Same pattern
-    /// as <see cref="Windows.TokenVerifier"/>: the work captures the generation it was started for,
-    /// and an answer to a superseded generation is thrown away. Only the framework thread writes
-    /// this (single writer, so the non-atomic increment is safe); background tasks only read it.
+    /// Logout does not cancel a request in flight (only unload does), so its answer could otherwise put
+    /// the previous character's status, or a halt, onto the next one's session. Work captures the
+    /// generation it started for and drops an answer to a superseded one. Its one writer is the
+    /// framework thread, so the plain increment is safe.
     /// </remarks>
     private volatile int sessionGeneration;
 
-    // The next five are WRITTEN only on the game's main thread — from the Update handler, from work
-    // marshaled onto it with RunOnFrameworkThread, and from the Login/Logout/Unlock events, which
-    // reach the plugin on that same thread (Login through Dalamud's framework update, Logout through
-    // a hook on the game's own logout callback). The one exception is the constructor's own OnLogin
-    // call, which runs before any handler is subscribed, so nothing else can be writing yet. They
-    // therefore need no synchronization between writers. (`identity` is additionally null-checked by
-    // the settings window via HasCharacter; a reference read is atomic, so the worst case there is a
-    // one-frame-stale status line.) Writing any of them from a background thread would break this
-    // reasoning.
+    // Framework-thread fields, from here through nextConfigPollAt (see the threading rules above).
+    // The constructor's OnLogin call also writes them, before any handler is subscribed.
 
     /// <summary>The character to attribute uploads to. Null whenever nobody is logged in.</summary>
     private CharacterIdentity? identity;
@@ -362,86 +264,51 @@ internal sealed class SyncManager : IDisposable
     /// True once identity capture has given up for this login, until a login, a logout or a "Sync
     /// now" press clears it. See <see cref="IdentityCaptureGaveUp"/>.
     /// </summary>
-    /// <remarks>
-    /// Written on the framework thread, alongside the fields above. `volatile` makes each read see
-    /// the latest write, so the settings window can read it from the draw call.
-    /// </remarks>
     private volatile bool identityCaptureGaveUp;
 
     /// <summary>True from a login to the next logout. See <see cref="IsLoggedIn"/>.</summary>
     /// <remarks>
-    /// Kept here rather than read from the game in the window, because the settings window draws
-    /// outside the framework thread's guarantee. Written alongside the fields above.
+    /// The window reads this rather than the game, because it draws outside the framework thread's
+    /// guarantee.
     /// </remarks>
     private volatile bool loggedIn;
 
-    /// <summary>When the next <c>/config</c> poll is due. Null means "poll at the first opportunity".</summary>
+    /// <summary>When the next <c>/config</c> poll is due; null means at the first opportunity.</summary>
     private DateTimeOffset? nextConfigPollAt;
 
     /// <summary>
-    /// Why each category was omitted from the most recent collection pass, keyed by category.
+    /// Why each category was omitted the last time a pass ran it, keyed by category. Merged across
+    /// passes because an unlock pass runs only some collectors (see <see cref="CollectionStatusMemory"/>).
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Kept so the settings window can explain a category that never appears — for example, that the
-    /// achievements list must be opened once before the game will answer for it. The window renders
-    /// whatever reason it is handed, which is how that hint reaches the user without anyone writing a
-    /// branch on a category name.
-    /// </para>
-    /// <para>
-    /// <c>volatile</c>, and replaced wholesale rather than mutated. The writer is the collection pass
-    /// on the framework thread; the reader is the window's draw call, which Dalamud may or may not
-    /// invoke on that same thread. Rather than depend on the answer, the dictionary handed out is
-    /// never touched again — a reader either sees the whole old map or the whole new one, never a map
-    /// mid-update. Mutating it in place would be a genuine data race if the threads ever differ.
-    /// </para>
+    /// The window renders whatever reason it is handed, such as the achievements list needing to be
+    /// opened once, so the hint reaches the user without a branch on a category name.
     /// </remarks>
     private volatile IReadOnlyDictionary<string, string> lastSkipped = new Dictionary<string, string>();
 
     /// <summary>
     /// Each category's latest partial-read phrase (see <see cref="Collectors.CollectResult.PartialNote"/>),
-    /// merged across passes rather than replaced, for the same reason <see cref="lastSkipped"/>
-    /// is (see <see cref="CollectionStatusMemory.MergePartialNotes"/> for the exact rule): a
-    /// pass that collected a category in full clears its note, a pass that did not run it leaves
-    /// the last note standing. For the settings window.
+    /// for the settings window. Merged by <see cref="CollectionStatusMemory.MergePartialNotes"/>.
     /// </summary>
-    /// <remarks>
-    /// <c>volatile</c>, and never mutated once handed out, for the same cross-thread reason as
-    /// <see cref="lastSkipped"/>: the writer is the collection pass on the framework thread, the
-    /// reader is the window's draw call.
-    /// </remarks>
     private volatile IReadOnlyDictionary<string, string> lastPartialNotes =
         new Dictionary<string, string>();
 
     /// <summary>
     /// Each category's latest healthy-chip hover copy (see
-    /// <see cref="Collectors.CollectResult.CollectedDetail"/>), remembered with the same merge
-    /// rules and thread discipline as <see cref="lastPartialNotes"/>. For the settings window.
+    /// <see cref="Collectors.CollectResult.CollectedDetail"/>), remembered like
+    /// <see cref="lastPartialNotes"/>. For the settings window.
     /// </summary>
     private volatile IReadOnlyDictionary<string, string> lastCollectedDetails =
         new Dictionary<string, string>();
 
     /// <summary>
-    /// Per-source scan status from the most recent collection pass that reported any, keyed by
-    /// source (see <see cref="SourceKeys"/>) — for example, "the saddlebag was read from a
-    /// cache, not live". For the settings window.
+    /// Per-source scan status from the latest pass that reported any, keyed by source (see
+    /// <see cref="SourceKeys"/>), such as "the saddlebag was read from a cache". For the settings window.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Unlike <see cref="lastSkipped"/>, this is REPLACED wholesale rather than merged, and only
-    /// when the new pass actually produced something. A source note describes a physical storage
-    /// location as seen by the pass that reported it, not a per-category fact — an unlock pass that
-    /// reran only, say, the mounts collector knows nothing about the item sources and would report
-    /// none, so merging its (empty) notes over the last real observation would erase a true "the
-    /// armoire is unscanned" hint the user still needs to see. Replacing only on a non-empty result
-    /// keeps the window showing the last pass that actually looked at the item sources, which is
-    /// the truthful thing to show — not a snapshot of whichever pass happened to run most recently.
-    /// </para>
-    /// <para>
-    /// <c>volatile</c>, and never mutated once handed out, for the same cross-thread reason as
-    /// <see cref="lastSkipped"/>: the writer is the collection pass on the framework thread, the
-    /// reader is the window's draw call.
-    /// </para>
+    /// Replaced, not merged, and only by a pass that reported notes. A note describes storage as one
+    /// pass saw it, and an unlock pass that skipped the item collectors reports none, so merging or
+    /// clearing would erase a true "the armoire is unscanned" hint.
     /// </remarks>
     private volatile IReadOnlyDictionary<string, ItemSourceStatus> lastSourceNotes =
         new Dictionary<string, ItemSourceStatus>();
@@ -474,15 +341,13 @@ internal sealed class SyncManager : IDisposable
 
         lifetimeToken = lifetime.Token;
 
-        // A plugin enabled while already logged in never receives a Login event, so treat that as one.
-        // Ahead of the subscriptions below, because this constructor does not run on the framework
-        // thread: with the Update handler already attached, a frame could read the login fields this
-        // writes while the write is still in progress. Subscribing afterwards publishes them safely.
+        // A plugin enabled while logged in gets no Login event, so treat this as one, before subscribing:
+        // the constructor is off the framework thread, and a frame could read these fields mid-write.
         if (clientState.IsLoggedIn)
             OnLogin();
 
-        // Every `+=` here has a matching `-=` in Dispose. A handler left attached after unload would
-        // be invoked against a torn-down plugin.
+        // Each has a matching `-=` in Dispose; a handler left attached would run against a torn-down
+        // plugin.
         framework.Update += OnFrameworkUpdate;
         clientState.Login += OnLogin;
         clientState.Logout += OnLogout;
@@ -493,8 +358,6 @@ internal sealed class SyncManager : IDisposable
     public ApiStatus? LastStatus => lastStatusCode < 0 ? null : (ApiStatus)lastStatusCode;
 
     /// <summary>When the last successful upload completed, or null if none has this session.</summary>
-    // `as DateTimeOffset?` unboxes when the box holds a value and yields null when the field is null,
-    // in one step.
     public DateTimeOffset? LastSyncedAt => lastSyncedAtBox as DateTimeOffset?;
 
     /// <summary>
@@ -508,18 +371,17 @@ internal sealed class SyncManager : IDisposable
     /// <see cref="haltStatusCode"/> for its two readers.
     /// </summary>
     /// <remarks>
-    /// Two volatile reads, so a halt raised or cleared between them can make this one frame stale,
-    /// the same tolerance as every other property the window reads.
+    /// Two volatile reads, so a halt raised or cleared between them leaves it one frame stale.
     /// </remarks>
     public ApiStatus? HaltStatus =>
         blockedPendingUserAction && haltStatusCode >= 0 ? (ApiStatus)haltStatusCode : null;
 
-    /// <summary>The most recent server config, for the settings window to render category switches from.</summary>
+    /// <summary>The latest server config, which the settings window draws its switches from.</summary>
     public ConfigResponse? RemoteConfig => remoteConfig;
 
     /// <summary>
     /// How many <c>/config</c> polls have started. An upload path arms its
-    /// <see cref="SyncResumeWait"/> with this when a 503 says syncing is switched off.
+    /// <see cref="SyncResumeWait"/> with this when a 503 <c>sync_disabled</c> arrives.
     /// </summary>
     public int ConfigPollsStarted => configPollsStarted;
 
@@ -534,12 +396,12 @@ internal sealed class SyncManager : IDisposable
     public int ConfigAnsweredPoll => configAnsweredPoll;
 
     /// <summary>
-    /// Brings the next <c>/config</c> poll forward to a few minutes away, after a 503 saying syncing is
-    /// switched off on any upload path.
+    /// Brings the next <c>/config</c> poll forward to a few minutes away, after a 503
+    /// <c>sync_disabled</c> on any upload path.
     /// </summary>
     /// <remarks>
-    /// So the sync card names the switch within minutes rather than at the next scheduled poll, and
-    /// so the plugin learns sooner when it is back on. Never pushes back a poll due sooner (see
+    /// The sync card then names the switch within minutes, not at the next scheduled poll, and the
+    /// plugin learns sooner when it is back on. Never pushes back a poll due sooner (see
     /// <see cref="SyncTickPlan.BringPollForward"/>). Safe from any thread: the upload tasks call it as
     /// their answers arrive.
     /// </remarks>
@@ -553,31 +415,31 @@ internal sealed class SyncManager : IDisposable
     /// True while the wizard is still owed the config answer it asked for when the token verified.
     /// </summary>
     /// <remarks>
-    /// The wizard holds its consent step shut while this is true, so that the step opens with every
-    /// checkbox it will ever show already on it. It is lowered by an ANSWER, not by a success: a poll
-    /// that fails has settled the question of whether more is coming, and the answer is no. A wait only
-    /// a successful poll could end would trap the user in the wizard whenever the server was
-    /// unreachable; a failure simply means the consent step shows no group checkboxes, which the
-    /// one-time consent migration is there to make good later.
+    /// The wizard holds its consent step shut while this is true, so the step opens with every checkbox
+    /// it will show. Any answer lowers it, a failure included, because a wait only success could end
+    /// would trap the user in the wizard while the server is unreachable. A failed poll just means no
+    /// group checkboxes, which the one-time consent migration makes good later.
     /// </remarks>
     public bool OnboardingConfigPending => onboardingConfigPending;
 
     /// <summary>
-    /// The current automatic full-sweep cadence, after the server's tuning and the plugin's
-    /// clamps — so the settings window can state the real number instead of a hardcoded one.
+    /// The current automatic full-sweep cadence after the server's tuning and the plugin's clamps, so
+    /// the settings window can show the real number.
     /// </summary>
     public TimeSpan FullSyncInterval => scheduler.FullSyncInterval;
 
-    /// <summary>True while an upload is on the wire — lets the Sync now button show it live.</summary>
-    /// <remarks>A volatile bool read, so safe from the draw call; at worst one frame stale.</remarks>
+    /// <summary>True while an upload is on the wire, so the Sync now button can show it.</summary>
     public bool UploadInFlight => uploadInFlight;
 
     /// <summary>
     /// True while the server has asked the plugin to wait before its next upload, so a "Sync now"
-    /// press would upload nothing until the wait ends. A wait a switched-off 503 started also ends
-    /// when the website says syncing is back on (see <see cref="SyncResumeWait"/>).
+    /// press would upload nothing until the wait ends.
     /// </summary>
-    /// <remarks>The scheduler takes its lock to answer, so this is safe from the draw call.</remarks>
+    /// <remarks>
+    /// A wait a 503 <c>sync_disabled</c> started can also end once the website says syncing is back
+    /// on (see <see cref="SyncResumeWait"/>). The scheduler takes its lock to answer, so this is safe
+    /// from the draw call.
+    /// </remarks>
     public bool IsBackingOff => scheduler.IsBackingOff(timeProvider.GetUtcNow());
 
     /// <summary>The recent uploads, newest first, for the settings window's upload log.</summary>
@@ -587,46 +449,25 @@ internal sealed class SyncManager : IDisposable
     public void ClearUploadHistory() => uploadLog.Clear();
 
 #if DEBUG
-    /// <summary>
-    /// Replaces the upload log with fabricated entries for capturing screenshots of it.
-    /// </summary>
+    /// <summary>Replaces the upload log with fabricated entries for capturing screenshots of it.</summary>
     /// <remarks>
-    /// <para>
-    /// DEBUG-only, like <see cref="UploadLogSeed"/> itself — a released plugin must never be able
-    /// to show a user invented sync history. Clears first so repeated runs give the same picture
-    /// rather than piling seeded rows on top of each other and on top of real ones.
-    /// </para>
-    /// <para>
-    /// A seeded window has to be self-consistent everywhere the shutter can see, not only in the
-    /// surface being aimed at — so the sync card's own state and the remembered read statuses are
-    /// moved to match, and only collections that would really be collected are seeded. Each of
-    /// those is explained where it happens below.
-    /// </para>
+    /// DEBUG-only, like <see cref="UploadLogSeed"/>: a released plugin must never show invented sync
+    /// history. It clears first, so repeated runs give the same picture. The rest of the window moves to
+    /// match, since a screenshot shows more than the log.
     /// </remarks>
     public void SeedUploadHistoryForScreenshots(
         IReadOnlyList<ICollector> collectors, DateTimeOffset now)
     {
         uploadLog.Clear();
 
-        // The remembered per-COLLECTION statuses. They survive across passes and are only reset at
-        // logout, so a collection a real pass could not read keeps saying "not read yet" under a
-        // seeded log whose newest rows say it synced. Cleared rather than invented: every seeded row
-        // read everything it carried, which is what an unmarked list already says.
-        //
-        // The per-CONTAINER notes are deliberately left alone. They are real readings of the
-        // player's own storage, and the log makes no claim about any individual container — "Tracked
-        // items 156" beside "Saddlebag not scanned" is what a real session looks like, not a
-        // contradiction. Clearing them would empty the panel's Containers row entirely, which is a
-        // feature the screenshot exists to show.
+        // Per-collection statuses last until logout and would say "not read yet" beside seeded rows
+        // that say otherwise. Per-container notes are real readings the screenshot shows, so they stay.
         lastSkipped = new Dictionary<string, string>();
         lastPartialNotes = new Dictionary<string, string>();
         lastCollectedDetails = new Dictionary<string, string>();
 
-        // Only what would really be collected, decided by the gate a real pass asks. A collection
-        // the user or the server has switched off draws no chip in the panel above, so a row
-        // claiming it synced would contradict the same window — and which collections are off
-        // depends on the backend the developer is pointed at, which is exactly the sort of thing a
-        // screenshot records without anyone noticing.
+        // Only collections a real pass would collect: one switched off draws no chip in the panel
+        // above, so a row claiming it synced would contradict the window.
         var config = remoteConfig;
         var collectable = new List<ICollector>(collectors.Count);
         foreach (var collector in collectors)
@@ -639,16 +480,12 @@ internal sealed class SyncManager : IDisposable
         foreach (var entry in entries)
             uploadLog.Record(entry);
 
-        // The "Reading from:" panel is drawn only once a pass has run, so without this a seeded
-        // window shows a full upload log above the empty space where the panel belongs — and the
-        // panel is one of the surfaces the screenshots exist to capture. The cleared status maps
-        // above make it report every switched-on collection as read, which is what the seeded rows
-        // already claim.
+        // The "Reading from:" panel draws only once a pass has run. With the maps cleared above, it
+        // reports every switched-on collection as read, matching the seeded rows.
         if (entries.Count > 0)
             hasCollected = true;
 
-        // Taken from the newest seeded entry rather than restated, so the card and the log's top
-        // row can never disagree about when the last upload happened.
+        // From the newest seeded entry, so the card and the log's top row agree.
         if (entries.Count > 0)
         {
             var newest = entries[^1];
@@ -663,20 +500,16 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <remarks>
     /// DEBUG-only. A real give-up needs a character that cannot be read, or whose name or home world
-    /// never becomes readable, which an ordinary session does not produce. A "Sync now" press, a
-    /// login or a logout leaves this state exactly as they leave a real give-up.
+    /// never becomes readable, which an ordinary session does not produce. A "Sync now" press, a login
+    /// or a logout leaves this state as they leave a real give-up.
     /// </remarks>
     public void ForgetCharacterForTesting()
     {
-        // Marshaled because the identity fields are written only on the framework thread (see the
-        // note above `identity`), and a command can arrive from the console's draw call. `_ =`
-        // discards the returned task on purpose, and `() => { ... }` is an inline function with a
-        // body, like an arrow function with braces.
+        // Marshaled: these are framework-thread fields, and a command can arrive from the console's
+        // draw call.
         _ = framework.RunOnFrameworkThread(() =>
         {
-            // A marshal queued just before teardown still runs, and a give-up happens only while
-            // logged in. `||` is true when either side is, and stops at the first true, as in
-            // TypeScript.
+            // A give-up happens only while logged in.
             if (lifetimeToken.IsCancellationRequested || !clientState.IsLoggedIn)
                 return;
 
@@ -685,8 +518,7 @@ internal sealed class SyncManager : IDisposable
             identityAttempts = 0;
             identityCaptureGaveUp = true;
 
-            // A real give-up comes before any upload of the login, so the card has no last outcome,
-            // time or read status to show; each is set to the value a logout leaves it at.
+            // A real give-up precedes the login's first upload, so these take the values a logout leaves.
             lastStatusCode = -1;
             lastSyncedAtBox = null;
             hasCollected = false;
@@ -697,76 +529,53 @@ internal sealed class SyncManager : IDisposable
 #endif
 
     /// <summary>
-    /// Why each category was skipped by the last collection pass. Empty before the first pass.
+    /// Why each category was skipped the last time a pass ran it. Empty before the first pass.
     /// </summary>
-    /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
     public IReadOnlyDictionary<string, string> LastSkipped => lastSkipped;
 
     /// <summary>
     /// Each category's latest partial-read phrase, keyed by category. Empty before the first pass
     /// and for every category read in full.
     /// </summary>
-    /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
     public IReadOnlyDictionary<string, string> LastPartialNotes => lastPartialNotes;
 
     /// <summary>
     /// Each category's latest healthy-chip hover copy, keyed by category. Empty before the first
     /// pass and for every category whose chip needs none.
     /// </summary>
-    /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
     public IReadOnlyDictionary<string, string> LastCollectedDetails => lastCollectedDetails;
 
     /// <summary>
     /// Per-source scan status from the most recent collection pass that reported any (see
-    /// <see cref="lastSourceNotes"/> for why this replaces rather than merges). Empty before the
-    /// first such pass.
+    /// <see cref="lastSourceNotes"/>). Empty before the first such pass.
     /// </summary>
-    /// <remarks>The returned dictionary is never mutated, so it is safe to read from any thread.</remarks>
     public IReadOnlyDictionary<string, ItemSourceStatus> LastSourceNotes => lastSourceNotes;
 
     /// <summary>
-    /// True once a collection pass has run for the current character, so the settings window's
-    /// read-status panel has something truthful to report. See <see cref="hasCollected"/>.
+    /// True once a collection pass has run for the current character. See <see cref="hasCollected"/>.
     /// </summary>
-    /// <remarks>A volatile bool read, so safe from the draw call; at worst one frame stale.</remarks>
     public bool HasCollected => hasCollected;
 
     /// <summary>True when a character is loaded and identified, so an upload could actually happen.</summary>
-    /// <remarks>
-    /// A null check on a reference, which is atomic. The window may read this from the draw call while
-    /// the framework thread is writing it; the worst outcome is a status line that is one frame stale.
-    /// </remarks>
     public bool HasCharacter => identity is not null;
 
     /// <summary>
     /// True when the plugin has stopped trying to read the logged-in character, so nothing uploads
     /// until a "Sync now" press or the next login starts it again.
     /// </summary>
-    /// <remarks>
-    /// What lets the window tell this apart from the ordinary wait after login, when the character
-    /// is still being read. A volatile bool, so safe to read from the draw call; at worst one frame
-    /// stale.
-    /// </remarks>
+    /// <remarks>Lets the window tell this apart from the ordinary wait after login.</remarks>
     public bool IdentityCaptureGaveUp => identityCaptureGaveUp && identity is null;
 
     /// <summary>True while a character is logged in, whether or not it has been read yet.</summary>
     /// <remarks>
-    /// What lets the window tell nobody being logged in apart from the ordinary wait after login,
-    /// while the character is still being read. A volatile bool, so safe to read from the draw call; at worst
-    /// one frame stale.
+    /// Lets the window tell nobody being logged in apart from the ordinary wait after login.
     /// </remarks>
     public bool IsLoggedIn => loggedIn;
 
     /// <summary>
-    /// The identified character, or null when nobody usable is loaded. The live tracker and the
-    /// Crucible sharing read this so every upload path attributes work to one identity, captured in
-    /// one place; the window reads it to name the character in a refusal sentence, on the sync card
-    /// and on the live tracker's and Crucible run sharing's cards.
+    /// The identified character, or null when nobody usable is loaded. Every upload path reads this,
+    /// so all attribute work to one identity; the window reads it to name the character.
     /// </summary>
-    /// <remarks>
-    /// A reference read, so atomic. The live paths read it on the framework thread; the window reads
-    /// it from the draw call, where it is at worst one frame stale.
-    /// </remarks>
     internal CharacterIdentity? Identity => identity;
 
     /// <summary>
@@ -777,10 +586,9 @@ internal sealed class SyncManager : IDisposable
     internal int SessionGeneration => sessionGeneration;
 
     /// <summary>
-    /// How many times "Sync now" has been pressed this plugin session, whether or not a halt was
-    /// set. The live tracker and the Crucible sharing capture it when they send an upload and hand it
-    /// back with a refusal, so a refusal sent before the player's fix and answered after it does not
-    /// halt them again.
+    /// How many times "Sync now" has been pressed this plugin session, halt or not. The live tracker
+    /// and the Crucible sharing capture it with each upload and hand it back with a refusal, so a
+    /// refusal sent before the player's fix and answered after it does not halt them again.
     /// </summary>
     internal int HaltEpoch => haltEpoch;
 
@@ -789,19 +597,11 @@ internal sealed class SyncManager : IDisposable
     /// server refused in a way only the player can fix, and records it in the upload log.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// One halt serves every upload path. Their refusals are the same refusals (the same character
-    /// or the same token), so the same sentence names the fix, and "Sync now" or a relog lifts all
-    /// of them at once. Without it, a player with only the tracker or the Crucible sharing switched
-    /// on never uploads to <c>/sync</c>, and nothing would tell them why sharing stopped.
-    /// </para>
-    /// <para>
-    /// Called from the path's upload task, with the session and press counts captured when the
-    /// upload was sent. A refusal from a session that has ended, or sent before the last "Sync
-    /// now", is dropped. The checks run on the upload task, so a logout or a "Sync now" press that
-    /// lands between them and the writes below can still let one stale refusal raise the halt; the
-    /// next press or relog clears it, and the log row repeats the session check below.
-    /// </para>
+    /// One halt serves every path: their refusals name the same character or token, and "Sync now" or
+    /// a relog lifts them all. Without it, a player sharing only live data never uploads to
+    /// <c>/sync</c> and is never told why sharing stopped. A refusal from an ended session or sent
+    /// before the last "Sync now" is dropped, though a logout or press landing just after that check
+    /// can still let one through until the next press or relog.
     /// </remarks>
     /// <param name="source">The upload path the server refused.</param>
     /// <param name="status">The refusal's status; anything that is not a user-action halt is ignored.</param>
@@ -823,8 +623,7 @@ internal sealed class SyncManager : IDisposable
         blockedPendingUserAction = true;
         log.Warning($"{source} upload halted: {status}. The user must resolve this.");
 
-        // The log row repeats the session check, so a logout that lands between the first check
-        // and here leaves no row in the next character's log.
+        // Rechecked, so a logout since the first check leaves no row in the next character's log.
         if (startedFor == sessionGeneration)
         {
             uploadLog.Record(
@@ -834,50 +633,32 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>Queues an immediate full sweep, as when the user presses "Sync now".</summary>
     /// <remarks>
-    /// <para>
-    /// Clears the "needs user action" halt: pressing the button is the user asserting they fixed it.
-    /// It still respects any backoff — a button must not become a way to hammer a server that said stop.
-    /// </para>
-    /// <para>
-    /// While the website has syncing switched off, the press asks <c>/config</c> once instead, and the
-    /// sweep follows only if the answer says syncing is back on (see <see cref="PausedPress"/>).
-    /// </para>
+    /// Clears the user-action halt, since a press says the user fixed it. Any backoff still holds: a
+    /// button must not become a way to hammer a server that said stop. While the website has syncing
+    /// switched off, the press asks <c>/config</c> once instead, and sweeps only if the answer says
+    /// syncing is back on (see <see cref="PausedPress"/>).
     /// </remarks>
     public void RequestManualSync()
     {
-        // A new press count first, so a live tracker or Crucible sharing refusal already in flight
-        // (sent before the player's fix) is recognized as stale when it lands. Interlocked.Increment
-        // is an atomic `count++`, safe whichever thread the press arrives on.
+        // Count the press first, so a live refusal sent before the fix is stale when it lands.
+        // Interlocked, because the press may arrive on any thread.
         Interlocked.Increment(ref haltEpoch);
 
-        // Volatile, so this write is safe from any thread — and it should clear immediately, on
-        // the press itself, rather than waiting behind the marshal below.
+        // Cleared on the press itself, not behind the marshal below.
         blockedPendingUserAction = false;
 
-        // Marshaled rather than run inline: this method is called from the window's draw call,
-        // which Dalamud does not promise to invoke on the framework thread, and the identity-rearm
-        // fields below belong to the framework thread's single-writer discipline (loginSettledAt
-        // is a struct field the framework tick reads every frame). The same pattern, for the same
-        // reason, as RequestOnboardingConfigPoll's marshal. The scheduler request rides inside the
-        // marshal too, so the rearm always lands before the sweep it exists to unblock.
+        // Marshaled, because the rearm writes framework-thread fields. The scheduler request rides
+        // inside, so the rearm lands before the sweep it unblocks.
         _ = framework.RunOnFrameworkThread(() =>
         {
-            // A marshal queued just before teardown still runs; starting work against a canceled
-            // lifetime would only be discarded a moment later.
             if (lifetimeToken.IsCancellationRequested)
                 return;
 
             var now = timeProvider.GetUtcNow();
 
-            // Identity capture can give up (a home world that never resolved), and only a fresh
-            // login or this press re-arms it. Without this, "Sync now" would queue a sweep that the
-            // `identity is null` guard silently drops on every frame, and the button would appear
-            // to do nothing at all.
-            //
-            // Only after a give-up. A pending capture, the login settle wait or an identity retry, is
-            // left alone: re-arming it would move its deadline to NOW, so a press moments after login
-            // would skip the settle wait entirely (see LoginSettleDelay for what that wait buys).
-            // Logout clears the flag, so a press at the title screen re-arms nothing.
+            // Only a login or this press re-arms a capture that gave up; otherwise the sweep meets a
+            // null identity and the button seems to do nothing. A pending capture is left alone, since
+            // re-arming it would skip the login settle wait (see LoginSettleDelay).
             if (identityCaptureGaveUp && identity is null)
             {
                 loginSettledAt = now;
@@ -885,10 +666,7 @@ internal sealed class SyncManager : IDisposable
                 identityCaptureGaveUp = false;
             }
 
-            // While the website has syncing off, a sweep would be refused at the upload gate, so the
-            // press is recorded instead: a later tick starts a poll for it once one may go, and the
-            // first poll started after the press queues the sweep if its answer says syncing is back
-            // on (see PausedPress and DispatchPausedPress).
+            // During a pause the press waits for its own poll (see PausedPress).
             if (remoteConfig is { Enabled: false })
             {
                 if (UploadGate.CanContactServer(settings))
@@ -902,70 +680,37 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Fetches <c>/config</c> once, in direct response to the user verifying their token — the one
-    /// request path that runs before onboarding is complete.
+    /// Fetches <c>/config</c> once when the user verifies their token: the one request that runs
+    /// before onboarding is complete.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <b>Why the gate is bypassed.</b> Every automatic request funnels through
-    /// <see cref="UploadGate.CanContactServer"/>, which requires <c>OnboardingComplete</c> — that is
-    /// what keeps a fresh install silent. This method skips that check, and Dalamud's rules are the
-    /// reason it may: what they forbid is <i>unprompted</i> contact and <i>non-consensual data
-    /// collection</i>, and this is neither. It runs only as the immediate consequence of the user
-    /// pressing Verify — the same click that already sends <c>GET /me</c> — it uploads nothing, and
-    /// it reads only the server's own switches, cadence, and item manifest. Nothing about the player
-    /// leaves the machine.
-    /// </para>
-    /// <para>
-    /// <b>What it buys.</b> The wizard's consent list is built from the server's manifest groups, so
-    /// without this the first-run user is asked to consent to a list the plugin has not fetched yet,
-    /// and would meet the group checkboxes for the first time in the settings — wearing "New" badges,
-    /// on an install minutes old. The <see cref="RemoteConfig"/> this fills in is the single source
-    /// of truth for the config; the window reads it back rather than keeping a copy of its own.
-    /// </para>
-    /// <para>
-    /// Safe to call as often as the user presses Verify: a poll already in flight wins, and a token
-    /// that is not even well formed is refused here rather than earning an opaque 401.
-    /// </para>
+    /// It skips <see cref="UploadGate.CanContactServer"/>, which keeps a fresh install silent. Dalamud's
+    /// rules allow this: it runs only on the user's Verify press, which already sends <c>GET /me</c>,
+    /// and it sends nothing about the player, reading only the server's switches, cadence and item
+    /// manifest. It lets the wizard ask consent for the server's item groups instead of the user
+    /// meeting them later as "New".
     /// </remarks>
     public void RequestOnboardingConfigPoll()
     {
-        // The bypass is justified by the wizard and nowhere else, so it refuses to run outside it
-        // rather than trusting its caller to check. Past onboarding, the ordinary gate governs every
-        // poll — a request from here would be one the user's master switch never authorized.
+        // The bypass is justified only inside the wizard. Past onboarding the ordinary gate governs
+        // every poll, and a request from here would skip the master switch.
         if (settings.OnboardingComplete)
             return;
 
-        // A credential is still required. This is the one part of CanContactServer that survives the
-        // bypass: with no usable token the request could only ever come back 401, so the round trip
-        // would tell the user nothing a local shape check could not.
+        // The one part of CanContactServer that survives the bypass: without a usable token the answer
+        // could only be a 401.
         if (!settings.HasUsableToken())
             return;
 
-        // The wizard holds its consent step shut while this is true, so it is raised here — on the press
-        // itself — rather than when the poll eventually starts. Raising it later would leave a window in
-        // which the request is on its way and the wizard believes it has nothing to wait for.
-        //
-        // Every path out of here lowers it again. A poll that starts lowers it when it answers, and the
-        // HTTP client's own timeout means even an unreachable server answers; a request that arrives
-        // while a poll is already in flight is satisfied by that poll's answer; and a marshal that lands
-        // after teardown lowers it on the spot. The wait can therefore always end.
+        // Raised on the press, not when the poll starts, so the wizard never thinks it has nothing to
+        // wait for. Every path lowers it: a poll answers (the HTTP timeout makes even an unreachable
+        // server answer), a press during a poll shares its answer, and a post-teardown marshal lowers it.
         onboardingConfigPending = true;
 
-        // Marshaled rather than started inline. This runs from the window's draw call, which Dalamud
-        // does not promise to invoke on the framework thread, and StartConfigPoll writes
-        // `nextConfigPollAt` — a struct field the framework tick reads every frame. Keeping every
-        // write to it on the framework thread is the same single-writer discipline the identity
-        // fields document above, and it is what makes those per-frame reads safe without locks.
-        //
-        // `_ =` discards the returned task deliberately, like the Task.Run calls elsewhere in this
-        // class: nothing awaits it, and StartConfigPoll cannot throw.
+        // Marshaled, because StartConfigPoll writes framework-thread fields.
         _ = framework.RunOnFrameworkThread(() =>
         {
-            // The marshal can land after teardown has begun: Dispose unsubscribes the event handlers,
-            // but a delegate already queued still runs. Starting a fresh request against a canceled
-            // lifetime would only be canceled a moment later. The wait is lowered on the way out, so
-            // it cannot be left standing by a poll that will now never run.
+            // Lowered here, since the poll it waits on will now never run.
             if (lifetimeToken.IsCancellationRequested)
             {
                 onboardingConfigPending = false;
@@ -992,8 +737,7 @@ internal sealed class SyncManager : IDisposable
     // --- Game events -----------------------------------------------------------------------
 
     /// <summary>
-    /// The character began loading. The identity is deliberately not read yet — at this moment the
-    /// game has not necessarily populated it.
+    /// The character began loading. The identity is read later, once the game has populated it.
     /// </summary>
     private void OnLogin()
     {
@@ -1004,10 +748,6 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>The character logged out. Everything character-specific is dropped.</summary>
-    /// <remarks>
-    /// Dalamud hands this a logout type and code that the plugin has no use for; the signature must
-    /// still match the event's delegate.
-    /// </remarks>
     private void OnLogout(int type, int code)
     {
         identity = null;
@@ -1016,68 +756,46 @@ internal sealed class SyncManager : IDisposable
         identityCaptureGaveUp = false;
         loggedIn = false;
 
-        // The "user must fix this" halt is released on logout, because its most common cause —
-        // the server would not match this character to a verified claim — belongs to the
-        // character, and the character is leaving. Without this, logging into a verified character
-        // behind a refused one inherits a halt that does not apply to it, and the login sync
-        // silently never fires. The token-shaped causes self-heal: a genuinely revoked token earns
-        // one 401 from the next character's login sync and halts again — a request or two per
-        // relog, never a loop, because a token-shaped halt stops the config poll too.
+        // The halt's most common cause, a character the server would not match, leaves with the
+        // character; kept, it would silently block the next character's login sync. A revoked token
+        // halts again on the next login sync: a request or two per relog, never a loop.
         blockedPendingUserAction = false;
 
-        // Responses still in flight belong to the character who just left; bumping the generation
-        // makes them discard themselves when they land, instead of re-latching the halt (or a stale
-        // status line) onto whoever logs in next.
+        // Responses still in flight discard themselves when they land; see sessionGeneration.
         sessionGeneration++;
 
-        // The status line describes the previous character's last upload. Left in place it would
-        // flash — or, if nothing syncs, stick — on whoever logs in next.
+        // The status line describes the departing character's last upload.
         lastStatusCode = -1;
         lastSyncedAtBox = null;
 
-        // Skip reasons describe the session that just ended — the achievements list, for instance, is
-        // unloaded on logout. Carrying them into the next character would show hints about a state
-        // that no longer exists.
+        // The read-status snapshots describe the ended session and the departing character's storage.
+        // The achievements list, for one, unloads on logout.
         lastSkipped = new Dictionary<string, string>();
 
-        // Partial notes and chip hover copy are session-scoped for the same reason: whatever was
-        // read, or left unread, belonged to the departing character.
         lastPartialNotes = new Dictionary<string, string>();
         lastCollectedDetails = new Dictionary<string, string>();
 
-        // Source notes describe THIS character's inventory, retainers, and other storage — none of
-        // which belongs to whoever logs in next. Carrying them across a character switch would show
-        // scan status for storage the new character does not own.
         lastSourceNotes = new Dictionary<string, ItemSourceStatus>();
 
-        // Nothing has been read for the NEXT character yet. Left set, the read-status panel would
-        // report the departing character's collections as read — and, with their skip reasons just
-        // cleared above, report every enabled collection as healthy before a single pass had run.
+        // Left set, with the skip reasons cleared above, the panel would report every enabled
+        // collection read before any pass had run.
         hasCollected = false;
 
-        // Queued work belongs to the character that queued it. Uploading it after a character switch
-        // would attribute one character's unlocks to another.
+        // Queued work uploaded after a character switch would credit one character's unlocks to another.
         scheduler.Reset();
 
-        // Which categories a cap had to cut is a fact about how much the departing character had
-        // collected. Held across the switch, the next character's truncation would go unmentioned
-        // because someone else's already had its line.
+        // A cap cut depends on how much the departing character collected; kept, the next
+        // character's cut would go unlogged.
         capWarnings.Reset();
 
-        // A pass that cannot be assembled records no upload-log row at all — it throws before the
-        // draft exists — so the log line is the only trace it leaves. Clearing here gives a relog
-        // a way to surface a failure that would otherwise be reported once and then never again
-        // for the life of the plugin load, while syncing stays silently dead.
+        // An assembly failure leaves no upload-log row, only its log line; clearing lets a relog report
+        // it in full again.
         assembleFailures.Reset();
 
-        // outcomeWarnings is not character-scoped and stays. The upload task owns it and can be in
-        // flight while this runs, so clearing it here would be a cross-thread write; NoteSuccess
-        // clears it instead.
+        // outcomeWarnings stays: the upload task owns it and may be running, so NoteSuccess clears it.
 
-        // The upload log's entries describe the departing character's uploads, and its change-diff
-        // baselines on the nearest older entry per category — left in place, the next character's
-        // first sync would be compared against the PREVIOUS character's counts and light up gold
-        // "(changed)" marks for differences no one earned. Character-scoped, like everything above.
+        // The log diffs each row against the nearest older one, so the next character's first sync
+        // would show "(changed)" against the departing character's counts.
         uploadLog.Clear();
     }
 
@@ -1085,23 +803,11 @@ internal sealed class SyncManager : IDisposable
     /// The local player unlocked something. Routes it to the collector that owns that sheet.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Contains no category names. It asks each collector "is this row yours?" and files the answer
-    /// under that collector's own key, so a new collection needs no change here.
-    /// </para>
-    /// <para>
-    /// Routing rather than sweeping is a correctness requirement, not an optimization. The contract
-    /// says an <c>unlock</c> upload "stamps the upload moment as the acquisition time for every
-    /// category in it", and an acquisition date is never revised afterwards. Quests are the sharpest
-    /// case: a snapshot upload deliberately leaves their date null, so sweeping every category on one
-    /// mount unlock would stamp a fake acquisition date onto every quest uploaded for the first time
-    /// alongside it — permanently.
-    /// </para>
-    /// <para>
-    /// The <c>identity is null</c> guard is load-bearing for compliance, not just for correctness: it
-    /// is what keeps this handler completely inert before the user has opted in, since the identity
-    /// is only ever captured on the far side of the upload gate.
-    /// </para>
+    /// It names no category: each collector says whether the row is its own. Routing rather than
+    /// sweeping matters because an <c>unlock</c> upload permanently stamps its moment as the acquisition
+    /// date of every category in it, so a sweep would date every first-time quest to one mount unlock.
+    /// The <c>identity is null</c> guard keeps this inert before opt-in, since the identity is captured
+    /// only past the upload gate.
     /// </remarks>
     private void OnUnlock(RowRef rowRef)
     {
@@ -1112,10 +818,7 @@ internal sealed class SyncManager : IDisposable
 
         foreach (var collector in collectors)
         {
-            // Not every collector maps to an unlockable sheet — possession counts, for instance, are
-            // not unlocks. Those simply do not implement IUnlockAware and never match.
-            //
-            // `is IUnlockAware aware` tests the type and binds the converted value in one step.
+            // A collector with no unlockable sheet, such as a possession count, is not IUnlockAware.
             if (collector is IUnlockAware aware && aware.Handles(rowRef))
             {
                 scheduler.NotifyUnlock(collector.CategoryKey, now);
@@ -1130,23 +833,8 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <param name="categoryKey">The category to upload, named by whatever captured the change.</param>
     /// <remarks>
-    /// <para>
-    /// <see cref="OnUnlock"/> can only route what Dalamud reports as an unlock, which is a change
-    /// to the game's unlock bitmaps. A collection whose source is a different kind of event — a
-    /// window the player opens, say — has no row reference to route, so it calls this instead and
-    /// names its own category, exactly as a collector does.
-    /// </para>
-    /// <para>
-    /// Naming no category here is what keeps that true: the key is an argument, so a new collection
-    /// of this kind needs no change to this class. Everything else about the upload is identical to
-    /// an unlock's, debounce and acquisition stamping included — which is the point, since both are
-    /// "this one collection just gained something".
-    /// </para>
-    /// <para>
-    /// The <c>identity is null</c> guard is the same compliance gate <see cref="OnUnlock"/> carries,
-    /// and for the same reason: the identity is only ever captured on the far side of the upload
-    /// gate, so this stays completely inert until the user has opted in.
-    /// </para>
+    /// The upload is an unlock's in every way, debounce and acquisition stamping included. The
+    /// <c>identity is null</c> guard keeps this inert before opt-in; see <see cref="OnUnlock"/>.
     /// </remarks>
     public void NotifyCategoryChanged(string categoryKey)
     {
@@ -1161,8 +849,7 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     private void OnFrameworkUpdate(IFramework _)
     {
-        // How much of this frame may run is SyncTickPlan.Decide's rule; only the work happens here.
-        // Which halts still let the poll through is SyncTickPlan.PollSurvivesHalt's rule.
+        // SyncTickPlan decides how much of this frame runs and which halts the poll survives.
         var plan = SyncTickPlan.Decide(
             UploadGate.CanContactServer(settings),
             pollIsWorthwhile: SyncTickPlan.PollSurvivesHalt(HaltStatus),
@@ -1173,33 +860,24 @@ internal sealed class SyncManager : IDisposable
 
         var now = timeProvider.GetUtcNow();
 
-        // Polled even while the kill switch is off — it is how we learn the switch flipped back.
+        // Polled even while the kill switch is off: that is how the plugin learns it flipped back.
         PollConfigIfDue(now);
 
-        // A "Sync now" press made during a pause asks for a poll of its own.
         DispatchPausedPress(now);
 
-        // Once the latest /config says syncing is back on, the wait a switched-off 503 started ends.
         EndSyncWaitIfResumed(now);
 
         if (plan == TickAction.PollOnly)
             return;
 
-        // Read the volatile field ONCE and use the snapshot for the whole frame. A background poll
-        // completing mid-frame would otherwise let us collect items against one manifest and stamp
-        // the payload with a different manifest's version.
+        // One read for the whole frame, so a poll landing mid-frame cannot pair one manifest's items
+        // with another's version.
         var config = remoteConfig;
 
         CaptureIdentityIfSettled(now);
 
-        // Hold sweeps until the first config poll of this load has ANSWERED, one way or the
-        // other. Without this, the first sweep dispatches on the same tick the fetch starts and
-        // collects with no item manifest — skipping the items category and leaving a scary
-        // "waiting for {host}" hint on the settings screen until the next sweep, minutes
-        // later. Success populates the manifest; failure lets syncing proceed anyway (the skip
-        // hint then describes a server we genuinely could not reach). The scheduler keeps the
-        // queued trigger, so the held sweep dispatches on the first tick after the answer —
-        // the cost is one config round trip before the session's first upload.
+        // Hold sweeps until this load's first config poll answers, either way, or the first sweep has no
+        // item manifest and skips items. The trigger stays queued, so this costs one config round trip.
         if (remoteConfig is null && !firstConfigAnswerSeen)
             return;
 
@@ -1219,48 +897,39 @@ internal sealed class SyncManager : IDisposable
 
     // --- Work ------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Reads the character once the login has settled. On the framework thread, as required.
-    /// </summary>
+    /// <summary>Reads the character once the login has settled.</summary>
     /// <remarks>
-    /// The character is committed only when it is <b>usable</b>. An empty name or home world would
-    /// fail the contract's length constraints and earn a 400 on every single upload for the rest of
-    /// the session — a silent, permanent failure. So an unusable read is retried a bounded number of
-    /// times and then abandoned until a "Sync now" press or the next login, rather than cached.
+    /// Commits only a usable character (see <see cref="CharacterIdentity.IsUsable"/>). An unusable
+    /// character is read up to <see cref="MaxIdentityAttempts"/> times, then abandoned until a "Sync now"
+    /// press or the next login.
     /// </remarks>
     private void CaptureIdentityIfSettled(DateTimeOffset now)
     {
-        // `x is not { } y` reads as "x is null". The positive form, `x is { } y`, means "x is not
-        // null, and call the unwrapped value y" — a null test and an unwrap in one step, after which
-        // the compiler knows y is non-null. So: bail out if no login is pending, or if it has not
-        // settled yet.
         if (loginSettledAt is not { } settledAt || now < settledAt)
             return;
 
-        // The delay elapsed but the game has not populated the player yet. Re-check next frame; this
-        // costs two property reads and never logs, so it is safe to do per-frame.
+        // Not populated yet. Re-checked every frame, which is cheap: two reads and no logging.
         if (!playerState.IsLoaded || playerState.ContentId == 0)
             return;
 
         CharacterIdentity candidate;
         try
         {
-            // The one-way door. The raw ContentId is hashed here, at the edge, and the plain value
-            // never reaches the payload, the log, or the config file.
+            // Hashed here, where it is read (see ContentIdHash).
             candidate = new CharacterIdentity
             {
                 ContentIdHash = ContentIdHash.Compute(playerState.ContentId),
                 Name = playerState.CharacterName,
 
-                // The home world is a lazy reference into a game data sheet. It can fail to resolve
-                // — a sheet still loading, or a world newer than the installed game data.
+                // A lazy sheet reference: it fails to resolve while the sheet loads, or for a world
+                // newer than the installed game data.
                 HomeWorld = playerState.HomeWorld.ValueNullable?.Name.ExtractText() ?? string.Empty,
             };
         }
         catch (Exception ex)
         {
-            // A character we cannot identify is a character we must not upload for: the hash is what
-            // the server binds the data to, and guessing it would write to the wrong character.
+            // Never upload for a character we cannot identify: the server binds data to the hash, so
+            // a guess would write to the wrong character.
             log.Error(
                 ex, "Could not read the local character; syncing stays idle until Sync now or next login.");
             loginSettledAt = null;
@@ -1281,7 +950,6 @@ internal sealed class SyncManager : IDisposable
                 return;
             }
 
-            // Back off and try again, rather than committing an identity every upload will fail on.
             loginSettledAt = now + IdentityRetryDelay;
             return;
         }
@@ -1296,7 +964,7 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>Collects on the framework thread, then hands the payload to a background upload.</summary>
-    /// <param name="due">The work the scheduler handed out. Already consumed — it will not be reissued.</param>
+    /// <param name="due">The work the scheduler handed out; already consumed, so never reissued.</param>
     /// <param name="config">The frame's snapshot of the server config, so it cannot change mid-build.</param>
     private void StartUpload(SyncDue due, ConfigResponse? config)
     {
@@ -1304,71 +972,42 @@ internal sealed class SyncManager : IDisposable
         SyncRequest request;
         UploadLogEntry logDraft;
 
-        // The scheduler has already handed this work out, so a throw here would silently lose the
-        // sweep. Worse, an exception escaping the Update handler propagates into Dalamud's dispatch.
-        // Individual collectors are guarded inside CollectorRunner; this guards everything around them.
+        // A throw here would lose the sweep and escape into Dalamud's dispatch. CollectorRunner guards
+        // each collector; this guards everything around them.
         try
         {
-            // Reading game state — must happen here, on the framework thread, before anything is async.
             snapshot = CollectorRunner.Run(
                 CollectorSelection.For(collectors, due.Categories), settings, config);
 
-            // A pass has now looked at the game for this character, so the settings window's
-            // read-status panel may report on it. Set from the snapshot, not from the upload's
-            // outcome: the panel describes what the plugin could READ, which is settled here and is
-            // true whether or not the resulting payload ever reaches the server (it may be empty,
-            // rejected, or halted).
+            // Set here, not on the upload's outcome: the panel reports what was read, whether or not
+            // the payload ever ships.
             hasCollected = true;
 
-            // Where a clipped manifest becomes visible: without this, a server bug serving an
-            // oversized manifest would read as mysteriously missing counts. ManifestTruncationWarnings
-            // decides which of this pass's clips have not been reported yet.
+            // Without this, a server bug serving an oversized manifest would look like missing counts.
             foreach (var warning in truncationWarnings.LinesFor(
                 snapshot.TruncatedManifests, config?.ManifestVersion))
             {
                 log.Warning(warning);
             }
 
-            // Bound every category to the contract's caps before anything downstream sees it.
-            // An over-cap payload is rejected whole by the server (400), losing every category
-            // in it; truncating here keeps the rest of the upload alive. PayloadCaps hands back a
-            // bounded snapshot — the same instance when nothing was over a cap — so everything
-            // below (the cost log, the skip reasons, the request build, and the upload-log draft)
-            // sees one snapshot without any of them needing to know capping happened. It also
-            // retracts the completeness claim of every category it cut, so a truncated list can
-            // never ship declared complete.
+            // Bounded to the contract's caps (see PayloadCaps). Everything below sees the bounded
+            // snapshot, whose cut categories do not claim completeness.
             var (boundedSnapshot, droppedByCap) = PayloadCaps.Bound(snapshot);
             if (droppedByCap.Count > 0)
             {
-                // Every pass over a cap ships the bounded snapshot. The dedupe below rations only
-                // the log lines — never the truncation itself.
+                // The dedupe below rations only the log lines, never the truncation.
                 snapshot = boundedSnapshot;
 
-                // PayloadCapWarnings decides which of this pass's cuts have not been reported yet.
                 foreach (var line in capWarnings.LinesFor(droppedByCap))
                     log.Warning($"Payload cap: {line}.");
             }
 
             LogCollectionCost(snapshot, due.Trigger);
 
-            // The full facts of every category. This is the QA and support surface for collectors
-            // whose values matter and not just their counts — harvesting a quest's sequence bytes
-            // for the server's curated table, checking an item count against a container. Logged
-            // from the bounded snapshot, so it shows what actually ships. Facts stay on the
-            // user's machine: /xllog is local, and everything here is data the user consented to
-            // uploading anyway. A generic loop over whatever categories the pass produced —
-            // never a peek at one category by name.
-            //
-            // Verbose rather than Debug, deliberately: a quests line is tens of kilobytes, and at
-            // Debug it would drown the short timing/scheduling lines someone raising the level is
-            // usually after. Payload dumps sit one notch deeper in the /xllog dropdown.
-            //
-            // The level check guards eager work: C# interpolation is eager, so without it every
-            // pass would serialize every category to JSON (~100KB of throwaway strings) on the
-            // framework thread just to have Verbose discard the result at the default level.
-            // Guarded, the cost is zero unless the user has deliberately raised the plugin's
-            // level. (Serilog orders levels Verbose < Debug < Information, so "<= Verbose"
-            // means Verbose is actually enabled.)
+            // The full facts as shipped, for checking values and not just counts. They stay local in
+            // /xllog, and the user already consented to uploading them. Verbose, not Debug: a quests line
+            // is tens of kilobytes. With Verbose off, the level check skips serializing them on the
+            // framework thread.
             if (log.MinimumLogLevel <= LogEventLevel.Verbose)
             {
                 foreach (var (categoryKey, facts) in snapshot.Collections)
@@ -1383,9 +1022,8 @@ internal sealed class SyncManager : IDisposable
 
             if (snapshot.Collections.Count == 0)
             {
-                // Every category was disabled, skipped, or unreadable. An empty `collections` object
-                // is a valid payload, but it asserts nothing, so sending it would only spend a
-                // rate-limit slot.
+                // An empty `collections` object is valid but asserts nothing, so sending it would only
+                // spend a rate-limit slot.
                 log.Debug($"Nothing to upload for {due.Trigger}; skipping.");
                 return;
             }
@@ -1393,28 +1031,19 @@ internal sealed class SyncManager : IDisposable
             request = SyncPayloadBuilder.Build(
                 identity!, pluginVersion, due.Trigger, snapshot, config?.ManifestVersion);
 
-            // Which categories this upload declares complete. Read off the built request rather
-            // than the snapshot, so it reports what actually ships: the builder withholds every
-            // declaration on an unlock upload, and a category the payload does not carry never
-            // gets one. Logged apart from the facts because it is a different kind of statement —
-            // the facts say what was found, this says what the upload asserts was findable (see
-            // SyncRequest.CollectionScopes) — and that assertion's only other visible effect is on
-            // the website, a machine away from the pass that made it.
+            // The completeness claims as shipped, read off the request because the builder withholds
+            // some. Without this line only the website shows what the upload asserted was findable.
             if (log.MinimumLogLevel <= LogEventLevel.Verbose && request.CollectionScopes is { } scopes)
                 log.Verbose($"{due.Trigger} declared complete: {string.Join(", ", scopes.Keys)}");
 
-            // The upload-log draft is summarized HERE, from the same snapshot the payload was
-            // built from — so the log describes what actually went out, never a reconstruction.
-            // Its status and failure diagnostics are filled in when the response settles. Inside
-            // this try on purpose: Draft serializes and hashes the facts, and this method's
-            // promise is that nothing in it can throw into the frame dispatch.
+            // Drafted from the snapshot the payload was built from, so the log shows what went out; the
+            // response fills in the rest. Inside the try because Draft serializes and hashes the facts.
             logDraft = UploadLogEntry.Draft(
                 timeProvider.GetUtcNow(), due.Trigger, snapshot, config?.ManifestVersion);
         }
         catch (Exception ex)
         {
-            // Reported in full once. A pass that cannot be assembled usually cannot be assembled
-            // the next time either, and the sweep comes round again on its own.
+            // Reported in full once: a pass that fails to assemble usually fails on the next sweep too.
             if (assembleFailures.IsFirstSighting(ex))
                 log.Error(ex, $"Could not assemble the {due.Trigger} upload; skipping it.");
             else
@@ -1424,55 +1053,38 @@ internal sealed class SyncManager : IDisposable
 
         uploadInFlight = true;
 
-        // Task.Run moves the whole thing off the framework thread, including the JSON serialization
-        // inside PostSyncAsync. `_ =` discards the task deliberately: it is awaited by nobody, and
-        // UploadAsync is written so that nothing can escape it.
-        //
-        // No cancellation token is passed to Task.Run on purpose. Handing it one that is ALREADY
-        // canceled makes Task.Run skip the delegate entirely, so UploadAsync's `finally` would
-        // never run, `uploadInFlight` would stay true, and syncing would be dead for the rest of the
-        // session. Cancellation is instead observed inside UploadAsync, where the flag is cleared.
-        //
-        // The generation is captured here, once, so the task compares against the session it was
-        // started for rather than whatever the field holds when the response lands.
+        // Off the framework thread, JSON serialization included. No token: Task.Run skips the delegate
+        // for an already-canceled one, so UploadAsync's finally would never clear uploadInFlight.
         var startedFor = sessionGeneration;
         _ = Task.Run(() => UploadAsync(request, due.Trigger, startedFor, logDraft));
     }
 
     /// <summary>
-    /// Folds this pass's skip reasons into what the settings window shows. The merge rules live
-    /// in <see cref="CollectionStatusMemory"/>, where they are unit-tested — including why the
-    /// memory is merged rather than replaced.
+    /// Folds this pass's skip reasons into the settings window's memory; see
+    /// <see cref="CollectionStatusMemory"/>.
     /// </summary>
     private void RememberSkipReasons(CollectionSnapshot snapshot) =>
         lastSkipped = CollectionStatusMemory.MergeSkipReasons(lastSkipped, snapshot);
 
     /// <summary>
-    /// Merges this pass's partial-read phrases into the settings window's memory of them. The
-    /// rules live in <see cref="CollectionStatusMemory"/>, where they are unit-tested.
+    /// Merges this pass's partial-read phrases into the settings window's memory; see
+    /// <see cref="CollectionStatusMemory"/>.
     /// </summary>
     private void RememberPartialNotes(CollectionSnapshot snapshot) =>
         lastPartialNotes = CollectionStatusMemory.MergePartialNotes(lastPartialNotes, snapshot);
 
     /// <summary>
-    /// Merges this pass's healthy-chip hover copy into the settings window's memory of it. The
-    /// rules live in <see cref="CollectionStatusMemory"/>, where they are unit-tested.
+    /// Merges this pass's healthy-chip hover copy into the settings window's memory; see
+    /// <see cref="CollectionStatusMemory"/>.
     /// </summary>
     private void RememberCollectedDetails(CollectionSnapshot snapshot) =>
         lastCollectedDetails =
             CollectionStatusMemory.MergeCollectedDetails(lastCollectedDetails, snapshot);
 
     /// <summary>
-    /// Replaces the settings window's source-notes snapshot with this pass's, but only when this
-    /// pass actually reported any.
+    /// Replaces the settings window's source notes with this pass's, when it reported any. See
+    /// <see cref="lastSourceNotes"/>.
     /// </summary>
-    /// <remarks>
-    /// See the reasoning on <see cref="lastSourceNotes"/> for why this replaces instead of merging
-    /// like <see cref="RememberSkipReasons"/> does, and why an empty result from this pass leaves
-    /// the field untouched rather than clearing it: a pass that never touched the item sources (for
-    /// example an unlock sweep for a different category) has nothing truthful to say about them, so
-    /// the last pass that did look stays the answer.
-    /// </remarks>
     private void RememberSourceNotes(CollectionSnapshot snapshot)
     {
         if (snapshot.SourceNotes.Count > 0)
@@ -1483,11 +1095,9 @@ internal sealed class SyncManager : IDisposable
     /// Reports what this collection pass cost the frame it ran in.
     /// </summary>
     /// <remarks>
-    /// Escalates to Warning for a pass that is repeatedly expensive, because at that point it is no
-    /// longer a curiosity: a pass that overruns the frame is a visible stutter for the player, and
-    /// the fix is to spread the work across frames rather than to collect less. Which passes qualify
-    /// is <see cref="CollectionCost.IsAlarming"/>'s rule, unit-tested alongside the arithmetic and
-    /// the ordering; only the logging is here.
+    /// Warns about a repeatedly expensive pass, because overrunning the frame stutters the game; the fix
+    /// is to spread the work across frames, not to collect less. <see cref="CollectionCost.IsAlarming"/>
+    /// decides which passes qualify.
     /// </remarks>
     private void LogCollectionCost(CollectionSnapshot snapshot, SyncTrigger trigger)
     {
@@ -1497,13 +1107,11 @@ internal sealed class SyncManager : IDisposable
         if (cost.IsEmpty)
             return;
 
-        // A pass where no collector ran warmed nothing, so it must not claim the session's one
-        // exemption — the genuinely cold pass that follows would then be reported as a problem.
+        // A pass where no collector ran warmed nothing, so it must not use up the first-pass exemption.
         anyPassHasRun = true;
 
-        // C# interpolation is eager: these strings are assembled whether or not the log level would
-        // print them. Affordable only because this runs once per upload (a login or a 30-minute
-        // sweep), never once per frame. Do not copy this pattern into a per-frame path.
+        // These strings are built whatever the log level. Fine once per upload; never copy this into a
+        // per-frame path.
         if (budgetWarnings.ShouldReport(cost))
         {
             log.Warning(
@@ -1514,9 +1122,7 @@ internal sealed class SyncManager : IDisposable
             return;
         }
 
-        // Still over budget, and the culprit has already been named. A slow machine overruns on
-        // every pass, so the reader learns nothing new — but the number stays available to anyone
-        // who raises the log level.
+        // Already named. A slow machine overruns on every pass, so later overruns go to Debug.
         if (cost.IsAlarming)
         {
             log.Debug(
@@ -1525,9 +1131,7 @@ internal sealed class SyncManager : IDisposable
             return;
         }
 
-        // Still reported when it overran, just not as a problem: the number is what tells a
-        // contributor what warm-up costs on a real client, and hiding it would leave the next
-        // person measuring it from scratch.
+        // An exempt overrun is still logged: it shows what warm-up costs on a real client.
         var note = cost.OverBudget && isFirstPass
             ? " (first pass of this session; mostly one-time warm-up)"
             : string.Empty;
@@ -1538,7 +1142,7 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>Uploads off the framework thread, retrying once if the failure was transient.</summary>
     /// <param name="startedFor">The session generation this upload belongs to.</param>
-    /// <param name="logDraft">The upload-log summary of what this request carries, awaiting its outcome.</param>
+    /// <param name="logDraft">The upload-log summary of this request, awaiting its outcome.</param>
     private async Task UploadAsync(
         SyncRequest request, SyncTrigger trigger, int startedFor, UploadLogEntry logDraft)
     {
@@ -1548,22 +1152,16 @@ internal sealed class SyncManager : IDisposable
             {
                 var response = await apiClient.PostSyncAsync(request, lifetimeToken).ConfigureAwait(false);
 
-                // The character this answer is about may have logged out while it was in the air.
-                // Applying it would write the previous character's status — or worse, a halt — onto
-                // whoever is logged in now. The server already acted on the request (its writes are
-                // monotonic, so that is harmless); only the local bookkeeping is stale. Checked per
-                // iteration, so a logout during the retry delay is caught too. The one thing this
-                // can drop is a late 429's Retry-After, which costs at most one extra request that
-                // will receive its own.
+                // A logout while this was in the air makes it stale (see sessionGeneration), and the
+                // server's monotonic writes make dropping it harmless. Checked per attempt to catch a
+                // logout during the retry delay; a dropped late 429 costs at most one extra request.
                 if (startedFor != sessionGeneration)
                 {
                     log.Debug($"Discarding a {trigger} sync response from a previous session.");
                     return;
                 }
 
-                // The draft plus everything the settled response can add to "why": the outcome,
-                // which attempt this was, the server's requested wait, the raw HTTP code, and
-                // any validation complaints — the diagnostics a pasted bug report needs.
+                // The draft plus the response's diagnostics, for a pasted bug report.
                 var settledEntry = logDraft with
                 {
                     Status = response.Status,
@@ -1576,11 +1174,8 @@ internal sealed class SyncManager : IDisposable
 
                 if (HandleResponse(response, trigger, startedFor))
                 {
-                    // Settled: recorded even for failures — a transparency log that hid failed
-                    // uploads would be lying. The generation is re-checked at the moment of
-                    // writing, the same discipline HandleResponse applies to the status fields:
-                    // HandleResponse also returns true for a response it DISCARDED as stale, and
-                    // a previous character's upload must not be written into the log either.
+                    // Recorded even for failures, since a log that hid them would mislead. Rechecked,
+                    // because HandleResponse also returns true for a stale response it discarded.
                     if (startedFor == sessionGeneration)
                         uploadLog.Record(settledEntry);
 
@@ -1595,7 +1190,7 @@ internal sealed class SyncManager : IDisposable
                     return;
                 }
 
-                // Writes are idempotent server-side, so repeating the identical body is safe.
+                // Safe to repeat; see RetryPolicy.ShouldRetryNow.
                 var code = HttpCodeNote(response.HttpStatusCode);
                 log.Debug($"Retrying {trigger} sync after {response.Status}{code}.");
                 await Task.Delay(RetryPolicy.TransientRetryDelay, lifetimeToken).ConfigureAwait(false);
@@ -1603,15 +1198,12 @@ internal sealed class SyncManager : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // The plugin unloaded mid-upload. Deliberately not logged: the log service may itself be
-            // torn down by now.
+            // Unloaded mid-upload. Not logged: the log service may already be torn down.
         }
         catch (Exception ex)
         {
-            // A last-resort net. An exception left unhandled in a discarded task escapes as an
-            // unobserved-task exception on the finalizer thread, long after the context that caused
-            // it is gone — logged at best, silently swallowed at worst. Catch it while we still know
-            // what we were doing.
+            // A last-resort net: an exception escaping a discarded task surfaces later on the finalizer
+            // thread, with its context gone.
             if (uploadFailures.IsFirstSighting(ex))
                 log.Error(ex, "Unexpected failure during sync upload.");
             else
@@ -1623,14 +1215,14 @@ internal sealed class SyncManager : IDisposable
         }
     }
 
-    /// <summary>Applies the server's answer to the scheduler. Returns true when the attempt is settled.</summary>
+    /// <summary>
+    /// Applies the server's answer to the scheduler. Returns true when the attempt is settled.
+    /// </summary>
     /// <param name="startedFor">The session generation the upload belongs to.</param>
     private bool HandleResponse(ApiResponse<SyncResponse> response, SyncTrigger trigger, int startedFor)
     {
-        // Re-checked here, at the moment of writing, not only before the call: a logout can land in
-        // the gap between the caller's check and these writes, and a stale write after OnLogout's
-        // clears would put the previous character's status — or worse, a halt — onto the next one.
-        // The re-check shrinks that window from a network round trip to a few instructions.
+        // Rechecked at the moment of writing, which shrinks the logout race from a round trip to a few
+        // instructions.
         if (startedFor != sessionGeneration)
         {
             log.Debug($"Discarding a {trigger} sync response from a previous session.");
@@ -1645,23 +1237,20 @@ internal sealed class SyncManager : IDisposable
             scheduler.MarkUploaded(trigger, now);
             lastSyncedAtBox = now;
 
-            // A working upload ends whatever run of failures came before it, so the next one is
-            // worth reporting even if it is the same status as the last.
+            // A success ends the run of failures, so the next failure is reported even if its status
+            // repeats.
             if (outcomeWarnings.NoteSuccess())
                 log.Information($"Sync recovered on the {trigger} upload.");
 
-            // And it shows a wait ended early was rightly ended (see SyncResumeWait.UploadAccepted).
+            // It also shows a wait that ended early was rightly ended (see SyncResumeWait.UploadAccepted).
             syncWait.UploadAccepted();
 
-            // Categories the server refused (a per-category kill switch). Surfaced so the user is not
-            // left wondering why a collection never appears on the website.
+            // Categories a per-category kill switch refused, logged so the user knows why one never
+            // appears on the website.
             var skipped = response.Value?.SkippedCategories;
 
-            // Folded and bounded like every other adopted server string: the log is a durable
-            // sink the user pastes into bug reports, and these names come from an overridable
-            // backend — a newline inside one would let it forge its own log lines. The join runs
-            // before the bound, which is safe only because the response body these names were
-            // parsed from is itself capped at ApiClient.MaxResponseBytes.
+            // Folded to one bounded line: these names come from an overridable backend, and a newline
+            // could forge log lines. Joining first is safe because ApiClient.MaxResponseBytes caps the body.
             if (skipped is {Count: > 0}
                 && ServerText.SingleLine(string.Join(", ", skipped)) is { } names)
             {
@@ -1671,11 +1260,8 @@ internal sealed class SyncManager : IDisposable
             return true;
         }
 
-        // The server told us to wait. Never argue: honor Retry-After when it sent one. A 503 saying
-        // syncing is switched off waits the same way, unless the website says it is back on first
-        // (see SyncResumeWait, which also says when it may not). syncWait is armed before the
-        // scheduler's wait is set (see SyncResumeWait for why). `?.` reads through a possibly-null
-        // value, like optional chaining: no error body, no code.
+        // The server asked for a wait; honor Retry-After when it sent one. A 503 sync_disabled may end
+        // early, and syncWait is armed before the scheduler's wait is set (see SyncResumeWait).
         if (RetryPolicy.BackoffUntil(response.Status, response.RetryAfter, now) is { } until)
         {
             var switchedOff = RetryPolicy.EndsWhenSyncResumes(response.Status, response.Error?.Error);
@@ -1691,15 +1277,14 @@ internal sealed class SyncManager : IDisposable
                 log.Information($"Backing off until {until:u} after {response.Status}.");
             }
 
-            // Either way a switched-off 503 brings the next poll forward, so the card names the pause.
+            // Either way it brings the next poll forward, so the card names the pause.
             if (switchedOff)
                 BringConfigPollForward();
 
             return true;
         }
 
-        // Nothing a retry can fix — a bad token, a character the server would not match, a
-        // misconfigured backend.
+        // Nothing a retry can fix: a bad token, an unmatched character, a misconfigured backend.
         if (RetryPolicy.RequiresUserAction(response.Status))
         {
             // The status first, then the flag: see haltStatusCode.
@@ -1709,12 +1294,10 @@ internal sealed class SyncManager : IDisposable
             return true;
         }
 
-        // Terminal but not the user's fault (a 400, 405, or 413 — all plugin bugs). Retrying the
-        // identical body cannot help, so drop it and let the next trigger build a fresh one.
+        // Terminal and a plugin bug (a 400, 405 or 413): retrying the same body cannot help, so drop it.
         if (ApiStatusMap.IsTerminal(response.Status))
         {
-            // The next trigger builds the same shape and earns the same rejection, so the line is
-            // worth making once until an upload gets through.
+            // The next trigger earns the same rejection, so report it once until an upload gets through.
             if (outcomeWarnings.ShouldReport(response.Status))
                 log.Error($"Sync rejected: {response.Status}. Dropping this upload.");
             else
@@ -1749,34 +1332,27 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Starts a <c>/config</c> poll and schedules the next one. The single place a poll begins,
-    /// whether the frame tick found one due, the user's Verify press asked for one (see
-    /// <see cref="RequestOnboardingConfigPoll"/>), or a "Sync now" press made during a pause did (see
-    /// <see cref="DispatchPausedPress"/>).
+    /// Starts a <c>/config</c> poll and schedules the next. Every poll starts here: the frame tick,
+    /// <see cref="RequestOnboardingConfigPoll"/> and <see cref="DispatchPausedPress"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>Framework thread only.</b> <c>nextConfigPollAt</c> is a struct field with no
-    /// synchronization, written here and read by every frame's tick, so it follows the same
-    /// single-writer discipline as the identity fields: one writer, one thread, no locks.
-    /// </remarks>
+    /// <remarks>Framework thread only: it writes <see cref="nextConfigPollAt"/>.</remarks>
     private void StartConfigPoll(DateTimeOffset now)
     {
-        // The one authoritative in-flight check. Every caller (a due poll, a Verify press, a Sync now
-        // press made during a pause) reaches it on the framework thread, so two landing in the same
-        // frame cannot both get through: the second sees the flag the first just set.
+        // Every caller runs on the framework thread, so two polls asked for in the same frame cannot
+        // both get through.
         if (configPollInFlight)
             return;
 
         nextConfigPollAt = now + ConfigPollInterval;
         configPollInFlight = true;
 
-        // Numbered as it starts (see configPollsStarted). The framework thread is the only writer,
-        // so the increment needs no Interlocked.
+        // Numbered as it starts (see configPollsStarted). The framework thread is the only writer, so
+        // the increment needs no Interlocked.
         configPollsStarted++;
         var pollNumber = configPollsStarted;
 
-        // Untokened for the same reason as the upload above: an already-canceled token would make
-        // Task.Run skip the delegate, stranding configPollInFlight at true.
+        // No token: an already-canceled one would make Task.Run skip the delegate, stranding
+        // configPollInFlight at true.
         var startedFor = sessionGeneration;
         _ = Task.Run(() => PollConfigAsync(startedFor, pollNumber));
     }
@@ -1785,31 +1361,26 @@ internal sealed class SyncManager : IDisposable
     /// <param name="pollNumber">This poll's number, counting polls from 1 as they start.</param>
     private async Task PollConfigAsync(int startedFor, int pollNumber)
     {
-        // Decides, in the finally below, whether the next poll waits the full interval or the short
-        // retry. Declared out here so every exit — a failed response, a throw — is covered by one rule.
+        // The finally reads this to choose the full interval or the short retry, so every exit follows
+        // one rule.
         var answered = false;
 
-        // The answer's `enabled`, or null when no config came back: what settles a press made during
-        // a pause, in the finally below. `bool?` is a bool that may also be null, like
-        // `boolean | null`.
+        // The answer's `enabled`, or null when no config came back. The finally settles a press made
+        // during a pause with it.
         bool? answeredEnabled = null;
 
         try
         {
             var response = await apiClient.GetConfigAsync(lifetimeToken).ConfigureAwait(false);
 
-            // A definitive answer, even an unwelcome one, is still an answer. The short retry exists
-            // for a poll that could not reach the server; hurrying back to a credential the server
-            // has already refused only asks the same question faster. A refusal that only the user
-            // can resolve therefore waits the full interval, which is the cadence the contract
-            // documents and slow enough to be polite about a token that may never come back.
+            // A refusal only the user can fix is an answer too: the short retry is for a poll that could
+            // not reach the server, and asking again sooner only repeats the question.
             answered = response.IsSuccess || RetryPolicy.RequiresUserAction(response.Status);
 
             if (response.IsSuccess)
             {
-                // Applied even when the session generation has moved on: the config describes the
-                // server and the token, not the character, so it is just as valid for whoever logs
-                // in next.
+                // Applied even after a logout: the config describes the server and token, not the
+                // character.
                 var config = response.Value!;
 
                 remoteConfig = config;
@@ -1820,46 +1391,19 @@ internal sealed class SyncManager : IDisposable
 
                 scheduler.ApplyIntervals(config.Intervals);
 
-                // The one-time pre-group consent migration (flag-guarded inside PluginSettings, so
-                // every poll after the first groups-bearing one is a no-op). Running it here means
-                // the first config a user ever receives that carries groups migrates their
-                // pre-group items consent before the next collection pass unions the enabled
-                // groups — without it, an existing user's item scan would go silent until they
-                // re-opted in by hand. The ordering is practical, not strict: the delegate is
-                // queued rather than awaited, but the login sweep's settle delay gives it ample
-                // room to land first, and losing that race would only delay the first item upload
-                // by one cycle (server writes are monotonic), never lose anything.
-                //
-                // Held back until onboarding is complete, because the migration exists to speak for a
-                // user who was never shown a group checkbox — and a user still inside the wizard is in
-                // the middle of being shown exactly that, from this very config. Reading their half-made
-                // category choice here could enable a legacy group they are about to leave off. The
-                // wizard settles the flag itself when it finishes (PluginSettings.SettleItemGroupConsent).
-                //
-                // Marshaled to the framework thread rather than run inline, deliberately. This poll
-                // completes on a background task, but PluginSettings' lists are not thread-safe and
-                // the framework thread reads EnabledItemGroupKeys on every collection pass
-                // (CollectorRunner copies it into the collect context). Keeping every settings
-                // MUTATION on the framework thread — the same single-writer discipline the
-                // identity fields document above — is what makes those reads safe without locks.
-                //
-                // `_ =` discards the returned task on purpose, like the Task.Run calls above:
-                // nothing awaits it, and the try/catch inside keeps anything from escaping into
-                // an unobserved-task exception.
+                // One-time pre-group consent migration, so an existing user's item scan does not go silent.
+                // Queued so it never lands mid-pass. The login settle delay lets it beat the login sweep,
+                // and losing that race delays one upload.
                 _ = framework.RunOnFrameworkThread(() =>
                 {
-                    // The marshal can land after teardown has begun — Dispose unsubscribes the
-                    // event handlers, but a queued delegate still runs. A canceled lifetime means
-                    // the plugin is going away, and a settings write during teardown is not worth
-                    // racing Dispose for; the migration simply runs on the next load's first poll.
+                    // At teardown the migration waits for the next load's first poll.
                     if (lifetimeToken.IsCancellationRequested)
                         return;
 
                     try
                     {
-                        // `Count: > 0` matters as much as the null test: an empty groups array
-                        // must not burn the one-time flag, or a later config carrying the real
-                        // groups could never migrate this user's consent.
+                        // Past onboarding only (see PluginSettings.SettleItemGroupConsent), and never on an
+                        // empty groups array, which would burn the one-time flag before real groups arrive.
                         if (settings.OnboardingComplete
                             && config.ItemManifestGroups is { Count: > 0 } groups
                             && settings.MigrateItemGroupConsent(
@@ -1871,8 +1415,7 @@ internal sealed class SyncManager : IDisposable
                     }
                     catch (Exception ex)
                     {
-                        // Same last-resort net as UploadAsync: a throw in a discarded task would
-                        // surface as an unobserved-task exception long after the context is gone.
+                        // A last-resort net for a discarded task; see UploadAsync.
                         log.Error(ex, "Item group consent migration failed.");
                     }
                 });
@@ -1880,11 +1423,8 @@ internal sealed class SyncManager : IDisposable
                 return;
             }
 
-            // The halt, by contrast, is scoped like the upload's: a failure that arrives after the
-            // character who caused it left must not halt the next one's session. Nor does a poll made
-            // during onboarding halt anything — the user is still at the token box, being told what the
-            // server thinks of their token by the wizard itself, and a halt raised here would outlive
-            // the wizard and suppress the first sweep of a session that has yet to begin.
+            // A halt is session-scoped, so a stale answer raises none. Nor does a poll during onboarding: the
+            // wizard shows the token's verdict; a halt would outlive the wizard and block the first sweep.
             if (settings.OnboardingComplete
                 && startedFor == sessionGeneration
                 && RetryPolicy.RequiresUserAction(response.Status))
@@ -1895,8 +1435,7 @@ internal sealed class SyncManager : IDisposable
                 log.Warning($"Config poll halted: {response.Status}. The user must resolve this.");
             }
 
-            // Any other failure keeps the previous config, which is exactly right: a config we cannot
-            // refresh is better than no config, and the next poll is only an interval away.
+            // Any other failure keeps the previous config, which beats having none.
         }
         catch (OperationCanceledException)
         {
@@ -1904,9 +1443,8 @@ internal sealed class SyncManager : IDisposable
         }
         catch (Exception ex)
         {
-            // Reported in full once. A throw before the answer is recorded reschedules the poll to
-            // the short retry delay, so a deterministic one would report every two minutes for as
-            // long as the session lasts.
+            // Reported in full once: a throw reschedules to the short retry, so a repeatable one would
+            // report every two minutes.
             if (configPollFailures.IsFirstSighting(ex))
                 log.Error(ex, "Unexpected failure polling config.");
             else
@@ -1914,28 +1452,20 @@ internal sealed class SyncManager : IDisposable
         }
         finally
         {
-            // Any answer — success, failure, even cancellation at unload — releases the
-            // first-sweep hold. A failed poll must unblock syncing rather than strand it: the
-            // upload itself will surface whatever is actually wrong with the server.
+            // Any answer, even a failure or cancellation, releases the first-sweep hold. The upload
+            // will surface whatever is wrong with the server.
             firstConfigAnswerSeen = true;
 
-            // Whatever the wizard was waiting for, this was it. ANY answer lowers the wait — a failure
-            // and a cancellation as much as a success — because a wait only a successful poll could end
-            // would leave the consent step shut behind a Continue button that never enables.
+            // Any answer ends the wizard's wait; see OnboardingConfigPending.
             onboardingConfigPending = false;
 
-            // A "Sync now" press made during a pause is answered by the first poll that started after
-            // it, whatever that poll got back; an answer saying syncing is back on queues the sweep
-            // the press was for. Settle compares poll numbers, so a press made while this poll was on
-            // its way stays waiting for a poll of its own (see PausedPress.Press).
+            // Settles a paused press this poll answers, whatever came back, and queues the sweep if
+            // syncing is back on (see PausedPress.Settle).
             if (pausedPress.Settle(pollNumber, answeredEnabled))
                 QueueManualSweep(answeredAt: timeProvider.GetUtcNow());
 
             configPollInFlight = false;
 
-            // A poll that brought nothing back leaves the plugin without the manifest it needs, so the
-            // next one is pulled in to the short retry rather than left a full interval away. Marshaled
-            // because nextConfigPollAt belongs to the framework thread, which reads it every frame.
             if (!answered)
                 RescheduleConfigPollSoon();
         }
@@ -1943,8 +1473,9 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>
     /// Starts the poll a "Sync now" press made during a pause asked for, once it is due (see
-    /// <see cref="PausedPress.PollDue"/>). Framework thread only, like every poll start.
+    /// <see cref="PausedPress.PollDue"/>).
     /// </summary>
+    /// <remarks>Framework thread only: it starts the poll through <see cref="StartConfigPoll"/>.</remarks>
     private void DispatchPausedPress(DateTimeOffset now)
     {
         if (!pausedPress.PollDue(configPollsStarted, configPollInFlight, now))
@@ -1955,12 +1486,13 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Ends the collections upload's wait for sync to resume once the latest <c>/config</c> says
-    /// syncing is back on (see <see cref="SyncResumeWait.TryEnd"/>), and logs it.
+    /// Ends the collections upload's wait for syncing to resume once the latest <c>/config</c> says
+    /// syncing is back on (see <see cref="SyncResumeWait.TryEnd"/>).
     /// </summary>
     private void EndSyncWaitIfResumed(DateTimeOffset now)
     {
-        // The poll number first, then the config (see ConfigAnsweredPoll).
+        // The poll number before the config, so the config is from that poll or a later one (see
+        // ConfigAnsweredPoll).
         var answeredPoll = configAnsweredPoll;
         var config = remoteConfig;
 
@@ -1972,24 +1504,19 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Queues the sweep a "Sync now" press made during a pause was for, from the poll task. Marshaled
-    /// to the framework thread like every other request (see <see cref="RequestManualSync"/>).
+    /// Queues the sweep a "Sync now" press made during a pause was for. The poll task calls it, so it
+    /// marshals to the framework thread, where every scheduler request is made.
     /// </summary>
     /// <param name="answeredAt">When the answer saying syncing is back on arrived.</param>
     /// <remarks>
-    /// The same answer may also end the collections wait, whose own sweep can be handed out in the
-    /// frames before this marshal lands; that sweep already sent everything this one would, so the
-    /// request is normally dropped then (see <see cref="SyncScheduler.RequestUnlessSweptSince"/>). A
-    /// sweep handed out on a frame that began a moment before the answer lets the request through,
-    /// which costs one extra upload and nothing else.
+    /// The same answer may also end the collections wait, whose sweep can go out before this lands;
+    /// <see cref="SyncScheduler.RequestUnlessSweptSince"/> then drops this request. A sweep handed out
+    /// on a frame that began just before the answer lets it through, costing one extra upload.
     /// </remarks>
     private void QueueManualSweep(DateTimeOffset answeredAt)
     {
-        // `_ =` discards the returned task deliberately, as elsewhere in this class: nothing awaits it,
-        // and the delegate cannot throw.
         _ = framework.RunOnFrameworkThread(() =>
         {
-            // The marshal can land after teardown has begun; there is nothing to sync then.
             if (lifetimeToken.IsCancellationRequested)
                 return;
 
@@ -1998,16 +1525,13 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Brings the next <c>/config</c> poll forward to the short retry delay, never pushing back one
-    /// due sooner (see <see cref="SyncTickPlan.BringPollForward"/>).
+    /// Brings the next <c>/config</c> poll forward to the short retry delay, on the framework thread,
+    /// never pushing back one due sooner (see <see cref="SyncTickPlan.BringPollForward"/>).
     /// </summary>
     private void RescheduleConfigPollSoon()
     {
-        // `_ =` discards the returned task deliberately, as elsewhere in this class: nothing awaits it,
-        // and the delegate cannot throw.
         _ = framework.RunOnFrameworkThread(() =>
         {
-            // The marshal can land after teardown has begun; there is no next poll to schedule then.
             if (lifetimeToken.IsCancellationRequested)
                 return;
 

@@ -3,25 +3,15 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Occult;
 
-/// <summary>
-/// Decides whether the live occult tracker may run at all, right now.
-/// </summary>
+/// <summary>Decides whether the live occult tracker may run right now.</summary>
 /// <remarks>
-/// <para>
-/// This is the tracker's consent gate, alongside <see cref="UploadGate"/> and
-/// <see cref="Collectors.CollectorGate"/>: the manager asks it every tick and stops the moment it
-/// says no, so consent revocation takes effect within a second. Layered on top of the base gates
-/// (master switch, completed onboarding, usable token, server's global kill switch) are the
-/// tracker's own two: the user's <see cref="PluginSettings.ShareOccultInstanceState"/> toggle and
-/// the server's <c>occultTracker.enabled</c> switch.
-/// </para>
-/// <para>
-/// A config with no <c>occultTracker</c> block reads as OFF — deliberately opposite to the
-/// unknown-category rule. An unknown /sync category defaults enabled because the server
-/// strips keys it does not recognize; this is a separate ENDPOINT, and a server that does
-/// not advertise it would answer every upload with a 404. The same rule keeps the tracker
-/// quiet until the first /config of the session arrives.
-/// </para>
+/// The tracker's consent gate, beside <see cref="UploadGate"/> and
+/// <see cref="Collectors.CollectorGate"/>; the manager asks it every tick, so revoking consent takes
+/// effect within a second. On top of the base gates it adds the user's
+/// <see cref="PluginSettings.ShareOccultInstanceState"/> and the server's <c>occultTracker.enabled</c>.
+/// A config with no <c>occultTracker</c> block reads as off, unlike an unknown /sync category, because
+/// a server that does not advertise this separate endpoint would answer every upload with 404; the
+/// same rule keeps the tracker quiet until the session's first /config arrives.
 /// </remarks>
 public static class OccultGate
 {
@@ -30,46 +20,29 @@ public static class OccultGate
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     public static bool CanTrack(PluginSettings settings, ConfigResponse? remoteConfig)
     {
-        // Everything /sync requires: consent, onboarding, a usable token, and the server's
-        // global kill switch.
+        // Everything /sync requires: consent, onboarding, a usable token, and the server's global
+        // kill switch.
         if (!UploadGate.CanUpload(settings, remoteConfig))
             return false;
 
-        // The feature's own opt-out.
         if (!settings.ShareOccultInstanceState)
             return false;
 
-        // The server must have advertised the endpoint AND left it switched on.
+        // The server must advertise the endpoint and leave it on.
         return remoteConfig?.OccultTracker is { Enabled: true };
     }
 
     /// <summary>
-    /// True when the server has answered and its answer rules the tracker out — what the settings
-    /// toggle draws grayed and chipped "Off".
+    /// True when the server has answered and rules the tracker out: what the settings toggle draws
+    /// grayed with an "Off" chip.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The complement of every server-side term in <see cref="CanTrack"/>, and it lives beside it
-    /// so the two cannot drift: the control must call a state unavailable on exactly the terms the
-    /// gate refuses to run on. Both of the server's switches count, because both stop the tracker
-    /// — the global pause reaches it through <see cref="UploadGate.CanUpload"/>, and a drawn
-    /// toggle that reads only the feature's own switch would sit ticked and full-contrast claiming
-    /// to share instance state while a paused server accepts nothing. A config carrying no
-    /// <c>occultTracker</c> block counts as off here for the same reason it does there — a server
-    /// that never advertised the endpoint cannot serve it, so a toggle reading "on" would describe
-    /// something that is not happening.
-    /// </para>
-    /// <para>
-    /// The contract has the server fold its global switch into <c>occultTracker.enabled</c>, so a
-    /// compliant backend masks the pause before it is ever read here. This checks anyway: the
-    /// backend URL is user-overridable, and the gate already declines to trust that folding.
-    /// </para>
-    /// <para>
-    /// A config that has NOT arrived is not off. It forbids nothing, exactly as it forbids no
-    /// category, so the toggle keeps showing the user's own choice until the server answers. The
-    /// tracker cannot run in that window either, but nothing is uploaded during it, so a
-    /// momentary "on" describes an intention rather than misreporting a live behavior.
-    /// </para>
+    /// The complement of every server-side term in <see cref="CanTrack"/>, kept beside it so the toggle
+    /// calls the tracker unavailable on exactly the terms the gate refuses. The global pause counts even
+    /// though a compliant server folds it into <c>occultTracker.enabled</c>, because the backend URL is
+    /// user-overridable; a missing <c>occultTracker</c> block counts as off. A config that has not
+    /// arrived forbids nothing, so the toggle shows the user's choice until the server answers, and
+    /// nothing uploads meanwhile.
     /// </remarks>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     public static bool ServerHasSwitchedOff(ConfigResponse? remoteConfig) =>
@@ -77,23 +50,15 @@ public static class OccultGate
         && (!remoteConfig.Enabled || remoteConfig.OccultTracker is not { Enabled: true });
 
     /// <summary>
-    /// True when the user's own master switch is the reason the tracker is not running: it is off,
-    /// while the tracker's toggle is ticked, the token is usable, and the server has not ruled the
-    /// tracker out.
+    /// True when the user's master switch is why the tracker is not running: the switch is off while
+    /// the toggle is ticked, the token usable, and the server has not ruled the tracker out.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The tracker's card names this (see <see cref="Windows.SharingCardLine"/>); like the collection
-    /// boxes above it, its toggle keeps its tick while the switch is off.
-    /// </para>
-    /// <para>
-    /// Only after onboarding: the setup wizard draws the card before its last step turns the master
-    /// switch on, so the switch is off there as a matter of course. Only with a usable token, too:
-    /// without one, switching syncing on would not start the tracker either, so the switch is not the
-    /// reason. A config that has not arrived rules nothing out, as in
-    /// <see cref="ServerHasSwitchedOff"/>; past onboarding no <c>/config</c> is fetched while the
-    /// master switch is off, so a session that starts with it off has none until it is switched on.
-    /// </para>
+    /// The tracker's card names this (see <see cref="Windows.SharingCardLine"/>), and the toggle keeps
+    /// its tick meanwhile. It needs onboarding, because the wizard draws the card before its last step
+    /// turns the switch on, and a usable token, without which the switch is not the reason. A config
+    /// that has not arrived rules nothing out; past onboarding, a session that starts with the switch
+    /// off fetches none until it is switched on.
     /// </remarks>
     /// <param name="settings">The user's persisted choices.</param>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
@@ -108,20 +73,13 @@ public static class OccultGate
     /// What the tracker's "Off" chip says, or null while the server still permits the tracker.
     /// </summary>
     /// <remarks>
-    /// Three different facts wear the same chip, and only one of them is a decision about the
-    /// tracker: a paused server is not sending anything at all, a config with no
-    /// <c>occultTracker</c> block comes from a server that does not offer the tracker, and a
-    /// switched-off tracker is one feature the server declined. Saying the last during either of
-    /// the others sends the user looking for a decision about the tracker that nobody made. Kept
-    /// beside the gate, and pure, so the wording cannot drift from the state it describes.
+    /// Three facts share the chip: a paused server, a server that does not offer the tracker (no
+    /// <c>occultTracker</c> block), and a server that switched the tracker off. Only the last is a
+    /// decision about the tracker, and naming it for the others sends the user looking for a decision
+    /// nobody made.
     /// </remarks>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     /// <param name="host">The configured website's address, which the sentences name.</param>
-    // `=>` makes the expression after it the whole method body, like an arrow function. Each
-    // `a ? b : c` picks b when a is true, else c; chained, they read top to bottom like an
-    // if / else-if ladder, the first true condition deciding. `is { Enabled: false }` matches a
-    // config that is present and paused, and `?.` reads the block only when the config is there,
-    // giving null otherwise, as in TypeScript.
     public static string? ServerOffText(ConfigResponse? remoteConfig, string host) =>
         !ServerHasSwitchedOff(remoteConfig) ? null
             : remoteConfig is { Enabled: false } ? ServerOffCopy.Paused(host)

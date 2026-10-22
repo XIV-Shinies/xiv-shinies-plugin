@@ -6,9 +6,8 @@ namespace XIVShinies.SyncPlugin.Api;
 /// The 200 body of <c>POST /api/plugin/v1/sync</c>.
 /// </summary>
 /// <remarks>
-/// The server omits optional keys rather than sending them as null, so the plugin can
-/// feature-detect them. That is why they are nullable here: null means "the server did not send
-/// this", which is exactly the signal we want.
+/// The server omits optional keys rather than sending null, so a null here means "not sent", which is
+/// how the plugin feature-detects them.
 /// </remarks>
 public sealed record SyncResponse
 {
@@ -19,27 +18,14 @@ public sealed record SyncResponse
     public required bool Bound { get; init; }
 
     /// <summary>
-    /// Rows created plus promoted, keyed by category. <c>items</c> never appears — item possession
-    /// feeds relic proofs rather than a collection count.
+    /// Rows created plus promoted, keyed by category. <c>items</c> never appears, since item
+    /// possession feeds relic proofs rather than a collection count.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A dictionary rather than one property per category, for the same reason
-    /// <see cref="SyncRequest.Collections"/> is one: a property per collection would mean adding a
-    /// collection touches this file too, breaking the rule that adding one is a single new
-    /// collector class and nothing else. No category's presence is part of this type's contract, so
-    /// a server generation that names different categories simply deserializes.
-    /// </para>
-    /// <para>
-    /// Informational only: <b>no plugin logic may branch on these.</b> Reading one by name would
-    /// reintroduce exactly the category-name dependency the rest of the plugin avoids. What the
-    /// upload log shows is what was SENT, summarized from the snapshot — never this.
-    /// </para>
-    /// <para>
-    /// Not <c>required</c>: an empty dictionary is the honest reading of a response that omitted
-    /// the object, and refusing to deserialize over an informational field would turn a successful
-    /// upload into a reported failure.
-    /// </para>
+    /// Informational only: <b>no plugin logic may branch on these</b>, and the upload log shows what
+    /// was sent, never this. A dictionary, so a new collection changes nothing here. Not
+    /// <c>required</c>: a missing object reads as empty rather than turning a successful upload into a
+    /// failure.
     /// </remarks>
     public Dictionary<string, int> Written { get; init; } = new();
 
@@ -56,8 +42,8 @@ public sealed record SyncResponse
     public int? ProvenSteps { get; init; }
 
     /// <summary>
-    /// Present only when the server stripped disabled categories from this payload. Lets the
-    /// plugin tell the user why a category did not sync.
+    /// Present only when the server stripped disabled categories from this payload, so the plugin can
+    /// tell the user why a category did not sync.
     /// </summary>
     public IReadOnlyList<string>? SkippedCategories { get; init; }
 }

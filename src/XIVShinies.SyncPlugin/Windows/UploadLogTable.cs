@@ -14,24 +14,14 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// each, the outcome, and what was sent (per category for a sync row).
 /// </summary>
 /// <remarks>
-/// <para>
-/// Rendered entirely from <see cref="UploadLogEntry"/> data plus the collectors' own display
-/// names, captured once at construction — no category-name branches, so a new collector appears
-/// here for free. The strings are built per frame, which is affordable only because the log
-/// section draws while expanded; do not copy this pattern into an always-visible path.
-/// </para>
-/// <para>
-/// Wrapped text inside the table breaks at each CELL's edge — which a null wrap edge means,
-/// because tables clamp the content region per column, and the line breaks are measured to that
-/// region (as is ImGui's own wrapping, for a word wider than the cell). That is why every wrapped
-/// call below passes a null wrap edge even when the table sits inside a card: the card-wide limit
-/// would let one cell's text run underneath its neighbor.
-/// </para>
+/// Drawn from <see cref="UploadLogEntry"/> data and the collectors' display names, with no
+/// category-name branches. Its strings are built per frame, affordable only because the section
+/// draws while expanded, never on an always-visible path. Wrapped calls pass a null edge, which in a
+/// table is the cell's; a card's edge would let a cell run under its neighbor.
 /// </remarks>
 internal sealed class UploadLogTable
 {
-    // Category key → the display name its collector declared. Built once: the collector list is
-    // fixed for the plugin's lifetime.
+    // Category key to display name. The collector list is fixed for the plugin's lifetime.
     private readonly Dictionary<string, string> categoryNames = new();
 
     public UploadLogTable(IReadOnlyList<ICollector> collectors)
@@ -46,25 +36,19 @@ internal sealed class UploadLogTable
     /// <param name="host">The configured website's address, which some outcomes name.</param>
     public void Draw(IReadOnlyList<UploadLogEntry> history, float innerRight, string host)
     {
-        // The metadata columns adapt to the room available: on a roomy table, When and Trigger
-        // each render on one line; on a narrow one, the date stacks over the time and the
-        // trigger stacks word by word. The stacking is explicit lines, never ImGui text
-        // wrapping — a wrap would happily break inside "7/11/2026" or "login" the moment the
-        // column got narrower than the word. Both candidate widths are measured from the rows
-        // actually shown, so the columns are always exactly as wide as their widest line.
-        // Seeded with the header labels: a column exactly as wide as "login" clips its own
-        // "Trigger" heading.
+        // When and Trigger stack by explicit lines when narrow, since ImGui wrapping would break
+        // inside "7/11/2026". Seeded with the headers, which a narrower column would clip.
         var whenOneLine = ImGui.CalcTextSize("When").X;
         var whenStacked = whenOneLine;
         var triggerOneLine = ImGui.CalcTextSize("Trigger").X;
         var triggerStacked = triggerOneLine;
 
-        // Outcome's widest single word, the website's address among them: a word wider than the
-        // column would be left to ImGui's own wrapping (see TextWrap).
+        // Outcome's widest word, the website's address included: a wider word would be left to
+        // ImGui's own wrapping (see TextWrap).
         var outcomeWord = ImGui.CalcTextSize("Outcome").X;
         foreach (var entry in history)
         {
-            // "d"/"t" are the short date and short time in the user's own locale.
+            // Short date and short time, in the user's locale.
             var at = entry.At.ToLocalTime();
             var date = at.ToString("d");
             var time = at.ToString("t");
@@ -90,29 +74,21 @@ internal sealed class UploadLogTable
         var triggerWidth =
             (compact ? triggerStacked : triggerOneLine) + (2f * ImGuiHelpers.GlobalScale);
 
-        // Roomier cells than ImGui's default: CellPadding is the gap between a cell's border and
-        // its content, pushed as a style variable scoped to this table.
+        // Roomier cells than ImGui's default.
         var padding = new Vector2(8f * ImGuiHelpers.GlobalScale, 6f * ImGuiHelpers.GlobalScale);
 
-        // Outcome takes 0.8 of every 3 units of the room the metadata columns leave, Sent the other
-        // 2.2: Outcome's usual content is one short word, and the per-category counts are the dense
-        // part. Outcome is never narrower than its widest word, though, so its width is worked out
-        // here. A column's width excludes the space between columns: with no vertical borders, ImGui
-        // puts the cell padding on each side of every gap and none at the table's outer edges, so
-        // the three gaps take two paddings each.
+        // Outcome gets 0.8 of every 3 units left and Sent 2.2, since the counts are the dense part.
+        // With no vertical borders, each gap between columns takes two paddings and the outer edges none.
         var stretchRoom = tableWidth - whenWidth - triggerWidth - (3 * 2f * padding.X);
 
-        // Over the widest word by a scaled pixel, because BreakForWrap breaks a scaled pixel short of
-        // the edge, and by one more whole pixel, because ImGui rounds a column's width down to a whole
-        // pixel.
+        // A scaled pixel over the widest word, since BreakForWrap breaks a scaled pixel short of the
+        // edge, and a whole pixel more, since ImGui rounds a column's width down to a whole pixel.
         var outcomeWidth =
             Math.Max(outcomeWord + 1f + ImGuiHelpers.GlobalScale, stretchRoom * (0.8f / 3f));
 
         using var cellPadding = ImRaii.PushStyle(ImGuiStyleVar.CellPadding, padding);
 
-        // Fixed columns for the short facts, the stretchy remainder for per-category detail, row
-        // striping for scanability. The explicit outer width stops the table at the card's inner
-        // edge — left alone it would stretch to the window and punch through the card's padding.
+        // The explicit width stops the table at the card's inner edge rather than the window's.
         using var table = ImRaii.Table(
             "uploadLogTable",
             4,
@@ -122,17 +98,13 @@ internal sealed class UploadLogTable
         if (!table.Success)
             return;
 
-        // Metadata columns fixed at their measured width (one-line or stacked, chosen above), and
-        // Outcome at the width worked out above; Sent stretches over whatever remains.
         ImGui.TableSetupColumn("When", ImGuiTableColumnFlags.WidthFixed, whenWidth);
         ImGui.TableSetupColumn("Trigger", ImGuiTableColumnFlags.WidthFixed, triggerWidth);
         ImGui.TableSetupColumn("Outcome", ImGuiTableColumnFlags.WidthFixed, outcomeWidth);
         ImGui.TableSetupColumn("Sent", ImGuiTableColumnFlags.WidthStretch, 1f);
         ImGui.TableHeadersRow();
 
-        // The table's cells are data the user came here to read, so they draw in the normal text
-        // color. Muted is used in exactly one place below — the "·" that separates the per-category
-        // counts, which is punctuation rather than content.
+        // The cells are data to read, so full contrast; only the "·" between categories is muted.
         var textColor = ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
         var muted = ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled];
 
@@ -140,15 +112,12 @@ internal sealed class UploadLogTable
         {
             var entry = history[index];
 
-            // A category that moved against its last appearance in the log lights up gold —
-            // "something new arrived since the previous upload". What counts as movement is
-            // UploadLogDiff.ChangedCategories' rule, not the printed count.
+            // A category that moved since its last appearance lights up gold (see
+            // UploadLogDiff.ChangedCategories).
             var changed = UploadLogDiff.ChangedCategories(history, index);
 
             ImGui.TableNextRow();
 
-            // Short date + short time in the user's own locale — one line, or the date stacked
-            // over the time in compact mode. Explicit lines: neither piece can ever be broken.
             ImGui.TableNextColumn();
             var at = entry.At.ToLocalTime();
             if (compact)
@@ -173,11 +142,8 @@ internal sealed class UploadLogTable
                 ImGui.TextUnformatted(triggerText);
             }
 
-            // The outcome (plus retry/attempt qualifiers) in a color that matches it: green for
-            // accepted, red for anything the user must look at, and the normal text color for a
-            // self-healing deferral — neither good news nor bad, but still the row's headline, so
-            // it is not dimmed. A validation rejection's detail — the server saying which field it
-            // hated — follows in the same normal color, so the row itself explains the failure.
+            // Green when accepted, red for anything to look at, full contrast for a self-healing
+            // deferral. A validation rejection's detail follows, so the row explains the failure.
             ImGui.TableNextColumn();
             var statusColor = UploadLogText.IsSuccess(entry.Status) ? Widgets.SuccessColor
                 : UploadLogText.IsDeferral(entry.Status)
@@ -188,12 +154,8 @@ internal sealed class UploadLogTable
             if (entry.Detail is { } detail)
                 Widgets.DrawWrapped(detail, ImGuiCol.Text, null);
 
-            // Mixed colors inside one flowing line need the span helper, exactly like the
-            // wizard intro's gold website name. A null span color means the normal text color,
-            // which is what the counts themselves use — they are the densest data in the table.
-            // What each category says, and which parts of it are highlighted, is the pure
-            // UploadLogText.SentSpans rule; this loop only maps its highlight flag to
-            // Brand.Gold and draws. Only the separator between categories is muted.
+            // UploadLogText.SentSpans decides each category's text and highlights; this maps a
+            // highlight to gold.
             ImGui.TableNextColumn();
 
             // A live tracker or Crucible sharing row sent one kind of thing and has no categories to
@@ -204,15 +166,13 @@ internal sealed class UploadLogTable
                 continue;
             }
 
-            // The proof note comes from the entry (the server answers per upload, not per
-            // category), so it is computed once out here and the same note draws beside each
-            // manifest-driven category the entry carries.
+            // The server proves per upload, not per category, so one note serves each manifest
+            // category.
             var proof = UploadLogText.ProofText(entry);
             var stepsProven = entry.ProvenSteps > 0;
             var sent = new List<(string Text, Vector4? Color)>(entry.Categories.Count * 3);
 
-            // Alphabetical by the label drawn for each category, matching the consent checklist and
-            // the sync card's chips — see UploadLogText.InDisplayOrder.
+            // By display name, like the consent list (see UploadLogText.InDisplayOrder).
             foreach (var category in UploadLogText.InDisplayOrder(entry.Categories, DisplayNameFor))
             {
                 if (sent.Count > 0)
@@ -230,13 +190,13 @@ internal sealed class UploadLogTable
 
             Widgets.DrawWrappedSpans(sent.ToArray());
 
-            // Only the categories something went wrong for — a collection the user switched off is
-            // skipped by their own choice, not unread (see UploadLogEntry.UnreadableCategoryKeys).
+            // Only failures: a collection the user switched off was skipped by choice (see
+            // UploadLogEntry.UnreadableCategoryKeys).
             var unreadable = entry.UnreadableCategoryKeys;
             if (unreadable.Count > 0)
             {
-                // By display name, like the Sent column above — see UploadLogText.KeysInDisplayOrder.
-                // The keys arrive sorted, but a key and the name drawn for it need not sort alike.
+                // By display name, since a key and its name need not sort alike (see
+                // UploadLogText.KeysInDisplayOrder).
                 var skipped = new List<string>(unreadable.Count);
                 foreach (var key in UploadLogText.KeysInDisplayOrder(unreadable, DisplayNameFor))
                     skipped.Add(DisplayNameFor(key));

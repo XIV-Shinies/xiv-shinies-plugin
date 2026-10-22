@@ -4,50 +4,42 @@ Guidance for working in **this** repo. This is the C# / .NET 10 Dalamud plugin t
 in-game collection progress to XIV Shinies. It is a **separate repo** from the main
 `xiv-shinies` web app.
 
-## Working style — baked-in rules (read first)
+## Working style — comments (read first)
 
-The maintainer is an experienced **frontend React developer with no prior C# experience**.
-Two rules are non-negotiable for all work in this repo:
+Comments ship in a public repo and are read by a contributor seeing the code cold, who knows C#.
+Keep them **concise** and **plain**:
 
-1. **Learning summaries (opt-in per session).** This project can end every substantial
-   change with a two-part "Learning summary" — plain-English first, then a bit more technical
-   with React/TypeScript comparisons — so the codebase doubles as C# learning material.
-   It's **opt-in per developer, per session**: the first time in a session you're about to
-   write one, ask the developer once whether they want them this session and honor that for
-   the rest of the session; skip the question when a standing preference is set (the
-   maintainer defaults to **on**). The **`/learning-summary` skill**
-   (`.claude/skills/learning-summary/`) is the authority on the format and depth once
-   enabled, and it's the file the maintainer refines over time. Skip summaries for trivial
-   edits regardless.
+- **Comment the why.** State the reason, constraint, or consequence the code cannot show. Don't
+  restate what the code does, explain C# syntax, or compare C# to another language.
+- **Short by default.** A one-line `<summary>` is the norm, two lines at most. Add `<remarks>`
+  only for a constraint a reader needs, three sentences or fewer. Inline comments run one or two
+  lines. State each reason once; elsewhere point to it ("see `CollectionStatusMemory`") or give
+  it in a clause.
+- **Shorten without losing facts.** When trimming a comment, keep every constraint, hazard,
+  compliance rule and wire fact it carried, or move it to a home that a pointer reaches.
+- **Plain words.** Short sentences, everyday words, no shorthand ("e.g.", "~", "w/").
+- **Never explain code by its history**: how it was built or tested ("pure, so it is
+  unit-tested"), the class it imitates ("in the `SyncScheduler` mold"), or "for the same reason
+  as X". Write the fact itself.
 
-2. **Comment heavily, for a beginner _and_ for future contributors.** This is an
-   open-source project that may take contributions from other developers, so comments serve
-   two audiences at once: the maintainer learning C#, and any contributor reading the code
-   cold. Comment everywhere it helps understanding, not just the tricky bits: what a
-   construct *is*, why it's here, and what the C#/Dalamud-specific syntax means. Favor short
-   plain-language comments; when a C# concept has no React analog, explain it. Keep comments
-   professional and accurate (they ship in a public repo) — avoid "note to self" phrasing;
-   write them as durable documentation. Prefer clarity over brevity — this codebase doubles
-   as the maintainer's C# learning material and as onboarding for contributors.
+**Comments describe the code as it is — never as it changed.** A comment is read by
+someone who has never seen any earlier version, so anything framed against a previous
+state is noise to them and rots as soon as the code moves again. This includes version
+numbers, release ordering, phase/task references, and — the recurring offender —
+*diff narration*: describing a choice in contrast to the thing it replaced. Write the
+durable fact instead:
 
-   **Comments describe the code as it is — never as it changed.** A comment is read by
-   someone who has never seen any earlier version, so anything framed against a previous
-   state is noise to them and rots as soon as the code moves again. This includes version
-   numbers, release ordering, phase/task references, and — the recurring offender —
-   *diff narration*: describing a choice in contrast to the thing it replaced. Write the
-   durable fact instead:
+| ❌ Diff narration                                                  | ✅ Durable fact                                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `// Drawn at the normal text color rather than muted.`             | `// This is the consent disclosure, so it draws at full contrast.` |
+| `// At the default scale this is unchanged from before.`           | `// At the default scale this is one TextColored call.`            |
+| `// This replaces an earlier design that only read the cache when…`| `// Summing is what lets a total include copies on a retainer.`     |
+| `// Now uses HasItem before GetItemCount.`                         | `// GetItemCount's behavior for an untracked id is undocumented.`   |
 
-   | ❌ Diff narration                                                  | ✅ Durable fact                                                     |
-   | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
-   | `// Drawn at the normal text color rather than muted.`             | `// This is the consent disclosure, so it draws at full contrast.` |
-   | `// At the default scale this is unchanged from before.`           | `// At the default scale this is one TextColored call.`            |
-   | `// This replaces an earlier design that only read the cache when…`| `// Summing is what lets a total include copies on a retainer.`     |
-   | `// Now uses HasItem before GetItemCount.`                         | `// GetItemCount's behavior for an untracked id is undocumented.`   |
-
-   Rule of thumb: if a sentence only makes sense to someone who saw the diff, delete it.
-   The exception is a genuine mechanism contrast that is still true today (e.g. "painting
-   through the draw list rather than a second `Text` call, so the layout cursor is not
-   advanced") — that explains *how the code works now*, not what it used to be.
+Rule of thumb: if a sentence only makes sense to someone who saw the diff, delete it.
+The exception is a genuine mechanism contrast that is still true today ("painting
+through the draw list rather than a second `Text` call, so the layout cursor is not
+advanced") — that explains *how the code works now*, not what it used to be.
 
 ## What this is
 
@@ -333,8 +325,6 @@ Project-scoped skills live in `.claude/skills/`:
 - **opening-pull-requests** — draft-by-default PR flow with a dotnet test plan.
 - **reviewing-code-changes** — parallel-subagent quality gate: C# correctness + contract
   conformance, Dalamud compliance, comment quality, and test coverage.
-- **learning-summary** — the two-part learning-summary format (see the working-style rules
-  at the top of this file).
 - **working-in-worktrees** — working on a branch outside the main checkout: setup under
   `.claude/worktrees/`, swapping the in-game dev build without clobbering the shared plugin
   config, and post-merge cleanup.

@@ -1,20 +1,11 @@
 namespace XIVShinies.SyncPlugin.Beastmaster;
 
-/// <summary>
-/// One of the values a game window was handed to draw itself from, reduced to the shapes that
-/// reading it needs.
-/// </summary>
+/// <summary>One value a game window draws from, narrowed to the shapes the readers use.</summary>
 /// <remarks>
-/// <para>
-/// The game's own value type is a union carrying integers, booleans, floats, text and several
-/// kinds of pointer, and only three of those matter here. Narrowing to this on the way in means
-/// everything downstream works on an ordinary list of values, with no game types involved.
-/// </para>
-/// <para>
-/// Every property is nullable, and null means "the slot did not hold this kind of thing" rather
-/// than "the slot was empty". A reader checking that a slot holds the kind it expects is how
-/// misreading a window whose layout has moved is caught.
-/// </para>
+/// The game's value type is a union of integers, booleans, floats, text and several pointer kinds.
+/// Narrowing it to the three that matter here lets readers work on a plain list with no game types.
+/// Null means the slot did not hold that kind, not that it was empty. A reader checking that each slot
+/// holds the kind it expects is how a window whose layout moved gets caught.
 /// </remarks>
 public readonly record struct AddonValue(uint? Number, bool? Flag, string? Text)
 {

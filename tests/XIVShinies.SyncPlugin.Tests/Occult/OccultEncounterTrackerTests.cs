@@ -5,17 +5,14 @@ using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Tests.Occult;
 
-// Turns raw per-tick game readings (CE container slots + FATE table rows) into the wire
-// vocabulary the tracker server understands: a status per encounter plus a second-exact
-// sinceUtc. The server fingerprints instances on exact epoch equality across independent
-// clients, so the derivation rules here are load-bearing — two plugins observing the same
-// instance must produce byte-identical timestamps.
+// The tracker turns each tick's CE slots and FATE rows into a status and a whole-second sinceUtc
+// per encounter. The server fingerprints instances on exact epoch equality across clients, so two
+// plugins watching one instance must produce identical timestamps.
 public class OccultEncounterTrackerTests
 {
-    // An arbitrary fixed instant. Tests move time by adding to it, never by waiting.
     private static readonly DateTimeOffset T0 = new(2026, 8, 11, 16, 0, 0, TimeSpan.Zero);
 
-    // A realistic phase-deadline epoch (the game reports whole seconds).
+    // A phase deadline; the game reports whole seconds.
     private const long Deadline = 1786465621;
     private const int CeDuration = 1200;
 
@@ -28,12 +25,12 @@ public class OccultEncounterTrackerTests
         ushort id, DynamicEventPhase phase, long deadline = Deadline, int duration = CeDuration) =>
         new(id, phase, deadline, duration);
 
-    // The South Horn Forked Tower slot, at the tower's own duration.
+    // The South Horn Forked Tower slot.
     private static DynamicEventReading Tower(DynamicEventPhase phase, long deadline = Deadline) =>
         new(48, phase, deadline, TowerDuration);
 
-    // Warmup ends exactly when the battle begins, so a preparing tower's deadline is the
-    // battle's start — one duration before the battle's own deadline.
+    // Warmup ends when the battle begins, so a preparing tower's deadline is one duration before the
+    // battle's.
     private const long WarmupDeadline = Deadline - TowerDuration;
 
     private static FateReading Fate(ushort id, long startEpoch) => new(id, startEpoch);
@@ -63,8 +60,8 @@ public class OccultEncounterTrackerTests
         Assert.Equal(OccultEncounterStatus.Preparing, Single(tracker, 46).Status);
     }
 
-    // The game reports a battle's END deadline, never its start. Both clients must derive the
-    // same start, so it comes from the deadline minus the duration — never from a local clock.
+    // The game reports a battle's end, never its start. Deriving the start from the deadline, never a
+    // local clock, gives every client the same value.
     [Fact]
     public void A_battling_ce_is_active_with_start_derived_from_deadline_minus_duration()
     {
@@ -76,8 +73,8 @@ public class OccultEncounterTrackerTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(Deadline - CeDuration), state.SinceUtc);
     }
 
-    // An idle CE the plugin never saw end carries no timestamp: the container zeroes every
-    // field at the Battle→Inactive flip, so a client that arrived later knows nothing.
+    // The container zeroes every field at the Battle→Inactive flip, so a client that arrived later
+    // has no timestamp.
     [Fact]
     public void An_idle_ce_never_observed_up_is_down_with_no_timestamp()
     {
@@ -91,8 +88,6 @@ public class OccultEncounterTrackerTests
 
     // --- The battle start anchor -----------------------------------------------------------
 
-    // A tower battle watched from its start keeps the start it was anchored at, even after the
-    // deadline is extended.
     [Fact]
     public void A_battle_watched_from_its_start_holds_that_start_when_the_deadline_is_extended()
     {
@@ -124,8 +119,7 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
     }
 
-    // A start anchored under observation is held whatever the deadline later reads — the
-    // deadline is not consulted at all once the battle was watched from its start.
+    // Once a battle was watched from its start, the deadline is not consulted at all.
     [Fact]
     public void A_held_start_survives_a_deadline_that_stops_reading()
     {
@@ -138,8 +132,8 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
     }
 
-    // The same for a start derived mid-battle, where a LATER deadline IS grounds for dropping
-    // it: a zero is the container saying "not yet", so the start stands.
+    // A later deadline drops a start derived mid-battle, but a zero is the container saying
+    // "not yet", so the start stands.
     [Fact]
     public void A_start_derived_under_way_survives_a_deadline_that_stops_reading()
     {
@@ -152,10 +146,9 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(Deadline - CeDuration), Single(tracker, 46).SinceUtc);
     }
 
-    // A slot first met mid-battle (a zone-in part way through a run) may have been read from an
-    // already-postponed deadline, so its start is provisional. A deadline that later moves
-    // settles that this deadline postpones, and the provisional start is dropped rather than
-    // reported as one no other client shares.
+    // A slot first met mid-battle may have been read from an already-postponed deadline, so its
+    // start is provisional. A deadline that moves proves this one postpones, so the start is dropped
+    // rather than reported as one no other client shares.
     [Fact]
     public void A_battle_first_seen_under_way_drops_its_start_once_the_deadline_moves()
     {
@@ -169,12 +162,12 @@ public class OccultEncounterTrackerTests
         Assert.Equal(OccultEncounterStatus.Active, state.Status);
         Assert.Null(state.SinceUtc);
 
-        // Dropping the start withdraws a timestamp; only a status change is reported as
-        // changed, so this rides out on the next heartbeat rather than prompting an upload.
+        // Only a status change counts as changed, so the withdrawn timestamp rides out on the next
+        // heartbeat.
         Assert.False(changed);
     }
 
-    // Once dropped it stays dropped: a later extension must not look like a fresh anchor.
+    // A later extension must not look like a fresh anchor.
     [Fact]
     public void A_dropped_start_is_not_re_derived_by_a_later_extension()
     {
@@ -190,8 +183,8 @@ public class OccultEncounterTrackerTests
         Assert.Null(Single(tracker, 48).SinceUtc);
     }
 
-    // A CE's deadline never moves within a battle, so meeting one mid-fight still yields the
-    // real start — the common case of zoning into an instance with a CE already up.
+    // A CE's deadline never moves within a battle, so meeting one mid-fight still yields the real
+    // start. This is the common case of zoning in with a CE already up.
     [Fact]
     public void A_battle_first_seen_under_way_keeps_its_start_while_the_deadline_holds()
     {
@@ -218,9 +211,8 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(Deadline - CeDuration), Single(tracker, 46).SinceUtc);
     }
 
-    // Having watched the battle begin is what makes the derived start trustworthy, and that
-    // fact has to outlive the unsynced ticks in between — otherwise the eventual anchor would
-    // be treated as a mid-battle guess and thrown away at the first extension.
+    // Watching the battle begin makes the derived start trustworthy. That must outlive the unsynced
+    // ticks, or the anchor would be treated as a mid-battle guess and dropped at the first extension.
     [Fact]
     public void Watching_a_battle_begin_still_counts_after_ticks_with_no_deadline()
     {
@@ -236,7 +228,6 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(Deadline - TowerDuration), Single(tracker, 48).SinceUtc);
     }
 
-    // The anchor belongs to one occurrence: the next battle on the same id derives its own.
     [Fact]
     public void A_later_battle_on_the_same_id_derives_a_fresh_start()
     {
@@ -250,8 +241,8 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(Deadline + 9000 - CeDuration), Single(tracker, 46).SinceUtc);
     }
 
-    // Watching an id leave Battle and come back is watching the second battle begin, so its
-    // start is anchored as firmly as one taken at a Warmup→Battle flip and held the same way.
+    // Watching an id leave Battle and return is watching the second battle begin, so its start is
+    // held like one taken at a Warmup→Battle flip.
     [Fact]
     public void A_battle_that_re_popped_under_observation_holds_its_start()
     {
@@ -268,8 +259,8 @@ public class OccultEncounterTrackerTests
             DateTimeOffset.FromUnixTimeSeconds(SecondDeadline - CeDuration), Single(tracker, 46).SinceUtc);
     }
 
-    // An id the container drops takes its history with it, so the battle still running when it
-    // returns is one this tracker did not watch begin — and its start is provisional again.
+    // An id the container drops takes its history with it, so its start is provisional again on
+    // return.
     [Fact]
     public void A_battle_whose_id_left_and_returned_is_treated_as_first_seen_under_way()
     {
@@ -287,8 +278,8 @@ public class OccultEncounterTrackerTests
 
     // --- The observed down flip ------------------------------------------------------------
 
-    // Battle→Inactive is the "CE just ended" moment (the respawn clock start). The observation
-    // time is the only timestamp that exists — everything in the container is zero by then.
+    // Battle→Inactive is when a CE ends and its respawn clock starts. The observation time is the
+    // only timestamp left, since the container is all zero by then.
     [Fact]
     public void An_observed_battle_to_inactive_flip_stamps_the_observation_time()
     {
@@ -301,8 +292,8 @@ public class OccultEncounterTrackerTests
         Assert.Equal(T0 + TimeSpan.FromSeconds(30), state.SinceUtc);
     }
 
-    // The stamp records when the flip was SEEN. Re-stamping every tick would walk the timestamp
-    // forward forever and the derived respawn countdown along with it.
+    // Re-stamping every tick would walk the timestamp, and the respawn countdown derived from it,
+    // forward forever.
     [Fact]
     public void The_down_stamp_sticks_across_later_ticks()
     {
@@ -340,8 +331,7 @@ public class OccultEncounterTrackerTests
 
     // --- Second-exact discipline -----------------------------------------------------------
 
-    // The server floors to whole seconds before fingerprinting; agreeing client-side keeps the
-    // stored value identical to what other reporters derive.
+    // The contract requires sinceUtc in whole seconds, including a stamp from the plugin's own clock.
     [Fact]
     public void Observation_stamps_are_truncated_to_whole_seconds()
     {
@@ -354,7 +344,6 @@ public class OccultEncounterTrackerTests
         Assert.Equal(T0 + TimeSpan.FromSeconds(30), Single(tracker, 46).SinceUtc);
     }
 
-    // A non-idle slot whose deadline has not synced yet must not invent a timestamp.
     [Fact]
     public void A_non_idle_ce_with_a_zero_deadline_has_a_null_sinceUtc()
     {
@@ -366,8 +355,8 @@ public class OccultEncounterTrackerTests
         Assert.Null(state.SinceUtc);
     }
 
-    // A torn read of the raw duration would push the derived battle start PAST the deadline —
-    // a plausible-looking epoch no other observer derives, worse than no timestamp at all.
+    // A torn read of the duration would push the derived start past the deadline: a plausible epoch
+    // no other observer derives, which is worse than no timestamp.
     [Fact]
     public void A_battling_ce_with_a_nonpositive_duration_has_a_null_sinceUtc()
     {
@@ -379,8 +368,8 @@ public class OccultEncounterTrackerTests
         Assert.Null(state.SinceUtc);
     }
 
-    // Raw game memory can hold garbage during zone transitions. An impossible epoch must
-    // degrade to "no timestamp", never throw out of the framework-tick handler.
+    // Game memory can hold garbage during zone transitions. An impossible epoch must not throw out
+    // of the framework-tick handler.
     [Fact]
     public void An_out_of_range_deadline_yields_a_null_sinceUtc_instead_of_throwing()
     {
@@ -392,8 +381,7 @@ public class OccultEncounterTrackerTests
         Assert.Null(state.SinceUtc);
     }
 
-    // A phase byte outside the known enum (a future game patch could add one) reads as
-    // down — "not verifiably up" is the only safe interpretation of an unknown state.
+    // A game patch could add a phase, and "not verifiably up" is the only safe reading of one.
     [Fact]
     public void An_unknown_phase_byte_reads_as_down()
     {
@@ -405,7 +393,7 @@ public class OccultEncounterTrackerTests
         Assert.Null(state.SinceUtc);
     }
 
-    // Two readings for one id would put contradictory rows in the report; the first wins.
+    // Two readings for one id would put contradictory rows in the report.
     [Fact]
     public void Duplicate_ce_readings_keep_only_the_first()
     {
@@ -429,8 +417,8 @@ public class OccultEncounterTrackerTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1786463208), state.SinceUtc);
     }
 
-    // A FATE can sit on the table for a few seconds before the server syncs it (zero epoch,
-    // zero position). Reporting it would upload a bogus fingerprint pair.
+    // A FATE can sit on the table for a few seconds with a zero epoch and position before the server
+    // syncs it. Reporting it would upload a bogus fingerprint pair.
     [Fact]
     public void A_pre_init_fate_is_not_reported_at_all()
     {
@@ -440,9 +428,8 @@ public class OccultEncounterTrackerTests
         Assert.Empty(tracker.Current);
     }
 
-    // The mirror case: a TRACKED fate whose row momentarily reads unsynced counts as still
-    // present. Without this, one bad read would flap it down and back up — two spurious
-    // uploads and a bogus down stamp.
+    // Dropping the FATE on one bad read would flap it down and back up: two spurious uploads and a
+    // bogus down stamp.
     [Fact]
     public void A_transient_pre_init_reading_keeps_a_tracked_fate_active()
     {
@@ -493,9 +480,8 @@ public class OccultEncounterTrackerTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1786470000), state.SinceUtc);
     }
 
-    // A downed FATE stays in the report: the server needs the down fact (and its stamp) even
-    // if this reporter uploads minutes later. Only Reset forgets it. The ghost's continued
-    // absence is old news, so it must not keep registering as a change either.
+    // The server needs the down fact and its stamp even if this reporter uploads minutes later; only
+    // Reset forgets it. Its continued absence is old news, so it is not a change.
     [Fact]
     public void A_downed_fate_stays_reported_on_later_ticks()
     {
@@ -529,8 +515,8 @@ public class OccultEncounterTrackerTests
             [Ce(46, DynamicEventPhase.Register)], [Fate(1972, 1786463208)], T0 + TimeSpan.FromSeconds(1)));
     }
 
-    // Register→Warmup keeps the wire status at 'preparing'; the deadline shift alone must not
-    // trigger an upload (the next heartbeat carries it).
+    // Register→Warmup stays 'preparing' on the wire, so the deadline shift waits for the next
+    // heartbeat.
     [Fact]
     public void A_phase_shift_within_preparing_is_not_a_status_change()
     {
@@ -583,8 +569,8 @@ public class OccultEncounterTrackerTests
         Assert.True(tracker.Apply([Ce(46, DynamicEventPhase.Inactive, deadline: 0)], [], T0 + TimeSpan.FromHours(3)));
     }
 
-    // Down stamps belong to the instance they were observed in. After a reset (new instance),
-    // an idle CE must read as unknown, not inherit the old instance's stamp.
+    // Down stamps belong to the instance they were observed in, so an idle CE in the next one must
+    // not inherit them.
     [Fact]
     public void Reset_clears_down_stamps_from_the_previous_instance()
     {

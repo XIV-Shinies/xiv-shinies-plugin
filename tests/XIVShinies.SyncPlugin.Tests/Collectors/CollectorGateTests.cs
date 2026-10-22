@@ -7,9 +7,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// Kill-switch precedence, pinned directly rather than only through the runner. Four switches must
-// all be on; any one of them off wins. Two are the plugin's own, two come from the server's
-// /config.
+// Kill-switch precedence: four switches must all be on and onboarding complete, and any one failing
+// wins. Two switches are the plugin's own, two come from the server's /config.
 public class CollectorGateTests
 {
     private const string Category = "quests";
@@ -76,14 +75,13 @@ public class CollectorGateTests
         Assert.False(CollectorGate.IsEnabled(Category, FullyOptedIn(), Remote(categoryEnabled: false)));
     }
 
-    // Why a missing config permits collection is explained in CollectorGate.IsEnabled.
+    // Proceeding without /config is safe (see CollectorGate.IsEnabled).
     [Fact]
     public void A_missing_remote_config_falls_back_to_the_users_own_switches()
     {
         Assert.True(CollectorGate.IsEnabled(Category, FullyOptedIn(), remoteConfig: null));
     }
 
-    // ...but the plugin's own switches still govern when the config is missing.
     [Fact]
     public void A_missing_remote_config_never_overrides_the_user()
     {
@@ -93,8 +91,8 @@ public class CollectorGateTests
         Assert.False(CollectorGate.IsEnabled(Category, settings, remoteConfig: null));
     }
 
-    // A category the server has never heard of is permitted: the server strips unknown payload keys,
-    // so a collector can ship before the server grows its switch.
+    // The server strips unknown payload keys, so a collector can ship before the server grows its
+    // switch.
     [Fact]
     public void A_category_the_server_never_mentions_is_permitted()
     {

@@ -3,25 +3,21 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// Answers consent and server-permission questions about the category rows, without anyone having
-/// to name a category.
+/// Answers consent and server-permission questions about the category rows without naming a category.
 /// </summary>
 /// <remarks>
-/// A separate class because the code that needs these answers lives outside the collectors — the sync
-/// orchestrator, for one — and the extensibility contract forbids it from naming a category to get them.
-/// Pure and Dalamud-free, so the gate test can run a collector this plugin has never heard of through it.
+/// Its callers, the sync orchestrator among them, live outside the collectors, and the extensibility
+/// contract forbids them from naming a category. Reads no game state; everything it uses is handed in.
 /// </remarks>
 public static class ManifestConsent
 {
     /// <summary>
-    /// True when the user has opted into a collection that is driven by the item manifest — the consent
-    /// the one-time group migration carries over onto the server's <c>legacy</c> groups.
+    /// True when the user opted into a collection driven by the item manifest: the consent the one-time
+    /// group migration carries over to the server's <c>legacy</c> groups.
     /// </summary>
     /// <remarks>
-    /// Asked of the collectors rather than named. The migration needs the consent of whichever category
-    /// owns the manifest groups, and the collectors already say which one that is
-    /// (<see cref="ICollector.UsesItemManifest"/>), so a second manifest-driven collection is migrated
-    /// for free instead of silently never being migrated at all.
+    /// Asks the collectors (<see cref="ICollector.UsesItemManifest"/>) rather than naming the category,
+    /// so a second manifest-driven collection is migrated too rather than silently skipped.
     /// </remarks>
     /// <param name="collectors">Every registered collector.</param>
     /// <param name="settings">The consent to read.</param>
@@ -38,21 +34,14 @@ public static class ManifestConsent
     }
 
     /// <summary>
-    /// The categories whose whole scope is settled by ticking them — every collection except one
-    /// whose contents come from consent groups the user answers separately.
+    /// The categories whose whole scope is settled by ticking them: every collection except one whose
+    /// contents come from consent groups the user answers separately.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// What this exists for: switching a category on without its groups leaves it ticked and
-    /// collecting nothing, reporting itself skipped — the state <see cref="SetGroupConsent"/> calls
-    /// the one a consent surface must never reach. Anything that enables a category on the user's
-    /// behalf must therefore ask for this list rather than the full one.
-    /// </para>
-    /// <para>
-    /// Asked of the collectors, so no category is named. The flag names the item manifest
-    /// specifically, which is also the only thing that attaches per-group consent rows — so a
-    /// collection driven by some other manifest has no groups to strand and stays included.
-    /// </para>
+    /// Anything that enables a category for the user must use this list: one switched on without its
+    /// groups stays ticked, collects nothing and reports itself skipped (see
+    /// <see cref="SetGroupConsent"/>). Only the item manifest attaches group rows, so a collection
+    /// driven by another manifest has no groups to strand and stays in the list.
     /// </remarks>
     /// <param name="collectors">Every registered collector.</param>
     public static IReadOnlyList<string> FixedScopeCategoryKeys(IEnumerable<ICollector> collectors)
@@ -71,18 +60,10 @@ public static class ManifestConsent
     /// Writes one category's consent, and every manifest group nested under it, together.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A category and its groups cannot send anything without each other: a group's ids are only ever
-    /// scanned as part of its category's pass, and a category driven by the manifest sends only what its
-    /// enabled groups cover. A ticked category with every group off would therefore upload nothing while
-    /// presenting itself as on — so ticking a category ticks its groups, and unticking it unticks them.
-    /// Narrowing the selection group by group afterwards is exactly what those checkboxes are for.
-    /// </para>
-    /// <para>
-    /// Only the groups ON THE ROW are touched — that is, the groups the user is looking at. A group the
-    /// server adds later is not in this list and is not written here, so it arrives switched off and
-    /// waits for a tick of its own.
-    /// </para>
+    /// A manifest category sends only what its enabled groups cover, so with every group off it would
+    /// upload nothing while showing as on; ticking a category ticks its groups, and unticking unticks
+    /// them. Only the groups on the row are written, so a group the server adds later arrives off and
+    /// waits for its own tick.
     /// </remarks>
     /// <param name="row">The category row whose consent is being written.</param>
     /// <param name="enabled">The value to write to the category and to each of its groups.</param>
@@ -102,11 +83,10 @@ public static class ManifestConsent
     /// Writes one group's consent, keeping its category in agreement with it.
     /// </summary>
     /// <remarks>
-    /// The other half of the rule <see cref="SetRowConsent"/> writes from above. Switching a group ON
-    /// switches its category on, because a group is only ever scanned as part of that category's pass.
-    /// Switching the LAST enabled group OFF switches the category off, because with no group left to
-    /// scan it would collect nothing while still presenting itself as switched on — and that is the one
-    /// state a consent surface must never be able to reach.
+    /// The group-side half of <see cref="SetRowConsent"/>. Switching a group on switches its category
+    /// on, since a group is scanned only in its category's pass. Switching the last enabled group off
+    /// switches the category off: with nothing to scan it would collect nothing while showing as on, a
+    /// state a consent surface must never reach.
     /// </remarks>
     /// <param name="row">The category row the group belongs to.</param>
     /// <param name="groupKey">The group the user just clicked.</param>
@@ -128,15 +108,12 @@ public static class ManifestConsent
     }
 
     /// <summary>
-    /// Whether every consent control these rows cover is switched on — the state of a
-    /// select-all box over them.
+    /// Whether every consent control these rows cover is on: the state of a select-all box over them.
     /// </summary>
     /// <remarks>
-    /// Two questions, not one, because "every row it met was on" is only an answer if it met any. A box
-    /// seeded true and then shown nothing — no collectors at all, or every category switched off by the
-    /// server — would render ticked while nothing whatsoever is on, which is the one reading a consent
-    /// control must never give. Rows the server has switched off are skipped: they are not the user's to
-    /// answer for, and their own controls are drawn grayed out.
+    /// False when no server-enabled row was seen; otherwise a box over nothing (no collectors, or every
+    /// category switched off by the server) would draw ticked while nothing is on. Rows the server
+    /// switched off are skipped: they are not the user's to answer for, and their controls draw grayed.
     /// </remarks>
     /// <param name="rows">The category rows on screen, group state included.</param>
     public static bool AllConsentGiven(IReadOnlyList<CategorySettingsRow> rows)
@@ -151,7 +128,6 @@ public static class ManifestConsent
 
             sawServerEnabledRow = true;
 
-            // `&=` is "and-assign": allEnabled stays true only while every row it meets is on.
             allEnabled &= row.UserEnabled;
 
             if (row.Groups is not { Count: > 0 } groups)
@@ -165,13 +141,12 @@ public static class ManifestConsent
     }
 
     /// <summary>
-    /// Whether any collection on screen is one the server currently permits — so whether the
-    /// select-all has anything at all to act on.
+    /// Whether any collection on screen is one the server permits, so the select-all has something to
+    /// act on.
     /// </summary>
     /// <remarks>
-    /// The select-all reads and writes only the collections the server allows, so with none of them
-    /// allowed it is a control that visibly does nothing when clicked. The window disables it
-    /// instead, the same way each individual row is disabled.
+    /// With none permitted the select-all would visibly do nothing, so the window disables it, as it
+    /// does each row.
     /// </remarks>
     public static bool AnyServerEnabled(IReadOnlyList<CategorySettingsRow> rows)
     {
@@ -189,19 +164,17 @@ public static class ManifestConsent
     /// collection.
     /// </summary>
     /// <remarks>
-    /// Read from the rows rather than from the config so the window keeps its single source for
-    /// what the server currently permits, and so the state is reachable from a test. Any row
-    /// answers for all of them — the pause is one flag applied to every collection — so the first
-    /// one that reports it settles the question. An empty list answers "not paused", which is the
-    /// permissive direction and unreachable while the registry always yields collectors.
+    /// Read from the rows so the window keeps one source for what the server permits. The pause is one
+    /// flag on every row, so the first row that reports it settles the question. An empty list answers
+    /// "not paused", the permissive direction, which cannot happen while the registry yields collectors.
     /// </remarks>
     /// <param name="rows">This frame's category rows.</param>
     public static bool ServerHasPausedEverything(IReadOnlyList<CategorySettingsRow> rows)
     {
         foreach (var row in rows)
         {
-            // Both halves, so a row that somehow claimed a pause while still reading as usable
-            // cannot make the window announce a pause over live checkboxes.
+            // Both halves, so a row that claims a pause while still usable cannot make the window
+            // announce a pause over live checkboxes.
             if (row.ServerGloballyOff && !row.ServerEnabled)
                 return true;
         }
@@ -213,24 +186,21 @@ public static class ManifestConsent
     /// Whether the server has switched off every collection one by one, without pausing syncing.
     /// </summary>
     /// <remarks>
-    /// The state in which every collection's box is grayed for a reason no pause sentence explains, so
-    /// a consent surface owes the user a sentence of its own. An empty list is nobody's refusal.
+    /// Every box is then grayed for a reason no pause sentence explains, so a consent surface owes the
+    /// user its own sentence. An empty list is nobody's refusal.
     /// </remarks>
     /// <param name="rows">This frame's category rows.</param>
-    // `&&` stops at the first false, as in TypeScript.
     public static bool ServerPermitsNoCollection(IReadOnlyList<CategorySettingsRow> rows) =>
         rows.Count > 0 && !AnyServerEnabled(rows) && !ServerHasPausedEverything(rows);
 
     /// <summary>
-    /// Whether any collection at all will actually be uploaded as things stand — both halves, the
-    /// user's choice and the server's.
+    /// Whether any collection will be uploaded as things stand, by both the user's choice and the
+    /// server's.
     /// </summary>
     /// <remarks>
-    /// What the sync card's cadence promise depends on. "Everything else syncs automatically every
-    /// &lt;interval&gt;" is a claim about collections, so with none of them running it is false however
-    /// healthy the pipeline is — and the sweep genuinely does nothing. Which of the two ways of
-    /// reaching that state the user is in, and what the card says about each, is
-    /// <c>SyncStatusView.Select</c>'s decision; this only answers whether either has been reached.
+    /// The sync card's "Everything else syncs automatically every &lt;interval&gt;" depends on it: with
+    /// no collection running that claim is false, however healthy the pipeline. Which way the user got
+    /// here, and what the card says about it, is <c>SyncStatusView.Select</c>'s decision.
     /// </remarks>
     /// <param name="rows">This frame's category rows.</param>
     public static bool AnyEffectivelyOn(IReadOnlyList<CategorySettingsRow> rows)
@@ -246,21 +216,17 @@ public static class ManifestConsent
 
     /// <summary>
     /// True when the server offers consent groups for this collection and the user has none of them
-    /// switched on — so there is nothing the pass is allowed to look for.
+    /// switched on, so the pass may look for nothing.
     /// </summary>
     /// <remarks>
-    /// Lives here rather than in the item collector that acts on it: that collector reads game memory
-    /// and cannot be constructed outside the game, so a rule deciding whether a whole collection is
-    /// scanned at all would otherwise only ever be witnessed in game. Distinct from an empty manifest,
-    /// which means the server asked about nothing — this means it asked, and the user has not agreed to
-    /// answer.
+    /// The item collector acts on it. Distinct from an empty manifest, where the server asked about
+    /// nothing: here it asked, and the user has not agreed to answer.
     /// </remarks>
     /// <param name="context">The collect context for this pass.</param>
     public static bool GroupsOfferedButNoneEnabled(CollectContext context) =>
         context.RemoteConfig?.ItemManifestGroups is { Count: > 0 }
         && context.EnabledGroups.Count == 0;
 
-    /// <summary>True when the user has at least one of these groups switched on.</summary>
     private static bool AnyGroupEnabled(
         IReadOnlyList<ItemGroupRow> groups, PluginSettings settings)
     {

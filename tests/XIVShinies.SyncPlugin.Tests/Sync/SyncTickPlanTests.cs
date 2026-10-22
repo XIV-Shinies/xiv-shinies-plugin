@@ -6,13 +6,11 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
 /// <summary>
-/// How much of a frame's sync work may run — see <see cref="SyncTickPlan"/> for why the ordering
-/// lives outside the frame callback.
+/// How much of a frame's sync work may run, by the two rules <see cref="SyncTickPlan"/> states.
 /// </summary>
 public class SyncTickPlanTests
 {
     // A poll brought forward comes no later than `soon`, and never later than it was already due.
-    // No poll scheduled at all means one at the first opportunity, which is sooner still.
     [Theory]
     [InlineData(30, 2)]
     [InlineData(1, 1)]
@@ -26,6 +24,7 @@ public class SyncTickPlanTests
             SyncTickPlan.BringPollForward(now.AddMinutes(dueInMinutes), now.AddMinutes(2)));
     }
 
+    // A null due time means the first opportunity, which is already sooner than `soon`.
     [Fact]
     public void A_poll_due_at_the_first_opportunity_stays_due()
     {
@@ -34,8 +33,8 @@ public class SyncTickPlanTests
         Assert.Null(SyncTickPlan.BringPollForward(due: null, soon));
     }
 
-    // Which halts leave the poll worth making; SyncTickPlan.PollSurvivesHalt says why. No halt at
-    // all is not a refusal.
+    // SyncTickPlan.PollSurvivesHalt says why these halts leave the poll worth making. No halt at all
+    // is not a refusal.
     [Theory]
     [InlineData(ApiStatus.CharacterNotClaimed, true)]
     [InlineData(ApiStatus.CharacterNotVerified, true)]
@@ -49,8 +48,6 @@ public class SyncTickPlanTests
         Assert.Equal(expected, SyncTickPlan.PollSurvivesHalt(haltStatus));
     }
 
-    // The two rules together, as the frame sees them: a character refusal still polls, a token
-    // halt stops everything.
     [Theory]
     [InlineData(ApiStatus.CharacterNotVerified, TickAction.PollOnly)]
     [InlineData(ApiStatus.InvalidToken, TickAction.Nothing)]
@@ -65,8 +62,7 @@ public class SyncTickPlanTests
                 blockedPendingUserAction: true));
     }
 
-    // Consent outranks everything. A fresh install must make no request at all, whatever else is
-    // true — this is the check that keeps it silent.
+    // Consent outranks everything: a fresh install makes no request at all.
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -88,9 +84,8 @@ public class SyncTickPlanTests
                 canContactServer: true, pollIsWorthwhile: true, blockedPendingUserAction: false));
     }
 
-    // The point of the whole class: a halt stops the collecting and uploading without stopping a
-    // poll the server would still answer normally — which is how a server-side change reaches the
-    // plugin while the halt holds.
+    // A halt stops collecting and uploading but not a poll the server still answers normally, which
+    // is how a server-side change reaches the plugin while the halt holds.
     [Fact]
     public void A_halt_the_poll_can_see_past_still_polls()
     {
@@ -100,8 +95,8 @@ public class SyncTickPlanTests
                 canContactServer: true, pollIsWorthwhile: true, blockedPendingUserAction: true));
     }
 
-    // And the other half: a halt the poll would hit in exactly the same way stops it too, rather
-    // than spending a request on the same refusal forever.
+    // A halt the poll would hit the same way stops the poll too, or every tick would spend a request
+    // on the same refusal.
     [Fact]
     public void A_halt_the_poll_cannot_see_past_stops_it_too()
     {
@@ -111,8 +106,8 @@ public class SyncTickPlanTests
                 canContactServer: true, pollIsWorthwhile: false, blockedPendingUserAction: true));
     }
 
-    // Worthwhileness is only ever consulted under a halt: an unblocked tick polls regardless,
-    // because that poll is how a kill switch is discovered in the first place.
+    // Worthwhileness counts only under a halt: an unblocked tick's poll is how the plugin discovers a
+    // kill switch.
     [Fact]
     public void An_unblocked_tick_polls_whether_or_not_a_halt_would_have_allowed_it()
     {

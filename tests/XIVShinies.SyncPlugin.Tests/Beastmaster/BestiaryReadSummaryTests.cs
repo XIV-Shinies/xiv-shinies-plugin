@@ -11,9 +11,8 @@ public class BestiaryReadSummaryTests
     private static BestiaryReadSummary Read(LedgerReport ledger, int listed = 25, int held = 25) =>
         new(listed, held, PageCapturedTotal: 50, PageBeastTotal: 50, ledger, SheetSize: 50);
 
-    // A redraw that reads the same figures produces a summary equal to the last one. The two ledger
-    // reports are built separately, as the observer builds a fresh one on every read — so this
-    // would fail if the nested report compared by reference, and every read would look new.
+    // The observer builds a fresh ledger report on every read, so this fails if the nested report
+    // compares by reference, which would make every read look new.
     [Fact]
     public void A_redraw_reading_the_same_figures_is_equal_to_the_last_read()
     {

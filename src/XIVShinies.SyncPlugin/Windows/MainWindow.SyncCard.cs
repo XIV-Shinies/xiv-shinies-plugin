@@ -12,37 +12,25 @@ using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
-// The sync card: the master switch, the live status line, the Sync now button, and the
-// "Reading from:" read-status panel. One part of the MainWindow class — see MainWindow.cs
-// for the class doc, the window state, and the shared card system and widget bindings.
+// The sync card: the master switch, the status line, the Sync now button, and the
+// "Reading from:" panel.
 internal sealed partial class MainWindow
 {
     /// <summary>Everything sync in one card: the master switch, current status, manual trigger.</summary>
-    /// <param name="rows">
-    /// This frame's category rows, forwarded to the read-status panel at the bottom of the card (see
-    /// <see cref="DrawStatus"/>). Passed in rather than rebuilt so the settings screen builds them
-    /// exactly once per frame — see <see cref="DrawSettings"/>.
-    /// </param>
-    /// <param name="remoteConfig">
-    /// The screen's one <c>/config</c> snapshot, or null if none has arrived.
-    /// </param>
-    // `ConfigResponse?` may be null, like `ConfigResponse | null` in TypeScript.
+    /// <param name="rows">This frame's category rows (see <see cref="BuildCategoryRows"/>).</param>
+    /// <param name="remoteConfig">The screen's <c>/config</c> snapshot, or null if none has arrived.</param>
     private void DrawSyncCard(IReadOnlyList<CategorySettingsRow> rows, ConfigResponse? remoteConfig)
     {
         using (BrandCard())
         {
-            // Custom card header: icon and title left, the master switch right-aligned on the
-            // same row.
             DrawCardTitle(FontAwesomeIcon.Sync, "Sync my collections");
 
-            // The master switch is a toggle rather than a checkbox on purpose: the category
-            // checkboxes below select what to include, while this is an on/off power switch —
-            // giving it a different shape keeps the two from reading as the same kind of control.
+            // A toggle, not a checkbox: it is a power switch, and the checkboxes below choose what
+            // to include.
             var masterEnabled = configuration.Settings.MasterEnabled;
             var stateLabel = masterEnabled ? "ON" : "OFF";
 
-            // Position the state label + toggle as one right-aligned cluster: the toggle's right
-            // edge sits on the card's inner edge.
+            // The state label and the toggle align right as one cluster.
             var gap = 8f * ImGuiHelpers.GlobalScale;
             var innerRight = activeCardInnerRight
                 ?? (ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
@@ -51,7 +39,6 @@ internal sealed partial class MainWindow
             Widgets.AlignRight(
                 Widgets.ToggleWidth + gap + ImGui.CalcTextSize(stateLabel).X, innerRight);
 
-            // The label echoes the switch state: teal when on, muted when off.
             if (masterEnabled)
                 ImGui.TextColored(Brand.Teal, stateLabel);
             else
@@ -80,14 +67,12 @@ internal sealed partial class MainWindow
     /// </param>
     private void DrawStatus(IReadOnlyList<CategorySettingsRow> rows, ConfigResponse? remoteConfig)
     {
-        // Whether a sharing feature may run counts as well as the collections: a character the plugin
-        // stopped trying to read holds back the live tracker and the Crucible sharing too. `||` is
-        // true when either side is, and stops at the first true, as in TypeScript.
+        // The tracker and the Crucible sharing wait on the character too, so they count toward the
+        // warning that it could not be read.
         var sharingCanRun = OccultGate.CanTrack(configuration.Settings, remoteConfig)
             || CrucibleGate.CanShare(configuration.Settings, remoteConfig);
 
-        // Which state to state is SyncStatusView.Select's rule — including the order they override
-        // each other in. Only how each one looks is decided here.
+        // SyncStatusView.Select picks the state and its precedence; this only draws it.
         var status = SyncStatusView.Select(
             configuration.Settings.MasterEnabled,
             rows,
@@ -104,22 +89,19 @@ internal sealed partial class MainWindow
 
         if (status == SyncStatusKind.SwitchedOffByUser)
         {
-            // Red: everything below this line is inert while the switch is off, and a quiet gray
-            // would read as "resting" when the truth is "doing nothing at all".
+            // Red: nothing runs while the switch is off, and gray would read as resting.
             DrawWarning("Syncing is switched off.");
         }
         else if (status == SyncStatusKind.PausedByServer)
         {
-            // The master toggle above still reads ON, which is correct: it reports the plugin's own
-            // setting, and that setting has not changed. This line is what says the switch that is
-            // off lives on the website, whether it is the website's pause or the user's profile.
+            // The toggle still reads ON, the plugin's own setting; this line says the switch that is
+            // off is on the website, either its pause or the user's profile switch.
             DrawWarning(ServerOffCopy.Paused(BackendHost()));
         }
         else if (status == SyncStatusKind.BlockedPendingUserAction)
         {
-            // Names the fix for the status that raised this halt (SyncManager.HaltStatus), which can
-            // differ from the last upload's outcome; HaltCopy decides among the kinds of fix.
-            // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
+            // Names the fix for the status that raised the halt (SyncManager.HaltStatus), which can
+            // differ from the last upload's outcome.
             DrawWarning($"Syncing has stopped. {HaltSentence()}");
         }
         else if (status == SyncStatusKind.CharacterNotRead)
@@ -129,41 +111,27 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.NothingSwitchedOnByUser)
         {
-            // Normal text, not a warning: nothing here is broken, and the pipeline is doing exactly
-            // what it was told. Said out loud rather than left to the empty checkboxes below,
-            // because the Collections card is a header the user can collapse — and collapsed, an
-            // idle sync card would look like a fault with no explanation anywhere.
-            //
-            // Scoped to collections. The live tracker and the Crucible run sharing are gated
-            // separately and have no collection term in their gates, so either can be uploading
-            // while every collection here is off — and this card is the surface a user trusts to
-            // say what is being sent.
+            // Not a warning: nothing is broken. Stated because the collections can be folded away,
+            // and scoped to collections because the sharing features may still be uploading.
             ImGui.TextUnformatted(
                 "No collections are switched on, so none of your collection progress is being " +
                 "uploaded.");
         }
         else if (status == SyncStatusKind.NothingPermittedByServer)
         {
-            // Warned rather than stated, unlike the line above: this one is not the user's doing,
-            // and nothing in the plugin can change it. The rows each wear their own "Off" chip, but
-            // they are a fold away.
+            // A warning: it is not the user's doing, and nothing in the plugin can change it. The rows'
+            // "Off" chips are a fold away.
             DrawWarning(ServerOffCopy.EveryCollection(BackendHost()));
         }
         else if (status == SyncStatusKind.WaitingForCharacter)
         {
-            // Normal text color, like the colored states around it: this line IS the sync card's
-            // status — the sentence the user came to read — even though it is neither good news nor
-            // bad.
-            //
-            // The character has not been read yet. The copy names no duration because the wait has
-            // no fixed length (see SyncManager.CaptureIdentityIfSettled). Saying that the character
-            // is being read matters: the player is logged in, and a bare wait would read as the
-            // plugin failing to see them.
+            // Full contrast, as the status. It names no duration, since the wait has no fixed length
+            // (see SyncManager.CaptureIdentityIfSettled).
             ImGui.TextUnformatted(SyncStatusView.WaitingForCharacterSentence);
         }
         else if (status == SyncStatusKind.LoggedOut)
         {
-            // Normal text, like the wait above: nothing is wrong, and logging in is all it takes.
+            // Not a warning: logging in is all it takes.
             ImGui.TextUnformatted(SyncStatusView.LoggedOutSentence);
         }
         else if (status == SyncStatusKind.LastUploadOutcome && syncManager.LastStatus is { } lastStatus)
@@ -175,32 +143,24 @@ internal sealed partial class MainWindow
             ImGui.TextUnformatted("No collections have been uploaded yet this session.");
         }
 
-        // Whether the wait needs a line of its own is SyncStatusView.NeedsWaitLine's rule.
         if (SyncStatusView.NeedsWaitLine(status, syncManager.LastStatus, backingOff))
             DrawWrapped(SyncStatusView.WaitLine(BackendHost()), ImGuiCol.Text);
 
-        // "When?" is half of what a status line is for: without it, a deliberately quiet stretch
-        // (item acquisitions fire no event) is indistinguishable from a hang. Muted, unlike the
-        // status line above it: a relative timestamp is a footnote to the status, not the status.
+        // Without a time, a quiet stretch (item acquisitions fire no event) looks like a hang. Muted:
+        // it is a footnote to the status.
         if (syncManager.LastSyncedAt is { } syncedAt)
             ImGui.TextDisabled($"Last synced {TimeText.Ago(DateTimeOffset.UtcNow - syncedAt)}.");
 
         ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
 
-        // Primary: within this card, syncing now is the action everything above leads to. Clicking
-        // gives the same in-button feedback as the copy button, but tied to reality: the label
-        // yields to "Syncing" while the upload is actually on the wire, with a short minimum so
-        // even an instant sync visibly reacts. The `###` suffix keeps the button's identity stable
-        // while its visible label changes.
+        // "Syncing" shows while the upload is on the wire, with a short minimum. `###` keeps the ID
+        // stable while the label changes.
         var syncWidth = PaddedButtonWidth("Sync now");
         var showSyncing = DateTime.UtcNow < syncFeedbackUntil || syncManager.UploadInFlight;
         var syncButtonPos = ImGui.GetCursorPos();
 
-        // Read off the same status the card is stating, plus whether the server has asked the
-        // plugin to wait, so no sentence invites a press the button refuses (see
-        // SyncStatusView.SyncNowOffered and SyncNowEnabled). PrimaryButton owns its own disabled
-        // look, so the face goes flat rather than merely dimming — see Widgets.PrimaryButton for why
-        // that matters.
+        // From the stated status and the server's wait, so no sentence invites a press the button
+        // refuses (see SyncStatusView.SyncNowOffered and SyncNowEnabled).
         var syncNowOffered = SyncStatusView.SyncNowOffered(status, backingOff);
         if (PrimaryButton(
                 showSyncing ? "###syncNow" : "Sync now###syncNow",
@@ -214,7 +174,6 @@ internal sealed partial class MainWindow
 
         if (showSyncing)
         {
-            // Dark-on-teal like the button's own label; the glyph matches the card's sync icon.
             DrawButtonFeedback(
                 syncButtonPos, syncWidth, FontAwesomeIcon.Sync, Brand.TealForeground,
                 "Syncing", Brand.TealForeground);
@@ -222,15 +181,12 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Both blocks below describe a pipeline that is actually running, so both are hidden when it
-        // is not. Derived from the status the card is already stating, so the sentence above and the
-        // promise below cannot disagree.
+        // Both blocks below describe a running pipeline. Derived from the stated status, so the
+        // status and the promise cannot disagree.
         var pipelineRunning = SyncStatusView.CadenceHolds(status);
 
-        // Sets the expectation for every collection at once, so no category's own description has
-        // to explain the sync mechanism. Phrased by mechanism, not by category name; which
-        // collections may be promised "within seconds", and when a press is invited, is
-        // SyncStatusView.CadenceSentence's rule.
+        // One expectation for every collection, phrased by mechanism, never by category (see
+        // SyncStatusView.CadenceSentence).
         if (pipelineRunning)
         {
             DrawWrapped(
@@ -239,43 +195,24 @@ internal sealed partial class MainWindow
                 ImGuiCol.Text);
         }
 
-        // A snapshot of everything this sync reads: each collection the user has switched on (was it
-        // readable this pass, or is the game withholding it?), and the physical storage containers
-        // the item counts come from (inventory, saddlebag, armoire, and so on). This lives in the
-        // sync card rather than beneath any one category's row, because it describes the pipeline as
-        // a whole — and because storage containers are not category-scoped: a future collection that
-        // also reads items would draw from this exact same set of containers.
-        //
-        // Gated on a pass having actually run for this character (see SyncManager.HasCollected).
-        // Before then, no collection has a skip reason yet, so every enabled one would falsely
-        // report as read.
+        // The panel lists switched-on collections and the item containers, which no one category owns, so it
+        // sits here. It waits for a pass (SyncManager.HasCollected), or every enabled row would show as read.
         if (pipelineRunning && syncManager.HasCollected)
         {
             ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-            // Normal text color, matching the notes it introduces: this heading is what makes the
-            // list beneath it mean anything, and the notes themselves are colored by tone.
+            // Full contrast: the heading is what gives the notes beneath it their meaning.
             ImGui.TextUnformatted("Reading from:");
 
-            // The whole panel is assembled by a pure, tested builder, so this window stays a printer:
-            // it draws whatever notes it is handed and never asks which collection or which container
-            // produced one. The rows are this frame's, built once at the top of DrawSettings and
-            // shared with the consent card below.
+            // ReadStatusView.Build writes the notes; this only draws them, never asking their source.
             var readStatus = ReadStatusView.Build(rows, syncManager.LastSourceNotes, BackendHost());
 
-            // Whether any note drawn below is Missing — something contributing nothing at all right
-            // now, whether a collection the game will not answer for or a storage container that has
-            // never been opened. Tracked while drawing so the follow-up hint beneath the panel is
-            // gated on the exact tones just shown, rather than re-deriving the same answer. The two
-            // groups OR their answers together: the hint speaks for both.
+            // Gates the follow-up hint on exactly the notes shown.
             var hasMissingNote = DrawReadStatusGroup("Collections", readStatus.Collections);
             hasMissingNote |= DrawReadStatusGroup("Containers", readStatus.Containers);
 
-            // A Missing line that names an action (open the Saddlebag, open the Achievements window)
-            // cannot say what happens next, because acting in game changes nothing until the plugin
-            // reads again. This is the shared other half: the sync that actually picks the change
-            // up. Hidden once nothing is Missing, since a permanently Cached container has nothing
-            // left the user can do about it.
+            // A Missing line names an action in game; this says what then picks the change up. A
+            // Cached note leaves the user nothing to do, so it does not raise this.
             if (hasMissingNote)
             {
                 ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
@@ -285,56 +222,30 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Draws one labeled group of the "Reading from:" panel — its heading, its healthy sources as a
-    /// wrapped row of chips, then its full-line notes — and reports whether any note in it was
-    /// <see cref="SourceTone.Missing"/>. An empty group draws nothing at all, heading included.
+    /// Draws one labeled group of the "Reading from:" panel, healthy sources as chips and then
+    /// full-line notes, and reports whether any note was <see cref="SourceTone.Missing"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The heading is what tells the reader which KIND of thing the notes beneath it are — see
-    /// <see cref="ReadStatus"/> for the two questions the groups answer. Without the labels the two read
-    /// as one undifferentiated list of nouns. The label is a parameter rather than a branch on the group
-    /// — this method never learns which of the two it is drawing, exactly as it never learns which
-    /// collection or container any individual note came from. Drawn muted via
-    /// <see cref="DrawSectionLabel"/>, unlike the "Reading from:" heading above it: these headings are
-    /// captions naming the notes beneath them, and the tone-colored notes are what the reader is meant
-    /// to actually read.
-    /// </para>
-    /// <para>
-    /// The group is exception-first: a healthy source (Live or Cached) has nothing the user must do,
-    /// so it compresses into a small chip — its tone's icon and color, the note's short label, and the
-    /// note's optional detail on hover — while a Missing note keeps a full line, because its text names
-    /// what the user needs to know and hover must never be the only way to see it (see
-    /// <see cref="SourceNote"/> for the rule). The chips draw first, as one row that wraps at the
-    /// card's inner edge; the lines follow. Both decisions switch on the TONE alone, never on a source
-    /// key or category name, which is what keeps a future source renderable without touching this
-    /// method.
-    /// </para>
+    /// It switches on the tone alone, never a source or category, so a new source needs no change
+    /// here. A healthy source (Live or Cached) asks nothing of the user, so it shrinks to a chip; a
+    /// Missing note keeps a full line, since hover must never be the only way to read it (see
+    /// <see cref="SourceNote"/>).
     /// </remarks>
-    /// <param name="label">The group's heading.</param>
-    /// <param name="notes">The group's notes, already written and toned by the pure builder.</param>
-    /// <returns>True when at least one note carries the <see cref="SourceTone.Missing"/> tone.</returns>
     private bool DrawReadStatusGroup(string label, IReadOnlyList<SourceNote> notes)
     {
-        // A group with nothing in it (no collection switched on; no item pass yet) skips its heading
-        // too — an empty labeled section would only ask the reader what is supposed to be there.
+        // An empty group skips its heading too.
         if (notes.Count == 0)
             return false;
 
         ImGui.Dummy(new Vector2(0f, 4f * ImGuiHelpers.GlobalScale));
         DrawSectionLabel(label);
 
-        // A Missing note renders as a full line ONLY while it actually carries one; the builders
-        // guarantee it always does (see SourceNote), and a note that somehow arrived without a text
-        // degrades to a chip rather than being dropped or crashing the draw.
+        // The builders always give a Missing note its text (see SourceNote); one without degrades to
+        // a chip rather than being dropped.
         static bool IsLineForm(SourceNote note) =>
             note.Tone is SourceTone.Missing && note.Text is not null;
 
-        // --- The chip row -----------------------------------------------------------------------
-        // All healthy notes, side by side, wrapping at the card's inner edge. The wrap decision has
-        // to happen before each chip is drawn (a drawn chip has already reserved its footprint), so
-        // the row is laid out from measured widths in cursor space — the same coordinate space
-        // activeCardInnerRight arrives in (see DrawSectionLabel for the two-space distinction).
+        // The chip row, wrapped from measured widths in cursor space before each chip draws.
         var innerRight = activeCardInnerRight
             ?? (ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
         var chipGap = 6f * ImGuiHelpers.GlobalScale;
@@ -350,12 +261,8 @@ internal sealed partial class MainWindow
             var icon = ToneIcon(note.Tone);
             var width = ChipWidth(icon, note.Label);
 
-            // DrawChip ends each chip's row (its footprint Dummy advances the cursor to the next
-            // line), so continuing the row is the explicit act: SameLine only when this chip still
-            // fits before the card's inner edge. When it does not, the cursor is already sitting at
-            // the start of a fresh line and the row wraps — with a little vertical air first,
-            // because back-to-back rows of outlined chips sit flush otherwise. The gap is tighter
-            // than the horizontal chipGap: rows read as one group, not as separate sections.
+            // DrawChip leaves the cursor on a new line, so SameLine only while the chip fits. A
+            // wrapped row gets a little air, or outlined chips sit flush.
             if (anyChipDrawn && rowRight + chipGap + width <= innerRight)
             {
                 ImGui.SameLine(0f, chipGap);
@@ -370,40 +277,30 @@ internal sealed partial class MainWindow
             rowRight = chipStart + width;
             anyChipDrawn = true;
 
-            // The optional hover copy: what the source covers, or an optional refresh action. Read
-            // right after the chip, whose reserved footprint is the item IsItemHovered answers for.
+            // The chip's footprint is the item IsItemHovered answers for.
             if (note.Detail is { } detail && ImGui.IsItemHovered())
                 Widgets.DrawTooltip(detail);
         }
 
-        // --- The full lines ---------------------------------------------------------------------
         var hasMissingNote = false;
 
         foreach (var note in notes)
         {
-            // Cached does not count as missing (see SourceNoteText for why Cached is a healthy resting
-            // state rather than a gap): gating the caller's follow-up hint on it too would make that
-            // hint permanent noise that never clears. Missing is different — it marks something this
-            // pass did not read, and that is the gap the hint beneath the panel speaks to.
+            // Only Missing counts: Cached is a healthy resting state (see SourceNoteText), and would
+            // keep the follow-up hint up forever.
             if (note.Tone is SourceTone.Missing)
                 hasMissingNote = true;
 
             if (!IsLineForm(note) || note.Text is not { } text)
                 continue;
 
-            // Drawn at Widgets.InlineIconScale, like every other inline status icon (see the constant).
             DrawIconedText(ToneIcon(note.Tone), ToneColor(note.Tone), text, Widgets.InlineIconScale);
         }
 
         return hasMissingNote;
     }
 
-    /// <summary>
-    /// Maps a source note's tone to the color it draws in. A switch on the <em>tone</em>, never on a
-    /// source key or scan-state string — the tones are the only vocabulary this method knows, so a
-    /// future storage source colors correctly the moment <see cref="SourceNoteText.Describe"/>
-    /// assigns it one of them, with no change needed here.
-    /// </summary>
+    /// <summary>The color a source note's tone draws in.</summary>
     private static Vector4 ToneColor(SourceTone tone) =>
         tone switch
         {
@@ -411,18 +308,14 @@ internal sealed partial class MainWindow
             SourceTone.Cached => Widgets.CautionColor,
             SourceTone.Missing => Widgets.ErrorColor,
 
-            // Muted on purpose: an unreadable source is information, not a problem to solve, and
-            // any alarm color would read as one.
+            // Muted: an unreadable source is information, not a problem to solve.
             SourceTone.Unreadable => ImGuiColors.DalamudGrey,
 
-            // Keeps the expression exhaustive against a future tone without throwing at draw time.
+            // A future tone draws gray rather than throwing.
             _ => ImGuiColors.DalamudGrey,
         };
 
-    /// <summary>
-    /// Maps a source note's tone to the icon drawn beside it — the same switch-on-tone discipline as
-    /// <see cref="ToneColor"/>, and for the reason given there.
-    /// </summary>
+    /// <summary>The icon drawn beside a source note's tone.</summary>
     private static FontAwesomeIcon ToneIcon(SourceTone tone) =>
         tone switch
         {
@@ -430,12 +323,8 @@ internal sealed partial class MainWindow
             SourceTone.Cached => FontAwesomeIcon.Clock,
             SourceTone.Missing => FontAwesomeIcon.ExclamationCircle,
 
-            // A struck-through eye: the game itself cannot see this source. Paired with the muted
-            // color above, and the chip's hover explains why.
+            // The game itself cannot see this source; the chip's hover says why.
             SourceTone.Unreadable => FontAwesomeIcon.EyeSlash,
-
-            // Mirrors ToneColor's fallback arm: keeps the expression exhaustive against a future
-            // tone without throwing at draw time.
             _ => FontAwesomeIcon.QuestionCircle,
         };
 
@@ -445,22 +334,20 @@ internal sealed partial class MainWindow
     /// </summary>
     private string? CharacterRefusalSentence(ApiStatus status)
     {
-        // One read of the identity, so the name and the home world always come from the same
-        // character even if a logout lands mid-frame.
+        // One read, so the name and the home world come from the same character even if a logout
+        // lands mid-frame.
         var character = syncManager.Identity;
 
         return CharacterRefusalCopy.For(status, character?.Name, character?.HomeWorld, BackendHost());
     }
 
     /// <summary>
-    /// The sentence for the current halt (see <see cref="HaltCopy"/>), built from the loaded
-    /// character, the configured host and the server settings. Shared by the sync card and the
-    /// live tracker's and Crucible run sharing's cards, so every card says the same thing about one
-    /// halt.
+    /// The current halt's sentence (see <see cref="HaltCopy"/>). Every card that shows a halt uses it,
+    /// so they agree.
     /// </summary>
     private string HaltSentence()
     {
-        // One read of the identity, for the same reason as CharacterRefusalSentence.
+        // One read, so the name and the home world come from the same character.
         var character = syncManager.Identity;
 
         return HaltCopy.For(
@@ -483,8 +370,7 @@ internal sealed partial class MainWindow
                 ImGui.TextColored(Widgets.SuccessColor, "Your collections are up to date.");
                 break;
 
-            // The four character refusals. `case var refused when …` matches any status, and the
-            // `when` guard keeps the case only when CharacterRefusalCopy has a sentence for it;
+            // The four character refusals: any status CharacterRefusalCopy has a sentence for.
             // CharacterRefusalCopyTests pins that set to exactly ApiStatusMap.IsCharacterRefusal.
             case var refused when CharacterRefusalSentence(refused) is { } sentence:
                 DrawWarning(sentence);
@@ -494,24 +380,20 @@ internal sealed partial class MainWindow
                 DrawWarning($"Your token was rejected. Generate a new one on {BackendHost()}.");
                 break;
 
-            // The three outcomes below need no action in the plugin, so they carry no
-            // warning color — but they are still the sync card's status line, so they draw at full
-            // contrast. Only red says "you have to do something". A 503 from the account's own
-            // "Sync from the plugin" switch is fixed on the website, and the card's paused line
-            // (ServerOffCopy.Paused) names that fix once the next /config poll reports the switch.
+            // Nothing to fix in the plugin, so not red, but the status line, so full contrast. A 503 from
+            // the profile switch is named by ServerOffCopy.Paused once the next /config poll reports it.
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
                 DrawWrapped(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()), ImGuiCol.Text);
                 break;
 
+            // Not red either: the plugin tries again on its own.
             case ApiStatus.NetworkError:
                 DrawWrapped($"Could not reach {BackendHost()}. Will try again.", ImGuiCol.Text);
                 break;
 
-            // The settings-side refusal, as opposed to NetworkError's unreachable server: the
-            // request never left, so "will try again" would be false — nothing changes until the
-            // configuration file does. Which setting is at fault decides the sentence, so the
-            // wording comes from BackendUrl rather than being written here.
+            // The request never left, so "will try again" would be false: nothing changes until the
+            // configuration does. BackendUrl words which setting is at fault.
             case ApiStatus.NotConfigured:
                 DrawWarning(BackendUrl.DescribeUnusableSetting(
                     configuration.Settings.BaseUrl,

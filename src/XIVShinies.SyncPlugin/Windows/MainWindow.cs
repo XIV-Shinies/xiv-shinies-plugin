@@ -1,28 +1,13 @@
 using System;
 using System.Collections.Generic;
-// Vector2/Vector4 are simple float tuples from the .NET math library. ImGui uses them for sizes,
-// positions, and colors (RGBA, each component 0..1).
 using System.Numerics;
-// At Dalamud API 15 the ImGui bindings live under Dalamud.Bindings.ImGui (NOT the older
-// ImGuiNET package). ImGui is an "immediate mode" GUI: instead of building a retained tree of
-// components like React, you re-issue draw calls every frame inside Draw() below.
 using Dalamud.Bindings.ImGui;
-// FontAwesomeIcon (the icon glyphs) and its ToIconString extension.
 using Dalamud.Interface;
-// GameFontStyle/GameFontFamily — the game's own typefaces, which are the only route to real bold
-// (ImGui has no font-weight styling; bold is a different font).
 using Dalamud.Interface.GameFonts;
-// Font handles: a heading-sized variant of the default font, and the icon font, are pushed and
-// popped around the text they style — fonts are a stack in ImGui, exactly like colors.
 using Dalamud.Interface.ManagedFontAtlas;
-// ISharedImmediateTexture — a lazily-loaded, Dalamud-owned image ImGui can draw (the mascot).
 using Dalamud.Interface.Textures;
-// Scaling helpers: users on high-DPI displays run Dalamud at 1.5–2x, and raw pixel sizes ignore it.
 using Dalamud.Interface.Utility;
-// Scoped wrappers for ImGui's push/pop pairs. `using (ImRaii.Disabled(...))` guarantees the matching
-// End/Pop even if the block throws — a whole class of unbalanced-stack bugs stops existing.
 using Dalamud.Interface.Utility.Raii;
-// The windowing helpers (Window base class, WindowSystem) that manage plugin windows for us.
 using Dalamud.Interface.Windowing;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
@@ -31,35 +16,15 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
-/// <summary>
-/// The plugin window opened by the <c>/shinies</c> command.
-/// </summary>
+/// <summary>The plugin window opened by the <c>/shinies</c> command.</summary>
 /// <remarks>
-/// <para>
-/// Shows the first-run wizard until the user has consented, and the settings afterwards. It never
-/// opens itself: Dalamud forbids unprompted windows, so it appears only from <c>/shinies</c> or the
-/// installer's open and settings buttons.
-/// </para>
-/// <para>
-/// This class draws and nothing else. Which step the wizard is on lives in <see cref="OnboardingState"/>;
-/// which rows to draw lives in <see cref="CategorySettingsView"/>; what a token probe means lives in
-/// <see cref="Onboarding.TokenCheck"/>. All three are pure and unit-tested, which is why almost
-/// nothing here can be wrong in an interesting way.
-/// </para>
+/// Shows the first-run wizard until the user has consented, then the settings. Dalamud forbids
+/// unprompted windows, so it opens only from <c>/shinies</c> or the installer's open and settings
+/// buttons. It only draws: wizard state lives in <see cref="OnboardingState"/>, the rows in
+/// <see cref="CategorySettingsView"/>, and what a probe means in <see cref="Onboarding.TokenCheck"/>.
 /// </remarks>
-// `sealed` means no other class may inherit from this one. We inherit from Dalamud's `Window` base
-// class AND implement `IDisposable` — the .NET pattern for "I hold something that must be cleaned
-// up", whose `Dispose()` is the rough equivalent of a React `useEffect` cleanup function.
-//
-// `internal` (visible only inside this assembly) rather than `public`, because it takes a SyncManager,
-// which is itself internal. C# refuses to expose a public method whose parameter type is less
-// accessible than the method — otherwise a caller outside the assembly could see the constructor but
-// never name a value to pass it. Nothing outside the plugin constructs this window anyway.
-//
-// `partial` splits this one class across several files by concern — a first-class C# feature
-// (WinForms and WPF are built on it), not inheritance: every MainWindow.*.cs file contributes
-// members to this same class. This file holds the class doc, the window state, the lifecycle,
-// and the shared card system and widget bindings; each sibling file holds one screen or panel.
+// Split by concern: this file holds the window state, the lifecycle, the card system and the
+// widget bindings; each MainWindow.*.cs sibling holds one screen or panel.
 internal sealed partial class MainWindow : Window, IDisposable
 {
     /// <summary>The longest token string the input box will accept, comfortably above the real 47.</summary>
@@ -70,54 +35,40 @@ internal sealed partial class MainWindow : Window, IDisposable
     private readonly IReadOnlyList<ICollector> collectors;
     private readonly TokenVerifier verifier;
 
-    // A heading-sized build of the default font, owned by this window (created below, disposed in
-    // Dispose). Font atlases build asynchronously, so pushes are guarded on Available — until then
-    // headings just render at body size.
+    // Owned here. The atlas builds asynchronously, so pushes check Available; until then headings
+    // draw at body size.
     private readonly IFontHandle headingFont;
 
-    // Dalamud's FontAwesome icon font — borrowed from the UiBuilder, never disposed here.
+    // Borrowed from the UiBuilder, so Dispose leaves it alone.
     private readonly IFontHandle iconFont;
 
-    // A bold build of the game's Axis face for button labels, owned here. ImGui has no font-weight
-    // styling, so "bold" means a different font.
+    // Bold Axis for button labels, owned here. ImGui has no font weights, so bold is its own font.
     private readonly IFontHandle buttonFont;
 
-    // The mascot image for the settings header. Shared and Dalamud-owned: it loads in the
-    // background and is never disposed here.
+    // Dalamud-owned and loaded in the background; never disposed here.
     private readonly ISharedImmediateTexture mascotTexture;
 
-    // The version drawn in the masthead. Cosmetic only — uploads and the pasted diagnostic read
-    // the real assembly version.
+    // The masthead's version. Cosmetic: uploads and the pasted diagnostic read the real one.
 #if DEBUG
-    // Assignable in a development build so screenshots can be captured showing the version the
-    // release will carry, before the release flow sets it. See OverrideVersionForScreenshots.
-    //
-    // volatile because the seeding command writes it from the framework thread while the draw
-    // thread reads it — the same reason UploadLog marks its entry list volatile. A reference
-    // assignment is atomic, so the worst case is a frame of staleness.
+    // Writable for screenshots (see OverrideVersionForScreenshots). The seeding command writes it on
+    // the framework thread while the draw thread reads it; at worst one frame is stale.
     private volatile string pluginVersion;
 #else
     private readonly string pluginVersion;
 #endif
 
-    // The version the plugin is actually running, for the pasted diagnostic. Held apart from the
-    // masthead's copy so the screenshot override cannot reach it: the dump's whole job is to be
-    // trusted by whoever reads a bug report, and a version it cannot vouch for makes every other
-    // line in it suspect too.
+    // The running version, for the pasted diagnostic. Kept apart from the masthead's copy so the
+    // screenshot override can never reach a bug report.
     private readonly string diagnosticVersion;
 
-    // The upload log's table renderer, which captures each collector's display name at
-    // construction — the collector list is fixed for the plugin's lifetime.
     private readonly UploadLogTable uploadLogTable;
 
-    // The masthead's link row. Static because every entry is a constant and Draw runs every
-    // frame — rebuilding the array per frame would be needless garbage in an always-visible
-    // path. Id is the stable ImGui identity (`###`), precomputed for the same reason.
+    // The masthead's link row. Static so the always-visible draw path allocates nothing per frame.
+    // Id is the stable ImGui identity (`###`).
     private static readonly (FontAwesomeIcon Icon, Vector4 IconColor, string Label, string Id, string Url)[]
         LinkButtons =
         {
-            // The project's website, not the configured backend: this row is brand links, sitting
-            // beside Discord and the source repository, rather than anything about the sync target.
+            // The project's website, not the configured backend: these are brand links.
             (FontAwesomeIcon.Globe, Brand.Teal, "xiv-shinies.com", "###linkSite", BackendUrl.Default),
             (FontAwesomeIcon.Comments, Brand.Teal, "Discord", "###linkDiscord", PluginMeta.DiscordUrl),
             (FontAwesomeIcon.Code, Brand.Teal, "Source code", "###linkSource", PluginMeta.SourceUrl),
@@ -126,73 +77,50 @@ internal sealed partial class MainWindow : Window, IDisposable
 
     private readonly OnboardingState onboarding = new();
 
-    // Group keys whose "New" badge has been shown during THIS window's lifetime. The moment a new
-    // group is drawn we persist its "seen" flag (so it is gone next session), but we keep drawing its
-    // badge for the rest of the session by remembering it here — otherwise the badge would vanish one
-    // frame after appearing, since the very next frame's rebuild would report it as no longer new.
-    // See DrawGroupCheckboxes for the full lifecycle.
+    // Group keys badged "New" while the window is open. Drawing a group saves it as seen at once, so
+    // this keeps the badge up until the window closes (see OnClose).
     private readonly HashSet<string> groupsBadgedThisSession = new();
 
-    // The same lifecycle as groupsBadgedThisSession, for whole collections rather than the groups
-    // inside one. Kept as its own set rather than sharing that one: a category key and a group key
-    // come from different namespaces — ours and the server's — so nothing stops the two from
-    // colliding, and one shared set would light a collection's badge because a group that happened
-    // to share its key had been drawn.
+    // The same, for whole collections. A separate set because category keys (ours) and group keys
+    // (the server's) can collide.
     private readonly HashSet<string> categoriesBadgedThisSession = new();
 
-    // The same lifecycle again, for the Crucible run sharing's card: true once its "New" chip has
-    // gone up since the window opened (see CrucibleBadge). A field with no `= ...` starts false.
+    // The same, for the Crucible sharing card's "New" chip (see CrucibleBadge).
     private bool crucibleBadgedThisSession;
 
-    // The user's stored choices the wizard's consent step opened with (see DrawChooseCategoriesStep).
-    // Null until the step draws; cleared when the user leaves the step or closes the window.
-    // `(bool A, bool B)?` is a tuple that may be null: two named values traveling together, like
-    // `{ a, b } | null`.
+    // The stored choices the wizard's consent step opened with (see DrawChooseCategoriesStep). Null
+    // until the step draws; cleared when the user leaves the step or closes the window.
     private (bool AnythingSwitchedOn, bool TrackerOn)? chooseStepOpening;
 
-    // Whether the wizard has put per-group consent checkboxes on screen during THIS frame. Reset at
-    // the top of every wizard frame and set by DrawGroupCheckboxes when it actually draws a group row,
-    // so by the time the footer's Finish button is handled — drawn after the rows, in the same frame —
-    // it answers "was this user shown groups to choose from?" rather than "did the server ever have
-    // any?". Those differ: a config that carries no groups still answers, and a poll that fails answers
-    // too, and in both cases the user chose nothing group-level because there was nothing to choose
-    // from. See DrawWizardNav for what rides on the answer.
+    // Whether this wizard frame drew a group checkbox, not whether the server sent any. Finish draws
+    // after the rows and reads it (see PluginSettings.SettleItemGroupConsent).
     private bool wizardShowedGroups;
 
-    // The same question for the live occult tracker's checkbox: was it drawn in a state the user
-    // could act on? It matters more here than for a collection, because this is the one sharing
-    // control that starts ticked — a user who could not reach it has not agreed to it, and
-    // PluginSettings.SettleOccultConsent is what answers on their behalf.
+    // The same for the live tracker's checkbox: was it drawn enabled? It starts ticked, so a user who
+    // could not reach it has not agreed to it (see PluginSettings.SettleOccultConsent).
     private bool wizardCouldOfferOccultToggle;
 
-    // The text currently in the token box. ImGui hands us a `ref string` and rewrites it in place,
-    // so this must be a field rather than something rebuilt each frame. Seeded from the saved token
-    // in the constructor.
+    // The token box's text. ImGui edits it by ref, so it must outlive the frame.
     private string tokenInput;
 
-    // The account the last successful probe belonged to, for showing which characters are claimed.
+    // The last successful probe's account, for the claimed-characters list.
     private MeResponse? account;
 
-    // Until this instant, the Sync now button shows "Syncing" feedback instead of its label.
-    // Immediate mode has no timers or callbacks: the window redraws every frame anyway, so
-    // transient UI is just a deadline that each frame compares against the clock. This one is a
-    // minimum display time, so even a sync that finishes instantly visibly reacts to the click.
+    // Until this instant the Sync now button shows "Syncing": a minimum display time, so even an
+    // instant sync visibly reacts to the click.
     private DateTime syncFeedbackUntil;
 
-    // The same idea for the upload log's copy button and its "Copied" flash.
+    // The same, for the upload log's "Copied" flash.
     private DateTime logCopyFeedbackUntil;
 
-    // Whether this session's automatic token probe has been issued (or found unnecessary). One
-    // per session: the Account panel should greet the user with the token's real state, not
-    // re-verify on every draw.
+    // Whether this session's automatic token probe has run or was unnecessary (see TryAutoVerifyToken).
     private bool sessionTokenProbeRequested;
 
-    // While a BrandCard is open, the window-local X of its inner right edge — so card-aware
-    // helpers (BrandSeparator) can size themselves to the card instead of the window. Null outside
-    // any card.
+    // While a BrandCard is open, its inner right edge in cursor space, so helpers wrap and size to the
+    // card. Null outside any card.
     private float? activeCardInnerRight;
 
-    /// <summary>Builds the window. It is not opened here — Dalamud forbids unprompted windows.</summary>
+    /// <summary>Builds the window without opening it.</summary>
     public MainWindow(
         Configuration configuration,
         ApiClient apiClient,
@@ -203,10 +131,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         IFontHandle iconFont,
         float baseFontSizePx,
         string pluginVersion)
-        // `: base(...)` calls the parent Window constructor first, passing the window's title. The
-        // `###XIVShiniesMain` suffix is an ImGui trick: text before `###` is the visible title, and
-        // the part from `###` on is a stable internal ID, so the visible title can change later
-        // without ImGui treating it as a different window (and losing its saved position/size).
+        // The `###` ID stays stable, so a changed title keeps the window's saved position and size.
         : base($"{PluginMeta.DisplayName}###XIVShiniesMain")
     {
         this.configuration = configuration;
@@ -219,25 +144,14 @@ internal sealed partial class MainWindow : Window, IDisposable
         verifier = new TokenVerifier(apiClient);
         uploadLogTable = new UploadLogTable(collectors);
 
-        // A 1.3x build of the game's default font, for headings. The lambda runs during the atlas's
-        // asynchronous build; pushes are guarded on Available until it finishes.
         headingFont = fontAtlas.NewDelegateFontHandle(e =>
             e.OnPreBuild(tk => tk.AddDalamudDefaultFont(baseFontSizePx * 1.3f, null)));
 
-        // Bold Axis (the game's own UI face) at body size, for button labels.
         buttonFont = fontAtlas.NewGameFontHandle(
             new GameFontStyle(GameFontFamily.Axis, baseFontSizePx) { Bold = true });
 
-        // Sizing values are UNSCALED logical units: Dalamud's Window base multiplies Size and
-        // SizeConstraints by the user's global UI scale itself, so pre-scaling them (for example
-        // with ImGuiHelpers.ScaledVector2) double-scales — at high scales even the minimum can then
-        // exceed the screen.
-        //
-        // The opening size is computed in OnOpen and applied under FirstUseEver: ImGui uses it only
-        // when it has no remembered size for this window; after that the user's own resize wins and
-        // persists. MinimumSize is a real design floor (a minimum clamps UP): the width matches the
-        // preferred opening width, below which the header rows and the upload table stop being
-        // worth reading.
+        // Unscaled: Dalamud's Window scales Size and SizeConstraints itself. OnOpen's size holds until
+        // the user resizes; below the minimum width, the header and upload table stop being worth reading.
         SizeCondition = ImGuiCond.FirstUseEver;
 
         SizeConstraints = new WindowSizeConstraints
@@ -246,38 +160,25 @@ internal sealed partial class MainWindow : Window, IDisposable
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
 
-        // Start the token box from whatever is already saved, so reopening the wizard does not look
-        // like the token vanished.
+        // Seeded from the saved token, so reopening the wizard does not look like it was lost.
         tokenInput = configuration.Settings.Token;
     }
 
 #if DEBUG
     /// <summary>
-    /// Shows a different version in the masthead, for capturing screenshots that carry the version
-    /// a release will ship as.
+    /// Shows a different version in the masthead, for release screenshots taken before the release
+    /// flow sets the real one.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Screenshots for a release are taken before the release flow bumps the version, so a window
-    /// captured now shows the version being replaced. The flow that sets the real version is the
-    /// only thing allowed to write it, and a screenshot's needs are not a reason to bump it early
-    /// — so a development build is told what to draw instead, and the project file is untouched.
-    /// </para>
-    /// <para>
-    /// DEBUG-only, and confined to the masthead: the uploads carry the real assembly version, and
-    /// so does the pasted diagnostic, which reads <c>diagnosticVersion</c> instead.
-    /// </para>
-    /// <para>
-    /// A leading "v" is dropped because the masthead adds one itself — typing a version the way it
-    /// is written in a tag would otherwise photograph with the letter doubled.
-    /// </para>
+    /// Only the release flow may write the version, so a development build is told what to draw
+    /// instead. Uploads and the pasted diagnostic keep the real version. A leading "v" is dropped
+    /// because the masthead adds its own.
     /// </remarks>
     public void OverrideVersionForScreenshots(string version) =>
         pluginVersion = version.TrimStart('v', 'V');
 #endif
 
-    /// <summary>Cancels any token probe still in flight and releases the owned fonts.</summary>
-    /// <remarks>The icon font is borrowed from Dalamud and deliberately not disposed here.</remarks>
+    /// <summary>Cancels any token probe in flight and releases the fonts this window owns.</summary>
     public void Dispose()
     {
         verifier.Dispose();
@@ -285,15 +186,10 @@ internal sealed partial class MainWindow : Window, IDisposable
         buttonFont.Dispose();
     }
 
-    /// <summary>
-    /// Widens this window's padding so content does not butt against the edges.
-    /// </summary>
+    /// <summary>Widens this window's padding.</summary>
     /// <remarks>
-    /// Style variables are a stack, like colors and fonts: pushed here (which runs just before the
-    /// window is created for the frame, so Begin reads the value) and popped in <see cref="PostDraw"/>
-    /// after it — scoping the padding to this window alone. The privacy card and any other child
-    /// windows are created while the value is still pushed, so they inherit it too. Style values are
-    /// physical pixels, hence the explicit scale.
+    /// Runs just before Begin, which reads the value, and <see cref="PostDraw"/> pops it, so only this
+    /// window and its child windows get it. Style values are physical pixels, hence the scale.
     /// </remarks>
     public override void PreDraw()
     {
@@ -312,65 +208,42 @@ internal sealed partial class MainWindow : Window, IDisposable
     /// Chooses the window's opening size: the content's preferred size, capped by the screen.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Scale alone cannot decide this: at high UI scales the logical desktop shrinks, so a
-    /// reasonable content size can be an unreasonable share of the screen. The preferred size is
-    /// therefore capped against the display, with both sides in logical units — ImGui reports the
-    /// display in physical pixels, dividing by the scale converts it, and Dalamud scales the result
-    /// back up when applying <see cref="Window.Size"/>.
-    /// </para>
-    /// <para>
-    /// Computed here rather than in the constructor because the display size comes from ImGui,
-    /// which is only safely consulted inside its own frame — OnOpen runs before the frame's size
-    /// conditionals are applied. Under <c>FirstUseEver</c> the value matters only when ImGui has no
-    /// remembered size for this window; thereafter the user's resize always wins.
-    /// </para>
+    /// At high UI scales the logical desktop shrinks, so a reasonable content size can take most of
+    /// the screen. The preferred size and the display are both in logical units: ImGui reports
+    /// physical pixels, and Dalamud scales <see cref="Window.Size"/> back up. Done here, not in the
+    /// constructor, because ImGui is only safe to ask inside its own frame.
     /// </remarks>
     public override void OnOpen()
     {
         var displayLogical = ImGui.GetIO().DisplaySize / ImGuiHelpers.GlobalScale;
 
-        // The height preference is generous because the settings list is tall; if the rows are made
-        // more compact, lower the preference rather than raising the cap.
+        // Tall because the settings list is. If the rows get more compact, lower the preference
+        // rather than raising the cap.
         Size = new Vector2(
             Math.Min(560f, displayLogical.X * 0.45f),
             Math.Min(620f, displayLogical.Y * 0.70f));
     }
 
     /// <summary>
-    /// Retires the badges shown during this visit, so reopening the window does not show them again,
-    /// and forgets the wizard consent step's opening state.
+    /// Retires the badges shown during this visit and forgets the consent step's opening state.
     /// </summary>
     /// <remarks>
-    /// The session sets, and the Crucible card's session flag, keep a badge on screen after its
-    /// seen flag is persisted (see the fields' own note). Closing the window is the user finishing
-    /// with the list, which makes it the moment to drop them: the window object lives as long as
-    /// the plugin, so without this the chips would linger until the plugin unloaded, long after
-    /// they had been seen and acted on.
+    /// The window object lives as long as the plugin, so without this the session badges would
+    /// linger until it unloads.
     /// </remarks>
     public override void OnClose()
     {
         categoriesBadgedThisSession.Clear();
         groupsBadgedThisSession.Clear();
         crucibleBadgedThisSession = false;
-
-        // A wizard reopened later reads its consent step's opening state afresh.
         chooseStepOpening = null;
     }
 
-    /// <summary>
-    /// Called once per frame by the WindowSystem while the window is open, so everything here runs
-    /// roughly sixty times a second.
-    /// </summary>
-    /// <remarks>
-    /// That is the immediate-mode model: the UI is described afresh every frame rather than mutated.
-    /// Keep this cheap, and never block: whatever thread draws the game's frames is the one running
-    /// this, and stalling it stalls the game.
-    /// </remarks>
+    /// <summary>Draws the window. Called every frame while it is open.</summary>
+    /// <remarks>Keep it cheap and never block: it runs on the thread that draws the game's frames.</remarks>
     public override void Draw()
     {
-        // A probe finished on a background thread; fold its answer in before drawing anything that
-        // depends on it.
+        // Fold in a finished token probe before drawing anything that depends on it.
         ConsumeTokenProbe();
 
         if (!configuration.Settings.OnboardingComplete)
@@ -387,9 +260,6 @@ internal sealed partial class MainWindow : Window, IDisposable
     {
         float titleWidth;
 
-        // `using` on a conditional: Push() returns an IDisposable that pops the font, and `using`
-        // accepts null (it just skips the dispose) — so while the atlas is still building, this
-        // renders at body size instead of waiting.
         using (headingFont.Available ? headingFont.Push() : null)
         {
             ImGui.TextColored(Brand.Teal, PluginMeta.DisplayName);
@@ -401,13 +271,11 @@ internal sealed partial class MainWindow : Window, IDisposable
             ImGui.SameLine();
             Widgets.AlignRight(ImGui.CalcTextSize(rightAligned).X);
 
-            // Normal text color: this note carries the wizard's step counter — how far through setup
-            // the user is — which is information they are meant to read.
+            // Full contrast: the wizard's step counter is meant to be read.
             ImGui.TextUnformatted(rightAligned);
         }
 
-        // The underline is drawn by hand: ImGui has no "underlined text", but the window's draw
-        // list accepts arbitrary shapes at absolute screen coordinates.
+        // ImGui has no underlined text, so the underline goes on the draw list.
         var start = ImGui.GetCursorScreenPos();
         ImGui.GetWindowDrawList().AddRectFilled(
             start,
@@ -416,8 +284,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             0f,
             ImDrawFlags.None);
 
-        // Reserve the space the underline occupied, plus breathing room, so the next widget does
-        // not draw over it — draw-list shapes do not advance ImGui's layout cursor by themselves.
+        // Draw-list shapes do not advance the layout cursor, so reserve the underline's space and air.
         ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
     }
 
@@ -426,8 +293,6 @@ internal sealed partial class MainWindow : Window, IDisposable
     {
         ImGui.TextColored(Brand.Teal, text);
         BrandSeparator();
-
-        // Extra air beyond the separator's own, so the section body does not crowd the rule.
         ImGui.Dummy(new Vector2(0f, 4f * ImGuiHelpers.GlobalScale));
     }
 
@@ -438,14 +303,12 @@ internal sealed partial class MainWindow : Window, IDisposable
     private void BrandSeparator() => Widgets.BrandSeparator(activeCardInnerRight);
 
     /// <summary>
-    /// A bordered content card with brand padding and an optional teal icon-and-title header.
+    /// A bordered card with brand padding and an optional teal icon-and-title header, for a
+    /// <c>using</c> block.
     /// </summary>
     /// <remarks>
-    /// Unlike a fixed-size child window, this measures its content: everything drawn inside the
-    /// <c>using</c> goes into an ImGui group, and the border rectangle is drawn afterwards around
-    /// whatever the group turned out to be — so cards whose content varies (the token panel's
-    /// claimed-character list, say) need no height arithmetic. Text wrapping is constrained to the
-    /// card's inner width for the scope's duration.
+    /// The content goes in an ImGui group and the border is drawn around it afterwards, so a card of
+    /// any height needs no arithmetic. Text inside wraps at the card's inner edge.
     /// </remarks>
     private CardScope BrandCard(FontAwesomeIcon? icon = null, string? title = null) =>
         new(this, icon, title);
@@ -459,9 +322,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         private readonly float padding;
         private readonly IDisposable wrapScope;
 
-        // What activeCardInnerRight held before this card opened, restored on close — so a card
-        // nested inside another card would hand the outer card its wrap edge back, instead of
-        // silently clearing it. (Nothing nests today; this keeps the invariant honest anyway.)
+        // The enclosing card's edge, restored on close so a nested card hands it back.
         private readonly float? previousInnerRight;
 
         public CardScope(MainWindow owner, FontAwesomeIcon? icon, string? title)
@@ -471,19 +332,16 @@ internal sealed partial class MainWindow : Window, IDisposable
             topLeft = ImGui.GetCursorScreenPos();
             rightEdge = topLeft.X + ImGui.GetContentRegionAvail().X;
 
-            // Step inside the padding, then group everything so the closing border can measure it.
+            // Group everything inside the padding so the closing border can measure it.
             ImGui.SetCursorScreenPos(topLeft + new Vector2(padding, padding));
             ImGui.BeginGroup();
 
-            // Wrapped text must break at the card's inner edge, not the window's.
             var innerRightLocal =
                 ImGui.GetCursorPosX() + (rightEdge - padding - ImGui.GetCursorScreenPos().X);
             wrapScope = ImRaii.TextWrapPos(innerRightLocal);
             previousInnerRight = owner.activeCardInnerRight;
             owner.activeCardInnerRight = innerRightLocal;
 
-            // The same header treatment as the cards that compose their own rows — one source
-            // for the icon gap, the divider, and the spacing.
             if (icon is { } cardIcon && title is not null)
             {
                 owner.DrawCardTitle(cardIcon, title);
@@ -497,7 +355,6 @@ internal sealed partial class MainWindow : Window, IDisposable
             wrapScope.Dispose();
             ImGui.EndGroup();
 
-            // The border hugs whatever the group turned out to be, plus the padding.
             var bottom = ImGui.GetItemRectMax().Y + padding;
             ImGui.GetWindowDrawList().AddRect(
                 topLeft,
@@ -507,16 +364,20 @@ internal sealed partial class MainWindow : Window, IDisposable
                 ImDrawFlags.None,
                 1f * ImGuiHelpers.GlobalScale);
 
-            // Walk the layout cursor past the border — draw-list shapes do not advance it.
+            // Draw-list shapes do not advance the cursor, so step past the border.
             ImGui.SetCursorScreenPos(new Vector2(topLeft.X, bottom));
             ImGui.Dummy(new Vector2(0f, 4f * ImGuiHelpers.GlobalScale));
         }
     }
 
-    /// <summary>Binds this window's bold font to <see cref="Widgets.BoldButton(IFontHandle, string)"/>.</summary>
+    /// <summary>
+    /// Binds this window's bold font to <see cref="Widgets.BoldButton(IFontHandle, string)"/>.
+    /// </summary>
     private bool BoldButton(string label) => Widgets.BoldButton(buttonFont, label);
 
-    /// <summary>Binds this window's bold font to <see cref="Widgets.BoldButton(IFontHandle, string, Vector2)"/>.</summary>
+    /// <summary>
+    /// Binds this window's bold font to <see cref="Widgets.BoldButton(IFontHandle, string, Vector2)"/>.
+    /// </summary>
     private bool BoldButton(string label, Vector2 size) => Widgets.BoldButton(buttonFont, label, size);
 
     /// <summary>Binds this window's bold font to <see cref="Widgets.PrimaryButton"/>.</summary>
@@ -534,23 +395,22 @@ internal sealed partial class MainWindow : Window, IDisposable
             iconFont, buttonFont, buttonPos, buttonWidth, icon, iconColor, text, textColor);
 
     /// <summary>
-    /// A red warning the user should act on: a triangle icon beside wrapped red text. Every red
-    /// warning in the window goes through here, so the icon is part of what red means.
+    /// A red warning the user should act on: a triangle beside wrapped red text. Every red warning
+    /// goes through here, so the icon is part of what red means.
     /// </summary>
-    /// <remarks>Drawn at <see cref="Widgets.InlineIconScale"/>, like every other inline status icon.</remarks>
     private void DrawWarning(string text) =>
         DrawIconedText(
             FontAwesomeIcon.ExclamationTriangle, Widgets.ErrorColor, text, Widgets.InlineIconScale);
 
-    /// <summary>Binds this window's icon font and wrap edge to <see cref="Widgets.DrawIconedText"/>.</summary>
+    /// <summary>
+    /// Binds this window's icon font and wrap edge to <see cref="Widgets.DrawIconedText"/>.
+    /// </summary>
     private void DrawIconedText(FontAwesomeIcon icon, Vector4 color, string text, float iconScale = 1f) =>
         Widgets.DrawIconedText(iconFont, icon, color, text, activeCardInnerRight, iconScale);
 
     /// <summary>
-    /// The left half of a custom card header row: teal icon and title. Used by the cards that
-    /// right-align a control (a toggle, a button) on the same line — which BrandCard's built-in
-    /// header has no slot for. AlignTextToFramePadding centers the text against that frame-tall
-    /// neighbor. Close the row with <see cref="CloseCardHeader"/> after the trailing control.
+    /// The teal icon and title of a card header that right-aligns a control, which BrandCard's own
+    /// header has no slot for. Close the row with <see cref="CloseCardHeader"/> after the control.
     /// </summary>
     private void DrawCardTitle(FontAwesomeIcon icon, string title)
     {
@@ -572,12 +432,10 @@ internal sealed partial class MainWindow : Window, IDisposable
     private void DrawIcon(FontAwesomeIcon icon, Vector4 color, float scale = 1f) =>
         Widgets.DrawIcon(iconFont, icon, color, scale);
 
-    /// <summary>The privacy disclosure, framed as a bordered card so it reads as a deliberate statement.</summary>
-    /// <remarks>
-    /// This is the disclosure of what the plugin sends about the user's character, so it is exactly
-    /// the text they must be able to read: it draws at full contrast, and the card's border is what
-    /// sets it apart.
-    /// </remarks>
+    /// <summary>
+    /// The privacy card. It discloses what is sent about the user's character, so it draws at full
+    /// contrast.
+    /// </summary>
     private void DrawPrivacyCard(string text)
     {
         using (BrandCard(FontAwesomeIcon.Shield, "Your privacy"))
@@ -598,23 +456,17 @@ internal sealed partial class MainWindow : Window, IDisposable
     private void DrawChip(FontAwesomeIcon icon, string text, Vector4 color, bool filled = false) =>
         Widgets.DrawChip(iconFont, icon, text, color, filled);
 
-    // The configured host and the setting it was derived from, so BackendHost can tell a repeat
-    // question from a changed answer. Empty until first asked.
+    // BackendHost's cache, keyed on the setting it came from. Empty until first asked.
     private string? backendHostSource;
     private string backendHost = string.Empty;
 
-    /// <summary>The server this plugin is configured to talk to, named for the reader.</summary>
+    /// <summary>
+    /// The configured server's host. Every sentence in this window that names the service asks here.
+    /// </summary>
     /// <remarks>
-    /// <para>
-    /// Every sentence in this window that names the service asks here, so they all name the same
-    /// server. <see cref="BackendUrl.DisplayHost"/> owns the reasoning and the fallback.
-    /// </para>
-    /// <para>
-    /// Derived once per distinct setting rather than once per call. Several callers sit in
-    /// always-visible draw paths, and deriving a host means parsing a URL — the same per-frame
-    /// garbage the link row above is static to avoid. The cached value is keyed on the setting it
-    /// came from, so editing the config still takes effect without a restart.
-    /// </para>
+    /// <see cref="BackendUrl.DisplayHost"/> owns the derivation and the fallback. Cached per setting,
+    /// because parsing a URL every frame allocates on always-visible paths; a changed setting still
+    /// takes effect without a restart.
     /// </remarks>
     private string BackendHost()
     {
@@ -638,11 +490,15 @@ internal sealed partial class MainWindow : Window, IDisposable
     private void DrawHeaderRightChip(FontAwesomeIcon icon, string text, Vector4 color, float rightEdgeScreenX) =>
         Widgets.DrawHeaderRightChip(iconFont, icon, text, color, rightEdgeScreenX);
 
-    /// <summary>Binds this window's card wrap edge to <see cref="Widgets.DrawWrapped(string, Vector4, float?)"/>.</summary>
+    /// <summary>
+    /// Binds this window's card wrap edge to <see cref="Widgets.DrawWrapped(string, Vector4, float?)"/>.
+    /// </summary>
     private void DrawWrapped(string text, Vector4 color) =>
         Widgets.DrawWrapped(text, color, activeCardInnerRight);
 
-    /// <summary>Binds this window's card wrap edge to <see cref="Widgets.DrawWrapped(string, ImGuiCol, float?)"/>.</summary>
+    /// <summary>
+    /// Binds this window's card wrap edge to <see cref="Widgets.DrawWrapped(string, ImGuiCol, float?)"/>.
+    /// </summary>
     private void DrawWrapped(string text, ImGuiCol styleColor) =>
         Widgets.DrawWrapped(text, styleColor, activeCardInnerRight);
 }

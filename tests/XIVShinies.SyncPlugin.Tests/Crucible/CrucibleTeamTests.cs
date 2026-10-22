@@ -5,12 +5,10 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
-// The team window (XBMPetParty): the player's own familiars, in one of six modes. Each `[Fact]` is
-// one test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
+// The team window (XBMPetParty): the player's own familiars, in one of six modes.
 public class CrucibleTeamTests
 {
-    // Positions in the window's values: its mode and count, the item being chosen for, and where
-    // the familiar records start and how many values each spans.
+    // Positions in the window's values. ItemId holds the item the window is choosing for.
     private const int Mode = 2;
     private const int Count = 5;
     private const int ItemId = 1187;
@@ -31,9 +29,7 @@ public class CrucibleTeamTests
     /// <summary>The second value of a record's first feed pair: the feed's item id.</summary>
     private const int FirstFeedId = 8;
 
-    // The roster pick lists the picks in pick order, and the window's count says how many there
-    // are. The places past the count keep stale copies of earlier picks; this one has a twelfth.
-    // `Select` maps each familiar to its id, like `Array.map` in TypeScript.
+    // The places past the count keep stale copies of earlier picks; this fixture has a twelfth.
     [Fact]
     public void The_roster_pick_reads_only_the_counted_picks_in_order()
     {
@@ -46,8 +42,7 @@ public class CrucibleTeamTests
             reading.Familiars.Select(familiar => familiar.PetId));
     }
 
-    // Every counted roster place holds a pick, so a count reaching a place with no familiar in it
-    // is not the layout this reader knows. This fixture's thirteenth place is empty.
+    // Every counted roster place holds a pick. This fixture's thirteenth place is empty.
     [Fact]
     public void A_roster_count_that_reaches_an_empty_place_refuses_the_reading()
     {
@@ -57,8 +52,7 @@ public class CrucibleTeamTests
         Assert.Null(CrucibleTeam.Read(values));
     }
 
-    // A downed familiar reads 0 HP; it is listed like any other. `Single` returns the one item that
-    // matches and throws unless exactly one does, so it doubles as an assertion.
+    // A downed familiar is listed like any other.
     [Fact]
     public void A_downed_familiar_reads_zero_hp()
     {
@@ -73,8 +67,7 @@ public class CrucibleTeamTests
         Assert.Equal(550, downed.MaxHp);
     }
 
-    // At a lineup, each familiar carries its place: 0 to 2 for the three picks, 3 for none. `Where`
-    // filters and `OrderBy` sorts, like `filter` and `sort` in TypeScript.
+    // A place is 0 to 2 for the three picks, and 3 for none.
     [Fact]
     public void A_lineup_reads_each_familiars_place()
     {
@@ -91,8 +84,6 @@ public class CrucibleTeamTests
         Assert.Equal(new uint[] { 16, 20, 10 }, picked);
     }
 
-    // The feed being offered is the window's item, and a familiar's eaten feeds are its own. The
-    // `u` in `148u` makes the literal a `uint`, the type the id is stored as.
     [Fact]
     public void The_feed_window_reads_the_feed_and_what_each_familiar_has_eaten()
     {
@@ -135,10 +126,9 @@ public class CrucibleTeamTests
             reading.Familiars.Where(familiar => familiar.CurrentHp == 0).Select(familiar => familiar.PetId));
     }
 
-    // Only the feed and Blessed Horn modes choose for an item. The item's value can still hold a
-    // stale id in the other modes, and the server refuses an item outside those two, so a reading
-    // in any other mode carries none. These fixtures leave the item's value unreadable, so each test
-    // plants a stale id there.
+    // Only the feed and Blessed Horn modes choose for an item. The value can hold a stale id in the
+    // others, and the server refuses an item outside these two. These fixtures leave the value
+    // unreadable, so each row plants a stale id there.
     [Theory]
     [InlineData("petparty-mode0-roster-stale.json")]
     [InlineData("petparty-mode1-browse-downed.json")]
@@ -155,8 +145,8 @@ public class CrucibleTeamTests
         Assert.Null(reading.ItemId);
     }
 
-    // The feed and Blessed Horn modes are choosing for an item, so a window in either mode without
-    // one is not the layout this reader knows: an id of 0, or values that stop short of it.
+    // The feed and Blessed Horn modes choose for an item, so an id of 0, or values that stop short of
+    // it, mean a layout this reader does not know.
     [Fact]
     public void A_feed_window_without_its_item_refuses_the_reading()
     {
@@ -168,8 +158,7 @@ public class CrucibleTeamTests
     }
 
     // The rank comes from the label behind the paw glyph (U+E036). No rank label in the fixtures
-    // carries the sync glyph (U+E0BC), so this test writes one before the paw. The `!` after
-    // `Read(values)` tells the compiler the result is not null here, like TypeScript's `!`.
+    // carries the sync glyph (U+E0BC), so this test writes one before the paw.
     [Fact]
     public void A_rank_reads_from_its_label_and_a_capped_rank_is_marked()
     {
@@ -186,7 +175,7 @@ public class CrucibleTeamTests
     }
 
     // Each record checks itself: its icon is 242000 plus its id, and its HP text matches its HP
-    // numbers. A record failing either is not aligned with this reader's layout.
+    // numbers. Failing either means the record is misaligned.
     [Fact]
     public void An_icon_that_does_not_match_the_id_refuses_the_reading()
     {
@@ -205,7 +194,7 @@ public class CrucibleTeamTests
         Assert.Null(CrucibleTeam.Read(values));
     }
 
-    // Every value a record is read for has to be there; one missing means the record has moved.
+    // One missing value means the record has moved.
     [Theory]
     [InlineData(Rank)]
     [InlineData(Icon)]
@@ -253,7 +242,6 @@ public class CrucibleTeamTests
         Assert.Null(CrucibleTeam.Read(values));
     }
 
-    // A resting value stored as a number is the wrong kind.
     [Fact]
     public void A_resting_value_that_is_not_a_flag_refuses_the_reading()
     {
@@ -286,7 +274,6 @@ public class CrucibleTeamTests
         Assert.Null(CrucibleTeam.Read(values));
     }
 
-    // The window has fifteen places, and its count is a number.
     [Fact]
     public void A_count_beyond_fifteen_or_missing_refuses_the_reading()
     {
@@ -338,7 +325,6 @@ public class CrucibleTeamTests
         Assert.Null(CrucibleTeam.Read(values));
     }
 
-    // A window handed only its first few values, short of its records, reads as nothing.
     [Fact]
     public void A_window_without_its_records_reads_as_nothing()
     {

@@ -6,26 +6,22 @@ using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Tests.Occult;
 
-// The occult tracker's consent gate. The manager consults it every tick, so each refusal
-// here is a live guarantee: flipping any of these switches stops the tracker within a second.
+// The occult tracker's consent gate. The manager consults it every tick, so flipping any of these
+// switches stops the tracker within a second.
 public class OccultGateTests
 {
-    // A token whose shape passes the local validity check: xvs_ + exactly 43 base64url
-    // characters (see TokenFormat).
+    // Passes the local shape check; see TokenFormat.
     private const string UsableToken = "xvs_" + "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
 
-    // The website address the chip's sentences name. A made-up one, so a test can tell an address
-    // that was passed in from one written into the copy. `const` fixes the value when the code
-    // compiles. An attribute's arguments must be fixed then too, so the [InlineData] rows below spell
-    // each sentence out rather than calling ServerOffCopy.
+    // A made-up website address, so a test can tell a passed-in address from one written into the
+    // copy. The rows below spell each sentence out rather than call ServerOffCopy.
     private const string Host = "shinies.example";
 
-    // The paused line, spelled out once because two [InlineData] rows below expect it.
+    // The paused line, which two rows below expect.
     private const string PausedLine =
         "Syncing is off on " + Host + ". If you turned off \"Sync from the plugin\" on your profile, "
         + "turn it back on there. Your own choices are unchanged.";
 
-    /// <summary>Settings for a user who has fully opted in.</summary>
     private static PluginSettings OptedIn() => new()
     {
         MasterEnabled = true,
@@ -33,7 +29,6 @@ public class OccultGateTests
         Token = UsableToken,
     };
 
-    /// <summary>A config whose occult tracker is advertised and switched on.</summary>
     private static ConfigResponse ConfigWithTracker(bool trackerEnabled = true, bool globallyEnabled = true) => new()
     {
         Categories = new Dictionary<string, bool>(),
@@ -47,7 +42,7 @@ public class OccultGateTests
     [Fact]
     public void A_fresh_install_cannot_track()
     {
-        // Every default is off: no master switch, no onboarding, no token.
+        // The defaults leave the master switch off, onboarding unfinished, and no token.
         Assert.False(OccultGate.CanTrack(new PluginSettings(), ConfigWithTracker()));
     }
 
@@ -78,8 +73,7 @@ public class OccultGateTests
         Assert.False(OccultGate.CanTrack(settings, ConfigWithTracker()));
     }
 
-    // Opposite of the unknown-category rule, deliberately: this is a separate endpoint, and
-    // a server that has not advertised it would 404 every upload. No config yet — same.
+    // Off until /config arrives, as with a config lacking the occultTracker block (see OccultGate).
     [Fact]
     public void No_config_yet_means_no_tracking()
     {
@@ -114,9 +108,8 @@ public class OccultGateTests
 
     // --- What the settings toggle draws ------------------------------------------------------
 
-    // ServerHasSwitchedOff decides whether the toggle draws grayed and chipped "Off". It has to
-    // agree with CanTrack about what the server allows, or the control describes something other
-    // than what happens — so the three arms are pinned separately from the gate's own tests.
+    // ServerHasSwitchedOff decides whether the toggle draws grayed with an "Off" chip. It must agree
+    // with CanTrack about what the server allows, or the control misdescribes what happens.
 
     [Fact]
     public void A_server_that_switched_the_tracker_off_is_reported_off()
@@ -124,19 +117,18 @@ public class OccultGateTests
         Assert.True(OccultGate.ServerHasSwitchedOff(ConfigWithTracker(trackerEnabled: false)));
     }
 
-    // A server that never advertised the endpoint cannot serve it, so the control must not offer
-    // it either. This is the arm that differs from the unknown-category rule.
+    // A server that never advertised the endpoint cannot serve it. This arm differs from the
+    // unknown-category rule.
     [Fact]
     public void A_config_carrying_no_tracker_block_is_reported_off()
     {
-        // `with` copies the record and replaces one property — the block is init-only.
         var config = ConfigWithTracker() with { OccultTracker = null };
 
         Assert.True(OccultGate.ServerHasSwitchedOff(config));
     }
 
-    // The arm most likely to regress: before the first /config answers, the server has forbidden
-    // nothing, so the toggle keeps showing the user's own choice rather than graying out.
+    // The arm most likely to regress. Before the first /config answers, the server has forbidden
+    // nothing, so the toggle shows the user's own choice rather than graying out.
     [Fact]
     public void A_config_that_has_not_arrived_is_not_reported_off()
     {
@@ -149,15 +141,9 @@ public class OccultGateTests
         Assert.False(OccultGate.ServerHasSwitchedOff(ConfigWithTracker()));
     }
 
-    // The control and the gate must refuse on the same terms. Asserted as an equivalence rather
-    // than an implication: the failure they guard against is the two drifting apart, and drift in
-    // the direction that matters — the gate refusing while the control still reads live — is
-    // invisible to a one-way check, which passes by asserting nothing at all on exactly the
-    // configs where the control is wrong.
-    //
-    // A config that has not arrived is deliberately left out: it is the one asymmetric case (the
-    // server has forbidden nothing, but the tracker cannot run yet either), documented on
-    // ServerHasSwitchedOff and pinned by its own test above.
+    // An equivalence, not an implication: a one-way check misses the drift that matters, the gate
+    // refusing while the control still reads live. A config that has not arrived is left out: it is
+    // the one asymmetric case, documented on ServerHasSwitchedOff and tested above.
     [Theory]
     [InlineData(true, true)]
     [InlineData(false, true)]
@@ -174,10 +160,9 @@ public class OccultGateTests
             !OccultGate.CanTrack(OptedIn(), config));
     }
 
-    // A paused server is not a statement about the tracker, so the chip must not make one — the
-    // same precedence the collection rows follow. Every combination is pinned, because the case
-    // that settles the precedence is the one where BOTH are off: swapping the two arms of the
-    // choice would still satisfy either switch tested alone.
+    // A paused server says nothing about the tracker, so the chip names the pause first, as the
+    // collection rows do. The both-off row settles the precedence: with the arms swapped, each switch
+    // alone would still pass.
     [Theory]
     [InlineData(true, true, null)]
     [InlineData(true, false, "Temporarily switched off by " + Host + ".")]
@@ -191,13 +176,11 @@ public class OccultGateTests
 
         Assert.Equal(expected, OccultGate.ServerOffText(config, Host));
 
-        // The chip's presence and its sentence are one decision: text exactly when switched off.
         Assert.Equal(
             OccultGate.ServerHasSwitchedOff(config), OccultGate.ServerOffText(config, Host) is not null);
     }
 
-    // A server whose /config carries no tracker block cannot serve it, but nothing was switched off
-    // either: the chip says the website does not offer it.
+    // Nothing was switched off, so the chip says the website does not offer it.
     [Fact]
     public void A_config_with_no_tracker_block_says_the_server_does_not_offer_it()
     {
@@ -224,7 +207,6 @@ public class OccultGateTests
 
     // --- When the card names the master switch -----------------------------------------------
 
-    /// <summary>An opted-in user who has since switched syncing off.</summary>
     private static PluginSettings SwitchedOff()
     {
         var settings = OptedIn();
@@ -290,7 +272,6 @@ public class OccultGateTests
         Assert.False(OccultGate.StoppedBySyncSwitch(settings, ConfigWithTracker()));
     }
 
-    // The switch is the only thing stopping the tracker: turning it on lets the tracker run.
     [Fact]
     public void Turning_the_switch_on_is_all_the_tracker_needs()
     {

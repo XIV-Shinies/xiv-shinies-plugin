@@ -9,35 +9,21 @@ using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
-// When the Crucible snapshots go up, in which uploads, and under which trigger word. The scheduler
-// is handed the current moment, so every test sets the time explicitly. Each `[Fact]` is one test,
-// like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
+// When the Crucible snapshots go up, in which uploads, and under which trigger word.
 public class CrucibleUploadSchedulerTests
 {
-    /// <summary>A board's territory.</summary>
-    // `uint` is a whole number that can never be negative (an unsigned integer), the type of a
-    // territory id; `const` fixes the value when the code compiles.
+    // Territory ids.
     private const uint Board = 1339;
-
-    /// <summary>A second board's territory.</summary>
     private const uint OtherBoard = 1340;
-
-    /// <summary>The entrance's territory.</summary>
     private const uint Entrance = 148;
 
-    // `static readonly` is a value built once and never reassigned; a `DateTimeOffset` is a moment
-    // with its offset from UTC.
     private static readonly DateTimeOffset T0 = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);
 
-    /// <summary>A moment this many seconds after <see cref="T0"/>.</summary>
-    // `=>` makes the expression after it the whole method body, like an arrow function.
     private static DateTimeOffset At(double seconds) => T0.AddSeconds(seconds);
 
-    /// <summary>A bag snapshot holding this many tokens, read at this moment.</summary>
     private static CrucibleObservation Bag(int tokens, double seconds) =>
         CrucibleUploadBuilder.Bag(new CrucibleBagReading(tokens, [], []), At(seconds));
 
-    /// <summary>A team snapshot, open or closing, in the lineup mode unless another is named.</summary>
     private static CrucibleObservation Team(
         bool closed, double seconds, int hp = 500, CrucibleTeamMode mode = CrucibleTeamMode.Lineup) =>
         CrucibleUploadBuilder.Team(
@@ -45,26 +31,16 @@ public class CrucibleUploadSchedulerTests
             At(seconds),
             closed);
 
-    /// <summary>
-    /// A familiars snapshot of one familiar that is out, taken as a fight ended or outside one.
-    /// </summary>
-    // `[new CrucibleFieldedFamiliar(...)]` is a collection expression holding one familiar; the list
-    // type comes from the parameter it fills.
     private static CrucibleObservation Familiars(bool afterFight, double seconds, int hp = 500) =>
         CrucibleUploadBuilder.Familiars(
             afterFight, [new CrucibleFieldedFamiliar(13, hp, 560, true, At(seconds))], At(seconds));
 
-    /// <summary>The kinds in an upload, in order, as their wire names.</summary>
-    // `Select` maps each observation through `KindOf`, like `.map(kindOf)`; `ToArray` collects the
-    // result into an array.
     private static string[] Kinds(CrucibleUpload upload) =>
         upload.Observations.Select(CrucibleUploadScheduler.KindOf).ToArray();
 
-    /// <summary>Enters the board fresh and settles the enter, as a run's first moments do.</summary>
     private static CrucibleUploadScheduler EnteredAndSettled()
     {
         var scheduler = new CrucibleUploadScheduler();
-        // `freshEntry: true` names the parameter it fills, so the call says what the true means.
         scheduler.NotifyEntered(Board, At(0), freshEntry: true);
         scheduler.MarkAccepted(scheduler.Poll(At(2))!, At(2));
         return scheduler;
@@ -78,7 +54,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(new CrucibleUploadScheduler().Poll(At(100)));
     }
 
-    // A snapshot waits out the debounce, so the rest of a burst of window refreshes can join it.
+    // The debounce lets the rest of a burst of window refreshes join the snapshot.
     [Fact]
     public void A_snapshot_goes_up_as_a_change_once_the_debounce_has_passed()
     {
@@ -93,7 +69,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(upload));
     }
 
-    // The wait slides: each new snapshot pushes the deadline out, so a burst is one upload.
+    // Each new snapshot pushes the deadline out.
     [Fact]
     public void A_burst_of_snapshots_goes_up_as_one_upload()
     {
@@ -105,13 +81,11 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag", "team"], Kinds(scheduler.Poll(At(3.5))!));
     }
 
-    // A window that keeps changing still goes up: the wait is capped at ten seconds from the first
-    // snapshot that started waiting, even though each change pushes the debounce out.
+    // The wait is capped at ten seconds from the first snapshot that started waiting.
     [Fact]
     public void Snapshots_that_keep_changing_still_go_up_within_ten_seconds()
     {
         var scheduler = new CrucibleUploadScheduler();
-        // `(int)` converts the fractional number to a whole one, dropping the fraction.
         for (var second = 0.0; second < 10; second += 1.5)
             scheduler.Queue(Bag((int)(second * 10), second), Board, At(second));
 
@@ -119,8 +93,8 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(scheduler.Poll(At(10))!));
     }
 
-    // The longest wait counts from the snapshot that has waited longest, even when a replacement
-    // has moved it behind one that started waiting later.
+    // This holds even when a replacement has moved that snapshot behind one that started waiting
+    // later.
     [Fact]
     public void The_longest_wait_counts_from_the_snapshot_waiting_longest()
     {
@@ -133,7 +107,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["team", "bag"], Kinds(scheduler.Poll(At(10))!));
     }
 
-    // Change detection ignores the moment: the same content read later is not a change.
+    // Change detection ignores the moment.
     [Fact]
     public void A_snapshot_the_same_as_the_last_of_its_kind_is_not_sent_again()
     {
@@ -146,7 +120,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(10)));
     }
 
-    // A window's closing snapshot goes up whether or not its content changed.
     [Fact]
     public void A_closed_snapshot_goes_up_even_when_nothing_else_changed()
     {
@@ -159,9 +132,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["team"], Kinds(scheduler.Poll(At(7))!));
     }
 
-    // A newer snapshot of a kind replaces an unsent one: snapshots are facts at a time, and the
-    // latest is the one that matters. `is` with a type checks the record's kind and its values, like
-    // a TypeScript type guard.
+    // Snapshots are facts at a time, and the latest is the one that matters.
     [Fact]
     public void A_newer_snapshot_replaces_an_unsent_one_of_the_same_kind()
     {
@@ -191,7 +162,7 @@ public class CrucibleUploadSchedulerTests
             upload.Observations.Select(observation => observation.ObservedAtUtc));
     }
 
-    // A window's closing snapshot replaces an unsent open one: it is the same window, finished.
+    // It is the same window, finished.
     [Fact]
     public void A_closing_snapshot_replaces_an_unsent_open_one()
     {
@@ -204,8 +175,7 @@ public class CrucibleUploadSchedulerTests
         Assert.True(upload.Observations.Single() is CrucibleTeamObservation { Closed: true });
     }
 
-    // A window's closing snapshot and a fresh snapshot of the same kind go in two uploads, the
-    // closing one first; the fresh one never replaces it.
+    // The fresh snapshot never replaces the closing one.
     [Fact]
     public void A_fresh_snapshot_after_a_closing_one_goes_in_the_next_upload()
     {
@@ -221,9 +191,8 @@ public class CrucibleUploadSchedulerTests
         Assert.True(second.Observations.Single() is CrucibleTeamObservation { Closed: false });
     }
 
-    // The familiars snapshot taken as a fight ended is the only one listing the familiars that left
-    // the field during it, so a later familiars snapshot never replaces it; the two go in two uploads,
-    // the fight's first.
+    // Only the snapshot taken as a fight ended lists the familiars that left the field during it, so
+    // a later familiars snapshot never replaces it.
     [Fact]
     public void A_familiars_snapshot_after_the_fight_ends_goes_in_the_next_upload()
     {
@@ -239,8 +208,7 @@ public class CrucibleUploadSchedulerTests
         Assert.True(second.Observations.Single() is CrucibleFamiliarsObservation { AfterFight: false });
     }
 
-    // A familiars snapshot taken outside a fight is replaced like any open snapshot: only the
-    // familiar's newest HP needs to go up.
+    // Only the familiar's newest HP needs to go up.
     [Fact]
     public void A_familiars_snapshot_outside_a_fight_is_replaced_by_a_newer_one()
     {
@@ -254,7 +222,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(560, familiars.Familiars.Single().Hp.Current);
     }
 
-    // Snapshots read in different territories go in separate uploads, each with its own territory.
     [Fact]
     public void Snapshots_from_different_territories_go_in_separate_uploads()
     {
@@ -272,7 +239,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(second));
     }
 
-    // An upload ends where its moments would go backwards, so the server never sees them decrease.
+    // The server must never see an upload's moments decrease.
     [Fact]
     public void An_upload_ends_where_its_moments_would_go_backwards()
     {
@@ -287,7 +254,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["team"], Kinds(scheduler.Poll(At(7))!));
     }
 
-    // One upload at a time: nothing more is handed out until the one in flight is settled.
     [Fact]
     public void Nothing_else_is_handed_out_while_an_upload_is_in_flight()
     {
@@ -301,8 +267,7 @@ public class CrucibleUploadSchedulerTests
 
     // --- Entering and leaving -----------------------------------------------------------------
 
-    // Zoning into a board sends a baseline under the enter trigger, and the baseline goes up even
-    // when its content matches what was sent before.
+    // The baseline goes up even when its content matches what was sent before.
     [Fact]
     public void Entering_a_board_sends_the_baseline_as_an_enter()
     {
@@ -318,7 +283,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(upload));
     }
 
-    // Starting or reloading the plugin inside a board sends the same baseline, as a change.
+    // Starting includes reloading the plugin.
     [Fact]
     public void Starting_inside_a_board_sends_the_baseline_as_a_change()
     {
@@ -339,13 +304,10 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(1)));
 
         var upload = scheduler.Poll(At(2))!;
-        // `(a, b)` is a tuple: two values traveling together, compared by value, like a two-item
-        // array checked with `toEqual`.
         Assert.Equal((CrucibleTrigger.Enter, Board), (upload.Trigger, upload.TerritoryTypeId));
         Assert.Empty(upload.Observations);
     }
 
-    // Only the visit's first upload carries the enter trigger.
     [Fact]
     public void Only_the_first_upload_of_a_visit_is_an_enter()
     {
@@ -361,8 +323,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Change, scheduler.Poll(At(3))!.Trigger);
     }
 
-    // The entrance's windows, read before zoning in, go up as a change; the board's baseline is the
-    // enter.
     [Fact]
     public void An_entrance_snapshot_read_before_entering_goes_up_as_a_change()
     {
@@ -380,8 +340,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(second));
     }
 
-    // Leaving sends whatever the board still has queued, without waiting out the debounce, and
-    // then the leave itself, carrying the board just left and no observations.
+    // What is queued goes without waiting out the debounce.
     [Fact]
     public void Leaving_sends_what_is_queued_and_then_the_leave()
     {
@@ -402,8 +361,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Empty(leave.Observations);
     }
 
-    // A window that closes as the character zones out belongs to the board left: its closing
-    // snapshot joins the board's flush, ahead of the leave, in place of the open one.
+    // Its closing snapshot joins the board's flush in place of the open one.
     [Fact]
     public void A_window_closing_as_the_character_leaves_goes_up_before_the_leave()
     {
@@ -437,8 +395,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Leave, scheduler.Poll(At(12))!.Trigger);
     }
 
-    // The entrance's window, closing just after the character zones into the board, belongs to the
-    // entrance: it goes ahead of the enter, and the board's baseline stays in the enter.
     [Fact]
     public void An_entrance_window_closing_just_after_entering_goes_ahead_of_the_enter()
     {
@@ -456,8 +412,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(enter));
     }
 
-    // Moving straight from one board to another, a window of the first board closing on the way
-    // goes before that board's leave, and the second board's baseline stays in its enter.
+    // A window of the first board that closes on the way goes before that board's leave.
     [Fact]
     public void Moving_between_boards_keeps_each_boards_snapshots_with_it()
     {
@@ -474,8 +429,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(enter));
     }
 
-    // A fresh entry while the character is still in the board is a new visit: the old one is left
-    // first, so the server sees a leave and then an enter.
     [Fact]
     public void A_fresh_entry_into_the_same_board_starts_a_new_visit()
     {
@@ -486,7 +439,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal((CrucibleTrigger.Enter, Board), SendNext(scheduler, At(12)));
     }
 
-    // A snapshot read elsewhere after leaving goes after the leave.
     [Fact]
     public void A_snapshot_read_after_leaving_goes_after_the_leave()
     {
@@ -502,8 +454,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal((CrucibleTrigger.Change, Entrance), (next.Trigger, next.TerritoryTypeId));
     }
 
-    // Re-entering the same board before its leave has gone keeps the two visits apart: the old
-    // visit's last bag goes before its leave, and the new visit's goes in its enter.
     [Fact]
     public void Re_entering_before_the_leave_goes_keeps_the_visits_apart()
     {
@@ -526,7 +476,6 @@ public class CrucibleUploadSchedulerTests
         Assert.True(enter.Observations.Single() is CrucibleBagObservation { Tokens: 60 });
     }
 
-    // Entering a different board without a leave for the first sends the first board's leave.
     [Fact]
     public void Entering_another_board_sends_the_first_boards_leave()
     {
@@ -541,7 +490,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal((CrucibleTrigger.Enter, OtherBoard), (enter.Trigger, enter.TerritoryTypeId));
     }
 
-    // Every leave goes, in order, even when a long wait holds them all back.
     [Fact]
     public void Two_visits_left_during_a_wait_both_send_their_leaves()
     {
@@ -554,7 +502,6 @@ public class CrucibleUploadSchedulerTests
         scheduler.NotifyEntered(OtherBoard, At(20), freshEntry: true);
         scheduler.NotifyLeft(At(30));
 
-        // `Assert.Same` checks it is the very same object, like `toBe`, not just an equal one.
         Assert.Same(enter, scheduler.Poll(At(1000)));
         scheduler.MarkAccepted(enter, At(1000));
 
@@ -563,9 +510,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal((CrucibleTrigger.Leave, OtherBoard), SendNext(scheduler, At(1000)));
     }
 
-    /// <summary>
-    /// Polls the next upload, settles it as accepted, and returns its trigger and territory.
-    /// </summary>
     private static (CrucibleTrigger, uint) SendNext(CrucibleUploadScheduler scheduler, DateTimeOffset now)
     {
         var upload = scheduler.Poll(now)!;
@@ -584,8 +528,6 @@ public class CrucibleUploadSchedulerTests
 
     // --- The heartbeat ------------------------------------------------------------------------
 
-    // Inside a board, a quiet interval sends a heartbeat with no observations, under the visit's
-    // territory.
     [Fact]
     public void A_quiet_interval_inside_a_board_sends_a_heartbeat()
     {
@@ -598,7 +540,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Empty(heartbeat.Observations);
     }
 
-    // The interval the server sets is the one the heartbeat keeps.
     [Fact]
     public void The_heartbeat_keeps_the_interval_the_server_sets()
     {
@@ -609,7 +550,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Heartbeat, scheduler.Poll(At(92))!.Trigger);
     }
 
-    // Any upload restarts the quiet interval, so a busy board sends no heartbeats at all.
+    // A busy board therefore sends no heartbeats at all.
     [Fact]
     public void Any_upload_restarts_the_heartbeat_interval()
     {
@@ -621,8 +562,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Heartbeat, scheduler.Poll(At(112))!.Trigger);
     }
 
-    // Entering a board after a long quiet spell sends its enter first, never a heartbeat ahead of
-    // it.
     [Fact]
     public void Entering_after_a_long_quiet_spell_sends_the_enter_first()
     {
@@ -636,7 +575,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Enter, scheduler.Poll(At(1002))!.Trigger);
     }
 
-    // While snapshots are waiting to go, they are the sign of life; no heartbeat goes ahead of them.
+    // Waiting snapshots are the sign of life.
     [Fact]
     public void No_heartbeat_goes_up_while_snapshots_are_waiting()
     {
@@ -647,7 +586,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Change, scheduler.Poll(At(63))!.Trigger);
     }
 
-    // Outside a board, and after leaving one, there is no heartbeat.
     [Fact]
     public void No_heartbeat_goes_up_outside_a_board()
     {
@@ -658,8 +596,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(1000)));
     }
 
-    // A clock that jumps backwards makes the earlier moment the heartbeat's reference point, so the
-    // heartbeat does not stall for however far the clock jumped.
+    // The earlier moment becomes the heartbeat's reference point.
     [Fact]
     public void A_clock_that_jumps_backwards_does_not_stall_the_heartbeat()
     {
@@ -669,8 +606,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Heartbeat, scheduler.Poll(At(-40))!.Trigger);
     }
 
-    // Starting inside a board with nothing to send yet: the heartbeat counts from the start, not
-    // from an earlier upload.
+    // The heartbeat counts from the start, not from an earlier upload.
     [Fact]
     public void Starting_inside_a_board_waits_a_full_interval_before_the_heartbeat()
     {
@@ -681,8 +617,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Heartbeat, scheduler.Poll(At(60))!.Trigger);
     }
 
-    // The cadence comes from /config, held between 30 seconds and five minutes whatever the
-    // server sends.
+    // The cadence comes from /config, held between 30 seconds and five minutes.
     [Theory]
     [InlineData(0, 30)]
     [InlineData(-5, 30)]
@@ -711,14 +646,11 @@ public class CrucibleUploadSchedulerTests
 
         Assert.Null(scheduler.Poll(At(17.9)));
 
-        // The `u` suffix makes the 5 a `uint`, the same type as a territory id.
         Assert.Equal(5u, scheduler.Poll(At(18))!.TerritoryTypeId);
     }
 
     // --- Retrying -------------------------------------------------------------------------------
 
-    // A retried upload goes again after the wait, as the very same request: same snapshots, same
-    // moments.
     [Fact]
     public void A_retried_upload_goes_again_unchanged_after_the_wait()
     {
@@ -748,7 +680,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(17)));
     }
 
-    // Each failure in a row doubles the least wait, so a failure that persists slows down.
+    // A failure that persists slows down.
     [Fact]
     public void Each_retry_in_a_row_waits_twice_as_long()
     {
@@ -764,7 +696,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(47)));
     }
 
-    // The least wait stops doubling at five minutes.
     [Fact]
     public void The_least_retry_wait_stops_growing_at_five_minutes()
     {
@@ -772,7 +703,6 @@ public class CrucibleUploadSchedulerTests
         scheduler.Queue(Bag(100, 0), Board, At(0));
         var upload = scheduler.Poll(At(2))!;
 
-        // 15, 30, 60, 120 and 240 seconds, then capped at 300.
         var now = 2.0;
         foreach (var wait in new[] { 15, 30, 60, 120, 240, 300, 300 })
         {
@@ -783,7 +713,6 @@ public class CrucibleUploadSchedulerTests
         }
     }
 
-    // A success ends the run of failures, so the next retry waits the shortest wait again.
     [Fact]
     public void A_success_resets_the_retry_wait()
     {
@@ -800,7 +729,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(second, scheduler.Poll(At(37)));
     }
 
-    // A clock that jumps backwards does not stretch a wait: it moves back with the clock.
+    // The wait moves back with the clock.
     [Fact]
     public void A_clock_that_jumps_backwards_keeps_a_wait_its_length()
     {
@@ -813,7 +742,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(-3583)));
     }
 
-    // A retry goes before anything else waiting, the board's leave included.
+    // A retry goes before anything else waiting.
     [Fact]
     public void A_retry_goes_before_a_waiting_leave()
     {
@@ -830,7 +759,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(CrucibleTrigger.Leave, scheduler.Poll(At(30))!.Trigger);
     }
 
-    // A refused upload is dropped, and the queue carries on with what comes after it.
     [Fact]
     public void A_dropped_upload_is_not_sent_again()
     {
@@ -844,8 +772,7 @@ public class CrucibleUploadSchedulerTests
         Assert.True(next.Observations.Single() is CrucibleTeamObservation { Closed: false });
     }
 
-    // A refused upload can hold everything back for a while, so a refusal that repeats does not
-    // repeat at full speed.
+    // The hold keeps a repeating refusal from repeating at full speed.
     [Fact]
     public void A_dropped_upload_can_hold_what_follows()
     {
@@ -859,7 +786,7 @@ public class CrucibleUploadSchedulerTests
         Assert.NotNull(scheduler.Poll(At(900)));
     }
 
-    // An answer for an earlier upload changes nothing, even when a newer upload is equal to it.
+    // A late answer settles nothing, even when the upload in flight equals the one it answers.
     [Fact]
     public void A_late_answer_for_an_earlier_upload_settles_nothing()
     {
@@ -877,7 +804,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(300)));
     }
 
-    // A server's request to wait still holds when it answers an earlier upload.
     [Fact]
     public void A_late_request_to_wait_still_holds()
     {
@@ -893,8 +819,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(scheduler.Poll(At(100))!));
     }
 
-    // A wait the website's switch can end holds the retry until the switch comes back on (see
-    // RetryPolicy.EndsWhenSyncResumes), and then only for the least retry wait.
+    // RetryPolicy.EndsWhenSyncResumes says which waits syncing coming back on can end.
     [Fact]
     public void A_wait_for_sync_to_resume_ends_when_sync_resumes()
     {
@@ -910,8 +835,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(60)));
     }
 
-    // Syncing coming back on at once still leaves the least retry wait, so no answer turns into a
-    // tight loop of requests.
+    // This keeps syncing coming back on at once from turning into a tight loop of requests.
     [Fact]
     public void Sync_resuming_still_waits_the_least_retry_wait()
     {
@@ -926,7 +850,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(17)));
     }
 
-    // With no word that syncing is back on, the wait still ends when the server said it would.
+    // With no word that syncing is back on, the wait ends when the server said it would.
     [Fact]
     public void A_wait_for_sync_to_resume_still_ends_at_its_deadline()
     {
@@ -940,7 +864,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(3602)));
     }
 
-    // Syncing coming back on says nothing about load, so a rate limit in force outlasts it.
+    // Syncing coming back on says nothing about load.
     [Fact]
     public void Sync_resuming_leaves_a_rate_limit_in_force()
     {
@@ -956,7 +880,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Same(upload, scheduler.Poll(At(100)));
     }
 
-    // Two such waits: the later deadline wins, as with any wait.
     [Fact]
     public void The_later_of_two_waits_for_sync_to_resume_wins()
     {
@@ -970,8 +893,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(1800)));
     }
 
-    // The request a wait answers may no longer be in flight (a reset came between); the wait still
-    // holds, and syncing coming back on still ends it.
+    // Late means a reset came between the request and its answer.
     [Fact]
     public void A_late_wait_for_sync_to_resume_still_holds_until_sync_resumes()
     {
@@ -990,7 +912,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(scheduler.Poll(At(60))!));
     }
 
-    // A reset forgets the queue but not the wait, which is about the token.
+    // The wait is about the token, not the queue.
     [Fact]
     public void A_reset_keeps_a_wait_for_sync_to_resume()
     {
@@ -1005,7 +927,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(60)));
     }
 
-    // Syncing coming back on ends only its own wait: a refused payload's hold stays.
+    // Syncing coming back on ends only its own wait.
     [Fact]
     public void Sync_resuming_leaves_a_refused_payloads_hold()
     {
@@ -1020,7 +942,7 @@ public class CrucibleUploadSchedulerTests
         Assert.NotNull(scheduler.Poll(At(62)));
     }
 
-    // A clock that jumps backwards moves a wait for sync to resume back with it, like any wait.
+    // The wait moves back with the clock.
     [Fact]
     public void A_clock_that_jumps_backwards_keeps_a_wait_for_sync_to_resume_its_length()
     {
@@ -1035,9 +957,8 @@ public class CrucibleUploadSchedulerTests
 
     // --- Resetting ------------------------------------------------------------------------------
 
-    // A reset, as on logging out, forgets everything queued, the visit, the retry and the content
-    // change detection compares against, so the next character starts from a clean baseline; a
-    // server-instructed wait survives it.
+    // A reset, as on logging out, also forgets the retry and the content change detection compares
+    // against, so the next character starts clean. A server-instructed wait survives it.
     [Fact]
     public void A_reset_forgets_the_queue_and_the_visit_but_not_a_wait()
     {
@@ -1060,7 +981,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(1000)));
     }
 
-    // A snapshot left unsent for half an hour, as through a long hold, is let go.
     [Fact]
     public void A_snapshot_left_unsent_for_half_an_hour_is_let_go()
     {
@@ -1072,7 +992,6 @@ public class CrucibleUploadSchedulerTests
         Assert.Null(scheduler.Poll(At(1801)));
     }
 
-    // Short of half an hour, a held snapshot still goes once the hold ends.
     [Fact]
     public void A_snapshot_held_for_less_than_half_an_hour_still_goes()
     {
@@ -1084,7 +1003,7 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(OtherBoard, scheduler.Poll(At(1799))!.TerritoryTypeId);
     }
 
-    // A snapshot let go never reached the server, so the same content read again still goes up.
+    // A snapshot let go never reached the server.
     [Fact]
     public void Content_let_go_unsent_goes_up_when_read_again()
     {
@@ -1101,8 +1020,7 @@ public class CrucibleUploadSchedulerTests
 
     // --- Kinds ----------------------------------------------------------------------------------
 
-    // The scheduler's name for each kind is the `kind` key the serializer writes for it, so change
-    // detection and the wire agree.
+    // Change detection and the wire must agree.
     [Fact]
     public void Each_kind_has_the_name_the_wire_gives_it()
     {

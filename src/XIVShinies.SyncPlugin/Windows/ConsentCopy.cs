@@ -13,10 +13,8 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// <remarks>
 /// Each claim is decided from the same rows and <c>/config</c> the controls beneath it are drawn from
 /// (the wizard intro's user-driven inputs as they stood when its step opened), so a sentence and its
-/// controls cannot describe different states. Kept apart from the window so the states that would
-/// make a sentence false are reachable from tests.
+/// controls cannot describe different states.
 /// </remarks>
-// A `static class` holds only shared members and is never instantiated: a module of functions.
 public static class ConsentCopy
 {
     /// <summary>The wizard's consent step's opening sentence.</summary>
@@ -36,27 +34,23 @@ public static class ConsentCopy
     /// only while the server offers it and it is chosen on; otherwise the sentence would contradict
     /// the boxes beneath it, or the choices behind them (see <see cref="AnythingChosenOn"/>). With
     /// nothing to choose, as during a pause, it says so instead of inviting a choice, and names no
-    /// one as having switched things off: during a pause the switch that is off may be the user's own
-    /// on their profile (see <see cref="ServerOffCopy.Paused"/>).
+    /// one as having switched things off, since a pause may be the user's own switch on their profile
+    /// (see <see cref="ServerOffCopy.Paused"/>).
     /// </remarks>
     public static string WizardIntro(
         bool anythingSwitchedOn, bool trackerOffered, bool trackerOn, bool userHasAChoice, string host)
     {
         if (!userHasAChoice)
         {
-            // `$"...{host}..."` is an interpolated string, like a TypeScript template literal.
             return $"Nothing about your progress is sent: everything below is switched off on {host} " +
                 "for now. Once it is back on, you can choose what to upload in the settings.";
         }
 
-        // `var` lets the compiler infer the type, like an unannotated `let`. `a ? b : c` picks b when a
-        // is true, else c, as in TypeScript.
         var defaults = anythingSwitchedOn
             ? "Nothing about your progress is sent unless you switch it on here. "
             : "The collections below, and sharing your Crucible runs, all start switched off — " +
               "nothing about your progress is sent unless you turn it on here. ";
 
-        // `string.Empty` is the empty string, `""`.
         var tracker = trackerOffered && trackerOn
             ? "Sharing live Occult instance state starts on; untick it below if you would rather not. "
             : string.Empty;
@@ -75,13 +69,11 @@ public static class ConsentCopy
     /// </remarks>
     /// <param name="rows">This frame's category rows.</param>
     /// <param name="shareCrucibleRuns">The user's stored choice for the Crucible run sharing.</param>
-    // `IReadOnlyList<T>` is a list its holder cannot change, like `readonly T[]`.
     public static bool AnythingChosenOn(IReadOnlyList<CategorySettingsRow> rows, bool shareCrucibleRuns)
     {
         if (shareCrucibleRuns)
             return true;
 
-        // `foreach` walks every item in turn, like `for (const row of rows)`.
         foreach (var row in rows)
         {
             if (row.UserEnabled)
@@ -102,8 +94,6 @@ public static class ConsentCopy
     /// </remarks>
     /// <param name="rows">This frame's category rows.</param>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
-    // `ConfigResponse?` may be null, like `ConfigResponse | null` in TypeScript. `=>` makes the
-    // expression after it the whole method body; `||` stops at the first true.
     public static bool UserHasAChoice(
         IReadOnlyList<CategorySettingsRow> rows, ConfigResponse? remoteConfig) =>
         ManifestConsent.AnyServerEnabled(rows)

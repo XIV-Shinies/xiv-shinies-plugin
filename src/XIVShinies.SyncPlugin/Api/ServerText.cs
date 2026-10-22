@@ -1,6 +1,4 @@
-// UnicodeCategory, for spotting the invisible characters the fold has to drop.
 using System.Globalization;
-// StringBuilder, for folding a server string onto one line.
 using System.Text;
 
 namespace XIVShinies.SyncPlugin.Api;
@@ -9,31 +7,17 @@ namespace XIVShinies.SyncPlugin.Api;
 /// How a string that came from the server is made safe to keep, render, or log.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The backend URL is user-overridable — a Dalamud requirement, not a convenience — so the server
-/// is untrusted input. Anything it says can be arbitrarily long, contain any character, or be
-/// missing where the contract promises a value. These helpers are the one place that is dealt
-/// with, so every adoption site treats it the same way and a new one has something to reach for.
-/// </para>
-/// <para>
-/// Adoption happens at the door: the value is bounded when it enters the plugin, not each time it
-/// is drawn. A clamp at the render site only protects the render it guards, and the next surface
-/// to show the same string starts the problem over.
-/// </para>
-/// <para>
-/// Every operation here bounds the input <b>before</b> doing work proportional to its length. The
-/// only ceiling on an incoming string is the response body limit, so a transform that walks the
-/// whole value first — a trim, a copy, a fold — hands a hostile server several megabytes of work,
-/// and on the draw path that is several megabytes of work per frame.
-/// </para>
+/// The backend URL is user-overridable (a Dalamud requirement), so server strings are untrusted: any
+/// length, any character, or missing where the contract promises a value. Bound a value once, where it
+/// enters the plugin, not at each render site. Every operation here bounds its input before doing
+/// work proportional to its length, because the only other ceiling is the response body limit.
 /// </remarks>
 internal static class ServerText
 {
     /// <summary>The longest server string the plugin will keep, in UTF-16 code units.</summary>
     /// <remarks>
-    /// Generous for any legitimate value — a note, a validation complaint, a content hash — and
-    /// small enough that a hostile one cannot fill a window or a log file. A marked result is
-    /// this plus the three periods, since the marker says something the text itself does not.
+    /// Generous for a note, a validation complaint or a content hash, and small enough that a hostile
+    /// one cannot fill a window or a log file. A marked result is this plus the three periods.
     /// </remarks>
     public const int MaxAdoptedLength = 500;
 
@@ -42,9 +26,8 @@ internal static class ServerText
     /// </summary>
     /// <param name="text">The server's string.</param>
     /// <param name="ellipsis">
-    /// True to mark a shortened result with three periods, so a reader can tell the text was cut
-    /// rather than written that way. False where the value is matched or compared rather than
-    /// read, and a marker would corrupt it.
+    /// True to mark a shortened result with three periods, so a reader can tell it was cut. False
+    /// where the value is matched or compared, and a marker would corrupt it.
     /// </param>
     public static string Clamp(string text, bool ellipsis = false)
     {
@@ -53,15 +36,12 @@ internal static class ServerText
 
         var end = MaxAdoptedLength;
 
-        // A char in .NET is a UTF-16 code unit, and characters outside the basic multilingual
-        // plane — emoji, the rarer CJK blocks — are stored as a PAIR of them. Cutting between the
-        // halves leaves a lone surrogate: not valid UTF-16, drawn as a replacement box, and an
-        // exception the day the value is handed to a serializer. Backing off one unit drops the
-        // whole character instead of half of one.
+        // Never cut inside a surrogate pair: a lone surrogate is invalid UTF-16, draws as a box, and
+        // throws in a serializer. Backing off one unit drops the whole character.
         if (char.IsHighSurrogate(text[end - 1]))
             end--;
 
-        // Three periods, not the single "…" glyph — see MainWindow's Verify label for why.
+        // Three periods, not the single "…" glyph; see MainWindow's Verify label for why.
         return ellipsis ? text[..end] + "..." : text[..end];
     }
 
@@ -69,18 +49,10 @@ internal static class ServerText
     /// Whether a character is invisible formatting that a display string is safer without.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Unicode's Cf (format) category, minus the two members that carry real meaning in ordinary
-    /// text. A zero-width joiner is what binds an emoji sequence into one glyph, and a zero-width
-    /// non-joiner is required orthography in Persian and Arabic — dropping either corrupts copy
-    /// that is doing nothing wrong, and neither can reorder or conceal text, so neither is worth
-    /// dropping to be safe from.
-    /// </para>
-    /// <para>
-    /// What is left is the part that can lie about its own content: the bidirectional controls,
-    /// which reorder everything after them, and the zero-width spaces, which split a word with
-    /// nothing a reader can see.
-    /// </para>
+    /// Unicode's Cf category, minus the zero-width joiner, which binds emoji sequences, and the
+    /// non-joiner, which Persian and Arabic spelling needs; neither can reorder or hide text. What is
+    /// left can lie about its content: bidirectional controls reorder everything after them, and
+    /// zero-width spaces split a word invisibly.
     /// </remarks>
     private static bool IsInvisibleFormatting(char character) =>
         CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format
@@ -91,26 +63,16 @@ internal static class ServerText
     /// otherwise bounded, folded onto a single line, and marked if it had to be cut.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Null and blank both become null. A value the contract says is always present can still
-    /// arrive missing or empty, and "the server said nothing" is a state the caller already has to
-    /// handle — folding the two together means no caller has to tell them apart.
-    /// </para>
-    /// <para>
-    /// Line breaks, repeated spaces and control characters are collapsed because a length cap does
-    /// not bound the SHAPE of what is drawn. Five hundred newlines sit well inside the cap and
-    /// would still bury everything below them, and a control character draws as a placeholder box;
-    /// between them a server could lay out its own copy inside a panel it does not own. A one-line
-    /// explanation has no use for a second line, so nothing the field is for is lost.
-    /// </para>
+    /// Null and blank both become null, since a promised value can still arrive empty and callers
+    /// already handle "the server said nothing". Folding bounds the shape a length cap cannot: five
+    /// hundred newlines fit the cap and would bury the panel, and a control character draws as a box.
     /// </remarks>
     public static string? SingleLine(string? text)
     {
         if (text is null)
             return null;
 
-        // Bounded before the fold below, which is the part that walks every character — the
-        // bound-before-work rule this type is built on.
+        // Bound before the fold, which walks every character.
         var cut = text.Length > MaxAdoptedLength;
         var bounded = cut ? Clamp(text) : text;
 
@@ -119,26 +81,15 @@ internal static class ServerText
 
         foreach (var character in bounded)
         {
-            // Invisible but not inert, and dropped leaving NOTHING behind — not even the space a
-            // separator would leave. These occupy no width on screen, so treating one as a gap
-            // would insert a word break the server never sent: "a<ZWSP>b" is one word and has to
-            // stay one. They are dropped because they can rewrite what a reader sees — a
-            // zero-width space splits a word for no visible reason, and a right-to-left override
-            // reverses the reading order of everything after it, so a note could display as
-            // something other than what was sent while looking innocent in a log. The backend is
-            // user-overridable, which makes that reachable rather than hypothetical.
-            //
-            // pendingSpace is left exactly as it was, so one of these sitting inside a run of real
-            // whitespace neither creates a gap nor swallows one.
+            // Invisible formatting takes no width, so it leaves no space: "a<ZWSP>b" stays one word.
+            // pendingSpace is untouched, so one inside a whitespace run neither makes nor hides a gap.
             if (IsInvisibleFormatting(character))
                 continue;
 
-            // Whitespace is the fold's actual job; a control character would draw as a placeholder
-            // box. Both are separators, so both collapse to at most one space.
+            // Whitespace and control characters both collapse to at most one space.
             if (char.IsWhiteSpace(character) || char.IsControl(character))
             {
-                // Deferred rather than appended: a run becomes one space, and a run at the very
-                // end becomes nothing at all, which is the trim.
+                // Deferred, so a run becomes one space and a trailing run becomes nothing: the trim.
                 pendingSpace = folded.Length > 0;
                 continue;
             }
@@ -152,13 +103,10 @@ internal static class ServerText
             folded.Append(character);
         }
 
-        // A string with nothing visible in it — whitespace, control characters, invisible
-        // formatting, or any mix of them — leaves nothing to say.
         if (folded.Length == 0)
             return null;
 
-        // Folding only ever shortens, so the bound above still holds and the marker is the one
-        // thing left to add — it tells a reader the sentence stops because it was cut.
+        // Folding only shortens, so the bound still holds.
         return cut ? folded.Append("...").ToString() : folded.ToString();
     }
 }

@@ -1,21 +1,21 @@
 namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
-/// The lifecycle phase of a Critical Encounter (or the Forked Tower) as the game reports it.
+/// The lifecycle phase of a Critical Encounter or the Forked Tower, as the game reports it. The
+/// observed cycle is Inactive, Register, Warmup, Battle, then Inactive again.
 /// </summary>
 /// <remarks>
-/// The numeric values mirror the game's own <c>DynamicEventState</c> enum exactly — the reader
-/// casts the raw byte it finds in the CE container to this type. The enum is redeclared here
-/// (rather than using FFXIVClientStructs' one) so the tracker logic stays Dalamud-free and
-/// unit-testable; a mismatch would be caught the moment the reader's cast produced an undefined
-/// value. The observed full cycle is Inactive → Register → Warmup → Battle → Inactive.
+/// The values mirror the game's <c>DynamicEventState</c>, declared here so the tracker uses no game
+/// types; the reader casts the raw byte to this enum. Nothing checks the mirror at run time: an
+/// unknown byte reads as down (see <c>OccultEncounterTracker.MapCe</c>), so a patch that changes
+/// <c>DynamicEventState</c> needs this enum re-checked.
 /// </remarks>
 public enum DynamicEventPhase : byte
 {
-    /// <summary>Not currently running. Every other field of the slot is zeroed.</summary>
+    /// <summary>Not running. Every other field of the slot is zeroed.</summary>
     Inactive = 0,
 
-    /// <summary>The registration window is open (players can sign up).</summary>
+    /// <summary>The registration window is open.</summary>
     Register = 1,
 
     /// <summary>Registration closed; the encounter is about to begin.</summary>

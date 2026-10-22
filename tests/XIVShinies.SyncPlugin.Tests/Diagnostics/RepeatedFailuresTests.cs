@@ -4,13 +4,12 @@ using XIVShinies.SyncPlugin.Diagnostics;
 
 namespace XIVShinies.SyncPlugin.Tests.Diagnostics;
 
-// What counts as "the same failure we already reported". The stakes are asymmetric in both
-// directions: too coarse a signature swallows a second, unrelated bug that happens to throw the
-// same type, and too fine a one lets a per-second failure log every second forever.
+// What counts as a failure already reported. Too coarse a signature swallows an unrelated bug that
+// throws the same type; too fine a one lets a per-second failure log every second.
 public class RepeatedFailuresTests
 {
-    // Helpers that throw from named methods, so the captured exceptions carry genuinely different
-    // top frames. Catching a real throw is the only way to get a populated stack trace.
+    // Each helper throws from its own method, so the exceptions carry different top frames. Only a real
+    // throw populates a stack trace.
     private static Exception ThrownFromHere()
     {
         try
@@ -67,7 +66,7 @@ public class RepeatedFailuresTests
         Assert.True(failures.IsFirstSighting(ThrownFromHere()));
     }
 
-    // The whole point: a tick that throws every second must not log every second.
+    // A tick that throws every second must not log every second.
     [Fact]
     public void The_same_failure_thrown_again_is_not_reported()
     {
@@ -78,8 +77,7 @@ public class RepeatedFailuresTests
         Assert.False(failures.IsFirstSighting(ThrownFromHere()));
     }
 
-    // The inverse hazard. Two unrelated bugs can both throw InvalidOperationException; silencing
-    // the second because the first was reported would hide a defect entirely.
+    // Two unrelated bugs can both throw InvalidOperationException; silencing the second would hide it.
     [Fact]
     public void The_same_exception_type_from_a_different_method_is_reported()
     {
@@ -100,8 +98,7 @@ public class RepeatedFailuresTests
         Assert.True(failures.IsFirstSighting(DifferentTypeFromHere()));
     }
 
-    // The message is deliberately not part of the signature: a failure that names an id or a count
-    // produces a new message every time, which would defeat the memory entirely.
+    // The message is not part of the signature: one that names an id or a count changes every time.
     [Fact]
     public void A_failure_differing_only_in_its_message_is_not_reported_again()
     {
@@ -112,9 +109,8 @@ public class RepeatedFailuresTests
         Assert.False(failures.IsFirstSighting(new InvalidOperationException("id 2 failed")));
     }
 
-    // The same rule on a thrown exception, which is the only shape production ever sees. An
-    // exception that was never thrown takes the no-stack-frame path instead, so the case above
-    // pins the rule on a branch real failures never reach.
+    // Production only sees thrown exceptions. One never thrown takes the no-stack-frame path, which the
+    // test above covers and real failures never reach.
     [Fact]
     public void A_thrown_failure_differing_only_in_its_message_is_not_reported_again()
     {
@@ -125,8 +121,7 @@ public class RepeatedFailuresTests
         Assert.False(failures.IsFirstSighting(ThrownWithMessage("id 2 failed")));
     }
 
-    // Exists for the assemble-failure path — see SyncManager.OnLogout for why that memory is
-    // dropped.
+    // For the assemble-failure path; SyncManager.OnLogout says why that memory is dropped.
     [Fact]
     public void A_reset_lets_a_reported_failure_be_reported_again()
     {
@@ -138,8 +133,7 @@ public class RepeatedFailuresTests
         Assert.True(failures.IsFirstSighting(ThrownFromHere()));
     }
 
-    // An exception that was constructed but never thrown carries no stack trace at all. It still
-    // needs a stable signature rather than throwing while trying to report a failure.
+    // A never-thrown exception has no stack trace, and reporting it must not throw.
     [Fact]
     public void An_exception_that_was_never_thrown_still_has_a_signature()
     {
@@ -156,8 +150,7 @@ public class RepeatedFailuresTests
         Assert.Contains("InvalidOperationException", signature);
     }
 
-    // A reader who finds the signature in a log or a debugger should be able to tell where it came
-    // from without cross-referencing anything.
+    // A reader of the log can tell where it came from without looking anything up.
     [Fact]
     public void The_signature_names_the_method_that_threw()
     {

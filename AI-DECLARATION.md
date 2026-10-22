@@ -35,12 +35,11 @@ development honest and safe here:
   held to the same standard as hand-written code, and the author must test, understand,
   and be able to explain it. Because my explicit aim is to learn C#, I read, question, and
   understand every change rather than accepting generated code blindly. Each substantial
-  change ends with a plain-language "learning summary" (see the repo's
-  `.claude/skills/learning-summary` skill) so I can explain what the code does and why.
-- **The code is heavily commented.** Every non-trivial construct is commented in plain
-  language — both so I can follow C#/Dalamud idioms as I learn them, and so future
-  open-source contributors can understand the codebase. This is a required convention for
-  the project, not an afterthought.
+  change ends with a short plain-language summary so I can explain what the code does and
+  why.
+- **The code is commented in plain language.** Comments state the reasons and constraints a
+  reader cannot see in the code itself, so future open-source contributors can understand the
+  codebase. This is a required convention for the project, not an afterthought.
 - **Dalamud guidelines and user safety are non-negotiable.** The plugin is built to follow
   all Dalamud plugin-development guidelines (https://dalamud.dev/category/plugin-development)
   so that end users are safe: it reads only the local player, hashes the character ContentId

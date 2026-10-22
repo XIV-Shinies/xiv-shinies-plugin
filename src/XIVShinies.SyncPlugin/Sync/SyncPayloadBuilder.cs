@@ -8,9 +8,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// Turns one collection pass into the body of a sync upload.
 /// </summary>
 /// <remarks>
-/// Deliberately dumb. It reports exactly the categories the snapshot read — no more, no fewer — and
-/// invents nothing. A category the collectors skipped is simply absent, which the server reads as
-/// "not read this time" rather than "empty", so a partial upload can never erase anything.
+/// Reports exactly the categories the snapshot read and invents nothing. A skipped category is absent,
+/// which the server reads as "not read this time" rather than "empty", so a partial upload never
+/// erases anything.
 /// </remarks>
 public static class SyncPayloadBuilder
 {
@@ -33,10 +33,8 @@ public static class SyncPayloadBuilder
         CollectionSnapshot snapshot,
         string? manifestVersion)
     {
-        // An echo the contract would refuse is dropped rather than shortened. The field is
-        // optional and only spares the server a re-derivation, a 400 is terminal — an over-long
-        // echo sent verbatim would stop syncing outright — and a shortened version string would
-        // just be a different wrong value.
+        // An over-long echo is dropped, not shortened: the field is optional, the full value would earn
+        // a 400 on every upload, and a cut one would be a different wrong value.
         if (manifestVersion is { Length: > MaxManifestVersionLength })
             manifestVersion = null;
 
@@ -44,8 +42,8 @@ public static class SyncPayloadBuilder
         {
             CharacterContentIdHash = identity.ContentIdHash,
 
-            // The server trims and length-checks these; sending untrimmed input would fail
-            // validation and take the whole upload down with it.
+            // The contract trims the name but length-checks the world as sent. Trimming both sends what
+            // CharacterIdentity.IsUsable checked, so a padded world cannot fail the whole upload.
             CharacterName = identity.Name.Trim(),
             HomeWorld = identity.HomeWorld.Trim(),
 
@@ -53,16 +51,12 @@ public static class SyncPayloadBuilder
             Trigger = trigger,
             ManifestVersion = manifestVersion,
 
-            // Handed straight through. Whichever categories the collectors read, and only those.
             Collections = snapshot.Collections,
 
-            // Which of those lists are complete sets, per each category's declaration. Null (an
-            // omitted key, meaning "all partial") when there is nothing to declare.
             CollectionScopes = BuildCollectionScopes(snapshot, trigger),
 
-            // Per-source scan status, or null when there is nothing to send. An empty object on
-            // the wire is noise when no source status is worth reporting; null makes the shared
-            // serializer policy (ApiJson.Options omits null properties) drop the key entirely.
+            // Null rather than an empty object when nothing is worth sending, since ApiJson.Options
+            // omits null properties.
             ItemSources = BuildWireSourceNotes(snapshot.SourceNotes),
         };
     }
@@ -71,26 +65,11 @@ public static class SyncPayloadBuilder
     /// The completeness declarations that belong on the wire, or null when none do.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Only <c>"full"</c> is ever emitted: an omitted key already means "partial" on the server,
-    /// so writing <c>"partial"</c> out would say nothing at the cost of bytes — the same
-    /// minimize-what-you-send reasoning that drops unreadable source notes below.
-    /// </para>
-    /// <para>
-    /// An <c>unlock</c> upload declares nothing, whatever its collectors read. The contract asks
-    /// a delta upload to report <c>"partial"</c>, and the server would accept a <c>"full"</c> it
-    /// sent — it is not schema-rejected — so this is the plugin refusing to make a claim the
-    /// server would trust. An unlock upload exists to date the one thing that just changed; it
-    /// carries whichever categories the unlock routed to and must never be read as a statement
-    /// about everything the character owns. The gate is the trigger's, not any category's.
-    /// </para>
-    /// <para>
-    /// Intersected with the carried categories even though the runner only marks keys it
-    /// collected — a scope for a list this upload does not contain would assert completeness of
-    /// facts the server never received, so the builder refuses to construct one no matter what a
-    /// future snapshot source claims. What it cannot see is a list that was cut AFTER collection:
-    /// <see cref="PayloadCaps"/> owns that, retracting the claim of any category it truncates.
-    /// </para>
+    /// Only <c>"full"</c> is emitted: an omitted key already means "partial", and the
+    /// minimize-what-you-send rule forbids bytes that say nothing. An <c>unlock</c> upload declares
+    /// nothing, whatever it read, because the contract asks a delta upload for "partial" and the server
+    /// would trust a "full" on one. A scope is never built for a list the payload does not carry, and
+    /// <see cref="PayloadCaps"/> retracts the claim of a list cut after collection.
     /// </remarks>
     private static Dictionary<string, string>? BuildCollectionScopes(
         CollectionSnapshot snapshot, SyncTrigger trigger)
@@ -98,8 +77,7 @@ public static class SyncPayloadBuilder
         if (trigger == SyncTrigger.Unlock)
             return null;
 
-        // Null until a declaration survives the checks, so "none" becomes an omitted key without
-        // a second emptiness check — the same shape as BuildWireSourceNotes below.
+        // Null until a declaration survives the checks, so "none" becomes an omitted key.
         Dictionary<string, string>? scopes = null;
 
         foreach (var categoryKey in snapshot.CompleteKeys)
@@ -118,19 +96,15 @@ public static class SyncPayloadBuilder
     /// The source notes that belong on the wire, or null when none do.
     /// </summary>
     /// <remarks>
-    /// Source status exists to make counts judgeable — "was the saddlebag ever scanned?" — so a
-    /// source in the <see cref="SourceStates.Unreadable"/> state is dropped here: the game never
-    /// exposes it, it can never carry counts, and repeating that constant on every upload would be
-    /// exactly the noise the minimize-what-you-send rule forbids. The state is kept for the
-    /// settings panel, which is where a user wondering about such a source actually looks. Keyed
-    /// on the STATE, never on a source name, so any future unreadable source stays local the same
-    /// way.
+    /// Source status makes counts judgeable, so a <see cref="SourceStates.Unreadable"/> source, which
+    /// the game never exposes and which never carries counts, is dropped as noise under the
+    /// minimize-what-you-send rule; the settings panel still shows it. Keyed on the state, never on a
+    /// source name, so any unreadable source stays local.
     /// </remarks>
     private static Dictionary<string, ItemSourceStatus>? BuildWireSourceNotes(
         IReadOnlyDictionary<string, ItemSourceStatus> sourceNotes)
     {
-        // Null until something wire-worthy appears, so the "no notes at all" and the "only local
-        // notes" cases converge on the same omitted key without a second emptiness check.
+        // Null until a wire-worthy note appears, so no notes and only local notes both omit the key.
         Dictionary<string, ItemSourceStatus>? wireNotes = null;
 
         foreach (var (sourceKey, status) in sourceNotes)
@@ -138,8 +112,6 @@ public static class SyncPayloadBuilder
             if (status.State == SourceStates.Unreadable)
                 continue;
 
-            // `??=` assigns only when the left side is still null — the dictionary is created on
-            // the first wire-worthy note and reused for the rest.
             wireNotes ??= new Dictionary<string, ItemSourceStatus>();
             wireNotes[sourceKey] = status;
         }

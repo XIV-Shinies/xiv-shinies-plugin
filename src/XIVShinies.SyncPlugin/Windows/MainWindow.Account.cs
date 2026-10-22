@@ -11,26 +11,20 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
-// The account panel — the token box, its verification feedback, and the claimed-characters
-// list — shared by the wizard's link step and the settings screen, plus the token probe
-// plumbing both go through. One part of the MainWindow class — see MainWindow.cs for the
-// class doc, the window state, and the shared card system and widget bindings.
+// The account panel shared by the wizard's link step and the settings: the token box, its
+// feedback, the claimed characters, and the token probe plumbing.
 internal sealed partial class MainWindow
 {
-    /// <summary>
-    /// The token box, its Verify button, and the resulting feedback.
-    /// </summary>
+    /// <summary>The token box, its Verify button, and the resulting feedback.</summary>
     /// <remarks>
-    /// Shared by the wizard and the settings screen. Without it in the settings, a user whose token is
-    /// revoked would be told to "generate a new one" with nowhere to paste it, and the wizard never
-    /// reappears once onboarding is complete — the plugin would be permanently stuck.
+    /// The settings need it too: the wizard never returns after onboarding, so a revoked token would
+    /// otherwise leave nowhere to paste a new one.
     /// </remarks>
     private void DrawTokenPanel()
     {
         using (BrandCard())
         {
-            // Custom card header: title left; right-aligned, a button that opens the browser
-            // straight to the profile settings on the website, where tokens are created.
+            // The right-aligned button opens the website's profile settings, where tokens are made.
             DrawCardTitle(FontAwesomeIcon.Key, "Your account");
 
             const string openLabel = "Open profile settings";
@@ -42,8 +36,7 @@ internal sealed partial class MainWindow
             Widgets.AlignRight(openWidth, innerRight);
             var openButtonPos = ImGui.GetCursorPos();
 
-            // The configured server rather than the official one, and validated on the way out —
-            // see BackendUrl.ProfileUrl.
+            // The configured server, validated on the way out (see BackendUrl.ProfileUrl).
             if (BoldButton("###openProfile", new Vector2(openWidth, 0f)))
                 Util.OpenLink(BackendUrl.ProfileUrl(configuration.Settings.BaseUrl));
 
@@ -53,10 +46,7 @@ internal sealed partial class MainWindow
 
             CloseCardHeader();
 
-            // Names the configured server, matching where the button above actually goes.
-            // `$"...{x}..."` is an interpolated string, like a TypeScript template literal: each
-            // `{x}` is replaced by x's value. Only the piece marked `$` fills anything in; the
-            // plain pieces joined to it with `+` are taken as written.
+            // Names the configured server, where the button goes.
             DrawWrapped(
                 $"Create a plugin token in your profile settings on {BackendHost()}, then paste " +
                 "it below. The token is shown once and can be revoked at any time.",
@@ -64,39 +54,31 @@ internal sealed partial class MainWindow
 
             ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
 
-            // The button is busy for as long as anything it started is still outstanding: the token
-            // probe itself, and — in the wizard — the config the accepted token goes on to fetch. Both
-            // are the same wait as far as the user is concerned, and a button that went idle between
-            // them would invite a second press for a request already on its way.
+            // Busy until the probe and, in the wizard, the config it fetches have both answered, so
+            // an idle button never invites a second press.
             var checkInFlight = verifier.InFlight || onboarding.AwaitingConfig;
-            // Three periods rather than the single "…" glyph: the font centers that glyph vertically, so
-            // it reads as a row of dots floating in the middle of the line instead of trailing the text.
+
+            // Three periods, not "…": the font centers that glyph vertically.
             var verifyLabel = checkInFlight ? "Checking..." : "Verify";
 
-            // Size the input to the space the card has left after the Verify button — clamped on
-            // both ends: a token is a fixed ~47 characters, so on a very wide window a full-width
-            // box would be absurd, and on a degenerately narrow one the arithmetic could go
-            // negative (which ImGui reads as "size from the right edge", not zero) — the floor
-            // keeps the box a box. Logical units, scaled like everything else.
-            //
-            // Measured against the widest label the button can wear, so the box beside it keeps its
-            // size while the button changes what it says.
+            // The widest label the button wears, so the box keeps its size while the label changes.
             var verifyWidth = Math.Max(PaddedButtonWidth("Verify"), PaddedButtonWidth("Checking..."));
 
             var rightEdge = activeCardInnerRight
                 ?? (ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
             var available =
                 rightEdge - ImGui.GetCursorPosX() - verifyWidth - ImGui.GetStyle().ItemSpacing.X;
+
+            // Clamped: a token is 47 characters, and ImGui reads a negative width as "from the right
+            // edge".
             ImGui.SetNextItemWidth(Math.Clamp(
                 available, 120f * ImGuiHelpers.GlobalScale, 420f * ImGuiHelpers.GlobalScale));
 
-            // ImGuiInputTextFlags.Password masks the text (ImGui draws asterisks). It is a credential,
-            // and a plugin window is frequently on screen while streaming.
+            // Masked: it is a credential, and plugin windows are often on screen while streaming.
             if (ImGui.InputText("##token", ref tokenInput, TokenInputCapacity, ImGuiInputTextFlags.Password))
             {
-                // Any edit invalidates the previous verification. Forget() also bumps the verifier's
-                // generation, so an answer already in flight for the OLD token is discarded when it
-                // lands rather than being reported against the text now in the box.
+                // An edit voids the last check; Forget discards any answer still in flight for the
+                // old token.
                 onboarding.NotifyTokenEdited();
                 verifier.Forget();
                 account = null;
@@ -104,20 +86,16 @@ internal sealed partial class MainWindow
 
             ImGui.SameLine();
 
-            // The token is saved before the probe, because the API client reads it straight from the
-            // settings rather than being handed it. Persisting an unverified token is harmless:
-            // nothing uploads until onboarding is complete, and the master switch gates it thereafter.
             var canVerify = !checkInFlight && TokenFormat.IsWellFormed(tokenInput);
 
-            // `using` guarantees the matching EndDisabled even if something inside throws — the same
-            // job a `finally` would do, without the ceremony. An unbalanced disabled stack grays out
-            // everything drawn after it for the rest of the frame.
             bool verifyPressed;
             using (ImRaii.Disabled(!canVerify))
                 verifyPressed = BoldButton(verifyLabel, new Vector2(verifyWidth, 0f));
 
             if (verifyPressed)
             {
+                // Saved before the probe, since the API client reads it from the settings. Saving it
+                // unverified is safe: nothing uploads before onboarding or with the master switch off.
                 configuration.Settings.Token = tokenInput;
                 configuration.Save();
 
@@ -129,28 +107,23 @@ internal sealed partial class MainWindow
         }
     }
 
-    /// <summary>Says what the token box should be telling the user, in a color that matches.</summary>
-    /// <remarks>
-    /// Which message applies is decided by <see cref="TokenFeedback"/>, which is pure and tested. All
-    /// that is left here is turning a kind into pixels.
-    /// </remarks>
+    /// <summary>
+    /// Says what the token box should be telling the user, in a matching color.
+    /// <see cref="TokenFeedback"/> picks the message.
+    /// </summary>
     private void DrawTokenCheckFeedback()
     {
         ImGui.Spacing();
 
-        // The token has been accepted and the wizard is now waiting on what the server asks about, with
-        // Continue disabled until it arrives. A disabled button with no explanation beside it reads as a
-        // broken wizard, so the wait says what it is waiting for.
+        // Continue stays disabled until the config arrives, so the wait says what it waits for.
         if (onboarding.AwaitingConfig)
         {
             DrawWrapped($"Token accepted. Asking {BackendHost()} what it collects...", ImGuiCol.Text);
             return;
         }
 
-        // The four neutral states below draw at the normal text color: each one is either an
-        // instruction ("paste", "select Verify") or the live state of a check the user is waiting
-        // on, so all four are text they are meant to read. Only the two decided outcomes carry a
-        // color, and that color is the message (green accepted, red rejected).
+        // The neutral states are instructions or live status, so full contrast; only the outcomes
+        // carry a color.
         switch (TokenFeedback.For(onboarding.TokenCheck, tokenInput))
         {
             case TokenFeedbackKind.Empty:
@@ -171,9 +144,7 @@ internal sealed partial class MainWindow
                 break;
 
             case TokenFeedbackKind.Accepted:
-                // The same icon-led line as the rejection below it, through the same helper: the two
-                // alternate in the same spot of the same panel, and a check that sat differently from
-                // the triangle it replaces on screen would read as a different kind of message.
+                // Laid out like the rejection's warning, since the two replace each other in place.
                 DrawIconedText(
                     FontAwesomeIcon.Check, Widgets.SuccessColor, "Token accepted", Widgets.InlineIconScale);
                 ImGui.Dummy(new Vector2(0f, 4f * ImGuiHelpers.GlobalScale));
@@ -197,9 +168,8 @@ internal sealed partial class MainWindow
     /// </summary>
     private void DrawClaimedCharacters()
     {
-        // `is not { } characters` also catches an explicit JSON null, which gets past `required`
-        // (see ApiJson) — and this runs on the draw path, where a throw takes the whole window
-        // down with it.
+        // Also catches an explicit JSON null, which gets past `required` (see ApiJson). A throw on
+        // the draw path takes the window down.
         if (account?.Characters is not { } characters)
             return;
 
@@ -213,17 +183,15 @@ internal sealed partial class MainWindow
 
         ImGui.Spacing();
 
-        // A caption over the list; the character names beneath it are what the user reads.
         ImGui.TextDisabled("Claimed characters:");
 
-        // Bounded like every server-sized list this window draws each frame: the count is the
-        // server's to choose, and no honest account carries dozens of characters, so the ceiling
-        // only ever cuts a hostile backend.
+        // The server picks the count. No honest account has dozens, so this only cuts a hostile
+        // backend.
         const int MaxDrawnCharacters = 32;
         var drawn = 0;
 
-        // Whether any drawn character is verified. Counted over the drawn rows only, so the loop's
-        // ceiling bounds this too.
+        // Whether any drawn character is verified. Counted over drawn rows only, so the ceiling bounds
+        // it too.
         var anyVerified = false;
 
         foreach (var character in characters)
@@ -240,19 +208,16 @@ internal sealed partial class MainWindow
 
             drawn++;
 
-            // A person glyph rather than ImGui.Bullet — the round bullet reads like a radio button
-            // next to this window's checkboxes.
+            // Not ImGui.Bullet, which reads as a radio button beside the checkboxes.
             DrawIcon(FontAwesomeIcon.User, Brand.Teal);
             ImGui.SameLine();
-            // Folded and bounded like every other adopted server string: these are Lodestone
-            // values on an honest backend, and the backend is user-overridable.
+
+            // Folded and bounded like every server string: the backend is user-overridable.
             ImGui.TextUnformatted(
                 $"{ServerText.SingleLine(character.Name)} ({ServerText.SingleLine(character.World)})");
 
-            // A claim still waiting for its Lodestone bio code is listed, since it is the
-            // account's, but uploads for it are refused until it is verified. Muted rather than
-            // red: another listed character may be the one this player syncs, and the sync card
-            // says what to do if an upload is refused.
+            // Uploads for an unverified claim are refused. Muted, not red: another listed character
+            // may be the one this player syncs.
             if (character.Verified)
             {
                 anyVerified = true;
@@ -264,8 +229,7 @@ internal sealed partial class MainWindow
             }
         }
 
-        // With no verified claim at all, the first upload is certain to be refused, so this one
-        // case is said in red, like the empty list above.
+        // With no verified claim the first upload is certain to be refused, so this is red.
         if (drawn > 0 && !anyVerified)
         {
             ImGui.Spacing();
@@ -274,10 +238,8 @@ internal sealed partial class MainWindow
                 $"Lodestone bio on {BackendHost()}, or uploads will be refused.");
         }
 
-        // The list is a snapshot from the last probe, and nothing about it says so — a user who
-        // claimed an alt on the website after setup would otherwise stare at a list that looks live
-        // and never guess that Verify doubles as refresh. During setup the probe just ran seconds
-        // ago at the user's own press, so the list cannot be stale and the hint has nothing to say.
+        // The list is the last probe's snapshot, so say that Verify refreshes it. During setup the
+        // probe has just run, so the list cannot be stale.
         if (!configuration.Settings.OnboardingComplete)
             return;
 
@@ -288,22 +250,19 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Issues one token probe per session when the Account panel first opens with a saved, usable
-    /// token — so it greets the user with the token's real state and the claimed-characters list,
-    /// instead of asking them to press Verify to learn what is already true.
+    /// Probes a saved, usable token once per session when the Account panel first opens, so it
+    /// shows the token's real state without a Verify press.
     /// </summary>
     /// <remarks>
-    /// Runs through the upload gate: a Verify press is direct user action, but this is automatic,
-    /// so it must respect the same consent switches as every other unprompted request. The flag is
-    /// deliberately not reset on failure — the unreachable notice plus the Verify button to retry
-    /// by hand is the honest resting state, not a silent retry loop.
+    /// Unlike a Verify press, this is automatic, so it goes through the upload gate like every other
+    /// unprompted request. A failure is not retried: the notice and the Verify button are enough.
     /// </remarks>
     private void TryAutoVerifyToken()
     {
         if (sessionTokenProbeRequested || verifier.InFlight)
             return;
 
-        // A probe already answered this session (the wizard's Verify, most likely) — nothing to do.
+        // A probe already answered this session, most likely the wizard's.
         if (account is not null)
         {
             sessionTokenProbeRequested = true;
@@ -323,18 +282,9 @@ internal sealed partial class MainWindow
 
     /// <summary>Folds a finished token probe into the wizard's state.</summary>
     /// <remarks>
-    /// <para>
-    /// An accepted token is also the moment the plugin first has a credential the server will answer
-    /// to, so it is where <c>/config</c> is fetched — see
-    /// <see cref="SyncManager.RequestOnboardingConfigPoll"/> for why that request is allowed to run
-    /// before onboarding is complete. Without it the wizard's consent step could not list the
-    /// server's item manifest groups, because nothing would ever have asked for them.
-    /// </para>
-    /// <para>
-    /// A one-shot without needing a flag of its own. <c>Draw</c> calls this sixty times a second, but
-    /// <see cref="TokenVerifier.TakeResult"/> hands a probe's answer out exactly once, so the body below
-    /// runs on the single frame that answer arrives and does nothing on every other.
-    /// </para>
+    /// An accepted token during onboarding fetches <c>/config</c>, so the consent step can list the
+    /// server's item groups (see <see cref="SyncManager.RequestOnboardingConfigPoll"/>). Called every
+    /// frame, but <see cref="TokenVerifier.TakeResult"/> hands each answer out once.
     /// </remarks>
     private void ConsumeTokenProbe()
     {
@@ -344,12 +294,8 @@ internal sealed partial class MainWindow
         onboarding.RecordTokenCheck(response.Status);
         account = response.Value;
 
-        // Two conditions, and both are load-bearing. The token must be one the server actually
-        // recognized — asking for a config with a token just rejected would earn a second 401 and
-        // tell nobody anything. And onboarding must still be in progress, which is the only
-        // situation the gate bypass exists for: once the wizard is done, SyncManager's own
-        // interval poll owns /config and runs through the ordinary consent gate like everything
-        // else, so there is nothing here left to bypass it for.
+        // Only a recognized token: a rejected one would earn a second 401. After onboarding,
+        // SyncManager's gated poll owns /config, so this gate bypass is for the wizard alone.
         if (onboarding.TokenCheck == TokenCheckState.Valid
             && !configuration.Settings.OnboardingComplete)
         {

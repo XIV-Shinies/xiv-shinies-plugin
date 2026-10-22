@@ -6,28 +6,18 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// Decides whether the plugin may upload anything at all, right now.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is the gate that enforces <b>consent</b>. The API client independently refuses to send a
-/// malformed token, or to send any token to an unsafe or unacknowledged backend — but it knows
-/// nothing about whether the user ever agreed to sync. Dalamud requires an explicit opt-in before
-/// non-essential data is collected, so that decision is enforced in code here, not merely reflected
-/// by a checkbox in the settings window.
-/// </para>
-/// <para>
-/// Per-category consent is a separate question, answered by
-/// <see cref="Collectors.CollectorGate"/> once an upload is permitted at all.
-/// </para>
+/// The gate that enforces <b>consent</b>, which Dalamud requires before non-essential data is
+/// collected. The API client guards the token and the backend but knows nothing about consent.
+/// Per-category consent is <see cref="Collectors.CollectorGate"/>'s question.
 /// </remarks>
 public static class UploadGate
 {
     /// <summary>
-    /// True when the plugin may make any request at all — including the <c>/config</c> poll.
+    /// True when the plugin may make any request at all, including the <c>/config</c> poll.
     /// </summary>
     /// <remarks>
-    /// Consent plus a credential, and deliberately nothing else. In particular it does not consult
-    /// the server's kill switch, because the poll that <i>reads</i> that switch has to be allowed to
-    /// run. Gating the poll on its own result would make a flipped switch permanent: the plugin
-    /// could never learn it had been flipped back.
+    /// Consent plus a credential, and nothing else. It ignores the server's kill switch, because the
+    /// poll that reads the switch has to run, or the plugin could never learn it flipped back.
     /// </remarks>
     public static bool CanContactServer(PluginSettings settings)
     {
@@ -35,8 +25,7 @@ public static class UploadGate
         if (!settings.MasterEnabled || !settings.OnboardingComplete)
             return false;
 
-        // No credential, nothing to authenticate with. Checking the shape locally avoids a request
-        // that could only ever earn an opaque 401.
+        // Checking the token's shape locally avoids a request that could only earn a 401.
         return settings.HasUsableToken();
     }
 
@@ -48,8 +37,8 @@ public static class UploadGate
         if (!CanContactServer(settings))
             return false;
 
-        // A config we have not fetched cannot forbid anything. Refusing here would strand the plugin
-        // whenever /config is unreachable, and the server enforces its own switches regardless.
+        // An unfetched config forbids nothing: refusing would strand the plugin whenever /config is
+        // unreachable, and the server enforces its own switches anyway.
         return remoteConfig is null || remoteConfig.Enabled;
     }
 }

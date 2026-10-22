@@ -6,9 +6,8 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// What a collection pass cost the frame it ran in. Extracted from the orchestrator precisely because
-// the two things it does — order by duration, and compare against a threshold — are both trivial to
-// get backwards, and the orchestrator cannot be unit-tested.
+// What a collection pass cost its frame. Ordering by duration and comparing against a threshold are
+// both easy to get backwards.
 public class CollectionCostTests
 {
     private static CollectionSnapshot Snapshot(params (string Category, double Milliseconds)[] durations)
@@ -48,8 +47,8 @@ public class CollectionCostTests
         Assert.False(cost.IsEmpty);
     }
 
-    // Slowest first: the first name in the log line is the one worth acting on. Alphabetical order
-    // would put "mounts" first here, so this test fails against the obvious wrong implementation.
+    // The first name in the log line is the one worth acting on. Alphabetical order would put
+    // "mounts" first here.
     [Fact]
     public void The_breakdown_names_the_slowest_collector_first()
     {
@@ -59,8 +58,8 @@ public class CollectionCostTests
         Assert.Equal("quests 4.0ms, minions 2.0ms, mounts 0.5ms", cost.Breakdown);
     }
 
-    // The culprit FrameBudgetWarnings keys its memory on. Taking the wrong end of the sort would
-    // name the cheapest collector instead, and every later pass would blame it again.
+    // FrameBudgetWarnings keys its memory on this. The wrong end of the sort would blame the
+    // cheapest collector on every later pass.
     [Fact]
     public void The_slowest_category_is_the_collector_that_took_longest()
     {
@@ -70,7 +69,6 @@ public class CollectionCostTests
         Assert.Equal("quests", cost.SlowestCategory);
     }
 
-    // The ordinary steady-state pass: cheap, and after the first, so neither flag fires.
     [Fact]
     public void A_cheap_pass_is_neither_over_budget_nor_alarming()
     {
@@ -80,7 +78,7 @@ public class CollectionCostTests
         Assert.False(cost.IsAlarming);
     }
 
-    // The threshold is inclusive. Exactly at the budget is already too slow to ignore.
+    // Exactly at the budget is already too slow to ignore.
     [Fact]
     public void A_pass_exactly_at_the_threshold_is_over_budget()
     {
@@ -91,9 +89,8 @@ public class CollectionCostTests
         Assert.True(cost.OverBudget);
     }
 
-    // The budget is on the TOTAL, not on any single collector. Many cheap collectors can overrun a
-    // frame just as surely as one expensive one — which is the whole reason this measurement exists,
-    // since the plugin is expected to grow more of them.
+    // The budget is on the total, not per collector: many cheap collectors overrun a frame as surely
+    // as one expensive one.
     [Fact]
     public void Many_cheap_collectors_can_overrun_the_budget_together()
     {
@@ -104,17 +101,16 @@ public class CollectionCostTests
         Assert.Equal(TimeSpan.FromMilliseconds(9), cost.Total);
     }
 
-    // Half a 60fps frame (16.7ms). A regression that loosened this to, say, a whole frame would let a
-    // visible stutter through unreported.
+    // A 60fps frame is 16.7ms. A budget of a whole frame would let a visible stutter through
+    // unreported.
     [Fact]
     public void The_budget_threshold_is_half_a_sixty_fps_frame()
     {
         Assert.Equal(TimeSpan.FromMilliseconds(8), CollectionCost.FrameBudgetWarningThreshold);
     }
 
-    // --- Which overruns are worth raising an alarm about (see CollectionCost.IsAlarming) -------
+    // --- Which overruns raise an alarm (see CollectionCost.IsAlarming) ---------------------------
 
-    // The exemption in practice: an expensive first pass reports its cost without raising an alarm.
     [Fact]
     public void The_first_pass_of_a_session_is_over_budget_without_being_alarming()
     {
@@ -124,7 +120,6 @@ public class CollectionCostTests
         Assert.False(cost.IsAlarming);
     }
 
-    // The other side of the exemption: the same cost on a later pass is the alarm's actual target.
     [Fact]
     public void A_later_pass_over_budget_is_alarming()
     {
@@ -134,8 +129,7 @@ public class CollectionCostTests
         Assert.True(cost.IsAlarming);
     }
 
-    // The exemption is about warm-up, not about being first: a cheap first pass has nothing to
-    // excuse, and must not read as though it did.
+    // The first-pass exemption is for warm-up: a cheap first pass has nothing to excuse.
     [Fact]
     public void A_cheap_first_pass_is_neither_over_budget_nor_alarming()
     {

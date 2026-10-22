@@ -7,13 +7,10 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Crucible;
 
-// Which chip the Crucible run sharing's card wears, and when the user counts as having seen it. Each
-// `[Fact]` is one test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like
-// `it.each`.
+// Which chip the Crucible run sharing's card wears, and when the user counts as having seen it.
 public class CrucibleBadgeTests
 {
-    // The server states the rules are judged against, named so each table row reads as a sentence.
-    // `const string` fixes each name when the code compiles, so `[InlineData]` can use it.
+    // Server states, named so each table row reads as a sentence.
     private const string Permits = "permits";
     private const string SharingOff = "sharing switched off";
     private const string NoEndpoint = "no crucibleRuns block";
@@ -21,12 +18,6 @@ public class CrucibleBadgeTests
     private const string Unanswered = "no /config yet";
 
     /// <summary>The <c>/config</c> a server in the named state sends, or null before one arrives.</summary>
-    // `ConfigResponse?` may be null, like `ConfigResponse | null`; `=>` makes the expression after it
-    // the whole method body. A `switch` expression picks a value by matching, like a lookup object or
-    // a chain of ternaries; `_` is the case that matches anything else. `with { ... }` copies a record
-    // with one property changed. `sharingEnabled: false` names the parameter the value fills, like
-    // `{ sharingEnabled: false }` in TypeScript; parameters left out keep their defaults. `throw` can
-    // stand where a value is expected, so a misspelled state fails loudly.
     private static ConfigResponse? Server(string state) => state switch
     {
         Permits => ConfigWithCrucible(),
@@ -37,13 +28,6 @@ public class CrucibleBadgeTests
         _ => throw new ArgumentException(state),
     };
 
-    /// <summary>
-    /// A config advertising the Crucible endpoint, with both switches on unless an argument turns
-    /// one off.
-    /// </summary>
-    // `bool sharingEnabled = true` is an optional parameter with a default, like
-    // `sharingEnabled = true` in a TypeScript signature. `new() { ... }` builds a ConfigResponse and
-    // sets these properties on it, like an object literal. `[]` is an empty list.
     private static ConfigResponse ConfigWithCrucible(
         bool sharingEnabled = true, bool globallyEnabled = true) =>
         new()
@@ -58,8 +42,6 @@ public class CrucibleBadgeTests
 
     // --- Whether the card counts as new ----------------------------------------------------------
 
-    // With a server that permits the sharing, an unseen card is new, and a seen one stays new only
-    // while its chip already went up this viewing.
     [Theory]
     [InlineData(false, false, true)]
     [InlineData(false, true, true)]
@@ -71,8 +53,7 @@ public class CrucibleBadgeTests
         Assert.Equal(expected, CrucibleBadge.IsNew(seen: seen, Server(Permits), badgedThisSession: badged));
     }
 
-    // In every other state the card is not new, even unseen and even with its chip already up: a
-    // switched-off card is not offered, and before the server answers it may not exist at all.
+    // A switched-off card is not offered, and before the server answers it may not exist at all.
     [Theory]
     [InlineData(SharingOff)]
     [InlineData(NoEndpoint)]
@@ -86,7 +67,7 @@ public class CrucibleBadgeTests
 
     // --- Which chip the card wears -----------------------------------------------------------------
 
-    // "Off" outranks "New": a switched-off card says so on both surfaces, whatever has been seen.
+    // "Off" outranks "New", whatever has been seen.
     [Theory]
     [InlineData(SharingOff)]
     [InlineData(NoEndpoint)]
@@ -102,7 +83,7 @@ public class CrucibleBadgeTests
                 seen: false, Server(server), showNewChip: false, badgedThisSession: false));
     }
 
-    // Only the settings screen draws "New"; setup shows the card as part of its purpose.
+    // Setup shows the card as part of its purpose.
     [Fact]
     public void Only_the_settings_screen_draws_new()
     {
@@ -116,8 +97,7 @@ public class CrucibleBadgeTests
                 seen: false, Server(Permits), showNewChip: false, badgedThisSession: false));
     }
 
-    // Before the server answers the card wears nothing: neither "Off", which is not known yet, nor
-    // "New", which could turn into "Off" a moment later.
+    // Not "Off", which is not known yet, nor "New", which could turn into "Off" a moment later.
     [Fact]
     public void A_card_wears_nothing_before_the_server_answers()
     {
@@ -129,7 +109,6 @@ public class CrucibleBadgeTests
 
     // --- When the card counts as seen --------------------------------------------------------------
 
-    // A viewing counts only when the card was on screen while the server permitted the sharing.
     [Theory]
     [InlineData(Permits, true, true)]
     [InlineData(Permits, false, false)]
@@ -145,8 +124,8 @@ public class CrucibleBadgeTests
             CrucibleBadge.ShowingRetires(seen: false, Server(server), onScreen: onScreen, clicked: false));
     }
 
-    // A click counts whatever the server has said: the user has plainly seen the card, and "New"
-    // must not appear later beside a box they ticked before the server answered.
+    // A click counts whatever the server has said: "New" must not appear later beside a box the user
+    // ticked before the server answered.
     [Fact]
     public void Clicking_the_card_counts_as_seeing_it()
     {
@@ -154,7 +133,7 @@ public class CrucibleBadgeTests
             CrucibleBadge.ShowingRetires(seen: false, Server(Unanswered), onScreen: true, clicked: true));
     }
 
-    // A card already recorded needs no second record, so nothing is saved again on later frames.
+    // Later frames must save nothing.
     [Fact]
     public void A_seen_card_is_never_recorded_again()
     {
@@ -164,12 +143,9 @@ public class CrucibleBadgeTests
 
     // --- One viewing, frame by frame ---------------------------------------------------------------
 
-    // The first frame shows the chip and records the card; the chip stays up for the rest of the
-    // viewing on the session flag; once the window closes and the flag is cleared, it is gone.
     [Fact]
     public void The_chip_survives_its_own_record_and_retires_when_the_window_closes()
     {
-        // `var` lets the compiler infer the type, like an unannotated `let`.
         var server = Server(Permits);
 
         // Frame 1: unseen, so the chip shows, and drawing the card on screen records it.

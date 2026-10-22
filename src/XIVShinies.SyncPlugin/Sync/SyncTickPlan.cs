@@ -6,7 +6,7 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// <summary>How much of a frame's sync work may run.</summary>
 public enum TickAction
 {
-    /// <summary>Nothing at all — the plugin must not contact the server or read the game.</summary>
+    /// <summary>Nothing at all: the plugin must not contact the server or read the game.</summary>
     Nothing,
 
     /// <summary>Refresh the server's config, but collect and upload nothing.</summary>
@@ -21,18 +21,9 @@ public enum TickAction
 /// next <c>/config</c> poll falls once it is brought forward.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is an ordering, and an ordering stated only as a sequence of early returns inside a frame
-/// callback is one a test cannot reach — the callback holds Dalamud services and cannot be
-/// constructed outside the game. Stating it here keeps the two rules that matter checkable: consent
-/// gates absolutely everything, and a halt stops the collecting and uploading without stopping a
-/// poll the server would still answer.
-/// </para>
-/// <para>
-/// Nothing here lifts a halt — only the user does, by fixing what caused it. The poll that survives
-/// one is how a change on the server's side reaches the plugin meanwhile. Whether it survives
-/// depends on which refusal raised the halt; <see cref="PollSurvivesHalt"/> is that rule.
-/// </para>
+/// Consent gates everything, and a halt stops collecting and uploading without stopping a poll the
+/// server would still answer. Only the user lifts a halt; the poll that survives it is how a change
+/// on the server's side reaches the plugin meanwhile.
 /// </remarks>
 public static class SyncTickPlan
 {
@@ -42,11 +33,10 @@ public static class SyncTickPlan
     /// </summary>
     /// <param name="haltStatus">The status that raised the halt, or null when there is none.</param>
     /// <remarks>
-    /// <c>/config</c> answers 200 or 401 and never 403. So a character refusal (any of the four
-    /// 403s) leaves the poll working, and it is how the plugin learns a server pause has lifted
-    /// while the player sorts out the claim. A token-shaped halt would draw the same 401 on every
-    /// poll, and a backend the client refused to use sends nothing at all, so neither is worth
-    /// polling through.
+    /// <c>/config</c> answers 200 or 401, never 403, so a character refusal (any of the four 403s)
+    /// leaves the poll working, and the poll shows when a server pause lifts while the player sorts out
+    /// the claim. A token-shaped halt would draw the same 401 every poll, and a backend the client
+    /// refused to use sends nothing, so neither is worth polling through.
     /// </remarks>
     public static bool PollSurvivesHalt(ApiStatus? haltStatus) =>
         haltStatus is { } status && ApiStatusMap.IsCharacterRefusal(status);
@@ -57,10 +47,9 @@ public static class SyncTickPlan
     /// <param name="due">When it was due, or null for "at the first opportunity".</param>
     /// <param name="soon">The latest it should now wait.</param>
     /// <remarks>
-    /// Bringing a poll forward never pushes one back: a poll already due sooner keeps its time, and one
-    /// due at the first opportunity stays so.
+    /// Never pushes a poll back: one already due sooner keeps its time, and one due at the first
+    /// opportunity stays so.
     /// </remarks>
-    // `DateTimeOffset?` may be null, like `Date | null`. `is { } d` matches a value and names it.
     public static DateTimeOffset? BringPollForward(DateTimeOffset? due, DateTimeOffset soon) =>
         due is { } d && d > soon ? soon : due;
 
@@ -70,9 +59,8 @@ public static class SyncTickPlan
     /// fresh install, which is what keeps it silent.
     /// </param>
     /// <param name="pollIsWorthwhile">
-    /// Whether the halt in force is one <c>/config</c> would answer normally, so a poll is still
-    /// worth making. Consulted only while <paramref name="blockedPendingUserAction"/> holds; an
-    /// unblocked tick polls regardless.
+    /// Whether <c>/config</c> would answer the halt in force normally. Consulted only while
+    /// <paramref name="blockedPendingUserAction"/> holds.
     /// </param>
     /// <param name="blockedPendingUserAction">
     /// Whether syncing has stopped for something only the user can resolve.

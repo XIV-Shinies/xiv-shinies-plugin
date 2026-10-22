@@ -4,8 +4,8 @@ using XIVShinies.SyncPlugin.Onboarding;
 
 namespace XIVShinies.SyncPlugin.Tests.Onboarding;
 
-// Turns the outcome of a GET /me probe into something the wizard can show the user. The distinction
-// that matters is "your token is wrong" (only you can fix it) versus "we could not ask" (try again).
+// Turns a GET /me probe's outcome into what the wizard shows. What matters is "your token is wrong"
+// (only you can fix it) versus "we could not ask" (try again).
 public class TokenCheckTests
 {
     [Fact]
@@ -21,15 +21,15 @@ public class TokenCheckTests
         Assert.Equal(TokenCheckState.Invalid, TokenCheck.FromApiStatus(ApiStatus.InvalidToken));
     }
 
-    // The request was never sent — a malformed token, or a backend we refuse to send it to. Telling
-    // the user "could not reach the server" would be wrong: nothing was ever asked.
+    // A malformed token or a refused backend means nothing was sent, so "could not reach the server"
+    // would be wrong.
     [Fact]
     public void A_request_that_was_never_sent_is_invalid_not_unreachable()
     {
         Assert.Equal(TokenCheckState.Invalid, TokenCheck.FromApiStatus(ApiStatus.NotConfigured));
     }
 
-    // Everything else says nothing about the token. Do not blame the user for the server being down.
+    // None of these says anything about the token; do not blame the user for the server being down.
     [Theory]
     [InlineData(ApiStatus.NetworkError)]
     [InlineData(ApiStatus.ServerError)]

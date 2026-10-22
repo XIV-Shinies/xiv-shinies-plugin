@@ -2,19 +2,16 @@ using System.Collections.Generic;
 
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
-/// <summary>One counted line of the score: how many were beaten, and the points they paid.</summary>
-/// <param name="Count">How many the run beat.</param>
-/// <param name="Points">The points the line paid.</param>
+/// <summary>One counted line of the score: how many the run beat, and the points they paid.</summary>
 public sealed record CrucibleScoreLine(int Count, int Points);
 
 /// <summary>One bonus the run earned, as the results screen drew it.</summary>
 /// <param name="Name">The bonus's name in the client's language, formatting codes removed.</param>
-/// <param name="Points">The points it paid.</param>
 public sealed record CrucibleResultBonus(string Name, int Points);
 
 /// <summary>What one familiar the run brought gained.</summary>
 /// <param name="PetId">The familiar's <c>XBMPet</c> row id.</param>
-/// <param name="RankBefore">Its true rank before the run (not the board's cap).</param>
+/// <param name="RankBefore">Its true rank before the run, not the board's cap.</param>
 /// <param name="RankAfter">Its true rank after the run.</param>
 /// <param name="ExpBefore">Its EXP toward the next rank before the run.</param>
 /// <param name="ExpAfter">Its EXP toward the next rank after the run.</param>
@@ -27,21 +24,15 @@ public sealed record CrucibleResultFamiliar(
 
 /// <summary>What the results screen showed at the end of a run.</summary>
 /// <param name="ModeText">
-/// The board's mode as drawn ("Standard" at Degree 0), formatting codes removed.
+/// The board's mode as drawn, such as "Standard" at Degree 0, formatting codes removed.
 /// </param>
 /// <param name="BaseScore">The score before bonuses.</param>
 /// <param name="PerformancePercent">The performance share, as a percentage.</param>
-/// <param name="PerformancePoints">The points the performance share paid.</param>
-/// <param name="Enemies">The enemies beaten and their points.</param>
-/// <param name="Elites">The elites beaten and their points.</param>
-/// <param name="Bosses">The bosses beaten and their points.</param>
 /// <param name="RemainingHp">
-/// The HP the run ended on. The points the screen's HP line pays are part of the base score and
-/// are a separate figure from this one.
+/// The HP the run ended on. The points the screen's HP line pays are part of the base score, a
+/// separate figure.
 /// </param>
-/// <param name="BonusTotal">The points all bonuses paid together.</param>
-/// <param name="TotalScore">The final score.</param>
-/// <param name="RankText">The run's rank as drawn ("Exemplary"), formatting codes removed.</param>
+/// <param name="RankText">The run's rank as drawn, such as "Exemplary", formatting codes removed.</param>
 /// <param name="Bonuses">The bonuses earned, in the screen's order.</param>
 /// <param name="Familiars">
 /// The familiars brought, in the screen's order; one left behind is not listed.
@@ -63,24 +54,15 @@ public sealed record CrucibleResultsReading(
 
 /// <summary>Reads the results screen (<c>XBMResult</c>) from the values the window was given.</summary>
 /// <remarks>
-/// <para>
-/// The screen carries the score as numbers at fixed places (the performance share and the counted
-/// lines are drawn as text, such as "100%" and "x 3"), then a count of bonuses with their names and
-/// points in two runs of sixteen places, the total and the rank, and a count of familiars brought
-/// with five runs of sixteen places: each familiar's icon, its EXP toward the next rank before and
-/// after, and its rank before and after. A familiar's id is its icon minus 242000.
-/// </para>
-/// <para>
-/// The mode, the rank and the bonus names stay as the text the screen drew. They are in the client's
-/// language; turning them into language-independent ids is a lookup against the game's own sheets,
-/// which <see cref="CrucibleNames"/> does.
-/// </para>
+/// The screen carries the score at fixed places, with the performance share and counted lines drawn
+/// as text such as "100%" and "x 3"; then a bonus count with names and points in two runs of sixteen
+/// places, the total and the rank; then a familiar count with five runs of sixteen places: icon, EXP
+/// before and after, rank before and after. The mode, rank and bonus names stay as the text drawn,
+/// in the client's language, for <see cref="CrucibleNames"/> to resolve to ids.
 /// </remarks>
 public static class CrucibleResults
 {
-    // Where the score sits: the mode and base score, the performance and counted lines' text and
-    // points, the HP the run ended on, and the bonus total. The performance line's text is its
-    // percentage; the counted lines' text is their count.
+    // The score.
     private const int ModeIndex = 1;
     private const int BaseScoreIndex = 2;
     private const int PerformanceTextIndex = 3;
@@ -94,17 +76,16 @@ public static class CrucibleResults
     private const int RemainingHpIndex = 11;
     private const int BonusTotalIndex = 13;
 
-    // The bonuses: their count, then sixteen places of names and sixteen of points.
+    // The bonuses.
     private const int BonusCountIndex = 14;
     private const int FirstBonusName = 15;
     private const int FirstBonusPoints = 31;
 
-    // The final score and the rank it earned.
+    // The final score and its rank.
     private const int TotalScoreIndex = 68;
     private const int RankIndex = 69;
 
-    // The familiars brought: their count, then sixteen places each of icons, EXP before, EXP after,
-    // rank before and rank after.
+    // The familiars brought.
     private const int FamiliarCountIndex = 72;
     private const int FirstFamiliarIcon = 73;
     private const int FirstExpBefore = 89;
@@ -127,7 +108,6 @@ public static class CrucibleResults
     /// <summary>
     /// Reads the results screen, or null when the values are not the layout this reader knows.
     /// </summary>
-    /// <param name="values">Every value the window was handed, in order.</param>
     public static CrucibleResultsReading? Read(IReadOnlyList<AddonValue> values)
     {
         if (values.Count <= LastIndex)
@@ -138,8 +118,6 @@ public static class CrucibleResults
         if (mode is null || rankText is null)
             return null;
 
-        // Each score number has to be there. `||` stops at the first `is not { } name` that is true
-        // (that value is missing) and the `if` returns, so past it all nine names hold their values.
         if (ReadInt(values, BaseScoreIndex) is not { } baseScore
             || CrucibleText.ReadFirstNumber(values[PerformanceTextIndex].Text) is not { } percent
             || ReadInt(values, PerformancePointsIndex) is not { } performancePoints
@@ -215,8 +193,6 @@ public static class CrucibleResults
             return null;
 
         var familiars = new List<CrucibleResultFamiliar>((int)count);
-
-        // A HashSet answers "seen this one already?" in one step, like a JavaScript Set.
         var seen = new HashSet<uint>();
         for (var place = 0; place < count; place++)
         {
@@ -232,8 +208,7 @@ public static class CrucibleResults
                 return null;
             }
 
-            // A rank never falls over a run, and no familiar is brought twice. `seen.Add` returns
-            // false for an id already in the set (JavaScript's `Set.add` returns the set instead).
+            // A rank never falls over a run, and no familiar is brought twice.
             var petId = icon - IconBase;
             if (rankAfter < rankBefore || !seen.Add(petId))
                 return null;
@@ -245,12 +220,9 @@ public static class CrucibleResults
     }
 
     /// <summary>
-    /// The number at a place as an <c>int</c>, or null when there is none or it is too large for one.
+    /// The number at a place as an <c>int</c>, or null when there is none or it is above
+    /// <c>int.MaxValue</c>, which a cast would turn negative.
     /// </summary>
-    /// <remarks>
-    /// A value's number is a <c>uint</c>, and one above <c>int.MaxValue</c> would turn negative if
-    /// cast, so such a number is refused rather than misread.
-    /// </remarks>
     private static int? ReadInt(IReadOnlyList<AddonValue> values, int index) =>
         values[index].Number is { } number && number <= int.MaxValue ? (int)number : null;
 

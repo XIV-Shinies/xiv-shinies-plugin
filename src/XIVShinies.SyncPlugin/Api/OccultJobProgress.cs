@@ -8,8 +8,8 @@ namespace XIVShinies.SyncPlugin.Api;
 public sealed record OccultJobProgress
 {
     /// <summary>
-    /// Experience toward the next level, exactly as the game reports it. Range enforcement
-    /// happens at the wire boundary (<see cref="SyncFacts.Progression"/>), not here.
+    /// Experience toward the next level, exactly as the game reports it.
+    /// <see cref="SyncFacts.Progression"/> enforces the range at the wire boundary.
     /// </summary>
     public required uint Exp { get; init; }
 

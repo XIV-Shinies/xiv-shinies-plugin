@@ -5,28 +5,13 @@ namespace XIVShinies.SyncPlugin;
 /// offer.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Every surface that reports a server-side "off" reaches for one of these, and they sit here,
-/// owned by no single feature, because the collections, the live tracker and the Crucible run
-/// sharing all use them. Their rows are drawn on the same screen, so two copies of these strings
-/// would let a reword leave them saying different things about the same state, in view of each
-/// other.
-/// </para>
-/// <para>
-/// The distinctions between them are the whole point: one names a decision about a single thing,
-/// one names that decision taken for every collection, one names syncing switched off altogether,
-/// and one names a feature the website does not offer. Saying the first during either of the last
-/// two sends the user looking for a decision nobody made.
-/// </para>
-/// <para>
-/// Each names the website by its address, passed in as <c>host</c> (see
-/// <see cref="HostPlaceholder"/> for why an address rather than a generic word).
-/// </para>
+/// The collections, the live tracker and the Crucible run sharing draw these on one screen, so one
+/// copy keeps a reword from making them disagree. The four differ on purpose: a decision about one
+/// thing, that decision for every collection, syncing switched off altogether, and a feature not
+/// offered; saying the first during either of the last two sends the user looking for a decision
+/// nobody made. Each names the website by its address (see <see cref="HostPlaceholder"/>).
 /// </remarks>
-// A `static class` holds only shared members and is never instantiated: a module of functions.
-// Each member is a method rather than a `const`, because a `const` is fixed when the code compiles
-// and the address is only known once the plugin runs. `$"...{host}..."` is an interpolated string,
-// like a TypeScript template literal.
+// Methods rather than consts, because the address is known only once the plugin runs.
 public static class ServerOffCopy
 {
     /// <summary>
@@ -50,30 +35,24 @@ public static class ServerOffCopy
     /// collection one by one, without pausing syncing.
     /// </summary>
     /// <remarks>
-    /// Each row wears its own "Off" chip, but a whole list of them, all grayed, needs one sentence
-    /// above it saying the choice is the website's and the user's own is kept.
+    /// Each row wears its own "Off" chip, but a whole grayed list needs one sentence above it saying
+    /// the choice is the website's and the user's own is kept.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string EveryCollection(string host) =>
         $"{host} has switched off every collection for now. Your own choices are unchanged.";
 
     /// <summary>
-    /// What everything says while the website has paused syncing altogether.
+    /// What everything says while syncing is off altogether on the website.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The website sends the same <c>enabled: false</c> for two different switches: its own pause,
-    /// and the "Sync from the plugin" switch on the player's profile there. The plugin cannot tell
-    /// them apart, so the sentence names no audience and points at the one the player can flip.
-    /// </para>
-    /// <para>
-    /// Says plainly that the user's own settings survive, because the visible effect of a pause is
-    /// every checkbox clearing at once — which looks exactly like the plugin having discarded their
-    /// choices. Nothing is written to their stored consent while this is showing.
-    /// </para>
+    /// The website sends the same <c>enabled: false</c> for its own pause and for the "Sync from the
+    /// plugin" switch on the player's profile, and the plugin cannot tell them apart, so the sentence
+    /// names no audience and points at the switch the player can flip. A pause clears every checkbox at
+    /// once, which looks like the plugin discarded the user's choices, so this says plainly that they
+    /// survive. Nothing is written to their stored consent while it shows.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
-    // `\"` puts a double quote inside a string, the same escape as in TypeScript.
     public static string Paused(string host) =>
         $"Syncing is off on {host}. If you turned off \"Sync from the plugin\" on your profile, "
         + "turn it back on there. Your own choices are unchanged.";

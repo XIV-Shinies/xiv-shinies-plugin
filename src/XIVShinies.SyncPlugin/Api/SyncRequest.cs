@@ -22,14 +22,8 @@ public enum SyncTrigger
 }
 
 /// <summary>
-/// The body of <c>POST /api/plugin/v1/sync</c> — a collection snapshot for one character.
+/// The body of <c>POST /api/plugin/v1/sync</c>: a collection snapshot for one character.
 /// </summary>
-// A `record` is a class built for holding data: the compiler writes value-based equality and a
-// readable ToString for you, and `with` expressions let you copy-and-tweak
-// (`request with { Trigger = ... }`), much like object spread `{...obj, trigger: x}` in JS.
-// `required` forces the caller to set the property in the object initializer — the compiler
-// refuses to build the object otherwise. `init` means it can only be set at construction, never
-// reassigned afterwards.
 public sealed record SyncRequest
 {
     /// <summary>SHA-256 of the character's ContentId, lowercase hex. The raw id never travels.</summary>
@@ -45,8 +39,8 @@ public sealed record SyncRequest
     public required string PluginVersion { get; init; }
 
     /// <summary>
-    /// Optional. The <c>manifestVersion</c> from <c>/config</c> that the items list was built
-    /// against. Null here means the key is omitted from the JSON entirely.
+    /// The <c>manifestVersion</c> from <c>/config</c> that the items list was built against. Optional:
+    /// null omits the key from the JSON.
     /// </summary>
     public string? ManifestVersion { get; init; }
 
@@ -54,72 +48,43 @@ public sealed record SyncRequest
     public required SyncTrigger Trigger { get; init; }
 
     /// <summary>
-    /// The facts being uploaded, keyed by category (<c>"quests"</c>, <c>"items"</c>, …).
+    /// The facts being uploaded, keyed by category, such as <c>"quests"</c> or <c>"items"</c>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A dictionary rather than one named property per category, on purpose. A collector announces
-    /// its own <c>CategoryKey</c> and contributes its facts under it, so adding a new collection is
-    /// one new collector class — nothing here changes. Naming the categories in this type would
-    /// force every caller that places a result to branch on the category name, which is exactly
-    /// what the extensibility contract forbids.
-    /// </para>
-    /// <para>
-    /// <b>A category that could not be read must simply be absent from this dictionary</b>, never
-    /// present with an empty array. Absence means "not read this time"; an empty array means "read,
-    /// and it was empty". That distinction is the monotonic-write rule.
-    /// </para>
-    /// <para>
-    /// The values are <see cref="JsonNode"/> rather than <c>object</c> because the shapes differ
-    /// per category — id-lists are arrays of numbers, <c>items</c> is an array of objects — and a
-    /// JsonNode serializes exactly as built, with no polymorphism surprises.
-    /// </para>
+    /// A dictionary, so a new collection is one new collector and nothing branches on a category name.
+    /// <b>A category that could not be read is absent, never an empty array</b>: absence means "not
+    /// read this time", an empty array means "read, and it was empty" (the monotonic-write rule).
+    /// Values are <see cref="JsonNode"/> because shapes differ per category, and a node serializes
+    /// exactly as built.
     /// </remarks>
     public required Dictionary<string, JsonNode> Collections { get; init; }
 
     /// <summary>
-    /// Per-category completeness declarations (<c>"full"</c> per
-    /// <see cref="CollectionScopeValues"/>), or null when there is nothing to declare — null keys
-    /// are omitted from the JSON, and an omitted key means "partial" on the server.
+    /// Per-category completeness declarations (<c>"full"</c>, per <see cref="CollectionScopeValues"/>),
+    /// or null when there is nothing to declare. An omitted key means "partial" on the server.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This is the one way an id's ABSENCE from a list becomes meaningful. Normally a category's
-    /// list proves only what is present; declaring it <c>"full"</c> asserts it is the character's
-    /// complete set at upload time, which lets the server surface a player's own manual mark that
-    /// the plugin's complete list contradicts ("Marked by you — the plugin didn't find it"). The
-    /// server never infers completeness — a short list is indistinguishable from a small
-    /// collection — so an upload that does not declare it carries no evidence of absence.
-    /// </para>
-    /// <para>
-    /// Category-keyed like <see cref="Collections"/>, and for the same reason: each collection
-    /// declares its own completeness and the builder passes it through, so no caller ever branches
-    /// on a category name.
-    /// </para>
+    /// The one way an id's absence from a list becomes meaningful: <c>"full"</c> asserts the list is
+    /// the character's complete set, so the server may surface a manual mark the list contradicts. The
+    /// server never infers completeness, so an undeclared upload carries no evidence of absence. Each
+    /// collection declares its own and the builder passes it through, so nothing branches on a name.
     /// </remarks>
     public Dictionary<string, string>? CollectionScopes { get; init; }
 
     /// <summary>
-    /// Per-source scan status (inventory live, retainers cached, armoire loaded, etc.), or null when
-    /// not present. Optional on the wire: omitted when null or empty.
+    /// Per-source scan status (inventory live, retainers cached, armoire loaded), or null. Optional on
+    /// the wire: omitted when null or empty.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Accompanies item counts: it tells the server how each storage location was read, which is
-    /// what makes a low or zero count judgeable (was the saddlebag ever scanned?). Other
-    /// categories are single unlock flags with no physical storage locations to describe.
-    /// </para>
-    /// <para>
-    /// Source-keyed, never category-keyed: any collector may report on any source without special
-    /// casing by category name. A future category can use the same infrastructure.
-    /// </para>
+    /// It tells the server how each storage location was read, which makes a low or zero item count
+    /// judgeable. Source-keyed, never category-keyed (see <see cref="SourceKeys"/>).
     /// </remarks>
     public Dictionary<string, ItemSourceStatus>? ItemSources { get; init; }
 }
 
 /// <summary>
 /// The values the contract accepts in <see cref="SyncRequest.CollectionScopes"/>. Anything else is
-/// rejected with a 400, so the strings live here rather than being retyped at call sites.
+/// rejected with a 400.
 /// </summary>
 public static class CollectionScopeValues
 {
@@ -127,8 +92,8 @@ public static class CollectionScopeValues
     public const string Full = "full";
 
     /// <summary>
-    /// Anything less than complete. Also what an omitted key means, so the plugin never actually
-    /// sends this value — it exists to document the contract's full value set.
+    /// Anything less than complete. An omitted key already means this, so the plugin never sends it;
+    /// it documents the contract's full value set.
     /// </summary>
     public const string Partial = "partial";
 }
@@ -140,8 +105,7 @@ public static class CollectionScopeValues
 public static class SyncFacts
 {
     /// <summary>Facts for a category that is a plain list of unlocked/completed IDs.</summary>
-    // SerializeToNode turns a value into an in-memory JSON tree rather than a string, so it can be
-    // dropped into a larger document and serialized once, later.
+    // A node rather than a string, so the whole request serializes once.
     public static JsonNode Ids(IReadOnlyList<uint> ids) =>
         JsonSerializer.SerializeToNode(ids, ApiJson.Options)!;
 
@@ -154,18 +118,16 @@ public static class SyncFacts
     /// journal is currently on, as an object keyed by quest id.
     /// </summary>
     /// <remarks>
-    /// Built by hand rather than serialized from the dictionary, because JSON object keys are
-    /// strings and the ids must become plain decimal strings (<c>"70562"</c>) — a serializer's
-    /// dictionary-key policy is one more thing that could silently reshape them.
+    /// Built by hand so the ids become plain decimal strings (<c>"70562"</c>), which a dictionary-key
+    /// policy could reshape.
     /// </remarks>
     public static JsonNode Sequences(IReadOnlyDictionary<uint, byte> sequences)
     {
         var facts = new JsonObject();
         foreach (var (questId, sequence) in sequences)
         {
-            // Widened to int before it enters the node: an in-memory JsonValue remembers the exact
-            // CLR type it was built from, so a byte-backed node would refuse GetValue<int>() until
-            // serialized. The wire output is the same plain JSON number either way.
+            // Widened to int: an in-memory JsonValue keeps its CLR type, so a byte-backed node
+            // refuses GetValue<int>() until serialized. The wire output is the same.
             facts[questId.ToString(CultureInfo.InvariantCulture)] = (int)sequence;
         }
 
@@ -177,11 +139,9 @@ public static class SyncFacts
     /// <c>MKDSupportJob</c> row id, plus the optional knowledge sighting.
     /// </summary>
     /// <remarks>
-    /// Built by hand like <see cref="Sequences"/>, and for the same key reason — job ids must
-    /// become plain decimal strings. The knowledge key is present
-    /// only when an observation exists: the contract reads its absence as "never sighted", and
-    /// its <c>observedAt</c> must be a second-exact UTC string with a trailing <c>Z</c> (the
-    /// server rejects numeric-offset forms).
+    /// Built by hand so the job ids become plain decimal strings. The knowledge key is present only
+    /// with an observation, since the contract reads its absence as "never sighted", and its
+    /// <c>observedAt</c> must be second-exact UTC with a trailing <c>Z</c>, never a numeric offset.
     /// </remarks>
     public static JsonNode Progression(
         IReadOnlyDictionary<byte, OccultJobProgress> jobs,
@@ -193,18 +153,14 @@ public static class SyncFacts
         var jobsNode = new JsonObject();
         foreach (var (jobId, progress) in jobs)
         {
-            // An exp beyond the schema's ceiling is a misread (the game's real values sit far
-            // below it), not a fact about the character. The job is OMITTED, never clamped:
-            // under monotonic writes an absent id means "not read" and costs nothing, whereas
-            // writing the ceiling would pin the job at a maximum the server can never walk
-            // back — every honest later value would look stale. Sending it raw is not an
-            // option either: one out-of-range value makes the server reject the whole upload.
+            // An exp past the ceiling is a misread, so the job is left out ("not read"). Clamping
+            // would pin a maximum the server never walks back; sending it raw fails the whole upload.
             if (progress.Exp > maxExp)
                 continue;
 
             jobsNode[jobId.ToString(CultureInfo.InvariantCulture)] = new JsonObject
             {
-                // Int-typed for the same JsonValue-CLR-type reason Sequences documents.
+                // Widened to int so the node answers GetValue<int>() before serialization.
                 ["exp"] = (int)progress.Exp,
                 ["level"] = (int)progress.Level,
             };
@@ -233,10 +189,9 @@ public static class SyncFacts
 
 /// <summary>A beast the character has forged a pact with, and what is known about that pact.</summary>
 /// <remarks>
-/// An object rather than a bare id because the contract describes a pact as more than its
-/// existence: a beast also carries a rank and a battlehorn slot. A field the plugin has not read is
-/// left off, which is exactly how the contract expects an unreadable fact to arrive. No source the
-/// plugin reads carries the battlehorn slot, so it is never sent.
+/// The contract gives a pact a rank and a battlehorn slot as well as its existence. An unread field is
+/// left off, as the contract expects; no source the plugin reads carries the battlehorn slot, so it is
+/// never sent.
 /// </remarks>
 public sealed record TamedBeast
 {
@@ -253,12 +208,9 @@ public sealed record TamedBeast
     public const int MaxRank = 25;
 
     /// <summary>
-    /// The beast's rank, <see cref="MinRank"/>–<see cref="MaxRank"/>, or null when unread.
+    /// The beast's rank, <see cref="MinRank"/> to <see cref="MaxRank"/>, or null when unread.
     /// </summary>
-    /// <remarks>
-    /// <c>int?</c> is a nullable int, like <c>number | null</c> in TypeScript. The shared serializer
-    /// leaves a null field off the wire entirely rather than writing <c>"rank": null</c>.
-    /// </remarks>
+    /// <remarks>A null is left off the wire, not written as <c>"rank": null</c>.</remarks>
     public int? Rank { get; init; }
 }
 
@@ -266,41 +218,35 @@ public sealed record TamedBeast
 public sealed record ItemPossession
 {
     /// <summary>The item ID, taken from the server's manifest.</summary>
-    // `uint` is an unsigned 32-bit integer — it cannot be negative. There is no JS equivalent
-    // (all JS numbers are doubles); using it here encodes the contract's "positive integer"
-    // constraint in the type itself rather than relying on a runtime check.
+    // The contract requires a positive integer. Unsigned rules out negatives, and
+    // ItemTallies.BuildPossessions skips a zero id.
     public required uint Id { get; init; }
 
     /// <summary>
-    /// How many normal-quality copies are held. Zero is meaningful: it proves nothing, but it is
-    /// valid.
+    /// How many normal-quality copies are held. Zero is a reported fact: it proves no relic step, but
+    /// it sets a count-tracked item's total to zero (an omit-when-unseen id's zero is dropped instead).
     /// </summary>
     public required uint Count { get; init; }
 
     /// <summary>
-    /// How many high-quality copies are held, or null when none — null keys are omitted from
-    /// the JSON entirely. <c>count</c> stays normal-quality only; the server
-    /// decides whether HQ satisfies a requirement. The plugin reports raw facts per quality
-    /// and never sums them.
+    /// How many high-quality copies are held, or null when none; null is omitted from the JSON.
     /// </summary>
     /// <remarks>
-    /// <c>uint?</c> is a nullable value type — like <c>number | null</c> in TypeScript. Plain
-    /// <c>uint</c> cannot be null, so the <c>?</c> is what makes "no HQ copies" expressible as
-    /// key-absence on the wire.
+    /// <c>count</c> stays normal-quality only. The plugin reports each quality raw and never sums them;
+    /// the server decides whether HQ satisfies a requirement.
     /// </remarks>
     public uint? HqCount { get; init; }
 
-    /// <summary>
-    /// How many collectable-quality copies are held, or null when none. Collectables are the
-    /// same item id carrying a collectability flag (they can never also be HQ); turn-in
-    /// materials like Gobbiegoo only exist in this form.
-    /// </summary>
+    /// <summary>How many collectable-quality copies are held, or null when none.</summary>
+    /// <remarks>
+    /// A collectable is the same item id with a collectability flag, never also HQ; turn-in materials
+    /// such as Gobbiegoo exist only in this form.
+    /// </remarks>
     public uint? CollectableCount { get; init; }
 
     /// <summary>
-    /// False when the count came from a cache rather than a live container read. The server
-    /// deliberately ignores this — a stale positive is still a positive — but it is reported
-    /// honestly.
+    /// False when the count came from a cache rather than a live container read. The server ignores
+    /// it, since a stale positive is still a positive, but it is reported honestly.
     /// </summary>
     public required bool Fresh { get; init; }
 }

@@ -6,32 +6,23 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// Decides which truncation warnings to log this pass, remembering what it has already said.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Lives outside the orchestrator because it is a decision, not plumbing: given a set of clipped
-/// categories, the current manifest version, and what was said before, which lines should be
-/// logged. That makes it pure — no Dalamud services, no logger, no clock — and therefore
-/// unit-testable, which the orchestrator itself is not.
-/// </para>
-/// <para>
-/// Not thread-safe, and does not need to be: the collection pass that drives it is framework
-/// thread only, so there is a single writer and no lock is required.
-/// </para>
+/// Holds no Dalamud services, logger or clock: it returns the lines and the orchestrator logs them.
+/// Not thread-safe; only the framework-thread collection pass calls it.
 /// </remarks>
 public sealed class ManifestTruncationWarnings
 {
     /// <summary>
-    /// Per category, the manifest version its warning was last logged for. A category present
-    /// with a null value was warned about under a config that carried no version.
+    /// Per category, the manifest version its warning was last logged for. A null value means it was
+    /// logged under a config with no version.
     /// </summary>
     private readonly Dictionary<string, string?> warnedVersions = [];
 
-    /// <summary>Categories whose warning does not track a version, and so is logged once.</summary>
+    /// <summary>Categories whose warning tracks no version, and so is logged once.</summary>
     private readonly HashSet<string> warnedOnce = [];
 
     /// <summary>
-    /// The lines to log for this pass, in catalog order. Empty when every clipped category has
-    /// already been reported, which is the usual answer — the sweep cadence would otherwise
-    /// repeat the same warning every pass.
+    /// The lines to log for this pass, in catalog order. Usually empty: each clip is reported once,
+    /// not on every sweep.
     /// </summary>
     /// <param name="truncatedCategoryKeys">
     /// The categories whose manifest the server sent over the ceiling (see
@@ -43,9 +34,8 @@ public sealed class ManifestTruncationWarnings
     {
         var lines = new List<string>();
 
-        // Walked in catalog order rather than in the set's, because a HashSet does not promise
-        // one — this is what makes the log deterministic when two manifests clip together. A
-        // clipped key the catalog does not know has no wording to log, so it is passed over.
+        // Catalog order, because a HashSet promises none; it keeps the log stable when two manifests
+        // clip together. A key the catalog does not know has no wording, so it is skipped.
         foreach (var descriptor in ManifestCatalog.All)
         {
             if (!truncatedCategoryKeys.Contains(descriptor.CategoryKey))
@@ -64,8 +54,8 @@ public sealed class ManifestTruncationWarnings
     /// <summary>True when this clip has not yet been reported under the terms that identify it.</summary>
     private bool ShouldWarn(ManifestDescriptor descriptor, string? manifestVersion)
     {
-        // A manifest the version hash does not cover cannot tell a new clip from the one already
-        // reported, so it gets one line for the session rather than a promise it cannot keep.
+        // The version hash does not cover this manifest, so a new clip looks like the old one. It
+        // gets one line per session.
         if (!descriptor.CoveredByManifestVersion)
             return !warnedOnce.Contains(descriptor.CategoryKey);
 
@@ -73,7 +63,7 @@ public sealed class ManifestTruncationWarnings
             || warnedFor != manifestVersion;
     }
 
-    /// <summary>Records that this category's warning has now been logged.</summary>
+    /// <summary>Records that this category's warning was logged.</summary>
     private void Remember(ManifestDescriptor descriptor, string? manifestVersion)
     {
         if (descriptor.CoveredByManifestVersion)

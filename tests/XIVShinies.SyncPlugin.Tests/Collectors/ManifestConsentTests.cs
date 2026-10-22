@@ -7,16 +7,12 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The one-time group migration carries a user's existing consent onto the server's legacy groups, and it
-// has to know whose consent that is. Asking the collectors — rather than naming the category — is what
-// keeps the sync orchestrator free of category names, which the extensibility contract requires.
+// The one-time group migration carries a user's consent onto the server's legacy groups. It asks the
+// collectors whose consent that is, so the sync orchestrator names no category.
 public class ManifestConsentTests
 {
-    // A category this plugin has never heard of — the gate below rides on it.
     private const string UnknownCategory = "facewear";
 
-    // The Dalamud-free stand-in for a real collector: it answers the same self-description questions (its
-    // key, and whether it is manifest-driven) without loading a game assembly.
     private sealed class FakeCollector : ICollector
     {
         public FakeCollector(string categoryKey, bool usesItemManifest)
@@ -40,8 +36,8 @@ public class ManifestConsentTests
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] { 1 });
     }
 
-    // Pins the exclusion the one no-click consent path depends on: a category whose groups the
-    // user answers separately is left out. See ManifestConsent.FixedScopeCategoryKeys for why.
+    // The one no-click consent path depends on leaving out a category whose groups the user answers
+    // separately; ManifestConsent.FixedScopeCategoryKeys explains why.
     [Fact]
     public void Only_categories_a_tick_settles_on_their_own_have_a_fixed_scope()
     {
@@ -79,8 +75,7 @@ public class ManifestConsentTests
         Assert.True(ManifestConsent.AnyManifestCategoryEnabled(collectors, settings));
     }
 
-    // A collection that is not driven by the manifest has no groups to migrate consent onto, so its
-    // opt-in says nothing about the item groups.
+    // A collection without a manifest has no groups to carry consent onto.
     [Fact]
     public void A_category_that_is_not_manifest_driven_does_not_count()
     {
@@ -96,7 +91,6 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.AnyManifestCategoryEnabled(collectors, settings));
     }
 
-    // A manifest-driven category the user never opted into gives no consent to carry over.
     [Fact]
     public void A_manifest_driven_category_the_user_left_off_gives_nothing_to_carry_over()
     {
@@ -105,9 +99,7 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.AnyManifestCategoryEnabled(collectors, new PluginSettings()));
     }
 
-    // THE GATE: a manifest-driven collection this plugin has never heard of answers for its own consent,
-    // exactly as the shipped one does. A category-name check in the orchestrator would fail this test,
-    // which is the whole point of it.
+    // The gate: a category-name check in the orchestrator would fail this test.
     [Fact]
     public void An_unknown_manifest_driven_category_answers_for_its_own_consent()
     {
@@ -127,12 +119,10 @@ public class ManifestConsentTests
     }
 
     // --- The category/group agreement rules -------------------------------------------------
-    // A category and its groups cannot send anything without each other, so the two checkboxes are
-    // written together. These rules decide what the user actually consented to, which is why they live
-    // here and not in the draw code.
+    // A category and its groups send nothing without each other, so their checkboxes are written
+    // together. These rules decide what the user consented to, so they live here, not in the draw code.
 
-    // The parent defaults to server-permitted: these tests are about the consent rules between a
-    // category and its groups, and a server-off parent is a separate concern with its own tests.
+    // The parent defaults to server-permitted; a server-off parent has its own tests.
     private static ItemGroupRow GroupRow(string key, bool enabled = false, bool parentServerEnabled = true) =>
         new()
         {
@@ -161,8 +151,8 @@ public class ManifestConsentTests
         Groups = groups,
     };
 
-    // Ticking a category ticks the groups beneath it: those groups ARE what the category sends, and a
-    // ticked category with every group off would upload nothing at all.
+    // The groups are what the category sends, so a ticked category with every group off would upload
+    // nothing.
     [Fact]
     public void Ticking_a_category_ticks_every_group_the_user_can_see_under_it()
     {
@@ -189,8 +179,8 @@ public class ManifestConsentTests
         Assert.Empty(settings.EnabledItemGroupKeys);
     }
 
-    // Only the groups the user is looking at are written. A group that is not on the row — one the server
-    // added after this list was built — is left exactly as it was, neither granted nor revoked.
+    // A group not on the row, such as one the server added after the list was built, is neither granted
+    // nor revoked.
     [Fact]
     public void Only_the_groups_on_the_row_are_ever_written()
     {
@@ -205,12 +195,9 @@ public class ManifestConsentTests
         ManifestConsent.SetRowConsent(row, enabled: false, settings);
         Assert.False(settings.IsItemGroupEnabled("proofs"));
 
-        // Untouched throughout: it was never on the row.
         Assert.True(settings.IsItemGroupEnabled("some-other-collections-group"));
     }
 
-    // The ordinary collection: no manifest, no groups, just a checkbox. Writing its consent must not
-    // invent group keys for it.
     [Fact]
     public void A_category_with_no_groups_writes_only_itself()
     {
@@ -222,8 +209,8 @@ public class ManifestConsentTests
         Assert.Empty(settings.EnabledItemGroupKeys);
     }
 
-    // Turning a group ON turns its category on with it: a group's ids are only ever scanned as part of
-    // its category's pass, so a group without its category is a consent that could never be honored.
+    // A group is scanned only in its category's pass, so a group without its category is consent that
+    // could never be honored.
     [Fact]
     public void Ticking_a_group_ticks_its_category()
     {
@@ -237,8 +224,8 @@ public class ManifestConsentTests
         Assert.False(settings.IsItemGroupEnabled("materials"));
     }
 
-    // Turning the LAST group off turns the category off. This is what makes "category on, every group
-    // off" — a collection that presents itself as enabled and uploads nothing — unreachable by hand.
+    // Keeps "category on, every group off", which looks enabled and uploads nothing, out of reach by
+    // hand.
     [Fact]
     public void Unticking_the_last_group_unticks_its_category()
     {
@@ -252,8 +239,7 @@ public class ManifestConsentTests
         Assert.False(settings.IsCategoryEnabled("items"));
     }
 
-    // Unticking one of several leaves the category on: it still has a group to scan, and narrowing the
-    // selection group by group is exactly what these checkboxes are for.
+    // It still has a group to scan, and narrowing group by group is what these checkboxes are for.
     [Fact]
     public void Unticking_one_of_several_groups_leaves_the_category_on()
     {
@@ -282,7 +268,7 @@ public class ManifestConsentTests
         Assert.True(ManifestConsent.AllConsentGiven(rows));
     }
 
-    // The state of every fresh install: the collections are there and the user has ticked none of them.
+    // One category off leaves the box unticked, even while another is on.
     [Fact]
     public void All_collections_reads_as_unticked_while_a_category_is_off()
     {
@@ -291,8 +277,8 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.AllConsentGiven(rows));
     }
 
-    // A category whose groups are all off uploads nothing, so a box promising "all collections" must not
-    // read as ticked while one of them is off.
+    // The box promises every collection in full, so one group left off under a ticked category keeps
+    // the box unticked.
     [Fact]
     public void All_collections_reads_as_unticked_while_a_group_is_off()
     {
@@ -306,8 +292,8 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.AllConsentGiven(rows));
     }
 
-    // A box seeded true and then shown nothing would render ticked while nothing whatsoever is on — the
-    // one reading a consent control must never give.
+    // A box seeded true with nothing under it would read as ticked while nothing is on, the one reading
+    // a consent control must never give.
     [Fact]
     public void All_collections_never_reads_as_ticked_when_there_is_nothing_to_tick()
     {
@@ -317,8 +303,8 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.AllConsentGiven(serverDisabledOnly));
     }
 
-    // A row the server switched off is not the user's to answer for, and its own control is drawn grayed
-    // out — so it neither holds the box unticked nor gets written by it.
+    // A server-off row is not the user's to answer and draws grayed, so it neither holds the box
+    // unticked nor gets written by it.
     [Fact]
     public void A_server_disabled_row_does_not_hold_the_all_collections_box_unticked()
     {
@@ -332,10 +318,8 @@ public class ManifestConsentTests
     }
 
     // --- "The server asked, and the user has not agreed to answer" --------------------------
-    // The rule that decides whether a manifest-driven collection is scanned at all. It lives here, and
-    // not in the collector that acts on it, because that collector reads game memory and cannot be
-    // constructed outside the game — while this decision is pure, and shipping it wrong would mean the
-    // plugin quietly telling the user it read a collection it never looked at.
+    // Decides whether a manifest-driven collection is scanned at all. Get it wrong and the plugin tells
+    // the user it read a collection it never looked at.
 
     private static CollectContext ContextWith(
         IReadOnlyList<ItemManifestGroup>? groups, params string[] enabledGroupKeys) =>
@@ -372,8 +356,8 @@ public class ManifestConsentTests
         Assert.False(ManifestConsent.GroupsOfferedButNoneEnabled(context));
     }
 
-    // A server that offers no groups at all gates the manifest on the category checkbox alone, so there
-    // is no group consent to be missing. Distinct from the case above: nothing was asked of the user.
+    // With no groups offered, the category checkbox alone gates the manifest, so no group consent can be
+    // missing.
     [Fact]
     public void A_server_that_offers_no_groups_asks_nothing_of_the_user()
     {
@@ -382,8 +366,7 @@ public class ManifestConsentTests
             ContextWith(Array.Empty<ItemManifestGroup>())));
     }
 
-    // No config means the plugin does not yet know what to look for, which is a different miss with its
-    // own line in the settings window (CollectSkipReasons.NoRemoteConfig).
+    // No config is a different miss with its own line: CollectSkipReasons.NoRemoteConfig.
     [Fact]
     public void No_config_at_all_is_not_a_consent_problem()
     {
@@ -392,7 +375,6 @@ public class ManifestConsentTests
 
     // --- Whether the select-all has anything to act on ---------------------------------------
 
-    // No permitted row means nothing to act on.
     [Fact]
     public void No_server_enabled_row_means_the_select_all_has_nothing_to_act_on()
     {
@@ -429,8 +411,7 @@ public class ManifestConsentTests
         Assert.True(ManifestConsent.ServerHasPausedEverything(rows));
     }
 
-    // The distinction the sync card's status line hangs on: every collection switched off one by
-    // one is not a pause, and must not be reported as one.
+    // The sync card's status line depends on this distinction.
     [Fact]
     public void Collections_switched_off_individually_are_not_a_pause()
     {
@@ -447,8 +428,8 @@ public class ManifestConsentTests
 
     // --- Whether the server permits no collection, without a pause --------------------------------
 
-    // Every collection switched off one by one: the wizard's consent step owes the user the reason
-    // its collection boxes are all grayed, as the settings screen's status line gives it.
+    // In this state the wizard's consent step explains why every box is grayed, as the settings
+    // screen's status line does.
     [Fact]
     public void Collections_all_switched_off_individually_permit_none()
     {
@@ -457,8 +438,7 @@ public class ManifestConsentTests
         Assert.True(ManifestConsent.ServerPermitsNoCollection(rows));
     }
 
-    // A pause has its own sentence, so it is not this state; one permitted collection is not it
-    // either; and an empty list is nobody's refusal.
+    // A pause has its own sentence, and an empty list is nobody's refusal.
     [Fact]
     public void A_pause_a_permitted_collection_or_an_empty_list_is_not_that_state()
     {
@@ -472,8 +452,8 @@ public class ManifestConsentTests
 
     // --- Whether anything at all will be uploaded ----------------------------------------------
 
-    // Both halves have to agree before the cadence promise is true, and the user's half is the one
-    // the server knows nothing about.
+    // The cadence promise needs both the user and the server to permit a collection, and the server
+    // knows nothing of the user's half.
     [Fact]
     public void A_collection_the_user_switched_off_does_not_count_as_running()
     {

@@ -4,16 +4,13 @@ using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
-// The sentence a halt shows, on the sync card and on the live tracker's and Crucible run sharing's
-// cards alike. Each kind of halt has its own fix, so each test pins where its sentence comes from
-// (the refusal copy, the backend check, or, for the token, the exact string), and a sentence that
-// named the wrong fix cannot pass for the right one.
+// The sentence a halt shows on the sync card and both sharing cards. Each halt has its own fix, so
+// each test pins where its sentence comes from, and a wrong fix cannot pass for the right one.
 public class HaltCopyTests
 {
     private const string Host = "xiv-shinies.com";
     private const string DefaultUrl = "https://xiv-shinies.com";
 
-    // A character refusal reads exactly as the refusal copy words it.
     [Theory]
     [InlineData(ApiStatus.CharacterNotClaimed)]
     [InlineData(ApiStatus.CharacterNotVerified)]
@@ -26,8 +23,7 @@ public class HaltCopyTests
             HaltCopy.For(halt, "Some Name", "Excalibur", Host, DefaultUrl, customBackendAcknowledged: false));
     }
 
-    // A settings problem is fixed on this machine, so its sentence comes from the backend check
-    // that refused the setting.
+    // A settings problem is fixed on this machine, so the backend check that refused it words the fix.
     [Fact]
     public void A_configuration_halt_reads_as_the_backend_check_words_it()
     {
@@ -40,8 +36,8 @@ public class HaltCopyTests
                 customBackendAcknowledged: false));
     }
 
-    // Every other halt is the token: it is the only other status that raises one. An unknown halt
-    // (read in the frame a halt is being cleared) gets the same sentence rather than none.
+    // The token is the only other status that raises a halt. A null halt, read in the frame a halt is
+    // cleared, gets the same sentence rather than none.
     [Theory]
     [InlineData(ApiStatus.InvalidToken)]
     [InlineData(null)]

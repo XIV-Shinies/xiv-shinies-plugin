@@ -12,28 +12,13 @@ using XIVShinies.SyncPlugin.Occult;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
-// The consent surfaces: the per-category checkbox rows, their per-group checkboxes and "New"
-// badges, the select-all control, and the Crucible run sharing's and live tracker's own consent
-// cards — shared by the wizard's consent step and the settings screen's Collections section. One
-// part of the MainWindow class — see MainWindow.cs for the class doc, the window state, and the
-// shared card system and widget bindings.
+// The consent surfaces shared by the wizard's consent step and the settings: the collection rows
+// with their group checkboxes and "New" badges, select-all, and the Crucible and tracker cards.
 internal sealed partial class MainWindow
 {
-    /// <summary>
-    /// The settings window's category rows, from the pure builder every consent and status surface in
-    /// this window reads.
-    /// </summary>
-    /// <remarks>
-    /// A cheap list build with no game calls in it, but it still allocates — so each frame builds the
-    /// list ONCE and hands it to whichever surfaces need it, rather than each surface rebuilding it
-    /// for itself sixty times a second on an always-visible path.
-    /// </remarks>
-    /// <param name="remoteConfig">
-    /// The latest <c>/config</c>, or null if none has arrived.
-    /// </param>
-    // `ConfigResponse?` may be null, like `ConfigResponse | null` in TypeScript. `IReadOnlyList<T>` is
-    // a list its reader cannot change, like `readonly T[]`, and `=>` gives the method a single
-    // expression for its body, as an arrow function does.
+    /// <summary>This frame's category rows, which every consent and status surface reads.</summary>
+    /// <remarks>It allocates, so build it once per frame and pass it to each surface.</remarks>
+    /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     private IReadOnlyList<CategorySettingsRow> BuildCategoryRows(ConfigResponse? remoteConfig) =>
         CategorySettingsView.Build(
             collectors,
@@ -44,48 +29,36 @@ internal sealed partial class MainWindow
             syncManager.LastCollectedDetails);
 
     /// <summary>
-    /// The consent list, shared by the wizard's consent step and the settings: every section's
-    /// rows in one card, each section under a plain label rather than a fold of its own, so
-    /// opening the list puts every checkbox it collects consent for on screen at once.
+    /// The consent list: every section's rows in one card, under plain labels rather than folds, so
+    /// every checkbox it collects consent for is on screen at once.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Contains no category or section names. Every label, heading, and description comes from
-    /// the rows the collectors produced, which is what keeps "adding a collection is one new
-    /// class" true.
-    /// </para>
-    /// <para>
-    /// This card is about <b>consent alone</b> — what the user chooses to send. Whether a chosen
-    /// collection could actually be READ is a live status, and it belongs with every other live
-    /// status, in the sync card's read-status panel (see <see cref="DrawStatus"/>).
-    /// </para>
+    /// It names no category or section; all copy comes from the collectors' rows. It covers consent
+    /// only: whether a collection could be read belongs in the sync card's read-status panel (see
+    /// <see cref="DrawStatus"/>).
     /// </remarks>
     /// <param name="rows">This frame's category rows, from <see cref="BuildCategoryRows"/>.</param>
     /// <param name="showNewChips">
-    /// Whether this surface announces new collections — the first-run wizard shows every
-    /// collection by definition, so it badges nothing. Which drawings are then recorded as
-    /// seen differs per surface too; <see cref="CategorySettingsView.ShowingRetiresTheBadge"/>
-    /// holds that rule.
+    /// Whether this surface announces new collections; the wizard shows every collection, so it badges
+    /// nothing. <see cref="CategorySettingsView.ShowingRetiresTheBadge"/> decides which drawings count
+    /// as seen.
     /// </param>
     private void DrawCategoryRows(IReadOnlyList<CategorySettingsRow> rows, bool showNewChips)
     {
-        // ItemInnerSpacing is the gap ImGui puts between a checkbox's box and its label — wider
-        // here so the labels get some air. Pushed as a style variable scoped to this card.
+        // A wider gap between each checkbox and its label.
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemInnerSpacing,
                    new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
         using (BrandCard())
         {
-            // A checkbox's label starts after the box itself plus the inner spacing. The
-            // measure seeds each row's description home column and indents the notes and group
-            // checkboxes beneath it; taken inside the push so it tracks the label's real
-            // position.
+            // Where a checkbox's label starts: the home column of each row's copy and the indent of
+            // its groups. Measured inside the push, so it includes the wider gap.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
             DrawSelectAll(rows);
             BrandSeparator();
             ImGui.Spacing();
 
-            // Null until a category turns out to be new, so the usual case allocates nothing.
+            // Null until a category is new, so the usual frame allocates nothing.
             List<string>? newlySeenCategories = null;
 
             foreach (var section in CategorySettingsView.GroupBySection(rows))
@@ -99,18 +72,14 @@ internal sealed partial class MainWindow
                 }
             }
 
-            // One save for the whole batch. Marking them seen makes the next rebuild report
-            // IsNew=false, so this runs once per batch of newly-seen categories rather than every
-            // frame — the same lifecycle DrawGroupCheckboxes uses for groups.
+            // Once marked seen, rows stop reporting, so this saves once per batch, never every frame.
             if (newlySeenCategories is not null)
             {
                 configuration.Settings.MarkCategoriesSeen(newlySeenCategories);
                 configuration.Save();
             }
 
-            // The category rows end with a single Spacing, which is the gap BETWEEN rows. This note
-            // is not another row, so it gets a wider gap above its divider to read as its own
-            // closing remark rather than a continuation of the last collection's copy.
+            // A wider gap than between rows, so the note reads as a closing remark.
             ImGui.Spacing();
             ImGui.Spacing();
 
@@ -122,46 +91,36 @@ internal sealed partial class MainWindow
 
     /// <summary>
     /// One collection's consent row: the checkbox, its disclosure copy, and its group checkboxes.
-    /// Shared verbatim by both consent surfaces, so neither can drift to showing less.
+    /// Both consent surfaces draw it, so neither can show less.
     /// </summary>
-    /// <param name="row">The row to draw.</param>
-    /// <param name="showNewChips">
-    /// Whether this row, and the groups beneath it, may wear a "New" badge, and how strict the
-    /// record of having shown it is. See <see cref="DrawCategoryRows"/>.
-    /// </param>
+    /// <remarks>
+    /// The copy says what a tick would send, so an unticked box keeps full contrast: the offer is
+    /// open, and the copy is how the user decides. A row the server has switched off can send
+    /// nothing, so it mutes, and its reason rides the "Off" chip's tooltip.
+    /// </remarks>
+    /// <param name="showNewChips">See <see cref="DrawCategoryRows"/>.</param>
     /// <param name="checkboxColumn">
-    /// The width from a row's left edge to its checkbox label — the flowed description's home
-    /// column, and the indent for the notes and group checkboxes beneath the row. Measured by
-    /// the caller inside its ItemInnerSpacing push so it tracks the label's real position.
+    /// The width from the row's left edge to its checkbox label: the copy's home column and the
+    /// indent of the groups beneath.
     /// </param>
     /// <returns>
-    /// True when this drawing should retire the row's announcement: for a row with one left to
-    /// spend that the server permits, and — on a badging surface only — that the server has
-    /// actually answered about. The caller batches those into one save.
+    /// True when this drawing retires the row's announcement (see
+    /// <see cref="CategorySettingsView.ShowingRetiresTheBadge"/>). The caller batches these into one save.
     /// </returns>
     private bool DrawCategoryRow(CategorySettingsRow row, bool showNewChips, float checkboxColumn)
     {
-        // The box shows the effective state, not the stored preference: a ticked box under a
-        // collection the server has switched off states the opposite of what is happening, and a
-        // tick is the loudest thing on the row.
+        // The effective state, not the stored choice: a tick under a collection the server has
+        // switched off would claim the opposite of what happens.
         var enabled = row.IsEffectivelyOn;
         bool toggled;
 
-        // Captured before the checkbox draws: the column its label starts in is where the
-        // flowed description's wrapped lines come home to.
+        // Where the copy's wrapped lines return to, captured before the checkbox draws.
         var labelColumn = ImGui.GetCursorPosX() + checkboxColumn;
 
-        // The server will not accept this category right now (see CategorySettingsRow.ServerEnabled).
-        // Show it, disabled, with the user's own preference intact underneath — flipping it back on
-        // later restores what they chose.
+        // Disabled while the server has it off, with the stored choice kept for when it returns.
         using (ImRaii.Disabled(!row.ServerEnabled))
         {
-            // Everything after `##` is hidden from the label but forms part of the widget's
-            // identity. ImGui derives a control's ID from its label text, so two collections
-            // that happened to choose the same DisplayName would share an ID and cross-wire
-            // their clicks. The category key is unique by construction, which makes this
-            // collision impossible rather than merely unlikely. `$"...{x}..."` is an interpolated
-            // string, like a TypeScript template literal: each `{x}` is replaced by x's value.
+            // `##key` keeps the ImGui ID unique, so two collections with one name cannot share clicks.
             toggled = ImGui.Checkbox($"{row.DisplayName}##{row.Key}", ref enabled);
         }
 
@@ -169,25 +128,18 @@ internal sealed partial class MainWindow
         {
             ManifestConsent.SetRowConsent(row, enabled, configuration.Settings);
 
-            // Clicking a row is proof it was shown, even before the server has answered about it.
-            // Recorded here rather than left to the caller's batch, because that batch withholds
-            // the record for a row drawn before the answer arrived, and a row the user has just
-            // acted on must not be caught by that.
+            // A click proves the row was shown, so it is marked seen here: on a badging surface the
+            // caller's batch waits for the server's answer.
             configuration.Settings.MarkCategoriesSeen(new[] { row.Key });
             configuration.Save();
         }
 
-        // Remembering the key keeps the chip drawn once the caller's batched save makes the next
-        // rebuild report the row un-new — the same lifecycle DrawGroupCheckboxes uses.
+        // Keeps the chip up after the caller's save makes the row un-new.
         if (showNewChips && row.IsEffectivelyNew)
             categoriesBadgedThisSession.Add(row.Key);
 
-        // Which mark to wear, and its precedence, is CategorySettingsView.BadgeFor's rule. Only the
-        // look of each mark is decided here.
-        //
-        // Off's look is OffChip's. New is gold and unfilled, since the color already carries it. The
-        // type is a tuple that may be null: several named values traveling together, like a
-        // TypeScript `{ icon, text, color, tooltip, filled } | null`.
+        // CategorySettingsView.BadgeFor picks the mark; this picks its look. New is gold and
+        // unfilled, since the color already carries it.
         (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? badge =
             CategorySettingsView.BadgeFor(
                 row, showNewChips, categoriesBadgedThisSession.Contains(row.Key)) switch
@@ -198,22 +150,8 @@ internal sealed partial class MainWindow
                 _ => null,
             };
 
-        // The consent copy flows on the label's own line — "Name — what it sends" — with the
-        // collector's hover elaboration trailing the sentence when it offered one, the badge
-        // trailing that, and wrapped lines coming home under the label.
-        //
-        // It describes what the plugin WOULD send if the box were ticked, so a box the user simply
-        // left unticked keeps full contrast — that is an offer still open to them, and the copy is
-        // how they decide. A collection the server has switched off is not an open offer: nothing
-        // on this row can send it whatever the user does, so the copy mutes with the rest of the
-        // row. The reason it is off rides the chip's tooltip rather than a line of its own, so a
-        // switched-off row stays one line. `muted:` names the parameter the value fills, like a key in
-        // an options object.
-        //
-        // The collector wrote its copy with a placeholder for the website, filled with the
-        // configured address here (see HostPlaceholder). `row.Details is { } details ? ... : null`
-        // fills the details only when there are some: `is { } details` matches a present value and
-        // names it, and `a ? b : c` picks b when a is true, else c.
+        // "Name — what it sends", the hover mark, then the badge, wrapping home under the label.
+        // HostPlaceholder fills in the configured website.
         ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
         DrawWrappedWithTrailingHint(
             $"— {HostPlaceholder.Fill(row.WhatGetsSent, BackendHost())}",
@@ -224,87 +162,58 @@ internal sealed partial class MainWindow
 
         ImGui.Indent(checkboxColumn);
 
-        // Disabled along with the category above them. A group belongs to its category and is
-        // only ever scanned as part of that category's pass, so leaving the groups live under a
-        // grayed-out parent would offer the user a consent choice that cannot mean anything —
-        // and ticking one would switch its category back on behind the very control that says it
-        // is off.
+        // Disabled with the category: a group's tick would switch the category back on behind the
+        // control that says it is off.
         using (ImRaii.Disabled(!row.ServerEnabled))
             DrawGroupCheckboxes(row, showNewChips);
 
         ImGui.Unindent(checkboxColumn);
         ImGui.Spacing();
 
-        // Drawing a category IS showing it to the user, and only a row with an announcement left
-        // to spend is ever reported — otherwise every row would report on every frame and the
-        // caller would save the config sixty times a second. Which drawings count is
-        // CategorySettingsView.ShowingRetiresTheBadge's rule.
+        // Only a row with an announcement left reports, or the caller would save every frame.
         return CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips);
     }
 
-    /// <summary>
-    /// The live Occult tracker's plain-language disclosure — every kind of data the tracker
-    /// itself shares (the character identity beside it is <see cref="DrawPrivacyCard"/>'s
-    /// disclosure, as for every category). One sentence, built here for every surface that
-    /// discloses the tracker (the wizard's "What it sends" screen and the consent card), so no
-    /// surface can drift to saying less than another.
-    /// </summary>
+    /// <summary>The live tracker's disclosure: every kind of data it shares, and where it goes.</summary>
     /// <remarks>
-    /// It says where the data goes, so it names the configured host (see <see cref="BackendHost"/>).
+    /// Every surface that discloses the tracker uses this sentence, so none can say less. The
+    /// character identity is the privacy card's disclosure.
     /// </remarks>
-    // A `const` must be fixed when the code compiles, and the host is only known once the plugin
-    // runs, so this is a method that builds the text each time. Of the three pieces joined with
-    // `+`, only the one marked `$` fills in a `{...}`.
     private string OccultWhatGetsSent() =>
         "While you are in the Occult Crescent, shares your instance's public encounter " +
         "status (critical encounters, FATEs, Forked Tower) and your current world, powering " +
         $"the live tracker on {BackendHost()}.";
 
     /// <summary>
-    /// The tracker's hover elaboration: because the natural worry is other players, it says
-    /// what is NOT shared. Reassurance rather than a kind of data, so it follows the same split
-    /// as <see cref="Collectors.CategoryInfo.Details"/>.
+    /// The tracker's hover text: what is not shared, since the natural worry is other players. It
+    /// holds reassurance, never a kind of data (see <see cref="Collectors.CategoryInfo.Details"/>).
     /// </summary>
     private const string OccultTrackerDetails =
         "This is world state — nothing about you beyond your presence, and never anything " +
         "about other players.";
 
     /// <summary>
-    /// The live Occult tracker's consent card: its toggle, its disclosure copy, and, while the toggle
-    /// is ticked but the tracker is not running, the reason when it is the master switch, a halt or a
-    /// character that could not be read (see <see cref="DrawSharingCardLine"/>), followed by the
-    /// standing choice to switch on collections a later update adds. Drawn as its own card on both
-    /// consent surfaces (the wizard's consent step and the settings), separate from the collections
-    /// list — the tracker is not a collection and must not read as one, which is also why the
-    /// collections select-all does not touch it.
+    /// The live tracker's consent card, on both consent surfaces: its toggle, disclosure and stopped
+    /// line (see <see cref="DrawSharingCardLine"/>), then the standing choice for new collections.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Unlike every collection category, this defaults ON — it shares <b>world</b> state (which
-    /// encounters are up inside a public instance), not facts about the player, the same stance
-    /// Universalis takes on market data. It still only ever acts once the user has finished the
-    /// wizard and the master switch is on, and this card makes the sharing visible and
-    /// revocable on both consent surfaces.
-    /// </para>
-    /// <para>
-    /// Given the same treatment a server-disabled collection gets — unticked, grayed, and chipped
-    /// "Off" — whenever the tracker is unavailable, with the user's own preference intact
-    /// underneath. What counts as unavailable is decided at the check itself.
-    /// </para>
+    /// A card of its own, out of select-all's reach, because the tracker is not a collection. It
+    /// defaults on because it shares world state, not facts about the player (see
+    /// <see cref="PluginSettings.ShareOccultInstanceState"/>), yet acts only after the wizard and with
+    /// the master switch on. While the server has it off it draws unticked, grayed and chipped "Off",
+    /// with the user's choice kept underneath.
     /// </remarks>
     /// <param name="remoteConfig">
-    /// The snapshot to decide from. A caller that draws its own prose about this row passes the
-    /// same one it decided that prose from, so the two cannot be settled by different answers.
+    /// The snapshot to decide from: the one the caller used for any prose of its own about this row,
+    /// so the two decide from the same answer.
     /// </param>
     private void DrawOccultConsentRow(ConfigResponse? remoteConfig)
     {
-        // Asked of the gate that decides whether the tracker actually runs, so the control and
-        // the behavior cannot describe different things. OccultGate.ServerHasSwitchedOff holds
-        // the rule and the reasoning.
+        // The gate that decides whether the tracker runs, so the control and the behavior agree.
         var serverOff = OccultGate.ServerHasSwitchedOff(remoteConfig);
 
-        // What the wizard's consent settle reads. A disabled checkbox never reports a click, so a
-        // user shown one has made no choice about a control that is stored as ON by default.
+        // For the wizard's consent settle: a user shown a disabled box made no choice about a
+        // control stored as on by default.
         if (!serverOff)
             wizardCouldOfferOccultToggle = true;
 
@@ -313,27 +222,19 @@ internal sealed partial class MainWindow
                    new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
         using (BrandCard())
         {
-            // Measured the same way as the collections card's label column, inside the same
-            // style push, so every stacked card's text edges line up.
+            // Measured inside the same push as the collections card's, so the cards' text lines up.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
 
-            // Drawn by the same rule as the collection rows: the user's choice, unticked while the
-            // server has the tracker off. The user's own preference is untouched underneath and
-            // returns when the server advertises the tracker again.
+            // Unticked while the server has it off; the stored choice is untouched.
             var enabled = !serverOff && configuration.Settings.ShareOccultInstanceState;
             bool toggled;
             using (ImRaii.Disabled(serverOff))
                 toggled = ImGui.Checkbox("Share live Occult instance state##occultTracker", ref enabled);
 
-            // The what-is-NOT-shared reassurance, one hover away like every category's.
             DrawDetailsHint(OccultTrackerDetails);
 
-            // The same chip a switched-off collection wears, with its sentence in the same place.
-            // The tracker's switch has no note of its own (it lives in its own config block,
-            // which the server sends without one), so which ServerOffCopy sentence applies (the
-            // feature's, the pause's, or "not offered" for a server with no tracker block) is the
-            // gate's to decide, exactly as it decides whether the chip appears at all.
-            // `x is { } offText` matches when x is not null and names it `offText`.
+            // The tracker's config block carries no note, so the gate picks the chip's sentence: the
+            // feature's, the pause's, or "not offered".
             if (OccultGate.ServerOffText(remoteConfig, BackendHost()) is { } offText)
                 DrawOffChip(offText);
 
@@ -345,13 +246,9 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
 
-            // Consent copy, on the same rule as a collection row: full contrast while the server
-            // permits the tracker, so the user's own toggle reads as a choice still open to them,
-            // and muted along with the row once the server has taken the choice away.
+            // Full contrast while the choice is open, muted once the server takes it away.
             DrawWrapped(OccultWhatGetsSent(), serverOff ? ImGuiCol.TextDisabled : ImGuiCol.Text);
 
-            // Why a ticked tracker is not running, when the player can fix it. Which reason, if any,
-            // is SharingCardLine's rule.
             DrawSharingCardLine(
                 OccultGate.StoppedBySyncSwitch(configuration.Settings, remoteConfig),
                 OccultGate.CanTrack(configuration.Settings, remoteConfig));
@@ -360,10 +257,8 @@ internal sealed partial class MainWindow
 
             ImGui.Spacing();
 
-            // The standing choice for collections that do not exist yet — see
-            // PluginSettings.AutoEnableUnseenCategories for what acts on it at load, and
-            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
-            // separately is left out. Ticking it here is the explicit consent that answer rests on.
+            // The explicit consent PluginSettings.AutoEnableUnseenCategories acts on.
+            // ManifestConsent.FixedScopeCategoryKeys says why collections with groups are left out.
             var autoEnable = configuration.Settings.AutoEnableNewFeatures;
             if (ImGui.Checkbox(
                     "Turn on new collections automatically##autoEnableNew",
@@ -375,11 +270,8 @@ internal sealed partial class MainWindow
 
             ImGui.Indent(checkboxColumn);
 
-            // Scoped to exactly what the tick reaches: collections with a fixed scope, and no
-            // sharing feature. The tick answers for collections whose disclosure the user has not
-            // read yet, so the copy says the tick covers whatever they send, and names where that
-            // disclosure is read afterwards: the collection's own settings row, which wears its
-            // "New" chip until seen.
+            // The tick answers for disclosures not yet read, so the copy names where to read them: the
+            // collection's row, marked New until seen.
             DrawWrapped(
                 "Tick this and a new collection a later update adds starts switched on, whatever it " +
                 "sends, instead of waiting for you to find it. It is marked New in the settings, " +
@@ -391,16 +283,8 @@ internal sealed partial class MainWindow
         }
     }
 
-    /// <summary>
-    /// The Crucible run sharing's plain-language disclosure: every kind of data the sharing sends
-    /// (the character identity beside it is <see cref="DrawPrivacyCard"/>'s disclosure, as for every
-    /// category). One disclosure, built here for every surface that discloses the sharing, so no
-    /// surface can say less than another.
-    /// </summary>
-    /// <remarks>
-    /// It names the configured host as the place the run is filled in, as
-    /// <see cref="OccultWhatGetsSent"/> does.
-    /// </remarks>
+    /// <summary>The Crucible sharing's disclosure: every kind of data it sends, and where it goes.</summary>
+    /// <remarks>Every surface that discloses the sharing uses this, so none can say less.</remarks>
     private string CrucibleWhatGetsSent() =>
         "From the beasts you pick at the entrance until you leave a board, shares what the " +
         "Crucible's windows show between fights (the board, your beasts, bag, tokens, treasure, " +
@@ -410,8 +294,8 @@ internal sealed partial class MainWindow
         "fights included, and says when you leave.";
 
     /// <summary>
-    /// The sharing's hover elaboration: what is read during a fight and what is never read or sent,
-    /// since the natural worries are fights, enemies and other players.
+    /// The sharing's hover text: what is read during a fight and what is never read or sent, since
+    /// the natural worries are fights, enemies and other players.
     /// </summary>
     private const string CrucibleRunsDetails =
         "During a fight the only thing read about your run is which beast you have out and its HP, " +
@@ -421,26 +305,13 @@ internal sealed partial class MainWindow
         "worth, as the results screen shows them. Nothing about other players is read or sent.";
 
     /// <summary>
-    /// The Crucible run sharing's consent card: its toggle, its disclosure copy, and, while the toggle
-    /// is ticked but the sharing is not running, the reason when it is the master switch, a halt or a
-    /// character that could not be read (see <see cref="DrawSharingCardLine"/>). Drawn as its own
-    /// card on both consent surfaces, separate from the collections list, because it is not a
-    /// collection.
+    /// The Crucible sharing's consent card, on both consent surfaces: its toggle, disclosure and
+    /// stopped line (see <see cref="DrawSharingCardLine"/>). A card of its own: it is not a collection.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The toggle starts off; see <see cref="PluginSettings.ShareCrucibleRuns"/> for why.
-    /// </para>
-    /// <para>
-    /// While the server has the sharing off, the card draws it unticked, grayed and chipped "Off",
-    /// with the user's own choice intact underneath. What counts as off is
-    /// <see cref="CrucibleGate"/>'s to decide.
-    /// </para>
-    /// <para>
-    /// While the server permits the sharing and the user has not yet seen the card, the settings
-    /// screen chips it "New"; when the chip shows and when a drawing counts as seen are
-    /// <see cref="CrucibleBadge"/>'s rules.
-    /// </para>
+    /// The toggle starts off (see <see cref="PluginSettings.ShareCrucibleRuns"/>). While
+    /// <see cref="CrucibleGate"/> says the server has it off, it draws unticked, grayed and chipped
+    /// "Off", with the user's choice kept underneath. <see cref="CrucibleBadge"/> rules its "New" chip.
     /// </remarks>
     /// <param name="remoteConfig">The latest <c>/config</c>, or null if none has arrived.</param>
     /// <param name="showNewChip">
@@ -448,12 +319,11 @@ internal sealed partial class MainWindow
     /// </param>
     private void DrawCrucibleConsentRow(ConfigResponse? remoteConfig, bool showNewChip)
     {
-        // Asked of the gate that decides whether the sharing runs, so the control and the behavior
-        // cannot describe different things; CrucibleGate.ServerHasSwitchedOff holds the rule.
+        // The gate that decides whether the sharing runs, so the control and the behavior agree.
         var serverOff = CrucibleGate.ServerHasSwitchedOff(remoteConfig);
 
-        // Read before this drawing records anything, so the frame that first shows the card still
-        // wears the chip; the session flag keeps it up after the record is saved.
+        // Read before this frame records anything, so the first frame still wears the chip; the
+        // session flag keeps it up after that.
         var seen = configuration.Settings.CrucibleSharingSeen;
         var badge = CrucibleBadge.BadgeFor(seen, remoteConfig, showNewChip, crucibleBadgedThisSession);
         if (badge == CategoryBadgeKind.New)
@@ -464,7 +334,6 @@ internal sealed partial class MainWindow
                    new Vector2(9f * ImGuiHelpers.GlobalScale, ImGui.GetStyle().ItemInnerSpacing.Y)))
         using (BrandCard())
         {
-            // Measured inside the style push above, so the copy's left edge lines up with the label.
             var checkboxColumn = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
 
             // The user's choice, unticked while the server has the sharing off.
@@ -473,15 +342,12 @@ internal sealed partial class MainWindow
             using (ImRaii.Disabled(serverOff))
                 toggled = ImGui.Checkbox("Share your Crucible runs##crucibleRuns", ref enabled);
 
-            // Asked of the checkbox just drawn: false while the card sits below the visible part of
-            // the window, where the user has not seen it yet.
+            // False while the card is scrolled out of view, where the user has not seen it.
             var onScreen = ImGui.IsItemVisible();
 
-            // What is read during a fight, and what is never read, one hover away like every category's.
             DrawDetailsHint(CrucibleRunsDetails);
 
-            // The same chips a collection wears. CrucibleGate.ServerOffText chooses the "Off" chip's
-            // hover sentence, and is never null while the badge is Off.
+            // ServerOffText is never null while the badge is Off.
             if (badge == CategoryBadgeKind.Off
                 && CrucibleGate.ServerOffText(remoteConfig, BackendHost()) is { } offText)
             {
@@ -493,28 +359,24 @@ internal sealed partial class MainWindow
                 DrawChip(FontAwesomeIcon.Star, "New", Brand.Gold);
             }
 
-            // Only a real click writes the choice back. The tick drawn differs from the stored choice
-            // only while the server has the sharing off, and the box is disabled then, so a click can
-            // never overwrite the stored choice with the server's.
+            // The drawn tick differs from the stored choice only while the box is disabled, so a
+            // click never writes the server's state over the user's.
             if (toggled)
                 configuration.Settings.ShareCrucibleRuns = enabled;
 
-            // Recorded once, the first time the card is seen; the record makes this false on every
-            // later frame.
+            // True only on the frame the card is first seen.
             var retires = CrucibleBadge.ShowingRetires(seen, remoteConfig, onScreen, clicked: toggled);
             if (retires)
                 configuration.Settings.CrucibleSharingSeen = true;
 
-            // One save for whatever this frame changed.
             if (toggled || retires)
                 configuration.Save();
 
             ImGui.Indent(checkboxColumn);
 
-            // Full contrast while the server permits the sharing, muted with the row once it does not.
+            // Full contrast while the choice is open, muted once the server takes it away.
             DrawWrapped(CrucibleWhatGetsSent(), serverOff ? ImGuiCol.TextDisabled : ImGuiCol.Text);
 
-            // The same reasons the live tracker's card names, by SharingCardLine's rule.
             DrawSharingCardLine(
                 CrucibleGate.StoppedBySyncSwitch(configuration.Settings, remoteConfig),
                 CrucibleGate.CanShare(configuration.Settings, remoteConfig));
@@ -524,16 +386,12 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Draws a sharing card's warning, when <see cref="SharingCardLine.For"/> has one: why a ticked
-    /// sharing is not running, when the reason is the master switch, a halt or a character that could
-    /// not be read.
+    /// Draws why a ticked sharing is not running, when <see cref="SharingCardLine.For"/> has a line.
     /// </summary>
     /// <param name="stoppedBySyncSwitch">Whether the master switch is what stops the sharing.</param>
     /// <param name="canRun">Whether the settings and the server let the sharing run.</param>
     private void DrawSharingCardLine(bool stoppedBySyncSwitch, bool canRun)
     {
-        // The halt sentence is built only while there is a halt to name. `string.Empty` is the empty
-        // string, `""`.
         var halted = syncManager.BlockedPendingUserAction;
         var line = SharingCardLine.For(
             stoppedBySyncSwitch,
@@ -550,31 +408,15 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Discloses that a collection the plugin can read end to end is reported as complete, and what
-    /// the server is then entitled to do with that.
+    /// Discloses that a list the plugin reads in full is reported as complete, which lets the server
+    /// question the user's own hand marks (see <see cref="Api.SyncRequest.CollectionScopes"/>).
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Every category's own copy says what the plugin FINDS. A snapshot upload additionally declares
-    /// which of those lists it read completely (see <see cref="Api.SyncRequest.CollectionScopes"/>
-    /// for what that licenses). That is a claim made about the user's OWN entries — it can put a
-    /// question mark against something they marked by hand — so it is disclosed on the consent
-    /// surface rather than living only in the contract.
-    /// </para>
-    /// <para>
-    /// Drawn by the wizard's "What it sends" step and at the foot of the shared consent card,
-    /// which the wizard's consent step and the settings both draw — so every consent surface
-    /// carries it and none can drift: the pre-consent screen must never disclose less than
-    /// the screen that collects the ticks. Phrased conditionally and naming no
-    /// category, so it stays true however many collections can be read completely.
-    /// </para>
-    /// <para>
-    /// The visible line carries the consequence, not just the mechanism. "Reported as complete" on
-    /// its own reads as inert bookkeeping; what a user needs to know is that it can surface one of
-    /// their own marks for review. The reassurance that nothing is ever undone stays in the hover —
-    /// that is comfort, not disclosure. The line names the configured host as the party that acts on
-    /// the claim, as the other disclosures name it as the place the data goes.
-    /// </para>
+    /// A claim about the user's own entries is disclosed where consent is given, not only in the
+    /// contract. Every consent surface draws it, so the pre-consent screen never discloses less than
+    /// the one that collects the ticks, and it names no category, so it stays true whatever is read in
+    /// full. The visible line carries the consequence and names the configured host; the hover holds
+    /// only the reassurance.
     /// </remarks>
     private void DrawCompletenessNote()
     {
@@ -586,40 +428,27 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Draws a wrapped paragraph from wherever the cursor stands — continuation lines come back
-    /// to the first word's own column by default, so a paragraph started beside an icon stays
-    /// aligned under itself — with a muted question mark flowing after the sentence when
-    /// <paramref name="details"/> offers hover text, and <paramref name="trailingChip"/> flowing
-    /// last of all.
+    /// Draws a paragraph from the cursor, wrapping to the first word's column, then a muted hover
+    /// mark when <paramref name="details"/> is given, then <paramref name="trailingChip"/>.
     /// </summary>
     /// <remarks>
-    /// The paragraph sibling of <see cref="DrawDetailsHint"/>, which trails a one-line label:
-    /// <c>SameLine</c> after a WRAPPED paragraph anchors at the end of its first line, leaving
-    /// the mark floating mid-paragraph. So the paragraph is flowed here word by word (the same
-    /// flow as <see cref="Widgets.DrawWrappedSpans"/>) and the mark is appended as one more
-    /// word, wrapping to the next line only when it genuinely does not fit. Fit is measured
-    /// against the enclosing card's inner edge when there is one, so the lines break where the
-    /// card's own wrapped text does; drawn outside a card, it measures to the window's content
-    /// edge instead.
+    /// <c>SameLine</c> after a wrapped paragraph anchors at the end of its first line, so the words
+    /// are flowed by hand and the mark and chip follow as more words. Lines break at the card's inner
+    /// edge, or the content edge outside a card.
     /// </remarks>
     /// <param name="text">The paragraph.</param>
     /// <param name="details">The hover text behind the trailing mark, or null for no mark.</param>
     /// <param name="homeXOverride">
-    /// Where wrapped lines return to, in cursor space — for a paragraph whose continuation
-    /// belongs under an earlier column (a checkbox label) rather than under its own first word.
-    /// Null returns them to the first word's column.
+    /// Where wrapped lines return to, in cursor space, such as a checkbox label's column. Null
+    /// returns them to the first word's column.
     /// </param>
     /// <param name="trailingChip">
-    /// A badge to flow after the hover mark as the sentence's very last word, or null for none.
-    /// Taken as a parameter because only this method can place it: the chip has to be submitted
-    /// inside the word flow to be fit-tested against the same right edge, and the paragraph's last
-    /// line may have less room left than the chip is wide. A caller cannot append it afterwards —
-    /// this method closes the line, so a <c>SameLine</c> of theirs anchors at the start of the row
-    /// below.
+    /// A badge flowed after the mark, or null. Only this method can fit it to the last line: a
+    /// caller's <c>SameLine</c> afterwards would anchor on the row below.
     /// </param>
     /// <param name="muted">
-    /// True to draw the words at the disabled text color. For copy about something the plugin is
-    /// not currently doing — full contrast would read as a description of live behavior.
+    /// True to draw the words disabled-gray, for copy about something the plugin is not doing, which
+    /// at full contrast would read as live behavior.
     /// </param>
     private void DrawWrappedWithTrailingHint(
         string text,
@@ -632,17 +461,12 @@ internal sealed partial class MainWindow
         var innerRight = activeCardInnerRight
             ?? (ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
 
-        // Read before any word draws: the flow moves the cursor, so the first word's own
-        // column can only be captured now.
+        // Captured before the flow moves the cursor.
         var homeX = homeXOverride ?? ImGui.GetCursorPosX();
         var first = true;
 
-        // The word flow is the only wrapping authority (see DrawWrappedSpans for why the
-        // surrounding wrap scope is switched off), and the zero vertical item spacing keeps the
-        // flowed lines as tight as a single wrapped text call's. The mark and the badge are
-        // submitted inside the same scope as the words: an item submitted outside it advances the
-        // cursor by a full ItemSpacing.Y of its own, which the single Spacing() below would then
-        // double.
+        // Zero vertical spacing and ImGui's wrapping off (see Widgets.DrawWrappedSpans). The mark and badge
+        // stay inside: outside, each would add an ItemSpacing.Y that the Spacing() below doubles.
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemSpacing,
                    new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f)))
@@ -652,8 +476,6 @@ internal sealed partial class MainWindow
             {
                 if (!first)
                 {
-                    // Tentatively continue the line, then wrap if the word will not fit before
-                    // the right edge measured above.
                     ImGui.SameLine(0f, spaceWidth);
                     if (innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(word).X)
                     {
@@ -664,15 +486,12 @@ internal sealed partial class MainWindow
                 else if (homeXOverride is not null
                     && innerRight - ImGui.GetCursorPosX() < ImGui.CalcTextSize(word).X)
                 {
-                    // Only when the caller chose a home column: mid-line placement can leave no
-                    // room even for the FIRST word, and wrapping home genuinely widens the
-                    // line. Without an override, home IS the current column, so wrapping would
-                    // just repeat the same failed fit.
+                    // Mid-line, even the first word may not fit, and wrapping to the caller's home
+                    // column widens the line. Without one, home is here and wrapping gains nothing.
                     ImGui.NewLine();
                     ImGui.SetCursorPosX(homeX);
                 }
 
-                // The paragraph is submitted a word at a time, so the muted choice is made at each call.
                 if (muted)
                     ImGui.TextDisabled(word);
                 else
@@ -683,8 +502,7 @@ internal sealed partial class MainWindow
 
             if (details is not null)
             {
-                // The mark, flowed as the sentence's last word. Drawn as a real item (unlike a
-                // draw-list glyph), so the hover test below is the ordinary one.
+                // A real item, so the ordinary hover test works.
                 using (iconFont.Push())
                 {
                     var glyph = FontAwesomeIcon.QuestionCircle.ToIconString();
@@ -704,32 +522,26 @@ internal sealed partial class MainWindow
                 if (ImGui.IsItemHovered())
                     Widgets.DrawTooltip(details);
 
-                // The mark occupies the line now, so the badge after it is never the first item.
                 first = false;
             }
 
-            // Last of all, so a row reads "name — what it sends (?) ★New": the disclosure and its
-            // hover stay adjacent, and the badge decorates the end of the row rather than
-            // interrupting the sentence.
+            // Last, so the disclosure and its hover stay adjacent: "name — what it sends (?) ★New".
             DrawTrailingChip(trailingChip, innerRight, homeX, homeXOverride, first);
         }
 
-        // Everything above was submitted with zero vertical spacing; a zero-size advance outside
-        // the push restores the normal gap before whatever the caller draws next.
+        // Restores the normal gap the zero spacing above left out.
         ImGui.Spacing();
     }
 
     /// <summary>
-    /// Flows a badge as one more word of the paragraph <see cref="DrawWrappedWithTrailingHint"/>
-    /// just laid out, wrapping home when the line has no room left for it.
+    /// Flows a badge as one more word of <see cref="DrawWrappedWithTrailingHint"/>'s paragraph,
+    /// wrapping home when the line has no room left.
     /// </summary>
-    /// <param name="chip">The badge, or null when there is none.</param>
-    /// <param name="innerRight">The edge the paragraph measured its own words against.</param>
+    /// <param name="innerRight">The edge the paragraph measured its words against.</param>
     /// <param name="homeX">The column wrapped lines return to.</param>
-    /// <param name="homeXOverride">The caller's home column, or null when home is the first word's own.</param>
+    /// <param name="homeXOverride">The caller's home column, or null when home is the first word's.</param>
     /// <param name="first">
-    /// True when the paragraph itself has drawn nothing yet, so the cursor still sits where the
-    /// caller left it — possibly mid-line, beside a checkbox label.
+    /// True when the paragraph has drawn nothing, so the cursor may still sit mid-line beside a label.
     /// </param>
     private void DrawTrailingChip(
         (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled)? chip,
@@ -741,12 +553,10 @@ internal sealed partial class MainWindow
         if (chip is not { } badge)
             return;
 
-        // Measured rather than guessed: a chip is padding plus an icon plus its label, and Widgets
-        // owns that arithmetic. ChipWidth returns exactly what DrawChip reserves, so the fit test
-        // and the draw can never disagree.
+        // Exactly what DrawChip reserves, so the fit test and the draw agree.
         var width = ChipWidth(badge.Icon, badge.Text);
 
-        // The same two-branch fit test the words use, for the same reasons — see the flow loop.
+        // Wraps as the paragraph's words do (see DrawWrappedWithTrailingHint).
         if (!first)
         {
             ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
@@ -764,8 +574,7 @@ internal sealed partial class MainWindow
 
         DrawChip(badge.Icon, badge.Text, badge.Color, badge.Filled);
 
-        // DrawChip ends by reserving its footprint as a real item, so the ordinary hover test
-        // applies to the chip itself — the same route the description's question mark uses.
+        // DrawChip's footprint is a real item, so the ordinary hover test works.
         if (badge.Tooltip is { } tooltip && ImGui.IsItemHovered())
             Widgets.DrawTooltip(tooltip);
     }
@@ -776,22 +585,17 @@ internal sealed partial class MainWindow
     /// </summary>
     /// <param name="tooltip">The sentence its hover shows, saying why it is off.</param>
     /// <remarks>
-    /// Gray and filled: gray so the state never competes for attention with a badge that invites
-    /// the user to do something, filled so it reads as a mark about the grayed row it sits on.
+    /// Gray, so it never competes with a badge that invites action, and filled, so it still registers
+    /// on the grayed row.
     /// </remarks>
-    // The return type is the same tuple a consent row's badge uses.
     private static (FontAwesomeIcon Icon, string Text, Vector4 Color, string? Tooltip, bool Filled) OffChip(
         string? tooltip) =>
         (FontAwesomeIcon.PowerOff, "Off", Brand.DisabledForeground, tooltip, true);
 
-    /// <summary>
-    /// Draws the <see cref="OffChip"/> on the current line, after whatever the line already holds,
-    /// with its hover sentence: for a sharing card's label, which the chip follows directly.
-    /// </summary>
+    /// <summary>Draws the <see cref="OffChip"/> after a sharing card's label, with its hover text.</summary>
     /// <param name="offText">The sentence its hover shows, saying why it is off.</param>
     private void DrawOffChip(string offText)
     {
-        // `var chip` holds the tuple; `chip.Icon` and the rest read its named parts.
         var chip = OffChip(offText);
         ImGui.SameLine();
         DrawChip(chip.Icon, chip.Text, chip.Color, chip.Filled);
@@ -801,149 +605,89 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Draws a muted question mark on the current line that reveals <paramref name="details"/> on
+    /// Draws a muted question mark after the caller's line that shows <paramref name="details"/> on
     /// hover.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The consent list is a compliance surface AND a list people have to be able to scan. Those
-    /// pull in opposite directions: every caveat worth stating makes the wall of text a reader is
-    /// less likely to finish. Splitting it — the disclosure always visible, the elaboration one
-    /// hover away — keeps the surface honest without making it unreadable. What may move behind
-    /// this mark is bounded, and the rule lives on
-    /// <see cref="Collectors.CategoryInfo.Details"/>: never a kind of data, only detail that makes
-    /// the visible line trustworthy.
-    /// </para>
-    /// <para>
-    /// <c>SameLine</c> puts the glyph on the line the caller just drew, so it trails the label or
-    /// sentence it belongs to instead of starting a row of its own. The icon font is pushed for the
-    /// glyph alone: FontAwesome has no Latin letters, so text drawn while it is active renders as
-    /// blanks.
-    /// </para>
+    /// The disclosure stays visible and only its elaboration hides here, which keeps the consent list
+    /// both honest and scannable. A kind of data never moves behind this mark (see
+    /// <see cref="Collectors.CategoryInfo.Details"/>).
     /// </remarks>
-    /// <param name="details">The hover text.</param>
     private void DrawDetailsHint(string details)
     {
         ImGui.SameLine(0f, ImGui.GetStyle().ItemInnerSpacing.X);
 
+        // The push covers the glyph alone: the icon font has no Latin letters, so text drawn inside
+        // it comes out blank.
         using (iconFont.Push())
             ImGui.TextDisabled(FontAwesomeIcon.QuestionCircle.ToIconString());
 
-        // Answers for the glyph just drawn — the hover target is the mark itself, which is why it
-        // is small and deliberate rather than the whole row lighting up as a person reads down it.
+        // Only the mark is the hover target, so reading down the list lights nothing up.
         if (ImGui.IsItemHovered())
             Widgets.DrawTooltip(details);
     }
 
     /// <summary>
-    /// Whether anything in the collection rows still counts as "New", one of the two things the
-    /// folded "Collections" header (see <see cref="DrawSettings"/>) asks before wearing a "New" chip;
-    /// the other is the Crucible card's own <see cref="CrucibleBadge.IsNew"/>.
+    /// Whether anything in the collection rows still counts as "New", for the folded "Collections"
+    /// header's chip. The rule is <see cref="CategorySettingsView.AnythingIsNew"/>.
     /// </summary>
-    /// <remarks>
-    /// With the header folded, none of the badges beneath it are visible, so something added since
-    /// the last session would go unnoticed until the user happened to expand it. The rule is
-    /// <see cref="CategorySettingsView.AnythingIsNew"/>; this hands it the two session sets the
-    /// draw loop maintains.
-    /// </remarks>
-    /// <param name="rows">The category rows to scan, from <see cref="CategorySettingsView.Build"/>.</param>
     private bool AnythingIsNew(IReadOnlyList<CategorySettingsRow> rows) =>
         CategorySettingsView.AnythingIsNew(rows, categoriesBadgedThisSession, groupsBadgedThisSession);
 
     /// <summary>
-    /// Draws the per-group consent checkboxes beneath a manifest-driven category and persists both
-    /// the toggles and the seen-once flags, optionally badging a group the user has not been shown
-    /// before with a "New" chip.
+    /// Draws a manifest-driven category's group consent checkboxes, saving the ticks and the seen
+    /// flags, and badges a group never shown before "New".
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The seen-marking is the subtle part. A group arrives from <see cref="CategorySettingsView.Build"/>
-    /// with <c>IsNew = true</c> until its persisted "seen" flag is set. The first frame we draw it we set
-    /// that flag (one write), so every later frame's rebuild reports <c>IsNew = false</c> and this method
-    /// stops writing for that group — the config is saved once per batch of newly-seen groups, never per
-    /// frame (a per-frame save would be a real bug). Marking seen happens on <b>whichever surface drew
-    /// the group</b>, wizard or settings: it records that the user has been shown it, and the wizard's
-    /// consent step shows it just as plainly as the settings do. The one exception is a group under a
-    /// collection the server has switched off, which was drawn grayed and unusable and so has not been
-    /// introduced yet (see <see cref="CategorySettingsRow.WasDrawnAsUsable"/>).
-    /// </para>
-    /// <para>
-    /// <c>groupsBadgedThisSession</c> is a separate question — "is this group's badge currently on screen?" — and
-    /// only the badge-drawing surface adds to it. The badge would otherwise blink out one frame after it
-    /// appeared, since the persisted flag we just set makes the very next rebuild report the group as no
-    /// longer new; remembering the key keeps it drawn for the rest of the session, while the persisted
-    /// flag guarantees it is gone on the next load. A group first drawn by the WIZARD never enters that
-    /// set, which is what leaves the settings screen badge-free for a user who has just finished setup:
-    /// they have already seen every group there is.
-    /// </para>
+    /// Drawing a group on either surface marks it seen, saved once per batch, never per frame. A group
+    /// under a server-disabled collection was drawn unusable, so it is not yet introduced (see
+    /// <see cref="CategorySettingsRow.WasDrawnAsUsable"/>). Only the badging surface adds to
+    /// <c>groupsBadgedThisSession</c>, so a user fresh from the wizard sees no badges in the settings.
     /// </remarks>
-    /// <param name="row">The category row whose groups are being drawn.</param>
     /// <param name="showNewChips">
-    /// Whether an unseen group wears a "New" badge. False in the wizard, where every group is new by
-    /// definition and a chip beside each of them says nothing.
+    /// Whether an unseen group wears a "New" badge. False in the wizard, where every group is new.
     /// </param>
     private void DrawGroupCheckboxes(CategorySettingsRow row, bool showNewChips)
     {
-        // Nothing to draw unless the server sent consent groups for this manifest-driven category.
         if (row.Groups is not { Count: > 0 } groups)
             return;
 
-        // Past this point at least one group checkbox is going on screen — the fact the wizard's Finish
-        // handler settles its consent on. See PluginSettings.SettleItemGroupConsent for what rides on it.
+        // Read by the wizard's Finish (see wizardShowedGroups).
         if (!configuration.Settings.OnboardingComplete)
             wizardShowedGroups = true;
 
-        // A further indent nests the group checkboxes beneath their category's description. Measured
-        // the same way as the category column, inside the ItemInnerSpacing push the consent surface
-        // opened, so it tracks the same spacing.
+        // Nests the groups under the category's copy, measured inside the same push.
         var groupIndent = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemInnerSpacing.X;
         ImGui.Indent(groupIndent);
 
-        // Collected while drawing, then persisted once after the loop. Null until the first genuinely
-        // new group is seen, so a row whose groups are all already-seen writes nothing.
+        // Null until a group is new, so a row of seen groups writes nothing.
         List<string>? newlySeen = null;
 
         foreach (var group in groups)
         {
-            // Effective state, per ItemGroupRow.IsEffectivelyOn. The stored consent is untouched:
-            // this box is inside the parent's disabled scope, so a click cannot reach the write
-            // below while the two disagree.
+            // The effective state (see ItemGroupRow.IsEffectivelyOn). It differs from the stored
+            // consent only while the parent's scope disables the box, so no click writes it back.
             var groupEnabled = group.IsEffectivelyOn;
 
-            // Same `##key` identity trick as the category checkboxes above: the visible label is the
-            // group's, but the widget's ImGui id comes from the unique group key, so two groups that
-            // chose the same label never cross-wire their clicks.
+            // `##` keys the ImGui ID on the unique group key, as for the category checkbox.
             if (ImGui.Checkbox($"{group.Label}##group-{group.Key}", ref groupEnabled))
             {
-                // The category and its groups have to agree, because neither can send anything without
-                // the other. That rule lives in ManifestConsent, where it is unit-tested and names no
-                // category; this window only reports the click.
+                // The category and its groups must agree, since neither sends without the other;
+                // ManifestConsent holds that rule.
                 ManifestConsent.SetGroupConsent(row, group.Key, groupEnabled, configuration.Settings);
                 configuration.Save();
             }
 
-            // Drawing a group IS showing it to the user, so it is marked seen regardless of which
-            // surface drew it — the wizard's consent step shows a group just as plainly as the
-            // settings screen does. A group under a collection the server has switched off is the
-            // exception, for the same reason the collection itself is (see
-            // CategorySettingsRow.WasDrawnAsUsable): it was drawn grayed and unusable, so its turn
-            // has not come.
             if (group.IsNew && row.WasDrawnAsUsable)
                 (newlySeen ??= new List<string>()).Add(group.Key);
 
             if (!showNewChips || !row.ServerEnabled)
                 continue;
 
-            // Remember that this group's badge went up, so it keeps drawing for the rest of the session
-            // even though the seen-marking persisted after this loop makes the next rebuild report it
-            // as un-new.
+            // Keeps the badge up after the save below makes the group un-new.
             if (group.IsNew)
                 groupsBadgedThisSession.Add(group.Key);
 
-            // The badge shows for a group this install has never displayed, and for one whose badge went
-            // up earlier this session. It is a small outlined chip with a leading star (see DrawChip),
-            // so "New" reads as a compact badge beside the checkbox rather than another line of body
-            // copy; Brand.Gold is the "shiny" accent used for highlights elsewhere.
             if (group.IsNew || groupsBadgedThisSession.Contains(group.Key))
             {
                 ImGui.SameLine();
@@ -951,9 +695,6 @@ internal sealed partial class MainWindow
             }
         }
 
-        // Persist the seen-once flags for every group that was new this frame, in a single save. Because
-        // marking them seen makes the next rebuild report IsNew=false, this runs once per batch of
-        // newly-seen groups rather than every frame.
         if (newlySeen is not null)
         {
             configuration.Settings.MarkItemGroupsSeen(newlySeen);
@@ -963,51 +704,30 @@ internal sealed partial class MainWindow
         ImGui.Unindent(groupIndent);
     }
 
-    /// <summary>One checkbox that flips every collection at once.</summary>
+    /// <summary>
+    /// One checkbox that flips every collection at once, groups included (see
+    /// <see cref="ManifestConsent.SetRowConsent"/>).
+    /// </summary>
     /// <remarks>
-    /// <para>
-    /// Shown checked only when everything is on, so clicking it always does the obvious thing:
-    /// from "all on" it turns everything off, from anything else it turns everything on. It
-    /// never names a category — it iterates whatever rows it is handed, and its one caller
-    /// (<see cref="DrawCategoryRows"/>) hands it the very list drawn beneath it, so a bulk write
-    /// can never grant consent for a checkbox the user cannot see. A row the server has switched
-    /// off is left out of both the reading and the writing, itself and its groups alike: that
-    /// category uploads nothing whatever the boxes say, so this control leaves its consent
-    /// exactly as the user last set it, ready to mean something again if the server switches it
-    /// back on.
-    /// </para>
-    /// <para>
-    /// "Everything" includes the per-group consent checkboxes nested under a manifest-driven row (see
-    /// <see cref="DrawGroupCheckboxes"/>), both in what it writes and in whether it reads as checked.
-    /// A category whose groups are all off uploads nothing at all, so a select-all that ticked the
-    /// category and left its groups off would switch on a collection that still sends nothing —
-    /// and would then keep showing itself unchecked, because a group somewhere is still off. The
-    /// groups stay individually toggleable afterwards; this only sets a starting point.
-    /// </para>
-    /// <para>
-    /// This says nothing about a group that arrives LATER. A group the server adds after this click
-    /// has never appeared in any list the user has looked at, so it starts off and stays off until
-    /// they tick it — <see cref="PluginSettings.IsItemGroupEnabled"/> is an allowlist, and only the
-    /// groups on screen are ever written here.
-    /// </para>
+    /// Ticked only when everything is on, so a click turns all off from "all on" and all on otherwise.
+    /// It writes only the rows drawn beneath it, so it never grants consent for an unseen checkbox.
+    /// Rows the server has switched off are neither read nor written, so their consent stays as the
+    /// user last set it.
     /// </remarks>
-    /// <param name="rows">The rows this control reads and writes — the ones drawn beneath it.</param>
+    /// <param name="rows">The rows drawn beneath it, which this control reads and writes.</param>
     private void DrawSelectAll(IReadOnlyList<CategorySettingsRow> rows)
     {
-        // Whether the box reads as ticked is a rule about consent, not about drawing, so it lives in
-        // ManifestConsent with the rest of them and is unit-tested there.
         var allEnabled = ManifestConsent.AllConsentGiven(rows);
 
-        // Disabled rather than hidden, so the list reads the same shape whatever the server has
-        // switched off. ManifestConsent.AnyServerEnabled holds the rule.
+        // Disabled, not hidden, so the list keeps its shape whatever the server switches off.
         bool clicked;
         using (ImRaii.Disabled(!ManifestConsent.AnyServerEnabled(rows)))
             clicked = ImGui.Checkbox("All collections##selectAll", ref allEnabled);
 
         if (clicked)
         {
-            // Answered rather than merely drawn, so each row written here is recorded as shown for
-            // the same reason a row's own checkbox does it (see DrawCategoryRow).
+            // The click answers for every permitted row, so each is marked seen here, as a row's own
+            // click is (see DrawCategoryRow).
             var answered = new List<string>(rows.Count);
 
             foreach (var row in rows)

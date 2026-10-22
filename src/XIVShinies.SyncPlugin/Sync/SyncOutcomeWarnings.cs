@@ -7,19 +7,10 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// Decides whether an unhappy upload outcome is worth reporting, remembering what it already said.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The conditions behind a failed upload last far longer than the gap between sweeps: an outage, a
-/// network that blocks the backend, a schema the server tightened. Left unguarded, one of those
-/// writes the same line every few minutes for as long as it lasts.
-/// </para>
-/// <para>
-/// A success clears the memory, which is what separates this from a plain latch. A server that
-/// fails, recovers, and fails again has failed twice, and the second time is news — a latch would
-/// report the first and then stay quiet for the rest of the session.
-/// </para>
-/// <para>
-/// Not thread-safe. The upload path is one at a time behind its in-flight flag.
-/// </para>
+/// A failed upload's cause, such as an outage or a blocked network, usually outlasts the gap between
+/// sweeps, so unguarded it would log the same line every few minutes. A success clears the memory, so
+/// a server that fails, recovers and fails again is reported twice. Not thread-safe: the upload path
+/// runs one at a time behind its in-flight flag.
 /// </remarks>
 public sealed class SyncOutcomeWarnings
 {
@@ -28,8 +19,8 @@ public sealed class SyncOutcomeWarnings
 
     /// <summary>True when this outcome has not been reported since the last success.</summary>
     /// <remarks>
-    /// Records as it tests. Kept per status rather than as a single flag, so going quiet about a
-    /// 500 does not also go quiet about the network error that follows it.
+    /// Records as it tests. Kept per status, so going quiet about a 500 does not also silence the
+    /// network error that follows it.
     /// </remarks>
     public bool ShouldReport(ApiStatus status) => reported.Add(status);
 
@@ -38,10 +29,8 @@ public sealed class SyncOutcomeWarnings
     /// success ended a run of failures, which is the moment worth announcing.
     /// </summary>
     /// <remarks>
-    /// Clears every remembered outcome, not just the one that happened to arrive last: an upload
-    /// that worked ends the whole run of failures before it. The return value exists because an
-    /// outage that stops is otherwise invisible — the failure earns a line and the recovery earns
-    /// silence, leaving a reader unable to tell a fixed problem from an ongoing one.
+    /// Clears every remembered outcome, since a working upload ends the whole run. Without the
+    /// announcement, a fixed outage would look like an ongoing one.
     /// </remarks>
     public bool NoteSuccess()
     {

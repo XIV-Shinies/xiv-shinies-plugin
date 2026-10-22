@@ -5,24 +5,17 @@ using Xunit;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-/// <summary>
-/// Pins the exact set of collections permitted to declare a complete enumeration.
-/// </summary>
+/// <summary>Pins the exact set of collections permitted to declare a complete enumeration.</summary>
 /// <remarks>
-/// <para>
-/// What the claim licenses, and the condition a collection must meet to make it, are documented on
-/// <see cref="CategoryInfo.EnumeratesCompleteDomain"/>.
-/// </para>
-/// <para>
-/// The flag is reachable from a unit test through <see cref="CategoryInfoReflection"/>.
-/// </para>
+/// <see cref="CategoryInfo.EnumeratesCompleteDomain"/> documents what the claim licenses and when a
+/// collection may make it.
 /// </remarks>
 public class CompletenessDeclarationTests
 {
     /// <summary>
-    /// The collections entitled to declare a complete enumeration, each because its collector gets
-    /// an answer for every candidate the server's catalog may hold. The reasoning for each lives
-    /// beside its <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>.
+    /// The collections whose collector gets an answer for every candidate the server's catalog may
+    /// hold. Each one's reasoning sits beside its <see cref="CategoryInfo"/> in
+    /// <see cref="CollectorRegistry"/>.
     /// </summary>
     private static readonly HashSet<string> Declaring = new()
     {
@@ -36,17 +29,12 @@ public class CompletenessDeclarationTests
         CategoryKeys.TripleTriadCards,
     };
 
-    /// <summary>Every category the registry declares (see <see cref="CategoryInfoReflection"/>).</summary>
     private static IReadOnlyList<CategoryInfo> AllCategories() => CategoryInfoReflection.All();
 
     /// <summary>
-    /// Asserts the whole declaring set at once.
+    /// Comparing the whole set fails in both directions: a category that stops declaring, and a new one
+    /// that starts, typically copied from an entry with <c>EnumeratesCompleteDomain = true</c> left in.
     /// </summary>
-    /// <remarks>
-    /// Comparing the whole set is what makes this fail in both directions: a category that stops
-    /// declaring, and a new one that starts — typically one copied from an existing entry with
-    /// <c>EnumeratesCompleteDomain = true</c> left intact.
-    /// </remarks>
     [Fact]
     public void Exactly_the_expected_categories_declare_a_complete_enumeration()
     {
@@ -59,10 +47,9 @@ public class CompletenessDeclarationTests
     }
 
     /// <summary>
-    /// Guards the reflection itself. The set comparison above only sees categories the field scan
-    /// found, so a <see cref="CategoryInfo"/> stored somewhere the scan misses — a property, a
-    /// nested type — is invisible to it, and invisible in the safe-looking direction: a category
-    /// that does not declare simply never shows up. Comparing against the declared keys catches it.
+    /// Guards the reflection. A <see cref="CategoryInfo"/> the field scan misses, such as one held in a
+    /// property, would pass the set test unnoticed, because a missing category looks like one that
+    /// does not declare.
     /// </summary>
     [Fact]
     public void Every_registered_category_is_reachable_by_reflection()
@@ -73,13 +60,12 @@ public class CompletenessDeclarationTests
     }
 
     /// <summary>
-    /// The collections that must never declare completeness, named individually so the reason each
-    /// one withholds stays attached to the category rather than living only in the set above.
+    /// The collections that must never declare, named one by one so each reason stays attached to its
+    /// category.
     /// </summary>
     /// <remarks>
-    /// <c>tripleTriadNpcs</c> withholds for the reason recorded beside its
-    /// <see cref="CategoryInfo"/> in <see cref="CollectorRegistry"/>. The other three never reach
-    /// a factory that takes the claim at all, which is why they cannot declare — see
+    /// <c>tripleTriadNpcs</c> withholds for the reason beside its <see cref="CategoryInfo"/> in
+    /// <see cref="CollectorRegistry"/>. The other three never reach a factory that takes the claim; see
     /// <see cref="CollectResult.CompleteEnumeration"/>.
     /// </remarks>
     [Theory]

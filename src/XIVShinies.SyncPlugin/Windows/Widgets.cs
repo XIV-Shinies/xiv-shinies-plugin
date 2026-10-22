@@ -1,107 +1,72 @@
 using System;
 using System.Numerics;
-// At Dalamud API 15 the ImGui bindings live under Dalamud.Bindings.ImGui (NOT the older
-// ImGuiNET package). ImGui is an "immediate mode" GUI: instead of building a retained tree of
-// components like React, callers re-issue draw calls every frame.
 using Dalamud.Bindings.ImGui;
-// FontAwesomeIcon (the icon glyphs) and its ToIconString extension.
 using Dalamud.Interface;
-// Dalamud's standard palette (DalamudRed, HealerGreen, …), designed against its own themes —
-// preferred over hand-picked literals, which ignore the user's chosen style.
 using Dalamud.Interface.Colors;
-// Font handles — a caller's icon or bold font is pushed and popped around the text it styles;
-// fonts are a stack in ImGui, exactly like colors.
 using Dalamud.Interface.ManagedFontAtlas;
-// Scaling helpers: users on high-DPI displays run Dalamud at 1.5–2x, and raw pixel sizes ignore it.
 using Dalamud.Interface.Utility;
-// Scoped wrappers for ImGui's push/pop pairs. `using (ImRaii.Disabled(...))` guarantees the matching
-// End/Pop even if the block throws — a whole class of unbalanced-stack bugs stops existing.
 using Dalamud.Interface.Utility.Raii;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
 /// <summary>
-/// The shared drawing primitives every window in this plugin composes its UI from: icons, brand
-/// buttons, chips, wrapped text, separators, and the toggle switch.
+/// The shared drawing primitives the plugin's windows are built from: icons, brand buttons, chips,
+/// wrapped text, separators, and the toggle switch.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Stateless by design: a primitive that needs a font takes the caller's <see cref="IFontHandle"/>
-/// as a parameter, and one that wraps text takes the caller's wrap edge (a card's inner right, or
-/// null for the edge of the current content region). The window owns its fonts and its card
-/// state; this class owns only how things draw — which is what lets a second window reuse the
-/// same look without inheriting anything.
-/// </para>
-/// <para>
-/// Colors here come from Dalamud's own palette (and, for muted text, from the style's own text
-/// colors) rather than hardcoded literals: the user picks a Dalamud theme, including light ones,
-/// and a hand-picked gray that reads fine on dark is mush on light. <see cref="ErrorColor"/> mixes
-/// the palette's red with the style's text color (see there). The deliberate exceptions keep fixed
-/// values whatever the theme: the brand accents in <see cref="Brand"/>, and
-/// <see cref="BrandToggle"/>'s resting gray off-state track and white knob, which carry no text.
-/// </para>
-/// <para>
-/// Muted text (<c>ImGuiCol.TextDisabled</c>, a low-contrast gray in Dalamud's default themes) is
-/// for incidental text only — relative timestamps, empty-state filler, captions over the value
-/// they label, hints that restate a disabled control's state. Anything the user must read to
-/// decide something or to understand what the plugin does, consent copy above all, draws at the
-/// normal text color (<c>ImGuiCol.Text</c>).
-/// </para>
+/// Stateless: a primitive takes the caller's font and wrap edge (a card's inner right, or null for
+/// the content region's edge). Colors come from Dalamud's palette and the active style, because
+/// users pick themes, light ones included; only <see cref="Brand"/>'s accents and
+/// <see cref="BrandToggle"/>'s textless gray off-state track and white knob are fixed. Muted text
+/// (<c>ImGuiCol.TextDisabled</c>) is for incidental text such as relative timestamps, empty-state
+/// filler, captions over what they label, and hints that restate a disabled control's state, and for
+/// copy about a feature the website has switched off; anything else the user must read to decide
+/// something or to understand what the plugin does, consent copy above all, draws at
+/// <c>ImGuiCol.Text</c>.
 /// </remarks>
 internal static class Widgets
 {
     /// <summary>
-    /// The size every inline status icon draws at, as a fraction of the icon font's normal size (see
-    /// <see cref="DrawIcon"/>'s <c>scale</c> parameter). "Inline" means an icon sitting directly beside
-    /// a line of body text — a warning triangle, a source note's tone glyph — as opposed to a
-    /// standalone feature icon like a card title's, which draws full size.
+    /// The scale of every icon that sits beside a line of body text, such as a warning triangle. A
+    /// card title's icon draws full size.
     /// </summary>
     /// <remarks>
-    /// One constant, shared by every such icon, so that a warning triangle and a source note's glyph
-    /// read as one family of small status icons rather than as two unrelated decorations. At full text
-    /// size an icon visually outweighs the short line of text beside it, which is the opposite of what a
-    /// status glyph is for.
+    /// Shared so all status icons read as one family. At full size an icon outweighs the short line
+    /// beside it.
     /// </remarks>
     internal const float InlineIconScale = 0.82f;
 
     /// <summary>The red for warnings the user should act on.</summary>
     /// <remarks>
-    /// The palette's <c>DalamudRed</c> moved 40% of the way toward the active style's text color.
-    /// Pure red is hard to read at body-text size, and mixing in the text color keeps the result
-    /// readable on whatever theme is active: with the default white text it is #FF6666, and with a
-    /// light theme's dark text it becomes a darker red. A property rather than a field, so it reads
-    /// the style each time it is drawn; every caller is draw code.
+    /// The palette's <c>DalamudRed</c> moved 40% toward the style's text color: pure red is hard to
+    /// read at body-text size, and the mix stays readable on any theme (#FF6666 with the default white
+    /// text, a darker red with a light theme's dark text). A property, so it reads the style each time
+    /// it is drawn; every caller is draw code.
     /// </remarks>
-    // `=>` after a property's name makes a computed property, like a TypeScript getter.
-    // `Vector4.Lerp(a, b, t)` mixes two colors, `t` of the way from `a` to `b`, channel by channel.
     internal static Vector4 ErrorColor =>
         Vector4.Lerp(ImGuiColors.DalamudRed, ImGui.GetStyle().Colors[(int)ImGuiCol.Text], 0.4f);
 
-    /// <summary>The green for good news — an accepted upload, a verified token.</summary>
+    /// <summary>The green for good news, such as an accepted upload or a verified token.</summary>
     /// <remarks>
-    /// A property, like <see cref="ErrorColor"/>, because the palette's colors belong to the active
-    /// style: read each time it is drawn, it follows a theme the user changes while the game runs.
+    /// A property because the palette's colors belong to the active style: read on each draw, it
+    /// follows a theme the user changes while the game runs.
     /// </remarks>
     internal static Vector4 SuccessColor => ImGuiColors.HealerGreen;
 
-    /// <summary>
-    /// The yellow for "working, but worth knowing" states — a cached (possibly-stale) source note,
-    /// for instance.
-    /// </summary>
-    /// <remarks>A property for the same reason as <see cref="SuccessColor"/>.</remarks>
+    /// <summary>The yellow for "working, but worth knowing" states, such as a cached source note.</summary>
+    /// <remarks>A property (see <see cref="SuccessColor"/>).</remarks>
     internal static Vector4 CautionColor => ImGuiColors.DalamudYellow;
 
-    /// <summary>A consistent vertical gap between sections — one place to tune the page rhythm.</summary>
+    /// <summary>The vertical gap between sections.</summary>
     internal static void SectionGap() => ImGui.Dummy(new Vector2(0f, 10f * ImGuiHelpers.GlobalScale));
 
     /// <summary>
-    /// Moves the cursor so a widget of the given width ends at the right edge — the current
-    /// line's content edge by default, or an explicit edge such as a card's inner right.
+    /// Moves the cursor so a widget of the given width ends at the right edge: the content edge by
+    /// default, or an explicit one such as a card's inner right.
     /// </summary>
     /// <remarks>
-    /// Never moves the cursor LEFT: on a window too narrow for the widget, the cursor stays put
-    /// and the row simply runs long, instead of the widget overlapping whatever was already
-    /// drawn on the line. A window's minimum size makes that case rare; this makes it safe.
+    /// Never moves the cursor left, so in a window too narrow for the widget the row runs long instead
+    /// of overlapping what the line already holds.
     /// </remarks>
     internal static void AlignRight(float width, float? rightEdge = null)
     {
@@ -111,8 +76,7 @@ internal static class Widgets
 
     /// <summary>A branded divider: a 2px teal rule instead of ImGui's gray separator.</summary>
     /// <param name="innerRight">
-    /// A card's inner right edge in cursor space, so the rule spans the card rather than the
-    /// window — or null outside any card, where the window's content edge is the span.
+    /// A card's inner right edge in cursor space, or null to span the content region.
     /// </param>
     internal static void BrandSeparator(float? innerRight)
     {
@@ -132,20 +96,15 @@ internal static class Widgets
         ImGui.Dummy(new Vector2(0f, thickness + (4f * ImGuiHelpers.GlobalScale)));
     }
 
-    /// <summary>Draws wrapped text in a color, without unbalancing anything.</summary>
+    /// <summary>Draws wrapped text in a color, which <c>TextWrapped</c> cannot.</summary>
     /// <remarks>
-    /// Needed because <c>TextWrapped</c> has no colored variant and <c>TextColored</c> does not
-    /// wrap — long descriptions would run straight off the window edge. Pushing
-    /// <c>ImGuiCol.Text</c> recolors whatever text is drawn inside the scope. Lines break at spaces
-    /// wherever each word fits (see <see cref="BreakForWrap"/>), measured to the caller's edge rather
-    /// than any wrap position already pushed, such as a card's. A null <paramref name="wrapEdge"/>
-    /// means the right edge of the current content region: the window's, or a table cell's inside a
-    /// table.
+    /// Lines break only at spaces, measured to the caller's edge (see <see cref="BreakForWrap"/>), and
+    /// the wrap position pushed here (see <see cref="WrapPosFor"/>) wins over an enclosing one, such as
+    /// a card's. A null <paramref name="wrapEdge"/> means the content region's right edge, which in a
+    /// table is the cell's.
     /// </remarks>
     internal static void DrawWrapped(string text, Vector4 color, float? wrapEdge)
     {
-        // `out var everyLineFits` declares the variable that receives the second result, right
-        // where the call hands it back.
         var broken = BreakForWrap(text, wrapEdge, out var everyLineFits);
 
         using (ImRaii.PushColor(ImGuiCol.Text, color))
@@ -161,73 +120,59 @@ internal static class Widgets
     /// </summary>
     /// <remarks>
     /// A negative position turns ImGui's own wrapping off, so the breaks already made are the only
-    /// ones; <see cref="TextWrap"/>'s remarks say why, and which text still needs that wrapping. 0
-    /// means the right edge of the current content region.
+    /// ones (see <see cref="TextWrap"/> for why, and which text still needs that wrapping). 0 is the
+    /// content region's right edge.
     /// </remarks>
     private static float WrapPosFor(bool everyLineFits, float? wrapEdge) =>
         everyLineFits ? -1f : (wrapEdge ?? 0f);
 
     /// <summary>Draws wrapped text in one of the current style's own colors.</summary>
     /// <remarks>
-    /// The style's color is passed on as it is stored. <c>GetColorU32</c> would apply the style's
-    /// overall transparency, which ImGui applies again when it draws the text, so text in a faded
-    /// style or a disabled scope would come out fainter than plain text.
+    /// Passes the stored color. <c>GetColorU32</c> would apply the style's alpha, which ImGui applies
+    /// again when drawing, so text in a disabled scope would come out fainter than plain text.
     /// </remarks>
-    // `(int)styleColor` converts the enum value to its number, which indexes the style's color list.
     internal static void DrawWrapped(string text, ImGuiCol styleColor, float? wrapEdge) =>
         DrawWrapped(text, ImGui.GetStyle().Colors[(int)styleColor], wrapEdge);
 
     /// <summary>
-    /// Puts line breaks into text about to be drawn from the cursor to a wrap edge, at spaces only
-    /// (see <see cref="TextWrap"/> for why).
+    /// Breaks text drawn from the cursor to a wrap edge at spaces only (see <see cref="TextWrap"/>).
     /// </summary>
-    /// <param name="text">The text to draw.</param>
     /// <param name="wrapEdge">
-    /// The wrap position in cursor space (a card's inner right, or a tooltip's fixed width), or null
-    /// for the right edge of the current content region (the window's, or a table cell's inside a
-    /// table).
+    /// The wrap position in cursor space, or null for the content region's right edge.
     /// </param>
     /// <param name="everyLineFits">
-    /// Whether every line of the result fits (see <see cref="WrapPosFor"/> for what it decides).
+    /// Whether every line of the result fits, which decides the wrap position (see
+    /// <see cref="WrapPosFor"/>).
     /// </param>
     private static string BreakForWrap(string text, float? wrapEdge, out bool everyLineFits)
     {
         var cursorX = ImGui.GetCursorPosX();
         var edge = wrapEdge ?? (cursorX + ImGui.GetContentRegionAvail().X);
 
-        // One scaled pixel short of the edge, so a line measured here as exactly filling the room keeps
-        // a pixel of slack against ImGui's own rounding where its wrapping is still on.
+        // One scaled pixel short, so a line that exactly fills the room keeps slack against ImGui's
+        // own rounding where its wrapping is still on.
         return BreakAtSpacesForFont(text, edge - cursorX - ImGuiHelpers.GlobalScale, out everyLineFits);
     }
 
     /// <summary>Breaks text at spaces for a width, measured in the current font.</summary>
-    // `static s => ...` is a lambda, like the arrow function `s => ...`, that may not use the local
-    // variables, parameters or `this` around it, though it can still call static methods such as
-    // ImGui's, so it carries no closure.
     private static string BreakAtSpacesForFont(string text, float width, out bool everyLineFits) =>
         TextWrap.BreakAtSpaces(text, width, static s => ImGui.CalcTextSize(s).X, out everyLineFits);
 
     /// <summary>
-    /// A wrapped paragraph in which some spans carry their own color (null means the default text
-    /// color). An ImGui text widget is a single colored block, so inline emphasis has no built-in —
-    /// this flows the words by hand instead.
+    /// A wrapped paragraph whose spans carry their own color (null for the normal text color). ImGui
+    /// text has one color per call, so this flows the words by hand.
     /// </summary>
     /// <remarks>
-    /// The same greedy wrap ImGui performs, done manually: each word goes on the current line if it
-    /// fits and starts a new line otherwise, which lets the color change mid-paragraph. Words are
-    /// always joined by a single space, so attach punctuation directly to a span's words rather
-    /// than starting a span with it. Vertical item spacing is zeroed for the scope so the flowed
-    /// lines sit as tightly as a real wrapped paragraph.
+    /// Words are joined by single spaces, so attach punctuation to a span's words rather than starting
+    /// a span with it.
     /// </remarks>
     internal static void DrawWrappedSpans(params (string Text, Vector4? Color)[] spans)
     {
         var spaceWidth = ImGui.CalcTextSize(" ").X;
         var first = true;
 
-        // This flow is the ONLY wrapping authority: the negative wrap position turns ImGui's own
-        // text wrapping off for the words. Without it, a surrounding wrap scope (a card's, say)
-        // can character-wrap the tail of a word this flow already measured as fitting — the last
-        // letters end up stacked under the word instead of the word moving to the next line.
+        // Zero vertical spacing keeps lines as tight as one wrapped Text call. ImGui's wrapping is off, so a
+        // card's wrap scope cannot split a word this flow measured as fitting.
         using (ImRaii.PushStyle(
                    ImGuiStyleVar.ItemSpacing,
                    new Vector2(ImGui.GetStyle().ItemSpacing.X, 0f)))
@@ -239,8 +184,7 @@ internal static class Widgets
                 {
                     if (!first)
                     {
-                        // Tentatively continue the line, then wrap if the word will not fit —
-                        // after SameLine, the available content region is what remains of the line.
+                        // After SameLine, the available region is what remains of the line.
                         ImGui.SameLine(0f, spaceWidth);
                         if (ImGui.GetContentRegionAvail().X < ImGui.CalcTextSize(word).X)
                             ImGui.NewLine();
@@ -257,47 +201,20 @@ internal static class Widgets
         }
     }
 
-    /// <summary>
-    /// Draws one FontAwesome glyph in the given color, optionally shrunk relative to the
-    /// surrounding line's text.
-    /// </summary>
-    /// <param name="iconFont">The caller's icon font — the glyph renders as an empty box outside it.</param>
-    /// <param name="icon">The glyph to draw.</param>
-    /// <param name="color">The glyph's color.</param>
+    /// <summary>Draws one FontAwesome glyph in a color, optionally shrunk.</summary>
+    /// <param name="iconFont">The caller's icon font. Outside it the glyph draws as an empty box.</param>
     /// <param name="scale">
-    /// A fraction of the icon font's normal size (1 = unchanged, the default). Every inline status icon
-    /// passes <see cref="InlineIconScale"/>; a standalone feature icon like a card title's leaves this
-    /// at the default and renders full size.
+    /// A fraction of the icon font's size. Status icons pass <see cref="InlineIconScale"/>.
     /// </param>
     /// <remarks>
-    /// <para>
-    /// At the default scale this is one
-    /// <c>ImGui.TextColored</c> call inside the icon font push, which both paints the glyph and
-    /// advances the layout cursor by one line's worth of space. Dalamud builds its icon font at the
-    /// same size as the default UI font, which is why the glyph already lines up with body text
-    /// beside it with no extra alignment work.
-    /// </para>
-    /// <para>
-    /// A smaller scale reuses the footprint-reservation trick <see cref="DrawChip"/> uses for its
-    /// hand-drawn badge: reserve the FULL, unscaled glyph's box with an invisible <c>Dummy</c> — so
-    /// this call still advances the layout cursor exactly as far as the unscaled icon would, keeping
-    /// whatever <c>ImGui.SameLine()</c> comes next lined up on the same row it would expect — then
-    /// paint the smaller glyph directly onto the window's draw list, centered inside that reserved
-    /// box. Painting through the draw list instead of a second <c>ImGui.Text</c> call means the
-    /// smaller glyph itself never touches the layout cursor, so there is nothing for the mid-call
-    /// font-scale change below to disturb.
-    /// </para>
-    /// <para>
-    /// <c>ImGui.SetWindowFontScale</c> is WINDOW-global state — it is not scoped by the icon font
-    /// push above it, so left set it would shrink every widget drawn afterwards in this window, not
-    /// just this glyph. Every call below pairs it with a reset back to 1 immediately after the one
-    /// measurement or draw call that needed it.
-    /// </para>
+    /// Dalamud builds the icon font at the UI font's size, so a full-size glyph lines up with body
+    /// text. A shrunk glyph is painted on the draw list, centered in a <c>Dummy</c> of the full-size
+    /// box, so the cursor and any following <c>SameLine</c> behave as at full size.
+    /// <c>SetWindowFontScale</c> is window-wide and not scoped by the font push, so each call is reset
+    /// to 1 straight after use.
     /// </remarks>
     internal static void DrawIcon(IFontHandle iconFont, FontAwesomeIcon icon, Vector4 color, float scale = 1f)
     {
-        // The icon font maps FontAwesome codepoints to glyphs; ToIconString yields the codepoint as
-        // a string. Outside this push the same string would render as an empty box.
         using (iconFont.Push())
         {
             var glyph = icon.ToIconString();
@@ -308,9 +225,7 @@ internal static class Widgets
                 return;
             }
 
-            // The glyph's natural size at this font: the footprint an unscaled DrawIcon call would
-            // have reserved, and so the footprint THIS call reserves too, regardless of scale — that
-            // is what keeps the row's height, and SameLine's alignment, identical either way.
+            // The footprint reserved at any scale.
             var fullSize = ImGui.CalcTextSize(glyph);
 
             ImGui.SetWindowFontScale(scale);
@@ -319,45 +234,27 @@ internal static class Widgets
 
             var topLeft = ImGui.GetCursorScreenPos();
 
-            // Splits the size lost to scaling evenly on every side, which is what "centered" means
-            // for a box shrinking around a fixed middle point — half the margin above and below,
-            // half to the left and right, rather than the smaller glyph hugging the box's top-left
-            // corner (where an unshifted draw would otherwise leave it).
+            // Centers the shrunk glyph in the full-size box.
             var offset = (fullSize - scaledSize) / 2f;
 
             ImGui.SetWindowFontScale(scale);
             ImGui.GetWindowDrawList().AddText(topLeft + offset, ImGui.GetColorU32(color), glyph);
             ImGui.SetWindowFontScale(1f);
 
-            // Reserve the UNSCALED footprint — see the remarks above for why this has to match the
-            // scale-1 path's Text call exactly, so nothing downstream can tell this icon was drawn
-            // smaller.
             ImGui.Dummy(fullSize);
         }
     }
 
     /// <summary>
-    /// An icon beside wrapped text, both in the same color — the shared layout for every icon-led
-    /// line of body copy: red warnings, the green "Token accepted" line, the "Reading from:" source
-    /// notes. (A card header's icon and title share a color too, but that is a header row with a
-    /// layout of its own.)
+    /// An icon beside wrapped text in one color: the layout of every icon-led line of body copy, such
+    /// as red warnings and the "Reading from:" notes.
     /// </summary>
     /// <remarks>
-    /// The icon and the text are two separate ImGui items on the same line (<c>SameLine</c> puts
-    /// them side by side, the way flex-direction: row would). Without grouping them, a second
-    /// wrapped line would start back at the window's left edge — underneath the icon — instead of
-    /// lining up with the first line's text. <c>ImRaii.Group()</c> treats everything drawn inside
-    /// it as one block for layout purposes, which is what keeps wrapped lines flush with the text
-    /// above them rather than the icon beside it.
+    /// The text is grouped so its wrapped lines align under its first line, not under the icon.
     /// </remarks>
-    /// <param name="iconFont">The caller's icon font.</param>
-    /// <param name="icon">The icon to draw.</param>
-    /// <param name="color">The color shared by the icon and the text.</param>
-    /// <param name="text">The wrapped text beside the icon.</param>
-    /// <param name="wrapEdge">The caller's wrap edge — a card's inner right, or null for the window edge.</param>
+    /// <param name="wrapEdge">A card's inner right, or null for the window edge.</param>
     /// <param name="iconScale">
-    /// Forwarded to <see cref="DrawIcon"/> unchanged. The default of 1 (full size) suits a standalone
-    /// icon+text line at normal weight; every status line passes <see cref="InlineIconScale"/>.
+    /// Forwarded to <see cref="DrawIcon"/>. Status lines pass <see cref="InlineIconScale"/>.
     /// </param>
     internal static void DrawIconedText(
         IFontHandle iconFont, FontAwesomeIcon icon, Vector4 color, string text, float? wrapEdge,
@@ -373,14 +270,9 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// A secondary button: bold label, theme colors at rest, and a soft teal tint on hover — every
-    /// non-primary button in this plugin goes through here.
+    /// A secondary button: bold label, theme colors at rest, teal hover (see
+    /// <see cref="Brand.SecondaryHover"/>). Every non-primary button goes through here.
     /// </summary>
-    /// <remarks>
-    /// The hover override exists because the resting look should follow the user's theme, but many
-    /// themes hover buttons red — and red on a harmless button reads as "this will do something
-    /// bad". The tint is translucent, so it layers over any theme rather than fighting it.
-    /// </remarks>
     internal static bool BoldButton(IFontHandle buttonFont, string label)
     {
         using (ImRaii.PushColor(ImGuiCol.ButtonHovered, Brand.SecondaryHover))
@@ -403,26 +295,15 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// The branded primary button: near-black bold text on the bright teal, the site's own
-    /// primary-button pattern. One per screen — it marks the action that moves the user forward.
+    /// The branded primary button: dark bold text on teal, as on the website. One per screen, for the
+    /// action that moves the user forward.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Deliberately not built on <see cref="BoldButton(IFontHandle, string)"/>: color pushes are a
-    /// stack where the most recent push wins, so an inner secondary-hover push would override the
-    /// primary's hover.
-    /// </para>
-    /// <para>
-    /// It owns its disabled state rather than leaving that to the caller, so the color and the behavior
-    /// can never disagree: the face, its hover, and its active color all go to
-    /// <see cref="Brand.DisabledSurface"/> (see there for why a flat slate rather than a dimmed teal), so
-    /// nothing lights up under the cursor to contradict it, and <c>ImRaii.Disabled</c> swallows the press.
-    /// </para>
+    /// Not built on <see cref="BoldButton(IFontHandle, string)"/>, whose inner hover push would win
+    /// over this one's. It owns its disabled state so look and behavior cannot disagree: every face
+    /// color goes to <see cref="Brand.DisabledSurface"/>, and <c>ImRaii.Disabled</c> swallows the press.
     /// </remarks>
-    /// <param name="buttonFont">The caller's bold button font.</param>
-    /// <param name="label">The button's label.</param>
-    /// <param name="size">Its size.</param>
-    /// <param name="enabled">False to draw it dead and swallow the press — see the remarks.</param>
+    /// <param name="enabled">False to draw it disabled and swallow the press.</param>
     internal static bool PrimaryButton(IFontHandle buttonFont, string label, Vector2 size, bool enabled = true)
     {
         var face = enabled ? Brand.Teal : Brand.DisabledSurface;
@@ -440,8 +321,8 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// The width for a comfortably padded button: the label (measured in the bold button font)
-    /// plus generous side padding. ImGui's default button width hugs the text.
+    /// The width of a padded button: the label in the bold font plus side padding. ImGui's own
+    /// button width hugs the text.
     /// </summary>
     internal static float PaddedButtonWidth(IFontHandle buttonFont, string label)
     {
@@ -463,14 +344,12 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// Draws an icon-plus-text pair centered over an already-drawn button whose visible label is
-    /// blank — transient in-button feedback like "Copied" or "Syncing".
+    /// Draws an icon and text centered over an already-drawn button with a blank label: a button's
+    /// face, or feedback such as "Copied".
     /// </summary>
     /// <remarks>
-    /// A button label lives in a single font, and this needs two: the icon font for the glyph and
-    /// the bold font for the word. Text items are not interactive, so overlapping the button is
-    /// harmless. The layout cursor is teleported onto the button, the two pieces drawn, and the
-    /// cursor restored so normal layout resumes.
+    /// A button label has one font and this needs two. Text items take no clicks, so overlapping the
+    /// button is harmless, and the cursor is restored afterwards.
     /// </remarks>
     internal static void DrawButtonFeedback(
         IFontHandle iconFont, IFontHandle buttonFont,
@@ -493,9 +372,7 @@ internal static class Widgets
             buttonPos.X + ((buttonWidth - contentWidth) / 2f),
             buttonPos.Y + ImGui.GetStyle().FramePadding.Y));
 
-        // A negative wrap position means "never wrap" — a button's face is a single line, and
-        // without this a card's wrap scope would fold a right-aligned button's label at the
-        // card edge running through it.
+        // Never wrap: a card's wrap scope would fold a right-aligned button's label.
         using (ImRaii.TextWrapPos(-1f))
         {
             DrawIcon(iconFont, icon, iconColor);
@@ -511,14 +388,12 @@ internal static class Widgets
     internal static float ToggleWidth => ImGui.GetFrameHeight() * 1.55f;
 
     /// <summary>
-    /// A sliding on/off switch whose hover color previews the click's outcome: green when
-    /// clicking would turn it on, red when clicking would turn it off. The knob stays white.
+    /// An on/off switch whose hover color previews the click: green to turn it on, red to turn it
+    /// off. Returns true on the frame the value flips.
     /// </summary>
     /// <remarks>
-    /// Drawn by hand (an invisible button for the interaction, draw-list shapes for the look)
-    /// rather than using Dalamud's ToggleButton, whose colors come from the active theme with no
-    /// way to override the hover per state. At rest the track is brand teal when on and gray
-    /// when off. Returns true on the frame the value flips, like ImGui.Checkbox.
+    /// Drawn by hand because Dalamud's ToggleButton takes its colors from the theme, with no per-state
+    /// hover.
     /// </remarks>
     internal static bool BrandToggle(string id, ref bool value)
     {
@@ -528,8 +403,7 @@ internal static class Widgets
         var width = ToggleWidth;
         var radius = height * 0.5f;
 
-        // The invisible button supplies hit-testing and hover state; everything visible below is
-        // drawn over it by hand.
+        // Supplies hit-testing and hover; the look is drawn over it.
         ImGui.InvisibleButton(id, new Vector2(width, height));
         var pressed = ImGui.IsItemClicked();
         if (pressed)
@@ -539,7 +413,6 @@ internal static class Widgets
             ? (value ? ErrorColor : SuccessColor)
             : (value ? Brand.TealDark : new Vector4(0.35f, 0.35f, 0.35f, 1f));
 
-        // A fully rounded rectangle (rounding = half the height) reads as a pill-shaped track.
         drawList.AddRectFilled(
             topLeft,
             topLeft + new Vector2(width, height),
@@ -547,7 +420,6 @@ internal static class Widgets
             radius,
             ImDrawFlags.None);
 
-        // The knob sits at the end matching the state, inset slightly from the track's edge.
         var knobCenter = new Vector2(
             value ? topLeft.X + width - radius : topLeft.X + radius,
             topLeft.Y + radius);
@@ -560,86 +432,46 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// Draws a muted section label followed by a thin horizontal rule that fills the rest of the
-    /// row, so the label reads as a section divider ("Label ────────") instead of a plain caption
-    /// floating above the lines it introduces.
+    /// A muted section label followed by a thin rule to the row's right edge, so it reads as a
+    /// divider rather than a caption.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// ImGui has no built-in "label plus rule" widget, so the rule is hand-drawn on the window's
-    /// <em>draw list</em> — a list of raw shapes attached to the window, separate from the layout
-    /// cursor that ordinary widgets like <c>TextDisabled</c> advance. This is the same primitive
-    /// <see cref="BrandSeparator"/> and <see cref="DrawChip"/> use. Because draw-list calls never
-    /// move the cursor themselves, the label's own <c>TextDisabled</c> call is what actually
-    /// reserves layout space; the rule is simply painted over empty space to its right, and
-    /// <c>NewLine</c> at the end restores normal top-to-bottom flow for whatever the caller draws
-    /// next.
-    /// </para>
-    /// <para>
-    /// The rule spans from just right of the label text to the row's right edge — the caller's
-    /// <paramref name="innerRight"/> (a card's inner edge) when inside a card, or the window's own
-    /// content edge otherwise, the same fallback <see cref="BrandSeparator"/> uses, so the rule can
-    /// never overrun whichever container it is in. It is centered on the label's text line (half of
-    /// <c>GetTextLineHeight</c> below the line's top, where the cursor sits) and colored from the
-    /// active Dalamud theme's disabled-text color with its alpha thinned further, rather than a
-    /// literal color, so it reads as a quiet divider beneath the label instead of competing with
-    /// it — and still matches whatever theme the user has chosen.
-    /// </para>
+    /// The rule is painted on the draw list, so only the label advances the layout cursor, and it
+    /// stops at <paramref name="innerRight"/> or the content edge. It takes the theme's disabled-text
+    /// color, thinned, so it sits behind the label.
     /// </remarks>
-    /// <param name="label">The section heading drawn before the rule.</param>
     /// <param name="innerRight">A card's inner right edge in cursor space, or null outside any card.</param>
     internal static void DrawSectionLabel(string label, float? innerRight)
     {
-        // The muted heading itself. This is the ONLY call that advances the layout cursor; the rule
-        // drawn below is pure decoration painted beside it, not a second widget.
         ImGui.TextDisabled(label);
         ImGui.SameLine();
 
-        // GetCursorPosX() is in cursor-space (relative to the window's content region), the same
-        // coordinate space innerRight arrives in. Subtracting one from the other gives a plain
-        // pixel width that stays correct no matter where on screen this row ends up, which is why
-        // BrandSeparator computes its own width the same way.
+        // Cursor space, the space innerRight arrives in.
         var afterLabelX = ImGui.GetCursorPosX();
         var rightEdge = innerRight ?? (afterLabelX + ImGui.GetContentRegionAvail().X);
 
-        // A small scaled gap so the rule does not touch the last letter of the label.
         var gap = 6f * ImGuiHelpers.GlobalScale;
         var width = Math.Max(0f, rightEdge - afterLabelX - gap);
 
-        // GetCursorScreenPos() is the SCREEN-space counterpart of GetCursorPosX() above — the point
-        // AddLine needs, since draw-list calls work in screen pixels, not window-relative layout
-        // coordinates. Half the text line's height offsets from the line's top down to its
-        // vertical middle, centering the rule on the label's text rather than its top edge.
+        // The draw list works in screen space. The rule sits at the text line's middle.
         var centerY = ImGui.GetTextLineHeight() / 2f;
         var lineStart = ImGui.GetCursorScreenPos() + new Vector2(gap, centerY);
         var lineEnd = lineStart + new Vector2(width, 0f);
 
-        // Derived from the active style rather than a hardcoded literal, matching how the upload
-        // log reads ImGuiCol.TextDisabled for its own muted color. The alpha is thinned further on
-        // top of that so the rule sits visually behind the label instead of reading as more text.
         var ruleColor = ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled];
         ruleColor.W *= 0.6f;
 
         var thickness = 1f * ImGuiHelpers.GlobalScale;
         ImGui.GetWindowDrawList().AddLine(lineStart, lineEnd, ImGui.GetColorU32(ruleColor), thickness);
 
-        // The AddLine call above did not move the cursor, and SameLine left it sitting on the
-        // label's own line. NewLine advances to a fresh line beneath it so whatever the caller
-        // draws next is unaffected by either the SameLine or the rule.
+        // Leave the label's line, which SameLine kept the cursor on.
         ImGui.NewLine();
     }
 
     /// <summary>
-    /// Everything <see cref="MeasureChip"/> works out about one chip before it is drawn: the icon
-    /// glyph string plus every size and style constant <see cref="PaintChip"/> needs to paint it and
-    /// <see cref="DrawChip"/> or <see cref="DrawHeaderRightChip"/> need to position it.
+    /// A chip's measurements and style constants, from <see cref="MeasureChip"/>. Both chip
+    /// placements paint from one of these, so they stay pixel-identical.
     /// </summary>
-    /// <remarks>
-    /// The measurement and the style constants travel together in one value, which keeps
-    /// <see cref="DrawChip"/>'s normal, in-flow chip and <see cref="DrawHeaderRightChip"/>'s
-    /// right-aligned overlay chip pixel-identical: both paint from the same <see cref="ChipMetrics"/>,
-    /// so padding, rounding, and the two font scales have only one place they can be set.
-    /// </remarks>
     private readonly record struct ChipMetrics(
         string Glyph,
         string Text,
@@ -655,42 +487,27 @@ internal static class Widgets
         float IconScale);
 
     /// <summary>
-    /// Measures the glyph, the label, and the pill outline a "chip" badge needs, without drawing
-    /// anything. Split out of the chip's draw pass so a caller that must position a chip somewhere
-    /// other than "wherever the cursor currently is" — see <see cref="DrawHeaderRightChip"/>, which
-    /// right-aligns one against a fixed edge — can know its exact footprint first.
+    /// Measures a chip without drawing it, so a caller can place it by its footprint first.
     /// </summary>
     /// <remarks>
-    /// <c>ImGui.SetWindowFontScale</c> is WINDOW-global state (see <see cref="DrawIcon"/>): it is not
-    /// scoped to the icon font push or to any one draw call, so left set it would shrink every widget
-    /// drawn afterwards in this window. Every measurement below that needs the shrunk scale pairs it
-    /// with an immediate reset back to 1, on every path.
+    /// Each <c>SetWindowFontScale</c> is reset to 1 straight after use (see <see cref="DrawIcon"/>).
     /// </remarks>
     private static ChipMetrics MeasureChip(IFontHandle iconFont, FontAwesomeIcon icon, string text)
     {
-        // Both the text and the padding shrink by this factor. Distinct from InlineIconScale, which
-        // shrinks only the icon and leaves the body text beside it at full size; this shrinks an entire
-        // self-contained badge, text included, so it reads as a compact tag rather than a full-size
-        // label wearing a thin outline.
+        // Shrinks the whole badge, text and padding included, so it reads as a compact tag.
         const float ChipContentScale = 0.85f;
 
-        // The icon is drawn SMALLER than the chip's own text. A FontAwesome glyph at the text's size
-        // carries far more ink than a letter of the same height does, so at parity it reads as a
-        // second word competing with the label instead of as a small leading mark before it.
+        // Smaller than the text: a glyph at text size carries more ink than a letter and competes
+        // with the label.
         const float ChipIconScale = ChipContentScale * 0.7f;
 
         var paddingX = 6f * ChipContentScale * ImGuiHelpers.GlobalScale;
         var paddingY = 2f * ChipContentScale * ImGuiHelpers.GlobalScale;
         var thickness = 1f * ImGuiHelpers.GlobalScale;
-
-        // The gap between the icon and the text, kept separate from the outline padding so either
-        // can be tuned without affecting the other.
         var iconTextGap = 3f * ImGuiHelpers.GlobalScale;
 
-        // Measure the icon at the ICON's scale — the same scale it is drawn at in PaintChip, so the
-        // footprint this returns matches the ink exactly. The icon font must stay pushed for this
-        // measurement — ToIconString's codepoint only renders as a glyph while that font is active,
-        // otherwise it measures (and later draws) as an empty box.
+        // Both pieces are measured at the scales PaintChip draws them at, so the footprint matches
+        // the ink.
         string glyph;
         Vector2 iconSize;
         using (iconFont.Push())
@@ -701,26 +518,17 @@ internal static class Widgets
             ImGui.SetWindowFontScale(1f);
         }
 
-        // Measure the text at the CONTENT scale — again the scale PaintChip draws it at, and a larger
-        // one than the icon's. Measured in the default font, which is what is active out here, outside
-        // the icon font's push above.
         ImGui.SetWindowFontScale(ChipContentScale);
         var textSize = ImGui.CalcTextSize(text);
         ImGui.SetWindowFontScale(1f);
 
-        // The chip's content is exactly as tall as its taller piece and exactly as wide as the icon,
-        // the gap, and the text laid end to end. Max rather than the text's height alone: the icon is
-        // drawn smaller and so is normally the shorter of the two, but the two come from different
-        // fonts, and a glyph with a deep descender could still measure taller than the label.
+        // Max, not the text's height: the two come from different fonts, and a glyph can still
+        // measure taller than the label.
         var contentHeight = Math.Max(iconSize.Y, textSize.Y);
         var contentWidth = iconSize.X + iconTextGap + textSize.X;
         var chipSize = new Vector2(contentWidth + (2f * paddingX), contentHeight + (2f * paddingY));
 
-        // Rounding at half the chip's height makes the outline a full pill — semicircular ends,
-        // no straight corner anywhere — the same technique BrandToggle uses for its track. A
-        // pill reads as a tag; a slightly-rounded rectangle reads as a button waiting to be
-        // clicked, which these are not. Derived from the measured height rather than set as a
-        // constant so the ends stay semicircular at any font scale.
+        // A full pill: a slightly rounded rectangle would read as a button, which a chip is not.
         var rounding = chipSize.Y / 2f;
 
         return new ChipMetrics(
@@ -730,25 +538,17 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// Paints an already-measured chip's outline, icon, and text at an explicit screen position.
-    /// Pure draw-list output: it never reads or moves the layout cursor, so it is safe to call from
-    /// anywhere a caller has already worked out where the chip's top-left corner should land, whether
-    /// that is "the current cursor" (<see cref="DrawChip"/>) or "overlapping a full-width widget
-    /// already drawn this frame" (<see cref="DrawHeaderRightChip"/>).
+    /// Paints a measured chip at a screen position. Draw-list only: it never reads or moves the
+    /// layout cursor.
     /// </summary>
-    /// <param name="iconFont">The caller's icon font.</param>
-    /// <param name="metrics">The chip's measurements, from <see cref="MeasureChip"/>.</param>
-    /// <param name="topLeft">The chip outline's top-left corner, in screen coordinates.</param>
-    /// <param name="color">The color shared by the outline, the icon, and the text.</param>
+    /// <param name="topLeft">The outline's top-left corner, in screen coordinates.</param>
     private static void PaintChip(
         IFontHandle iconFont, ChipMetrics metrics, Vector2 topLeft, Vector4 color, bool filled)
     {
         var contentOrigin = topLeft + new Vector2(metrics.PaddingX, metrics.PaddingY);
         var contentHeight = Math.Max(metrics.IconSize.Y, metrics.TextSize.Y);
 
-        // Center the icon and the text independently within the content height, in case their
-        // measured heights differ slightly — the same "split the leftover margin" centering DrawIcon
-        // uses for a shrunk glyph inside its reserved box.
+        // Centered separately, since their heights can differ.
         var iconPos = contentOrigin + new Vector2(0f, (contentHeight - metrics.IconSize.Y) / 2f);
         var textPos = contentOrigin + new Vector2(
             metrics.IconSize.X + metrics.IconTextGap, (contentHeight - metrics.TextSize.Y) / 2f);
@@ -756,11 +556,7 @@ internal static class Widgets
         var drawList = ImGui.GetWindowDrawList();
         var colorU32 = ImGui.GetColorU32(color);
 
-        // A faint wash of the chip's own color, for a chip that has to be noticed rather than
-        // merely found. Off by default: an accent chip is already prominent from its color alone,
-        // and filling it would make it compete with the surrounding copy. A muted chip has the
-        // opposite problem — the color that keeps it from shouting also keeps it from registering
-        // — so weight substitutes for the loudness it deliberately gives up.
+        // An accent chip stays unfilled, or it would compete with the copy around it.
         if (filled)
         {
             var wash = color with { W = color.W * 0.16f };
@@ -768,15 +564,12 @@ internal static class Widgets
                 topLeft, topLeft + metrics.ChipSize, ImGui.GetColorU32(wash), metrics.Rounding);
         }
 
-        // Always drawn: it is what gives an unfilled chip its shape.
         drawList.AddRect(
             topLeft, topLeft + metrics.ChipSize, colorU32, metrics.Rounding, ImDrawFlags.None,
             metrics.Thickness);
 
-        // The icon, painted through the icon font at the ICON's scale — AddText draws with whatever
-        // font is currently active, which is why this stays inside the same iconFont push and
-        // SetWindowFontScale bracket MeasureChip used. The scale here must match the one the
-        // measurement used, or the reserved footprint would stop describing what was drawn.
+        // AddText draws in the active font. The scales must match MeasureChip's, or the reserved
+        // footprint stops describing what was drawn.
         using (iconFont.Push())
         {
             ImGui.SetWindowFontScale(metrics.IconScale);
@@ -790,29 +583,20 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// The exact width one chip will occupy, without drawing it. This is what lets a caller laying
-    /// several chips side by side decide whether the next one still fits before its row's right
-    /// edge — the wrap decision has to happen BEFORE <see cref="DrawChip"/> is called, because a
-    /// drawn chip has already reserved its footprint.
+    /// The width <see cref="DrawChip"/> will reserve, for deciding whether a chip fits before it is
+    /// drawn.
     /// </summary>
-    /// <param name="iconFont">The caller's icon font.</param>
-    /// <param name="icon">The glyph the chip would draw before its text.</param>
-    /// <param name="text">The chip's label.</param>
     internal static float ChipWidth(IFontHandle iconFont, FontAwesomeIcon icon, string text) =>
         MeasureChip(iconFont, icon, text).ChipSize.X;
 
     /// <summary>
-    /// Shows a hover tooltip with wrapped text. Call immediately after the hovered item, inside an
-    /// <c>ImGui.IsItemHovered()</c> check — a tooltip is redrawn every frame it is visible, like
-    /// every other ImGui widget, so there is nothing to open or close across frames.
+    /// Shows a tooltip with wrapped text. Call right after the hovered item, inside an
+    /// <c>ImGui.IsItemHovered()</c> check.
     /// </summary>
     /// <remarks>
-    /// The wrap width is a fixed multiple of the font size rather than of any window: a tooltip
-    /// floats free of the layout that spawned it, so without an explicit wrap edge a long sentence
-    /// would stretch into one very wide line. Its lines break at spaces wherever each word fits, as
-    /// <see cref="DrawWrapped(string, Vector4, float?)"/>'s do.
+    /// A tooltip has no window edge to wrap at, so it wraps at a multiple of the font size. Lines
+    /// break only at spaces.
     /// </remarks>
-    /// <param name="text">The tooltip's content, wrapped to a readable width.</param>
     internal static void DrawTooltip(string text)
     {
         ImGui.BeginTooltip();
@@ -825,106 +609,54 @@ internal static class Widgets
     }
 
     /// <summary>
-    /// A small outlined "chip": an icon then a label, both shrunk (the icon further than the text),
-    /// inside a thin pill outline, vertically centered against the standard checkbox row and
-    /// flowing in-line at the current cursor position. Used for the "New" badge beside a freshly
-    /// added consent group and for the read-status panel's per-source chips. The icon is a
-    /// parameter, so any caller can reuse the same compact-tag look with a glyph of its own.
+    /// A small outlined chip, an icon then a label in a pill, flowing at the cursor and centered on a
+    /// checkbox-height row.
     /// </summary>
     /// <remarks>
-    /// ImGui has no built-in chip/pill widget, so this is built from primitives, the same way
-    /// <see cref="BrandToggle"/> hand-draws a switch: <see cref="MeasureChip"/> works out the exact
-    /// footprint, then <see cref="PaintChip"/> paints it on the window's draw list — a list of raw
-    /// shapes attached to the window, distinct from the layout cursor React-style widgets normally
-    /// advance. Draw-list calls never move the layout cursor themselves, so a trailing <c>Dummy</c>
-    /// reserves the same footprint by hand; without it, whatever is drawn next would land on top of
-    /// the chip instead of after it. That <c>Dummy</c> is also a real (if inert) item, which is what
-    /// lets a caller attach hover behavior — <c>ImGui.IsItemHovered()</c> right after this call
-    /// answers for the chip's reserved rectangle.
+    /// The draw list does not move the cursor, so a <c>Dummy</c> reserves the painted footprint. It is
+    /// a real item, so <c>ImGui.IsItemHovered()</c> right after this call answers for the chip.
     /// </remarks>
-    /// <param name="iconFont">The caller's icon font.</param>
-    /// <param name="icon">The glyph drawn before the text, at a smaller scale than the text.</param>
-    /// <param name="text">The chip's label.</param>
-    /// <param name="color">The color shared by the outline, the icon, and the text.</param>
     /// <param name="filled">
-    /// True to wash the chip with a faint tint of its own color. For a chip whose color is muted
-    /// on purpose and would otherwise be easy to skim past.
+    /// True to wash the chip with a faint tint of its own color, for a deliberately muted chip that
+    /// would otherwise be easy to skim past.
     /// </param>
     internal static void DrawChip(
         IFontHandle iconFont, FontAwesomeIcon icon, string text, Vector4 color, bool filled = false)
     {
         var metrics = MeasureChip(iconFont, icon, text);
 
-        // A checkbox is always drawn at frame height regardless of its label's own font size, so
-        // this is the true height of the row the chip sits on even though the chip itself is
-        // shorter. Centering the chip within it keeps the badge level with the checkbox and label
-        // beside it, instead of hugging the row's top edge.
+        // A checkbox row is frame-height whatever its font, so the shorter chip is centered in it.
         var rowHeight = ImGui.GetFrameHeight();
 
-        // SameLine (called by the caller before this) leaves the cursor at the row's top-left, just
-        // to the right of whatever was drawn before it — the same Y every item on this line shares,
-        // regardless of each item's own height. Offsetting by half the leftover height centers the
-        // shorter chip inside that shared row.
         var topLeft = ImGui.GetCursorScreenPos() + new Vector2(0f, (rowHeight - metrics.ChipSize.Y) / 2f);
         PaintChip(iconFont, metrics, topLeft, color, filled);
 
-        // Reserve the full row height (not just the chip's own, shorter height) so the chip's
-        // footprint matches what every other item on this row already occupies — keeping the row's
-        // total height, and therefore where the NEXT row starts, unaffected by the chip. The width
-        // reserved is exactly chipSize.X, the same icon-plus-gap-plus-text-plus-padding total that
-        // was just painted, so a widget placed after this with ImGui.SameLine() lands flush against
-        // the chip's real right edge rather than overlapping or leaving a gap.
+        // The full row height, so the next row starts where it would without the chip.
         ImGui.Dummy(new Vector2(metrics.ChipSize.X, rowHeight));
     }
 
     /// <summary>
-    /// Draws a chip flush against a fixed right edge, overlapping the full-width widget drawn
-    /// immediately before it, instead of flowing in-line the way <see cref="DrawChip"/> does. Built
-    /// for a chip beside a <c>CollapsingHeader</c>: the header spans the entire available width, so
-    /// its own item rectangle already reaches the row's right edge, and a plain
-    /// <c>ImGui.SameLine()</c> after it would offset the cursor by that FULL width — pushing the
-    /// chip past the visible window instead of beside the header's own text.
+    /// Draws a chip against a fixed right edge, over the full-width widget drawn just before it, such
+    /// as a <c>CollapsingHeader</c>, beside which <c>SameLine</c> would push the chip off the window.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Reads back the immediately preceding widget's rectangle with <c>GetItemRectMin</c> /
-    /// <c>GetItemRectMax</c> — valid only because nothing else is drawn between that widget and
-    /// this call — to learn the row's actual height, then paints the chip at an explicit screen
-    /// position instead of asking the layout system for a "next" position on that row (there is
-    /// not one; the row is already full). The chip is pure draw-list output with no interactive
-    /// element of its own (see <see cref="PaintChip"/>), so overlapping the header this way does
-    /// not steal any of its clicks — expanding and collapsing the section still works anywhere
-    /// on the row, chip included.
-    /// </para>
-    /// <para>
-    /// The layout cursor is left exactly where the preceding widget put it: painting through the
-    /// draw list, like <see cref="BrandSeparator"/> and <see cref="DrawSectionLabel"/>, never touches
-    /// it, so the caller does not need to save or restore anything around this call.
-    /// </para>
+    /// Reads the previous item's rectangle, so nothing may be drawn in between. The chip is draw-list
+    /// only, so it takes none of the header's clicks and leaves the layout cursor where it was.
     /// </remarks>
-    /// <param name="iconFont">The caller's icon font.</param>
-    /// <param name="icon">The glyph drawn before the text, at a smaller scale than the text.</param>
-    /// <param name="text">The chip's label.</param>
-    /// <param name="color">The color shared by the outline, the icon, and the text.</param>
     /// <param name="rightEdgeScreenX">
-    /// The screen-space X the chip's own right edge should land just inside of — the enclosing
-    /// card's inner right edge when the preceding widget was drawn inside one, or the window's own
-    /// content edge otherwise.
+    /// The screen X the chip's right edge lands just inside: the card's inner edge, or the window's
+    /// content edge outside a card.
     /// </param>
     internal static void DrawHeaderRightChip(
         IFontHandle iconFont, FontAwesomeIcon icon, string text, Vector4 color, float rightEdgeScreenX)
     {
         var metrics = MeasureChip(iconFont, icon, text);
 
-        // The preceding item's rectangle — the header this chip overlaps — read back in screen
-        // space, so the chip can be vertically centered on the header's OWN measured height rather
-        // than an assumed one.
+        // Centered on the header's measured height.
         var rowMin = ImGui.GetItemRectMin();
         var rowMax = ImGui.GetItemRectMax();
         var rowHeight = rowMax.Y - rowMin.Y;
 
-        // A small scaled gap keeps the chip's outline off the card's own edge, matching the gap
-        // DrawSectionLabel leaves between a label and its rule.
         var margin = 8f * ImGuiHelpers.GlobalScale;
 
         var topLeft = new Vector2(

@@ -1,20 +1,20 @@
 namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
-/// Why an occult upload is happening. Travels to the server as the payload's
-/// <c>trigger</c> field (lower-cased), per docs/api-contract.md § occult/instance-state.
+/// Why an occult upload is happening. Sent lower-cased as the payload's <c>trigger</c> (see
+/// docs/api-contract.md, occult/instance-state).
 /// </summary>
 public enum OccultTrigger
 {
-    /// <summary>The character just entered an occult instance; first snapshot.</summary>
+    /// <summary>The character entered an occult instance: the first snapshot.</summary>
     Enter,
 
-    /// <summary>Some encounter's status changed (debounced).</summary>
+    /// <summary>An encounter's status changed, after a debounce.</summary>
     Change,
 
-    /// <summary>Idle re-upload keeping presence and tracker liveness fresh.</summary>
+    /// <summary>An idle re-upload that keeps presence and the tracker alive.</summary>
     Heartbeat,
 
-    /// <summary>The character left the instance; clears presence server-side.</summary>
+    /// <summary>The character left the instance; clears presence on the server.</summary>
     Leave,
 }

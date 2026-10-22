@@ -5,8 +5,8 @@ using XIVShinies.SyncPlugin.Beastmaster;
 
 namespace XIVShinies.SyncPlugin.Tests.Beastmaster;
 
-// The ledger is what turns pages of the bestiary window into something a collection pass can read.
-// The window shows part of itself at a time; a sync happens later and needs the whole set.
+// The ledger gathers bestiary pages for a later collection pass: the window shows part of the set
+// at a time, and a sync needs all of it.
 public class TamedBeastLedgerTests
 {
     private static BestiaryPageReading Page(int[] seen, int[] held) => new(seen, held, held.Length, 50);
@@ -21,8 +21,8 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 30 }, ledger.Snapshot());
     }
 
-    // A beast the page listed but did not mark as held is not the character's, and must not appear
-    // in what ships — but it still counts as seen, which is what proves they do not hold it.
+    // A listed beast not marked held must not ship, but it counts as seen: that is what proves the
+    // character does not hold it.
     [Fact]
     public void A_beast_listed_but_not_held_is_seen_rather_than_reported()
     {
@@ -34,8 +34,8 @@ public class TamedBeastLedgerTests
         Assert.Equal(2, ledger.SeenCount);
     }
 
-    // Ascending order is for the reader, not the server — the upload log and a pasted diagnostic
-    // are easier to scan when the numbers are not in the order the pages happened to arrive.
+    // Sorted for the reader, not the server: the upload log and a pasted diagnostic are easier to
+    // scan.
     [Fact]
     public void The_snapshot_is_sorted_ascending()
     {
@@ -47,7 +47,7 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 2, 11, 30 }, ledger.Snapshot());
     }
 
-    // Pages overlap when a player scrolls back, and the same beast must not be counted twice.
+    // Pages overlap when a player scrolls back.
     [Fact]
     public void Seeing_the_same_beast_twice_reports_it_once()
     {
@@ -60,9 +60,8 @@ public class TamedBeastLedgerTests
         Assert.Equal(1, ledger.Count);
     }
 
-    // Every pass resends everything gathered rather than only what is new, which is what makes a
-    // failed upload self-healing: the next sync carries the beast the failed one dropped, and the
-    // server's insert-only write makes the repeat free.
+    // Every pass resends everything gathered, so the next sync carries what a failed one dropped.
+    // The server's insert-only write makes the repeat free.
     [Fact]
     public void The_snapshot_keeps_reporting_earlier_beasts_so_a_failed_upload_retries_itself()
     {
@@ -76,8 +75,7 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 2, 30 }, ledger.Snapshot());
     }
 
-    // The snapshot is a copy, so a page read after it was taken cannot mutate a list the caller is
-    // still reading.
+    // A page read later must not change a list the caller is still reading.
     [Fact]
     public void A_snapshot_is_a_copy_rather_than_a_live_view()
     {
@@ -90,8 +88,8 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 2 }, snapshot);
     }
 
-    // The ledger belongs to whoever is logged in, so both session edges empty it. A beast carried
-    // across a character switch would attribute one character's collection to another.
+    // Both session edges empty the ledger: a beast carried across a character switch would credit
+    // one character's collection to another.
     [Fact]
     public void Clearing_empties_the_ledger()
     {
@@ -105,17 +103,16 @@ public class TamedBeastLedgerTests
         Assert.Equal(0, ledger.SeenCount);
     }
 
-    // "Nothing read yet" is the ordinary state, and it is a fact rather than a failure — the
-    // collector still reports the category as read.
+    // "Nothing read yet" is the ordinary state, a fact rather than a failure: the collector still
+    // reports the category as read.
     [Fact]
     public void A_fresh_ledger_is_empty_rather_than_absent()
     {
         Assert.Empty(new TamedBeastLedger().Snapshot());
     }
 
-    // Zero is the sheets' blank padding row and fails the server's positive-integer validation for
-    // the entire upload, so it never gets in. Reading should never produce one; this is the floor
-    // that means no future caller can reintroduce it.
+    // Zero is the sheets' blank padding row, and the contract fails the whole upload on one. Reading
+    // should never produce a zero; this floor holds for any caller.
     [Fact]
     public void A_non_positive_number_is_refused_at_the_door()
     {
@@ -140,8 +137,7 @@ public class TamedBeastLedgerTests
 
     // --- Ranks -----------------------------------------------------------------------------------------
 
-    /// <summary>A reading with these ranks, and the given beasts leveled (none by default).</summary>
-    // `params int[] leveled` lets a caller list the leveled numbers one by one, like `...leveled`.
+    /// <summary>A reading with these ranks and the given beasts leveled.</summary>
     private static BeastRankReading Reading(Dictionary<int, int> ranks, params int[] leveled) =>
         new(ranks, new HashSet<int>(leveled));
 
@@ -218,8 +214,7 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 1, 2, 30 }, ledger.Pacts());
     }
 
-    // A beast at rank 1 with no EXP could be how the record set stores a beast without a pact, so
-    // it is reported only once the window has shown it held.
+    // Rank 1 with no EXP may be a beast without a pact, so only the window can show it held.
     [Fact]
     public void A_beast_that_is_ranked_but_not_leveled_is_not_a_pact_on_its_own()
     {
@@ -253,7 +248,7 @@ public class TamedBeastLedgerTests
         Assert.True(ledger.RecordRanks(Reading(new Dictionary<int, int> { [4] = 1 }, 4)));
     }
 
-    // A beast dropping out of the leveled set changes what is reported, so it is news too.
+    // A beast leaving the leveled set changes what is reported.
     [Fact]
     public void A_beast_leaving_the_leveled_set_counts_as_news()
     {
@@ -263,7 +258,6 @@ public class TamedBeastLedgerTests
         Assert.True(ledger.RecordRanks(Reading(new Dictionary<int, int> { [4] = 2 })));
     }
 
-    // The same number of ranks on different beasts is a different reading.
     [Fact]
     public void The_same_rank_on_a_different_beast_counts_as_news()
     {
@@ -273,8 +267,7 @@ public class TamedBeastLedgerTests
         Assert.True(ledger.RecordRanks(Reading(new Dictionary<int, int> { [2] = 9 })));
     }
 
-    // The window wins where the two disagree: a beast it listed without marking held is not
-    // reported, whatever the record set says, because a reported pact is never taken back.
+    // The window wins where it and the record set disagree, since a reported pact is never taken back.
     [Fact]
     public void A_leveled_beast_the_window_listed_as_not_held_is_not_a_pact()
     {
@@ -286,7 +279,6 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 1 }, ledger.Pacts());
     }
 
-    // The order of the two reads does not matter: a window read after the record set still wins.
     [Fact]
     public void A_window_read_after_the_record_set_still_wins()
     {
@@ -313,7 +305,6 @@ public class TamedBeastLedgerTests
         Assert.Equal(new[] { 30 }, ledger.Pacts());
     }
 
-    // Non-positive numbers in either half of a reading are not bestiary numbers.
     [Fact]
     public void A_reading_drops_non_positive_numbers()
     {

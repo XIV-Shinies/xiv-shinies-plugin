@@ -5,14 +5,12 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
 // One upload path's wait after a 503 saying syncing is switched off, and when the website's
-// /config may end it early. Polls are numbered as they start; each `[Fact]` is one test, like
-// `it(...)` in Jest.
+// /config may end it early. Polls are numbered as they start.
 public class SyncResumeWaitTests
 {
-    // An arbitrary fixed instant. Tests move time by adding to it, never by waiting.
     private static readonly DateTimeOffset T0 = new(2026, 10, 20, 20, 0, 0, TimeSpan.Zero);
 
-    /// <summary>A wait armed by a refusal at T0, when three polls had started, lasting an hour.</summary>
+    // A refusal at T0, when three polls had started, with an hour's wait.
     private static SyncResumeWait Armed()
     {
         var wait = new SyncResumeWait();
@@ -74,8 +72,8 @@ public class SyncResumeWaitTests
         Assert.False(Armed().TryEnd(4, true, T0.AddHours(1)));
     }
 
-    // A website whose /config says syncing is on while its uploads keep saying it is off would
-    // otherwise turn its hour's wait into a few minutes, again and again.
+    // A refusal soon after an early end waits in full. Otherwise a website whose /config says
+    // syncing is on while its uploads say it is off would turn each hour's wait into a few minutes.
     [Fact]
     public void A_refusal_inside_a_wait_that_ended_early_waits_its_whole_wait()
     {

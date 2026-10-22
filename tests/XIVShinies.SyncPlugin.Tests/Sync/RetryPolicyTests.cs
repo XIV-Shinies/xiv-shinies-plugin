@@ -5,11 +5,10 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// Decides what to do after an upload fails. Getting this wrong is how a plugin ends up hammering a
-// server that already told it to stop.
+// What to do after an upload fails. Getting it wrong hammers a server that already said stop.
 public class RetryPolicyTests
 {
-    // Retrying an identical request that the server refused on principle can only fail again.
+    // The server refused on principle, so the same request can only fail again.
     [Theory]
     [InlineData(ApiStatus.InvalidToken)]
     [InlineData(ApiStatus.CharacterNotClaimed)]
@@ -41,8 +40,7 @@ public class RetryPolicyTests
         Assert.False(RetryPolicy.ShouldRetryNow(status, attempt: 1));
     }
 
-    // 429 and 503 are the server saying "wait". They are never retried in-place; the caller stops
-    // uploading until the backoff expires.
+    // 429 and 503 mean "wait": the caller stops uploading until the backoff expires.
     [Theory]
     [InlineData(ApiStatus.RateLimited)]
     [InlineData(ApiStatus.SyncDisabled)]
@@ -62,8 +60,8 @@ public class RetryPolicyTests
         Assert.Equal(now.AddSeconds(90), until);
     }
 
-    // The contract advertises Retry-After on 429/503, but a proxy can strip it. Fall back to the
-    // documented defaults rather than retrying instantly.
+    // A proxy can strip the contract's Retry-After header, so fall back to a documented default
+    // rather than retrying instantly.
     [Fact]
     public void Falls_back_to_a_short_wait_when_rate_limited_without_a_header()
     {
@@ -85,9 +83,8 @@ public class RetryPolicyTests
         Assert.Equal(now.Add(RetryPolicy.DefaultSyncDisabledBackoff), until);
     }
 
-    // Only a 503 whose code says syncing is switched off may end early. Matched exactly, like the
-    // other codes: a 429, a busy server, a tracker that cannot answer and a proxy page with no body
-    // all keep their whole wait.
+    // Only a 503 with the exact code `sync_disabled` may end early. A 429, a busy server, a tracker
+    // that cannot answer and a proxy page with no body keep their whole wait.
     [Theory]
     [InlineData(ApiStatus.SyncDisabled, "sync_disabled", true)]
     [InlineData(ApiStatus.SyncDisabled, "busy", false)]
@@ -101,9 +98,8 @@ public class RetryPolicyTests
         Assert.Equal(expected, RetryPolicy.EndsWhenSyncResumes(status, errorCode));
     }
 
-    // Polls are numbered as they start. One already on its way when the refusal arrived (number 3 or
-    // lower here) may carry the website's answer from before the switch went off, so only a later
-    // poll that says syncing is on ends the wait.
+    // Polls are numbered as they start. One already on its way at the refusal, 3 or lower here, may
+    // carry the answer from before syncing went off, so only a later poll saying it is on counts.
     [Theory]
     [InlineData(true, 4, 3, true)]
     [InlineData(true, 3, 3, false)]
@@ -125,8 +121,8 @@ public class RetryPolicyTests
         Assert.Null(RetryPolicy.BackoffUntil(ApiStatus.InvalidToken, null, now));
     }
 
-    // A 401 never heals on retry: the token is gone. Syncing must stop until the user pastes a new
-    // one, rather than quietly retrying every interval forever.
+    // A 401 never heals on retry. Syncing stops until the user pastes a new token, rather than
+    // retrying every interval forever.
     [Fact]
     public void An_invalid_token_stops_syncing_until_the_user_intervenes()
     {

@@ -1,49 +1,30 @@
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// One source of collection facts — completed quests, unlocked mounts, item possession, and so on.
+/// One source of collection facts: completed quests, unlocked mounts, item possession, and so on.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>Adding a collection to this plugin is one new class implementing this interface, and nothing
-/// else.</b> A collector announces its own <see cref="CategoryKey"/> and returns its own facts;
-/// the runner, the payload, and the settings UI all iterate collectors generically. Nothing
-/// downstream may branch on a category name — if you find yourself writing
-/// <c>if (key == "quests")</c>, the design has gone wrong.
-/// </para>
-/// <para>
-/// The single sanctioned exception is a collection driven by a server manifest, which also brings
-/// its <c>/config</c> field, a derivation on <see cref="CollectContext"/>, and the
-/// <see cref="ManifestCatalog"/> entry tying them to a category. Deriving a manifest's ids differs
-/// per manifest and has to stay unit-testable, and every manifest-driven collector reads the game
-/// — so the derivation lives in those Dalamud-free classes rather than here. The catalog entry is
-/// the only place a category is named.
-/// </para>
-/// <para>
-/// This interface is deliberately free of Dalamud types even though every real implementation
-/// reads the game. That keeps the runner and the payload assembly unit-testable with a fake
-/// collector, while the implementations themselves are verified by in-game QA.
-/// </para>
+/// Adding a collection is one new class implementing this interface and nothing else: the runner,
+/// payload and settings UI iterate collectors, and none may branch on a category name. The one
+/// exception is a server-manifest collection, which also brings its <c>/config</c> field, its id
+/// derivation on <see cref="CollectContext"/> (never on the collector; see CLAUDE.md's extensibility
+/// contract) and the <see cref="ManifestCatalog"/> entry, the only place a category is named. Keep
+/// Dalamud types out of this interface, which must load outside the game.
 /// </remarks>
-// An `interface` is a contract a class promises to fulfill — the same idea as a TypeScript
-// `interface` used with `class Foo implements Bar`, except C# enforces it at compile time.
 public interface ICollector
 {
     /// <summary>
-    /// The payload key this collector's facts are sent under (for example <c>"quests"</c>). It is
-    /// also the key used for the user's opt-in toggle and the server's kill switch, so all three
-    /// line up without a lookup table.
+    /// The payload key for this collector's facts, for example <c>"quests"</c>. It is also the
+    /// user's opt-in key and the server's kill-switch key, so all three line up without a lookup.
     /// </summary>
     string CategoryKey { get; }
 
     /// <summary>
-    /// The category's name as a person reads it (for example <c>"Mounts"</c>).
+    /// The category's name as a person reads it, for example <c>"Mounts"</c>.
     /// </summary>
     /// <remarks>
-    /// The copy lives on the collector rather than in the settings window on purpose. If the window
-    /// held a key-to-label table, adding a collection would mean editing the window too, and that
-    /// table would be a category-name branch by another name. A collector describes itself; the UI
-    /// renders whatever it is handed.
+    /// Lives on the collector so the settings window holds no key-to-label table, which would be a
+    /// category-name branch by another name.
     /// </remarks>
     string DisplayName { get; }
 
@@ -54,13 +35,13 @@ public interface ICollector
     string Section { get; }
 
     /// <summary>
-    /// A plain-language sentence naming exactly what leaves the player's machine for this category.
+    /// A plain-language sentence naming exactly what leaves the player's machine for this category,
+    /// shown next to the opt-in toggle.
     /// </summary>
     /// <remarks>
-    /// Shown next to the opt-in toggle. Dalamud requires that users be told what is collected before
-    /// they consent to it, so this is a compliance surface, not decoration: it must describe the real
-    /// payload, and it must be updated whenever <see cref="Collect"/> starts sending something new.
-    /// Write it for someone who has never read this code. Name the website the data goes to as
+    /// Dalamud requires users be told what is collected before they consent, so this must describe
+    /// the real payload and change whenever <see cref="Collect"/> sends something new. Write it for
+    /// someone who has never read this code, and name the website as
     /// <see cref="HostPlaceholder.Token"/>; the surface that draws the line fills in its address.
     /// </remarks>
     string WhatGetsSent { get; }
@@ -70,10 +51,9 @@ public interface ICollector
     /// one-liner says everything.
     /// </summary>
     /// <remarks>
-    /// Self-description like the two above. <see cref="WhatGetsSent"/> still has to name every kind
-    /// of data that leaves the machine on its own — this carries the scope and reassurance detail
-    /// that would otherwise crowd the consent list, never a disclosure the visible line omitted.
-    /// Where it names the website, it writes <see cref="HostPlaceholder.Token"/> the same way.
+    /// <see cref="WhatGetsSent"/> must still name every kind of data that leaves the machine; this
+    /// carries scope and reassurance, never a disclosure the visible line omits. Name the website as
+    /// <see cref="HostPlaceholder.Token"/>, as <see cref="WhatGetsSent"/> does.
     /// </remarks>
     string? Details { get; }
 
@@ -82,11 +62,8 @@ public interface ICollector
     /// fixed at compile time.
     /// </summary>
     /// <remarks>
-    /// The settings window uses this to decide whether to attach per-group consent rows beneath this
-    /// collector's row. It is self-description, the same idea as <see cref="DisplayName"/> and
-    /// <see cref="WhatGetsSent"/>: the window asks the collector about itself instead of comparing
-    /// <see cref="CategoryKey"/> against a hardcoded name, so a future manifest-driven collection gets
-    /// group rows for free just by setting this flag on its own <see cref="CategoryInfo"/>.
+    /// The settings window reads this to attach per-group consent rows, instead of comparing
+    /// <see cref="CategoryKey"/> against a name.
     /// </remarks>
     bool UsesItemManifest { get; }
 
@@ -95,11 +72,9 @@ public interface ICollector
     /// uploads within seconds (see <see cref="CategoryInfo.UploadsOnUnlock"/>).
     /// </summary>
     /// <remarks>
-    /// Self-description, like <see cref="UsesItemManifest"/>: carried onto each
-    /// <see cref="CategorySettingsRow"/>, where the sync card reads it rather than naming collections.
+    /// Carried onto each <see cref="CategorySettingsRow"/>, where the sync card reads it rather than
+    /// naming collections.
     /// </remarks>
-    // `=> false` gives the member a default body, so a collector that does not declare it answers
-    // false. TypeScript interfaces cannot carry a body; this is closer to a base class's getter.
     bool UploadsOnUnlock => false;
 
     /// <summary>
@@ -107,13 +82,11 @@ public interface ICollector
     /// </summary>
     /// <param name="context">
     /// Values that vary between passes, such as the server's latest config and item manifest.
-    /// Collectors that need nothing from it ignore it.
     /// </param>
     /// <remarks>
-    /// Reads game state, so it must be called on the framework thread. Return
-    /// <see cref="CollectResult.Skipped"/> rather than throwing when a source is simply not
-    /// available yet (for example, the achievements list has never been opened) — a skip omits the
-    /// category from the upload, which the server reads as "not read this time".
+    /// Call on the framework thread. Return <see cref="CollectResult.Skipped"/> rather than throwing
+    /// when a source is not available yet, such as an achievements list never opened; the server
+    /// reads the omitted category as "not read this time".
     /// </remarks>
     CollectResult Collect(CollectContext context);
 }
