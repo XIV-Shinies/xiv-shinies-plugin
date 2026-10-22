@@ -14,7 +14,7 @@
       The release version. The SDK copies it into the packaged manifest as "AssemblyVersion",
       normalized to four parts.
     -->
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
 
     <!--
       The manifest's "RepoUrl" is set in XIVShinies.SyncPlugin.json; the SDK does not derive it
