@@ -7,6 +7,12 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.9.0 — 2026-10-22
+
+- Sync your tamed beasts and each one's rank
+- Say why the website refused your character, and the fix
+- Move to the XIV-Shinies org; re-add the repo URL to follow
+
 ## v0.8.0 — 2026-09-09
 
 - Report a collection as complete whenever the plugin can read all of it
