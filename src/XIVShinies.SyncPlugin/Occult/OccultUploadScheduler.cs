@@ -3,67 +3,65 @@ using System;
 namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
-/// Decides <b>when</b> the occult uploader fires and with which trigger word. The tracker owns
-/// <i>what</i> gets sent (the snapshot is always read fresh at send time).
+/// Decides when the occult uploader fires and with which trigger. The tracker owns what is sent, and
+/// the snapshot is read fresh at send time.
 /// </summary>
 /// <remarks>
-/// <para>
-/// It only decides: it reads nothing from the game, sends nothing itself, and keeps no clock
-/// (every method that needs the time is handed <c>now</c>). <c>Notify*</c> and <c>Poll</c> run
-/// on the framework thread, but <c>MarkUploaded</c> and <c>BackOffUntil</c> run on a background
-/// task once the HTTP call finishes, so a lock guards the state.
-/// </para>
-/// <para>
-/// Priority when several things are due: leave, then enter, then a settled change, then the
-/// heartbeat. Enter and leave both carry the same full snapshot a change would, so whichever
-/// fires swallows a pending change rather than spending a second request on it.
-/// </para>
+/// It reads nothing from the game, sends nothing, and keeps no clock: callers pass <c>now</c>.
+/// <c>Notify*</c> and <c>Poll</c> run on the framework thread, and <c>MarkUploaded</c> and
+/// <c>BackOffUntil</c> on a background task after the HTTP call, so a lock guards the state. When
+/// several are due, leave wins, then enter, then a settled change, then the heartbeat; enter and leave
+/// carry the full snapshot, so either swallows a pending change.
 /// </remarks>
 public sealed class OccultUploadScheduler
 {
-    /// <summary>The shortest heartbeat the plugin will honor, whatever /config says.</summary>
+    /// <summary>The shortest heartbeat the plugin honors, whatever /config says.</summary>
     /// <remarks>
-    /// The guard matters because the backend URL is user-overridable: a zero or negative
-    /// cadence from a misconfigured or hostile server must not become a request flood. The
-    /// floor sits at double the server's default rate budget (240/hour = one request per
-    /// 15 s) so heartbeats alone can never consume the whole budget — change uploads need
-    /// headroom inside it too.
+    /// The backend URL is user-overridable, so a zero or negative cadence from a bad server must not
+    /// become a request flood. At the floor, heartbeats alone use half the server's default rate
+    /// budget (240 an hour, one per 15 seconds), leaving headroom for change uploads.
     /// </remarks>
     public static readonly TimeSpan MinHeartbeat = TimeSpan.FromSeconds(30);
 
-    /// <summary>The longest heartbeat the plugin will honor. Past ~3 missed heartbeats the
-    /// server ages the reporter out, so an enormous value would silently break presence.</summary>
+    /// <summary>
+    /// The longest heartbeat the plugin honors. The server ages a reporter out after about three
+    /// missed heartbeats, so a huge value would silently break presence.
+    /// </summary>
     public static readonly TimeSpan MaxHeartbeat = TimeSpan.FromMinutes(5);
 
-    /// <summary>How long a change burst gets to settle before it uploads. A CE flip often
-    /// lands alongside FATE flips within a second or two; the slide collapses them.</summary>
+    /// <summary>
+    /// How long a change burst settles before it uploads. A CE flip often lands with FATE flips within
+    /// a second or two.
+    /// </summary>
     private static readonly TimeSpan ChangeDebounce = TimeSpan.FromSeconds(2);
 
-    /// <summary>Guards every field below (see the class remarks for who calls from where).</summary>
+    /// <summary>Guards every field below; the class remarks say which threads call.</summary>
     private readonly object gate = new();
 
     private bool pendingEnter;
     private bool pendingLeave;
 
-    /// <summary>A change waiting out its debounce window, and when that window closes.</summary>
     private bool pendingChange;
     private DateTimeOffset changeDueAt;
 
-    /// <summary>True between an observed enter and the matching leave — the heartbeat only
-    /// runs while the character is actually inside.</summary>
+    /// <summary>True between an enter and its leave.</summary>
     private bool inside;
 
-    /// <summary>The heartbeat clock's reference point: set by any trigger <see cref="Poll"/>
-    /// issues, and refreshed by a completed upload. Null until the first of those.</summary>
+    /// <summary>
+    /// The heartbeat clock's reference point: set by any trigger <see cref="Poll"/> issues and by a
+    /// completed upload. Null until the first of those.
+    /// </summary>
     private DateTimeOffset? heartbeatAnchor;
 
-    /// <summary>The moment a server-instructed backoff expires. Null when not backing off.</summary>
     private DateTimeOffset? backoffUntil;
 
     /// <summary>How long between idle re-uploads.</summary>
     public TimeSpan Heartbeat { get; private set; } = TimeSpan.FromSeconds(60);
 
-    /// <summary>Adopts the server's heartbeat cadence from <c>/config</c>, clamped sane.</summary>
+    /// <summary>
+    /// Adopts the server's heartbeat cadence from <c>/config</c>, clamped between
+    /// <see cref="MinHeartbeat"/> and <see cref="MaxHeartbeat"/>.
+    /// </summary>
     public void ApplyHeartbeat(int heartbeatSeconds)
     {
         lock (gate)
@@ -75,26 +73,23 @@ public sealed class OccultUploadScheduler
         }
     }
 
-    /// <summary>The character entered an occult instance: first snapshot due immediately.</summary>
-    /// <remarks><paramref name="now"/> is unused here (the work is due immediately, so there
-    /// is no deadline to compute); the parameter exists for call-site symmetry with the other
-    /// Notify methods.</remarks>
+    /// <summary>The character entered an occult instance: the first snapshot is due at once.</summary>
+    /// <remarks><paramref name="now"/> is unused; it keeps the Notify methods alike.</remarks>
     public void NotifyEntered(DateTimeOffset now)
     {
         lock (gate)
         {
             pendingEnter = true;
             inside = true;
-
-            // The enter carries the full snapshot; a change that raced it is redundant.
             pendingChange = false;
         }
     }
 
-    /// <summary>Some encounter's status changed; (re)opens the debounce window.</summary>
-    /// <remarks>The window slides — each new change pushes the deadline out, so a burst of
-    /// simultaneous flips produces one upload. Assigning the deadline outright also means a
-    /// clock that jumps backwards cannot leave a window that never closes.</remarks>
+    /// <summary>An encounter's status changed; restarts the debounce window.</summary>
+    /// <remarks>
+    /// Each change pushes the deadline out, so a burst produces one upload. The deadline is assigned
+    /// outright, so a clock that jumps backward cannot leave a window that never closes.
+    /// </remarks>
     public void NotifyChanged(DateTimeOffset now)
     {
         lock (gate)
@@ -104,11 +99,10 @@ public sealed class OccultUploadScheduler
         }
     }
 
-    /// <summary>The character left the instance: final upload due immediately.</summary>
+    /// <summary>The character left the instance: the final upload is due at once.</summary>
     /// <remarks>
-    /// The uploader must build the leave payload from the territory and snapshot being LEFT —
-    /// the scheduler only orders the triggers; it cannot tell a plain exit from a same-tick
-    /// hop into another instance.
+    /// The uploader must build the leave payload from the territory and snapshot being left: the
+    /// scheduler cannot tell a plain exit from a same-tick hop into another instance.
     /// </remarks>
     public void NotifyLeft(DateTimeOffset now)
     {
@@ -116,21 +110,17 @@ public sealed class OccultUploadScheduler
         {
             pendingLeave = true;
             inside = false;
-
-            // The leave upload carries the final snapshot; the debouncing change is redundant.
             pendingChange = false;
 
-            // An enter queued before this leave is stale by construction — it describes a
-            // visit that is already over. (An enter notified AFTER the leave is a new visit
-            // and survives.)
+            // An enter queued before this leave describes a finished visit. One notified after it
+            // is a new visit and survives.
             pendingEnter = false;
         }
     }
 
-    /// <summary>Records a successful upload, restarting the idle-heartbeat clock.</summary>
+    /// <summary>Records a successful upload, restarting the idle heartbeat clock.</summary>
     /// <remarks>
-    /// <see cref="Poll"/> already anchors the clock when it ISSUES work, so the heartbeat
-    /// survives an upload that fails; this refresh just credits the actual completion time.
+    /// <see cref="Poll"/> also anchors the clock when it issues work; this credits the completion time.
     /// </remarks>
     public void MarkUploaded(DateTimeOffset now)
     {
@@ -140,9 +130,11 @@ public sealed class OccultUploadScheduler
         }
     }
 
-    /// <summary>Suppresses all work until the given moment, as instructed by the server.</summary>
-    /// <remarks>Pending work is deferred, never dropped. The deadline is absolute and never
-    /// shortens — over-waiting is the safe direction against a server that asked us to stop.</remarks>
+    /// <summary>Suppresses all work until the given moment, as the server instructed.</summary>
+    /// <remarks>
+    /// Pending work is deferred, never dropped. The deadline never shortens: over-waiting is the safe
+    /// direction with a server that asked us to stop.
+    /// </remarks>
     public void BackOffUntil(DateTimeOffset until)
     {
         lock (gate)
@@ -152,9 +144,11 @@ public sealed class OccultUploadScheduler
         }
     }
 
-    /// <summary>Forgets all queued work and the heartbeat, as when the player logs out.</summary>
-    /// <remarks>The backoff deadline deliberately survives: it is the server talking to the
-    /// token, and relogging must not shake off a rate limit.</remarks>
+    /// <summary>Forgets all queued work and the heartbeat, as at logout.</summary>
+    /// <remarks>
+    /// The backoff survives: it is the server talking to the token, and relogging must not shake off a
+    /// rate limit.
+    /// </remarks>
     public void Reset()
     {
         lock (gate)
@@ -168,20 +162,18 @@ public sealed class OccultUploadScheduler
     }
 
     /// <summary>
-    /// Returns the upload that is due right now and removes it from the queue, or null.
-    /// Called once per framework tick; each piece of work is handed out exactly once.
+    /// Returns the upload due now and removes it from the queue, or null. Called once per framework
+    /// tick; each piece of work is handed out once.
     /// </summary>
     /// <remarks>
-    /// Every issued trigger re-anchors the heartbeat clock at issue time, not on success. A
-    /// failed upload therefore waits out a fresh interval instead of retrying every tick, and
-    /// even a failed ENTER still leads to a heartbeat one interval later, so a single transient
-    /// error cannot silently end presence reporting for the whole visit.
+    /// Every issued trigger re-anchors the heartbeat at issue time, not on success. A failed upload
+    /// waits a fresh interval instead of retrying every tick, and even a failed enter leads to a
+    /// heartbeat one interval later, so one transient error cannot end presence for the whole visit.
     /// </remarks>
     public OccultTrigger? Poll(DateTimeOffset now)
     {
         lock (gate)
         {
-            // The server said wait. Nothing is due, and nothing queued is lost.
             if (backoffUntil is { } until)
             {
                 if (now < until)
@@ -190,16 +182,13 @@ public sealed class OccultUploadScheduler
                 backoffUntil = null;
             }
 
-            // A clock that jumped backwards past the anchor would otherwise stall the
-            // heartbeat by however far it jumped — long enough, and the server ages the
-            // reporter out. Treat the earlier "now" as the new reference point.
+            // A clock that jumped back past the anchor would stall the heartbeat by the size of the
+            // jump, possibly long enough for the server to age the reporter out.
             if (heartbeatAnchor is { } a && now < a)
                 heartbeatAnchor = now;
 
-            // 1. Leave first: presence should clear promptly, and it supersedes everything
-            //    else queued (its snapshot is the final word on this visit). A change still
-            //    debouncing is covered by the leave's snapshot, so it is dropped here too —
-            //    the snapshot is read at issue time, not when the change was noticed.
+            // 1. Leave first: presence should clear promptly, and its snapshot is the final word on
+            //    the visit. It covers a debouncing change too, since the snapshot is read at issue.
             if (pendingLeave)
             {
                 pendingLeave = false;
@@ -208,10 +197,8 @@ public sealed class OccultUploadScheduler
                 return OccultTrigger.Leave;
             }
 
-            // 2. Enter: the first snapshot, due the moment it is queued. The very first
-            //    Apply of an instance always registers as a change (every id is new), so
-            //    without the swallow here every entry would spend a second, byte-identical
-            //    upload two seconds after the enter.
+            // 2. Enter. An instance's first Apply always registers as a change, since every id is
+            //    new, so without this swallow every entry would send an identical second upload.
             if (pendingEnter)
             {
                 pendingEnter = false;
@@ -228,8 +215,7 @@ public sealed class OccultUploadScheduler
                 return OccultTrigger.Change;
             }
 
-            // 4. The idle heartbeat — only while inside, and only once an issued upload has
-            //    anchored the clock.
+            // 4. The idle heartbeat.
             if (inside && heartbeatAnchor is { } anchor && now >= anchor + Heartbeat)
             {
                 heartbeatAnchor = now;

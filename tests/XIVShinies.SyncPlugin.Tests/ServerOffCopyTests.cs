@@ -3,12 +3,10 @@ using Xunit;
 namespace XIVShinies.SyncPlugin.Tests;
 
 // The sentences for something the website has switched off or does not offer. Each is pinned whole,
-// with the address it was handed: a keyword check would still pass if two were swapped. Each
-// `[Fact]` is one test, like `it(...)` in Jest.
+// with the address it was handed: a keyword check would still pass if two were swapped.
 public class ServerOffCopyTests
 {
-    // A made-up address, so a test can tell one that was passed in from one written into the copy.
-    // `const` fixes the value when the code compiles.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
     [Fact]

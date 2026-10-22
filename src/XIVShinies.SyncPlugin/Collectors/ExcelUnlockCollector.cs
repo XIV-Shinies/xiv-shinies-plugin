@@ -6,44 +6,29 @@ using Lumina.Excel;
 namespace XIVShinies.SyncPlugin.Collectors;
 
 /// <summary>
-/// Collects the IDs of every row in a game data sheet that the local player has unlocked or
-/// completed. Covers quests, mounts, minions, achievements — and any future sheet-backed
-/// collection, since <c>IUnlockState</c> exposes the same shape for all of them.
+/// Collects the IDs of every row in a game sheet the local player has unlocked or completed, for any
+/// sheet <c>IUnlockState</c> answers for, such as quests, mounts, minions, achievements, orchestrion
+/// rolls and Triple Triad cards.
 /// </summary>
-/// <typeparam name="TRow">
-/// The Excel sheet row type, for example <c>Quest</c> or <c>Mount</c>. The constraint
-/// <c>struct, IExcelRow&lt;TRow&gt;</c> is what Lumina requires of a sheet row.
-/// </typeparam>
+/// <typeparam name="TRow">The sheet's row type, such as <c>Quest</c> or <c>Mount</c>.</typeparam>
 /// <remarks>
-/// <para>
-/// Reads game data, so <see cref="Collect"/> must run on the framework thread, and in-game QA
-/// verifies it. The gating rule lives in <see cref="CollectorGate"/>, <see cref="CollectorRunner"/>
-/// applies it and handles skips, and <see cref="Sync.SyncPayloadBuilder"/> assembles the request
-/// body.
-/// </para>
-/// <para>
-/// Reads only the <b>local</b> player's unlock state. It never touches the object table or any
-/// other character, which is a hard Dalamud rule.
-/// </para>
+/// Reads only the local player's unlock state, never the object table (a Dalamud rule).
+/// <see cref="CollectorGate"/> holds the gating rule, <see cref="CollectorRunner"/> applies it and
+/// handles skips, and <see cref="Sync.SyncPayloadBuilder"/> assembles the request body.
 /// </remarks>
-// Generics let one class serve every sheet: `ExcelUnlockCollector<Quest>` and
-// `ExcelUnlockCollector<Mount>` are distinct types the compiler generates from this one
-// definition, exactly like a generic in TypeScript.
 public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     where TRow : struct, IExcelRow<TRow>
 {
     private readonly IDataManager dataManager;
     private readonly IFramework framework;
 
-    // Lumina's row interface does not expose RowId, so the caller hands us a way to read it.
+    // Lumina's row interface does not expose RowId, so the caller supplies a reader.
     private readonly Func<TRow, uint> rowId;
 
     private readonly Func<TRow, bool> isUnlocked;
 
-    // Returns a skip reason when the source cannot be read yet, or null when it can.
     private readonly Func<string?>? precondition;
 
-    // How this collection names and describes itself to the user.
     private readonly CategoryInfo info;
 
     /// <summary>Creates a collector for one sheet.</summary>
@@ -51,11 +36,11 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="framework">Used to verify we are on the framework thread before reading.</param>
     /// <param name="rowId">Reads a row's ID (usually <c>row =&gt; row.RowId</c>).</param>
-    /// <param name="isUnlocked">True when the local player has unlocked/completed this row.</param>
+    /// <param name="isUnlocked">True when the local player has unlocked or completed this row.</param>
     /// <param name="precondition">
-    /// Optional. Returns a skip reason when the source is not readable yet — for example, the
-    /// achievements list has never been requested from the server. Returning a reason omits the
-    /// category from the upload, which is safe: the server treats absence as "not read this time".
+    /// Returns a skip reason while the source is unreadable, such as an achievements list never
+    /// requested from the server, or null. A skip omits the category, which the server reads as "not
+    /// read this time".
     /// </param>
     public ExcelUnlockCollector(
         CategoryInfo info,
@@ -89,34 +74,28 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     public string? Details => info.Details;
 
     /// <inheritdoc/>
-    // Sheet-backed collections are fixed in scope at compile time (every row in the sheet is a
-    // candidate), never driven by the server's item manifest.
     public bool UsesItemManifest => info.UsesItemManifest;
 
     /// <inheritdoc/>
-    // From the category's own declaration rather than from this class: sheet-backed collections share
-    // it, and not every one of them is announced by the game.
+    // From the category: not every sheet this class reads is announced by the game.
     public bool UploadsOnUnlock => info.UploadsOnUnlock;
 
     /// <inheritdoc/>
-    // Each collector recognizes only its own sheet, so routing an unlock needs no lookup table and
-    // no branch on category names. `Is<TRow>()` compares the row type the game reported against the
-    // one this collector was built for.
+    // Each collector recognizes only its own sheet, so routing an unlock needs no category branch.
     public bool Handles(RowRef rowRef) => rowRef.Is<TRow>();
 
     /// <inheritdoc/>
-    // This collector needs nothing from the context; sheet-backed unlocks are self-contained.
+    // Ignores the context: no server manifest scopes a sheet.
     public CollectResult Collect(CollectContext context)
     {
         GameThread.EnsureFrameworkThread(framework, nameof(ExcelUnlockCollector<TRow>));
 
-        // `?.Invoke()` calls the delegate only when it is not null.
         var skipReason = precondition?.Invoke();
         if (skipReason is not null)
             return CollectResult.Skipped(skipReason);
 
-        // Wraps the sheet fetch alone: a throw from the loop below is a different failure and must
-        // not be relabeled. See CollectSkipReasons.SheetUnavailable for why this is a catch.
+        // The fetch alone: a throw from the loop is a different failure and must not be relabeled.
+        // A catch, not a null check: see CollectSkipReasons.SheetUnavailable.
         ExcelSheet<TRow> sheet;
         try
         {
@@ -134,9 +113,8 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
                 ids.Add(rowId(row));
         }
 
-        // An empty list is a legitimate result ("we read the sheet; nothing was unlocked"), and is
-        // deliberately different from a skip. The completeness declaration is the category's (see
-        // CategoryInfo.EnumeratesCompleteDomain); CollectResult.Ids applies its own floor to it.
+        // The completeness declaration is the category's (see CategoryInfo.EnumeratesCompleteDomain);
+        // CollectResult.Ids applies its own floor to it.
         return CollectResult.Ids(ids, info.EnumeratesCompleteDomain);
     }
 }

@@ -10,29 +10,25 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// Builds the list of collectors the plugin runs.
 /// </summary>
 /// <remarks>
-/// <b>This is the only place a collection is registered.</b> Adding one means adding a single
-/// entry here — no change to the runner, the payload, the settings UI, or the API client. The
-/// collectors are handed to <see cref="CollectorRunner"/> rather than constructed inside it,
-/// because they hold Dalamud services and the runner holds none.
+/// The only place a collection is registered: adding one adds an entry here and changes nothing in
+/// the runner, payload, settings UI or API client. Collectors are built here, not in
+/// <see cref="CollectorRunner"/>, because they hold Dalamud services and the runner holds none.
 /// </remarks>
 public static class CollectorRegistry
 {
-    // The user-facing copy for each collection, alongside its wire key. `WhatGetsSent` is shown next
-    // to the opt-in toggle before the user consents, so it is a compliance surface: it must stay a
-    // true description of what the matching collector actually uploads.
+    // Each collection's user-facing copy. WhatGetsSent is a compliance surface (see
+    // ICollector.WhatGetsSent): it must stay true to what the matching collector uploads.
 
-    // The section headings the consent surfaces group by (see CategoryInfo.Section). Named as
-    // constants so two collections meaning the same section cannot drift apart by a typo.
+    // The headings the consent surfaces group by (see CategoryInfo.Section), named once so a typo
+    // cannot split a section.
     private const string CollectionLogSection = "Collection log";
     private const string TripleTriadSection = "Triple Triad";
     private const string ItemsSection = "Items & relics";
     private const string LimitedJobsSection = "Limited jobs";
 
     /// <summary>
-    /// The Occult Crescent section's heading. Public, unlike its siblings, because the wizard's
-    /// disclosure list places the live tracker — occult data, but not a collection — under the
-    /// same heading, so the title needs one home: the collectors' declared section and the
-    /// wizard's placement of the tracker cannot drift apart by a typo.
+    /// The Occult Crescent section's heading. Public because the wizard files the live tracker, which
+    /// is occult data but not a collection, under the same heading.
     /// </summary>
     public const string OccultSection = "The Occult Crescent";
 
@@ -43,13 +39,10 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of quests you have completed.",
 
-        // The game answers for every row in the Quest sheet, and the catalog is a pruned subset of
-        // that same sheet — the safe direction, since a sweep of the whole sheet cannot miss a
-        // cataloged quest.
+        // The game answers for every Quest row, and the catalog is a pruned subset of that sheet, so
+        // the sweep cannot miss a cataloged quest.
         EnumeratesCompleteDomain = true,
 
-        // The game announces each completed quest the moment it happens, so it uploads within
-        // seconds rather than on the sweep.
         UploadsOnUnlock = true,
     };
 
@@ -59,21 +52,15 @@ public static class CollectorRegistry
         DisplayName = "Quest progress",
         Section = CollectionLogSection,
 
-        // Scoped twice over, and the visible line says both halves: only quests the server named
-        // are looked at, and only the step position leaves the machine.
-        //
-        // The game calls the quest log the Journal, and XIV Shinies has a Journal feature of its
-        // own, so this copy says "in game" instead: the word would read as a fact about the site
-        // rather than about a multi-part quest the user is part-way through — a relic chain,
-        // typically. HostPlaceholder.Token stands for the configured website's address, filled in
-        // where the line is drawn (see HostPlaceholder).
+        // Scoped twice, and the visible line says both: only quests the server names, and only the
+        // step position. "In game" stands in for the game's word "Journal", which would read as the
+        // site's own Journal feature. HostPlaceholder.Token is the site's address (see HostPlaceholder).
         WhatGetsSent =
             "For the specific quests " + HostPlaceholder.Token + " asks about, how far through that " +
             "quest you have got in game.",
 
-        // What the step position is NOT: the game also tracks objective text and map locations
-        // against an active quest, and a reader has no way to know those stay behind unless it is
-        // said.
+        // The game also tracks objective text and map locations for an active quest, so the hover
+        // says those stay behind.
         Details =
             "Nothing is sent about any other quest, and nothing else about the ones it does ask " +
             "about — no objective text, no locations.",
@@ -86,11 +73,9 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of mounts you have unlocked.",
 
-        // The plain case: the game answers for every Mount sheet row the catalog can hold, so an
-        // exhaustive walk is an exhaustive answer.
+        // The game answers for every Mount row the catalog can hold.
         EnumeratesCompleteDomain = true,
 
-        // The game announces each new entry the moment it is earned.
         UploadsOnUnlock = true,
     };
 
@@ -101,11 +86,9 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of minions you have unlocked.",
 
-        // The plain case, exactly as for mounts: the game answers for every Companion sheet row the
-        // catalog can hold.
+        // The game answers for every Companion row the catalog can hold.
         EnumeratesCompleteDomain = true,
 
-        // The game announces each new entry the moment it is earned.
         UploadsOnUnlock = true,
     };
 
@@ -116,13 +99,10 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of achievements you have earned.",
 
-        // Once the game will answer at all, it answers for every row in the Achievement sheet, so
-        // the sweep covers everything the catalog can hold. Whether it will answer is a separate
-        // question, handled by this collector's precondition (see its construction below), which
-        // skips the pass rather than reporting a list the game had not filled in.
+        // Once the game answers at all, it answers for every Achievement row. Whether it answers is
+        // the precondition's job (see the collector's construction below).
         EnumeratesCompleteDomain = true,
 
-        // The game announces each new entry the moment it is earned.
         UploadsOnUnlock = true,
     };
 
@@ -133,20 +113,16 @@ public static class CollectorRegistry
         Section = CollectionLogSection,
         WhatGetsSent = "The ID numbers of the orchestrion rolls you have unlocked.",
 
-        // Owning the roll item and having unlocked the tune are separate states, and only the
-        // unlock is readable. Without this sentence a user with unplayed rolls in their bags would
-        // read the missing entries as a broken sync. It is elaboration rather than a kind of data,
-        // so it belongs in the hover instead of the visible line.
+        // Only the unlock is readable, not owning the roll item; without this, unused rolls in the
+        // bags read as a broken sync. It is elaboration, not a kind of data, so it belongs in the hover.
         Details =
             "A roll counts once you have used it and it is playable from your orchestrion list. " +
             "An unused roll still sitting in your inventory is not yet unlocked, so it is not " +
             "reported until you use it.",
 
-        // The game answers for every Orchestrion row, and the catalog holds a subset of those same
-        // rows, so the sweep covers it.
+        // The game answers for every Orchestrion row, and the catalog is a subset of those rows.
         EnumeratesCompleteDomain = true,
 
-        // The game announces each new entry the moment it is earned.
         UploadsOnUnlock = true,
     };
 
@@ -157,8 +133,7 @@ public static class CollectorRegistry
         Section = TripleTriadSection,
         WhatGetsSent = "The ID numbers of Triple Triad cards you have collected.",
 
-        // The game answers for every row in the card sheet, so the sweep covers every card the
-        // catalog can hold.
+        // The game answers for every card row, so the sweep covers the catalog.
         EnumeratesCompleteDomain = true,
     };
 
@@ -168,70 +143,48 @@ public static class CollectorRegistry
         DisplayName = "Triple Triad NPCs",
         Section = TripleTriadSection,
 
-        // The game records a per-NPC beaten flag, so the copy names that exact fact: an opponent
-        // defeated at least once.
+        // Names the exact fact the game records: a per-NPC flag for an opponent beaten at least once.
         WhatGetsSent = "The ID numbers of the Triple Triad NPCs you have defeated.",
 
-        // "Never collect data about other characters" is the one Dalamud rule that carries a ban,
-        // and the word "opponent" alone leaves a reader wondering. The reassurance belongs here
-        // rather than on the visible line: no player data is sent either way, so this makes the
-        // line trustworthy without changing what it discloses.
-        //
-        // The second sentence sets an expectation the plugin would otherwise disappoint silently.
-        // The game keeps no record of defeating certain opponents — ones that count toward no
-        // Triple Triad achievement — so no amount of syncing can ever report them, and a user who
-        // defeated one would be left concluding the plugin is broken. Deliberately unnamed and
-        // uncounted: which opponents those are is the game's business and can change with a patch,
-        // and naming them would put catalog knowledge in a plugin that is meant to hold none.
+        // "Never other players" answers the doubt "opponent" raises about Dalamud's one ban-carrying
+        // rule; it adds no kind of data, so it is hover text. The game keeps no flag for opponents that
+        // count toward no Triple Triad achievement, so the copy warns a user who beat one, without naming
+        // them: which ones is the game's to change, and the plugin holds no catalog knowledge.
         Details =
             "These are the game's computer opponents, never other players. The game keeps no " +
             "record of defeating a few of them, so those can never be reported — they stay yours " +
             "to mark by hand.",
 
         // The game keeps no beaten flag for some opponents the server's catalog lists, so an absent
-        // id here can mean "beaten but unreadable". See TripleTriadNpcCollector's class remarks.
+        // id can mean "beaten but unreadable". See TripleTriadNpcCollector's class remarks.
         EnumeratesCompleteDomain = false,
     };
 
     private static readonly CategoryInfo Items = new()
     {
         Key = CategoryKeys.Items,
-        // Named without any kind of item: the manifest's set is the server's to change at any
-        // time (see UsesItemManifest below), and a name that named one would go stale.
+        // Names no kind of item: the manifest is the server's to change (see UsesItemManifest below).
         DisplayName = "Tracked items",
         Section = ItemsSection,
 
-        // Currencies are named on the visible line, with gil spelled out: a balance is wealth data,
-        // and "items" alone would not tell a reader that consenting to a currency group sends how
-        // much gil they hold. That is a KIND of data, so it can never be demoted to the hover text.
-        // Phrased conditionally because whether any currency is asked about is the server's
-        // manifest choice — the sentence is true both before and after such a group exists.
-        //
-        // The storage clause is on the visible line for the same reason. An items upload carries
-        // `itemSources` beside the counts: a per-location scan state, and for retainers both how
-        // many were readable and how many the account holds. That headcount is a fact about the
-        // account rather than a count of any manifest item — and it travels even when no retainer
-        // was scanned — so "counts of the items the website asks about" does not cover it, and a
-        // reader would have no way to infer it. Naming the locations themselves stays in the hover:
-        // that is elaboration, whereas the fact they travel at all is disclosure.
+        // Every kind of data is on the visible line. Gil is spelled out: a balance is wealth data
+        // that "items" would not disclose, and "when it asks" holds because currency groups are the
+        // server's choice. The storage clause covers `itemSources`, sent beside the counts: each
+        // location's scan state, plus how many retainers were readable and how many the account has,
+        // even when none was scanned. The locations' names are elaboration, so they stay in the hover.
         WhatGetsSent =
             "Counts of the specific items " + HostPlaceholder.Token + " asks about, including your " +
             "currency balances (gil included) when it asks about those, plus which of your storage " +
             "locations could be read and how many retainers you have.",
 
-        // Where the plugin looked, and that "none of this item" is itself a reported fact rather
-        // than silence. Both make the count trustworthy; neither adds a kind of data to it.
-        //
-        // The group clause is hedged because the groups are optional: the server decides whether to
-        // send the item manifest in groups at all, and when it sends a flat list no group
-        // checkboxes are drawn and there is no per-group choice.
+        // Where the plugin looked, and that "none" is itself reported: trust, not a new kind of data.
+        // The group clause is hedged because the server may send a flat list, with no group choice.
         Details =
             "Counts are checked across your inventory, Armoire, Glamour Dresser, Saddlebag, and " +
             "retainers. Having none of an item is reported too. When these items are offered in " +
             "groups, you choose which groups to share and nothing outside them is looked at.",
 
-        // The only collection whose scope comes from the server's item manifest rather than being
-        // fixed at compile time, so it is the one that gets per-group consent rows in settings.
+        // The only collection scoped by the server's item manifest, so it gets per-group consent rows.
         UsesItemManifest = true,
     };
 
@@ -241,17 +194,14 @@ public static class CollectorRegistry
         DisplayName = "Phantom jobs",
         Section = OccultSection,
 
-        // Both halves of the payload on the visible line: the per-job progress, and the
-        // knowledge level with the condition under which it is captured — a window the user
-        // opens themselves, never something the plugin asks the game for.
+        // Both halves of the payload: per-job progress, and the knowledge level with when it is
+        // captured, from a window the user opens, never one the plugin asks the game for.
         WhatGetsSent =
             "Your phantom job levels and experience, read while you are inside the Occult " +
             "Crescent, and your knowledge level when you open the review window yourself.",
 
-        // The knowledge level is the one fact here the plugin cannot refresh on its own, so the
-        // hover names the NPC and the menu option that produce it, and says its capture time
-        // travels with it. Otherwise a level that lags behind the game looks like a broken sync
-        // rather than an old sighting.
+        // The plugin cannot refresh the knowledge level, so the hover names what captures it and that
+        // its time travels with it; otherwise a lagging level looks like a broken sync.
         Details =
             "All 24 support jobs travel together, read by the automatic sync or Sync now while " +
             "you are inside the Crescent. The knowledge level is captured only when you choose " +
@@ -266,9 +216,8 @@ public static class CollectorRegistry
         Section = OccultSection,
         WhatGetsSent = "The ID numbers of the occult records you have discovered.",
 
-        // Not a sheet sweep: the seen-set is a client-persisted list the game appends every
-        // discovery to, and reading it is reading the whole domain. See OccultRecordsCollector's
-        // class remarks.
+        // Not a sheet sweep: the game appends every discovery to a client-persisted seen-set, so
+        // reading it reads the whole domain. See OccultRecordsCollector's class remarks.
         EnumeratesCompleteDomain = true,
     };
 
@@ -278,17 +227,12 @@ public static class CollectorRegistry
         DisplayName = "Tamed beasts",
         Section = LimitedJobsSection,
 
-        // The job is named here because no other surface names it: the section header groups every
-        // limited job together, the display name is the collection, and the hover text calls the
-        // window by its in-game title. A player who wants to know whether their Beastmaster
-        // progress syncs is looking for that word, and this is the line they read without hovering.
+        // Names the job, which no other surface does: the section groups every limited job and the
+        // hover names only the window. A player asking whether Beastmaster syncs looks for the word.
         WhatGetsSent = "The ID numbers of the beasts you have tamed as Beastmaster, and each one's rank.",
 
-        // The actions that record this collection. The ranks are readable only once the player has
-        // talked to the Crucible's NPC, and the bestiary only while it is on screen, so a player
-        // who does neither sees nothing arrive and would read that as a broken sync rather than as
-        // the steps they are. It is elaboration rather than a kind of data, so it belongs in the
-        // hover instead of the visible line.
+        // Names the actions that record this collection: ranks need a talk with the Crucible's NPC,
+        // and the bestiary must be on screen. Without them, silence reads as a broken sync.
         Details =
             "Talking to the NPC at the Crucible of the Unbroken's entrance records your beasts and " +
             "each one's rank. Paging through your Master's Bestiary once with no filter applied " +
@@ -297,10 +241,8 @@ public static class CollectorRegistry
             "else about you is read for this beyond the zone you are in, and other players are " +
             "never involved.",
 
-        // The entitlement to claim completeness at all. A collection whose domain is always
-        // readable passes this straight through to the CollectResult; this one's becomes readable
-        // only when the player opens the window, so its collector additionally requires the pass to
-        // have earned it — see TamedBeastLedger.IsComplete for what has to agree.
+        // Only the entitlement: the bestiary is readable only once the player opens it, so the
+        // collector also requires the pass to earn the claim (see TamedBeastLedger.IsComplete).
         EnumeratesCompleteDomain = true,
     };
 
@@ -308,8 +250,12 @@ public static class CollectorRegistry
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="unlockState">Dalamud's local-player unlock state.</param>
     /// <param name="framework">Used by each collector to verify it is on the framework thread.</param>
-    /// <param name="knowledgeObserver">The passive knowledge-level capture the phantom jobs collector reads.</param>
-    /// <param name="tamedBeastObserver">The passive bestiary capture the tamed beasts collector reads.</param>
+    /// <param name="knowledgeObserver">
+    /// The passive knowledge-level capture the phantom jobs collector reads.
+    /// </param>
+    /// <param name="tamedBeastObserver">
+    /// The passive bestiary capture the tamed beasts collector reads.
+    /// </param>
     public static IReadOnlyList<ICollector> Create(
         IDataManager dataManager,
         IUnlockState unlockState,
@@ -318,17 +264,11 @@ public static class CollectorRegistry
         TamedBeastObserver tamedBeastObserver) =>
         new ICollector[]
         {
-            // `unlockState.IsQuestCompleted` is a "method group": the method is passed as a value
-            // where a `Func<Quest, bool>` is expected, and C# binds the receiver (`unlockState`)
-            // along with it. This is unlike JS, where passing `obj.method` bare loses `this`.
-            // Nothing is invoked here — the delegate is called later, during collection.
-
-            // Quest Excel row IDs are what the server stores, so no mapping is needed.
+            // The server stores Quest row ids, so no mapping is needed.
             new ExcelUnlockCollector<Quest>(
                 Quests, dataManager, framework, row => row.RowId, unlockState.IsQuestCompleted),
 
-            // The journal positions of the quests the server's manifest asks about. Scope comes
-            // from the manifest each pass, so this needs the context rather than a sheet.
+            // Scoped by the server's manifest each pass, so it reads the context, not a sheet.
             new QuestSequenceCollector(QuestSequences, framework),
 
             new ExcelUnlockCollector<Mount>(
@@ -338,9 +278,8 @@ public static class CollectorRegistry
             new ExcelUnlockCollector<Companion>(
                 Minions, dataManager, framework, row => row.RowId, unlockState.IsCompanionUnlocked),
 
-            // Achievements are the one sheet the game cannot answer for until the player has opened
-            // their Achievements window at least once this session. Until then we skip the category
-            // rather than report an empty list, which would be a lie the server must not act on.
+            // The game cannot answer for achievements until the player opens the Achievements window
+            // once this session. Until then skip: an empty list would be a lie the server must not act on.
             new ExcelUnlockCollector<Achievement>(
                 Achievements,
                 dataManager,
@@ -351,9 +290,8 @@ public static class CollectorRegistry
                     ? null
                     : CollectSkipReasons.AchievementListNotLoaded),
 
-            // The tunes, not the items: `Orchestrion` row ids are what the game's unlock state
-            // answers for. The "… Orchestrion Roll" items are a separate Item-sheet id space the
-            // server stores apart, so an item id sent here is dropped as unknown.
+            // Orchestrion row ids, which the unlock state answers for. The "… Orchestrion Roll" items
+            // are a separate Item-sheet id space, which the server drops as unknown here.
             new ExcelUnlockCollector<Orchestrion>(
                 OrchestrionRolls,
                 dataManager,
@@ -361,9 +299,7 @@ public static class CollectorRegistry
                 row => row.RowId,
                 unlockState.IsOrchestrionUnlocked),
 
-            // Cards are sheet-backed unlocks, structurally identical to mounts and minions. The
-            // sheet's row 0 is a dummy; the game never marks it unlocked, and even if it did, the
-            // id-zero filter in CollectResult.Ids keeps it off the wire.
+            // Row 0 is a dummy the game never marks unlocked; CollectResult.Ids drops id zero anyway.
             new ExcelUnlockCollector<TripleTriadCard>(
                 TripleTriadCards,
                 dataManager,
@@ -371,24 +307,23 @@ public static class CollectorRegistry
                 row => row.RowId,
                 unlockState.IsTripleTriadCardUnlocked),
 
-            // Defeated opponents have no IUnlockState method, so this collector reads the game's
-            // UIState directly — see its class remarks for the id space it reports.
+            // No IUnlockState method covers defeated opponents, so this reads UIState directly; see
+            // its class remarks for the id space it reports.
             new TripleTriadNpcCollector(TripleTriadNpcs, dataManager, framework),
 
-            // Phantom job progress lives in the occult instance director, so this one reads only
-            // inside the Crescent; the knowledge sighting rides along from the observer.
+            // Phantom job progress lives in the occult instance director, so this reads only inside
+            // the Crescent; the knowledge sighting comes from the observer.
             new OccultProgressionCollector(OccultProgression, framework, knowledgeObserver),
 
-            // Discovered occult records — a client-persisted list readable anywhere, so it needs
-            // no instance visit and no sheet walk: the saved list IS the seen-set.
+            // Readable anywhere: the client-persisted list is the seen-set, so no visit or sheet walk.
             new OccultRecordsCollector(OccultRecords, framework),
 
-            // Reads no game state during a pass: its facts are captured as the player opens their
-            // bestiary, and the pass hands over whatever has accumulated. See TamedBeastCollector.
+            // Reads no game state during a pass: the observer captures facts as the player opens the
+            // bestiary. See TamedBeastCollector.
             new TamedBeastCollector(TamedBeasts, framework, tamedBeastObserver),
 
-            // The odd one out: it reports possession counts rather than IDs, and it only looks at
-            // the items the server named in its manifest. The runner treats it like any other.
+            // Counts rather than ids, for the items the server's manifest names; the runner treats
+            // it like any other.
             new ItemCollector(Items, dataManager, framework),
         };
 }

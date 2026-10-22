@@ -4,9 +4,8 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// Which failed uploads are worth a line. An outage lasts for hours and the sweep comes round every
-// few minutes, so the same status arrives over and over; but an outage that ends and returns is two
-// separate events, and the second one has to be reportable.
+// Which failed uploads are worth a line. An outage repeats one status every few minutes for hours,
+// but an outage that ends and returns is two events, and the second must be reported.
 public class SyncOutcomeWarningsTests
 {
     [Fact]
@@ -27,8 +26,7 @@ public class SyncOutcomeWarningsTests
         Assert.False(outcomes.ShouldReport(ApiStatus.ServerError));
     }
 
-    // A network blip and a 500 are different things to a reader, so being quiet about one must not
-    // make the plugin quiet about the other.
+    // A network blip and a 500 are different news; silence about one must not cover the other.
     [Fact]
     public void A_different_outcome_is_reported_on_its_own_terms()
     {
@@ -39,9 +37,7 @@ public class SyncOutcomeWarningsTests
         Assert.True(outcomes.ShouldReport(ApiStatus.NetworkError));
     }
 
-    // The reason a plain latch is not enough. A server that fails, recovers, and fails again has
-    // genuinely failed twice, and the second failure is news — without this the plugin would go
-    // silent for the rest of the session after the first one.
+    // Why a plain latch is not enough: after the first failure it would stay silent all session.
     [Fact]
     public void An_outcome_that_returns_after_a_success_is_reported_again()
     {
@@ -53,8 +49,7 @@ public class SyncOutcomeWarningsTests
         Assert.True(outcomes.ShouldReport(ApiStatus.ServerError));
     }
 
-    // A success clears everything, not just the status that happened to arrive last: an upload that
-    // worked says the whole previous run of failures is over.
+    // An upload that worked ends the whole run of failures, not just the last status.
     [Fact]
     public void A_success_clears_every_remembered_outcome()
     {
@@ -68,8 +63,7 @@ public class SyncOutcomeWarningsTests
         Assert.True(outcomes.ShouldReport(ApiStatus.NetworkError));
     }
 
-    // Success is not itself an outcome anyone reports, so noting one twice must not become a way to
-    // make the next failure unreportable.
+    // Success is not a reported outcome, so noting it twice must not silence the next failure.
     [Fact]
     public void Repeated_successes_leave_the_next_failure_reportable()
     {

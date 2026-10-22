@@ -3,30 +3,18 @@ using System.Collections.Generic;
 
 namespace XIVShinies.SyncPlugin.Collectors;
 
-/// <summary>
-/// What one collection pass cost the frame it ran in, ready to be reported.
-/// </summary>
+/// <summary>What one collection pass cost the frame it ran in, ready to be reported.</summary>
 /// <remarks>
-/// <para>
-/// Collection runs on the game's framework thread, which has roughly 16.7ms to draw a frame at 60fps.
-/// Every collector spends part of that, and every collection added spends more — so the cost is
-/// measured and surfaced rather than assumed. A contributor who adds an expensive collector
-/// sees its price the first time a sweep runs.
-/// </para>
-/// <para>
-/// It reads no game state and logs nothing: the snapshot is handed in, and the orchestrator logs
-/// what this returns.
-/// </para>
+/// Collection runs on the framework thread, which has about 16.7ms per frame at 60fps, and every
+/// collector spends part of that. Measuring the cost shows a contributor an expensive collector's
+/// price on its first sweep. Reads no game state and logs nothing; the orchestrator logs the result.
 /// </remarks>
 public sealed record CollectionCost
 {
-    /// <summary>
-    /// The cost above which a pass is a problem rather than a curiosity.
-    /// </summary>
+    /// <summary>The cost at or above which a pass is a problem rather than a curiosity.</summary>
     /// <remarks>
-    /// A 60fps frame is about 16.7ms, and the game itself needs most of it. 8ms is therefore already
-    /// half the budget and past the point a player could feel the hitch. Deliberately not
-    /// user-configurable: it is a developer-facing alarm, not a preference.
+    /// 8ms is half a 60fps frame, most of which the game itself needs, and past the point a player
+    /// could feel the hitch. Not user-configurable: it is a developer-facing alarm, not a preference.
     /// </remarks>
     public static readonly TimeSpan FrameBudgetWarningThreshold = TimeSpan.FromMilliseconds(8);
 
@@ -36,22 +24,12 @@ public sealed record CollectionCost
     /// <summary>True when the pass is slow enough to risk a visible stutter.</summary>
     public required bool OverBudget { get; init; }
 
-    /// <summary>
-    /// True when this pass overran the budget in a way worth raising an alarm about.
-    /// </summary>
+    /// <summary>True when this pass overran the budget in a way worth raising an alarm about.</summary>
     /// <remarks>
-    /// <para>
-    /// The session's first pass is exempt: most of what it spends is one-time warm-up rather than
-    /// the cost of collecting — the first read of a game data sheet loads it, and the first touch
-    /// of the game's item lookups initializes them. On a real client that pass measures around
-    /// 21ms against 1–2ms for every later one, so a rule that counts it fires every single session
-    /// and says nothing about whether the plugin got slower. The alarm is for a pass that is
-    /// <b>repeatedly</b> expensive — the shape an added collector or a grown manifest takes.
-    /// </para>
-    /// <para>
-    /// Always implies <see cref="OverBudget"/>: the subset of over-budget passes worth acting on,
-    /// never a condition of its own.
-    /// </para>
+    /// The session's first pass is exempt: first reads of game sheets and item lookups are one-time
+    /// warm-up, about 21ms on a real client against 1 to 2ms for later passes, so counting it would fire
+    /// every session. The alarm is for a pass that is repeatedly expensive, the shape an added collector
+    /// or a grown manifest takes. Always implies <see cref="OverBudget"/>.
     /// </remarks>
     public required bool IsAlarming { get; init; }
 
@@ -59,9 +37,7 @@ public sealed record CollectionCost
     public required string Breakdown { get; init; }
 
     /// <summary>The category that took longest, or empty when no collector ran.</summary>
-    /// <remarks>
-    /// Ties are broken arbitrarily — the sort underneath is not a stable one.
-    /// </remarks>
+    /// <remarks>Ties break arbitrarily: the sort underneath is not stable.</remarks>
     public required string SlowestCategory { get; init; }
 
     /// <summary>True when no collector ran, so there is nothing worth reporting.</summary>
@@ -69,14 +45,11 @@ public sealed record CollectionCost
 
     /// <summary>Summarizes what a collection pass cost.</summary>
     /// <remarks>
-    /// Note this reads whatever category keys the collectors reported. It never asks for a category
-    /// by name, and never orders by one — the ordering is by duration, so the name that appears first
-    /// is the one worth acting on.
+    /// Names no category; it orders by duration, so the first name is the one worth acting on.
     /// </remarks>
     /// <param name="snapshot">The pass to summarize.</param>
     /// <param name="isFirstPassOfSession">
-    /// Whether this is the first pass since the plugin loaded. See <see cref="IsAlarming"/> for why
-    /// it matters.
+    /// Whether this is the first pass since the plugin loaded (see <see cref="IsAlarming"/>).
     /// </param>
     public static CollectionCost From(CollectionSnapshot snapshot, bool isFirstPassOfSession)
     {
@@ -101,9 +74,7 @@ public sealed record CollectionCost
 
         var measured = new List<KeyValuePair<string, TimeSpan>>(durations);
 
-        // A comparison delegate, like `arr.sort((a, b) => ...)` in JavaScript. Note the reversed
-        // operands: `b.CompareTo(a)` sorts DESCENDING, where the usual `a.CompareTo(b)` sorts
-        // ascending. Slowest first is the whole point — the first name in the line is the culprit.
+        // Slowest first, so the first name in the line is the culprit.
         measured.Sort((a, b) => b.Value.CompareTo(a.Value));
 
         var parts = new List<string>(measured.Count);

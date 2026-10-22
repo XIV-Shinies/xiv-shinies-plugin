@@ -3,8 +3,7 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Onboarding;
 
 /// <summary>The steps of the first-run wizard, in order.</summary>
-// The underlying integer values are their positions, which is what lets Advance and Back be simple
-// arithmetic rather than a switch. Do not reorder them casually.
+// Advance and Back add or subtract one, so the declaration order is the wizard's order.
 public enum OnboardingStep
 {
     /// <summary>What this plugin does, and what it will send.</summary>
@@ -24,17 +23,9 @@ public enum OnboardingStep
 /// The first-run wizard, as pure logic: which step, and whether the user may move on.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is where Dalamud's "explicit opt-in before any non-essential data collection" is actually
-/// enforced. Nothing uploads until <see cref="Finish"/> writes the user's consent to the settings,
-/// and <see cref="Finish"/> refuses to do so before the last step. The window draws whatever this
-/// object says; it decides nothing on its own.
-/// </para>
-/// <para>
-/// Deliberately free of Dalamud, ImGui, and the network. Verifying the token is an HTTP call, so the
-/// window makes it and reports the answer back here through <see cref="RecordTokenCheck"/> — this
-/// class only remembers what happened.
-/// </para>
+/// This enforces Dalamud's explicit opt-in: nothing uploads until <see cref="Finish"/> writes the
+/// user's consent, and it refuses before the last step. The window draws what this says and decides
+/// nothing; it makes the token probe and reports back through <see cref="RecordTokenCheck"/>.
 /// </remarks>
 public sealed class OnboardingState
 {
@@ -45,14 +36,11 @@ public sealed class OnboardingState
     public TokenCheckState TokenCheck { get; private set; } = TokenCheckState.NotChecked;
 
     /// <summary>
-    /// True while the wizard is still waiting to hear what the server asks about — the config fetched
-    /// on the back of a verified token.
+    /// True while the wizard waits for the config fetched after a verified token.
     /// </summary>
     /// <remarks>
-    /// The consent step's per-group checkboxes are drawn from that config, so a user who arrived before
-    /// it did would be asked to consent to a list that is not on screen yet, and would watch the groups
-    /// appear underneath a category they had already ticked. Waiting here is what lets the consent step
-    /// promise that everything it will ever show is already showing.
+    /// The consent step draws its per-group checkboxes from that config, so the account step holds until
+    /// it arrives, and no group appears under a category already ticked.
     /// </remarks>
     public bool AwaitingConfig { get; private set; }
 
@@ -61,18 +49,16 @@ public sealed class OnboardingState
 
     /// <summary>Whether the user may move forward from the current step.</summary>
     /// <remarks>
-    /// Only the account step has real preconditions, and it has two. Letting the user past an
-    /// unverified token would finish a wizard that cannot possibly sync, and the failure would surface
-    /// much later as an opaque 401. Letting them past a config answer that has not arrived would put
-    /// them in front of a consent list that is still being fetched — see <see cref="AwaitingConfig"/>.
+    /// Only the account step has preconditions: a verified token and the config fetched after it (see
+    /// <see cref="AwaitingConfig"/>). An unverified token would finish a wizard that cannot sync,
+    /// failing later as an opaque 401.
     /// </remarks>
     public bool CanAdvance => Step switch
     {
         OnboardingStep.LinkAccount => TokenCheck == TokenCheckState.Valid && !AwaitingConfig,
 
-        // The category step imposes nothing. Every category starts off, so continuing without
-        // choosing any is a coherent decision — "link my account, upload nothing yet" — and forcing a
-        // selection to escape the wizard would make consent a toll rather than a choice.
+        // Every category starts off, so continuing with none ticked is a coherent choice; forcing a
+        // selection would make consent a toll.
         OnboardingStep.ChooseCategories => true,
 
         OnboardingStep.Welcome => true,
@@ -83,7 +69,7 @@ public sealed class OnboardingState
     public bool CanGoBack => Step > OnboardingStep.Welcome && Step != OnboardingStep.Done;
 
     /// <summary>Moves to the next step, if the current one allows it.</summary>
-    /// <remarks>Silently does nothing when it may not — the button that calls this is drawn disabled.</remarks>
+    /// <remarks>Does nothing when it may not; the button that calls this is drawn disabled.</remarks>
     public void Advance()
     {
         if (CanAdvance)
@@ -91,10 +77,7 @@ public sealed class OnboardingState
     }
 
     /// <summary>Returns to the previous step.</summary>
-    /// <remarks>
-    /// A verified token survives the trip. Re-probing a token the user never touched would be a
-    /// pointless request, and would make stepping back feel like losing progress.
-    /// </remarks>
+    /// <remarks>A verified token survives the trip, so stepping back does not re-probe it.</remarks>
     public void Back()
     {
         if (CanGoBack)
@@ -105,21 +88,16 @@ public sealed class OnboardingState
     public void BeginTokenCheck() => TokenCheck = TokenCheckState.Checking;
 
     /// <summary>Records whether the server's config is still outstanding.</summary>
-    /// <remarks>
-    /// Pushed in by the window rather than asked for: the network lives out there, and this class
-    /// only remembers what it is told.
-    /// </remarks>
     public void NotifyAwaitingConfig(bool awaiting) => AwaitingConfig = awaiting;
 
     /// <summary>Records what the server said about the token.</summary>
     public void RecordTokenCheck(ApiStatus status) => TokenCheck = Onboarding.TokenCheck.FromApiStatus(status);
 
     /// <summary>
-    /// Forgets any previous verification, because the token being verified no longer exists.
+    /// Forgets any previous verification, because the token it verified is gone.
     /// </summary>
     /// <remarks>
-    /// Without this, a user could verify one token, paste a different one, and walk forward on the
-    /// strength of the old answer — arriving at a working wizard and a broken plugin.
+    /// Otherwise a user could verify one token, paste another, and advance on the old answer.
     /// </remarks>
     public void NotifyTokenEdited() => TokenCheck = TokenCheckState.NotChecked;
 
@@ -128,14 +106,12 @@ public sealed class OnboardingState
     /// </summary>
     /// <param name="settings">The settings to record consent into. The caller saves them.</param>
     /// <remarks>
-    /// Note what this does <b>not</b> do: it enables no categories. Those are ticked by the user on
-    /// the previous step and written as they are ticked. Opting someone in here — even into a
-    /// sensible default — would be consent by omission, which is the exact thing the rule forbids.
+    /// It enables no categories: the user ticks those on the previous step. Opting someone in here,
+    /// even to a sensible default, would be consent by omission, which the rule forbids.
     /// </remarks>
     public void Finish(PluginSettings settings)
     {
-        // An interlock, not a formality. This method is what flips the plugin on, so it must be
-        // impossible to call it from halfway through the wizard.
+        // An interlock: this flips the plugin on, so it must be impossible from mid-wizard.
         if (!IsComplete)
             return;
 

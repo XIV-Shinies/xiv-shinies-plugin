@@ -10,45 +10,33 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
-/// The live occult tracker's orchestrator: watches for the character entering an Occult
-/// Crescent instance, feeds the game's CE/FATE state through the tracker, and uploads
-/// snapshots when the scheduler says to.
+/// The live occult tracker's orchestrator: notices the character entering an Occult Crescent
+/// instance, feeds CE and FATE state through the tracker, and uploads when the scheduler says to.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The rules live in classes that touch no game state: what each encounter's status is in
-/// <see cref="OccultEncounterTracker"/>, when an upload goes in <see cref="OccultUploadScheduler"/>,
-/// what it carries in <see cref="OccultUploadBuilder"/>, and what each answer means in
-/// <see cref="OccultOutcomePolicy"/>. This class only moves data between the game, those classes,
-/// and the API client. It reads the game, so in-game QA verifies it.
-/// </para>
-/// <para>
-/// <b>Threading.</b> Game state is read inside the per-frame <c>Update</c> handler (throttled
-/// to one read per second); the resulting request — a plain object with no game handles — is
-/// uploaded on a background task. The scheduler locks internally, so the background task may
-/// report outcomes to it directly.
-/// </para>
-/// <para>
-/// <b>Consent.</b> Every tick starts by asking <see cref="OccultGate.CanTrack"/> (which owns
-/// the full gate ladder) and stands down while the user-action halt it shares with /sync is set,
-/// whichever path raised it, so revoking any switch stops the tracker within a second.
-/// </para>
+/// The rules live in <see cref="OccultEncounterTracker"/>, <see cref="OccultUploadScheduler"/>,
+/// <see cref="OccultUploadBuilder"/> and <see cref="OccultOutcomePolicy"/>; this class only moves data
+/// between the game, them, and the API client. Game state is read in the framework <c>Update</c>
+/// handler once a second, and the upload runs on a background task, which reports to the scheduler
+/// directly because the scheduler locks. Every tick asks <see cref="OccultGate.CanTrack"/> and stands
+/// down while the user-action halt shared with /sync is set, so revoking any switch stops the tracker
+/// within a second.
 /// </remarks>
 internal sealed class OccultManager : IDisposable
 {
-    /// <summary>One game-state read per second: state phases live for minutes, so nothing is
-    /// missed, and the per-frame cost stays negligible.</summary>
+    /// <summary>
+    /// One game-state read per second: phases last minutes, so nothing is missed, and the per-frame
+    /// cost stays negligible.
+    /// </summary>
     private static readonly TimeSpan ReadInterval = TimeSpan.FromSeconds(1);
 
-    /// <summary>
-    /// The longest the enter upload waits for the snapshot to become fingerprintable. The
-    /// first seconds after zoning are a sync race — the FATE table and CE deadlines stream in
-    /// — and an enter sent before any server epoch lands carries a fingerprint that matches
-    /// no active tracker, splitting one real instance across two tracker rows. A rejoin is
-    /// the sharpest case: the instant enter races the whole re-sync. Past this deadline the
-    /// enter goes out regardless; a genuinely quiet instance answers <c>unresolved</c> and
-    /// resolves itself on the first timestamped change.
-    /// </summary>
+    /// <summary>The longest the enter upload waits for the snapshot to become fingerprintable.</summary>
+    /// <remarks>
+    /// The FATE table and CE deadlines stream in after zoning, most sharply on a rejoin, and an enter
+    /// sent before any server epoch lands matches no tracker and splits one instance across two. Past
+    /// this the enter goes out anyway; a genuinely quiet instance answers <c>unresolved</c> and
+    /// resolves on its first timestamped change.
+    /// </remarks>
     private static readonly TimeSpan MaxEnterSettle = TimeSpan.FromSeconds(10);
 
     private readonly IFramework framework;
@@ -60,86 +48,79 @@ internal sealed class OccultManager : IDisposable
     private readonly PluginSettings settings;
 
     /// <summary>
-    /// The /sync orchestrator, which owns what every upload path shares: the character identity
-    /// (captured once, hash-side), the latest <c>/config</c>, and the user-action halt with the
-    /// session and press counts that scope it. The tracker reads all of them and raises the halt
-    /// through <see cref="SyncManager.HaltFromLiveUpload"/>.
+    /// The /sync orchestrator, which owns what every upload path shares: the hashed character
+    /// identity, the latest <c>/config</c>, and the user-action halt with the session and press counts
+    /// that scope it. The tracker raises the halt through <see cref="SyncManager.HaltFromLiveUpload"/>.
     /// </summary>
     private readonly SyncManager syncManager;
 
     private readonly string pluginVersion;
 
-    /// <summary>The source of "now".</summary>
     private readonly TimeProvider timeProvider;
 
     private readonly OccultEncounterTracker tracker = new();
     private readonly OccultUploadScheduler scheduler = new();
 
-    /// <summary>Which tick failures have already been reported in full.</summary>
-    /// <remarks>
-    /// The tick runs once a second, so a deterministic bug in it would otherwise fill the log.
-    /// Game main thread only, like the tick it guards.
-    /// </remarks>
+    /// <summary>
+    /// Tick failures already reported in full. The tick runs every second, so a deterministic bug would
+    /// otherwise fill the log. Framework thread only.
+    /// </summary>
     private readonly RepeatedFailures tickFailures = new();
 
-    /// <summary>Which upload failures have already been reported in full.</summary>
+    /// <summary>Upload failures already reported in full.</summary>
     /// <remarks>
-    /// Separate from <see cref="tickFailures"/> because it is touched from a different thread: the
-    /// upload runs on the thread pool and never marshals back. One upload runs at a time — <see
-    /// cref="uploadInFlight"/> gates entry and, being <c>volatile</c>, publishes what the previous
-    /// one wrote — so a single memory with no lock is still correct here, but it cannot be the same
-    /// memory the game's main thread is writing to.
+    /// Separate from <see cref="tickFailures"/>, because uploads run on the thread pool. It needs no
+    /// lock: <see cref="uploadInFlight"/> lets one upload run at a time and, being volatile, publishes
+    /// what the previous one wrote.
     /// </remarks>
     private readonly RepeatedFailures uploadFailures = new();
 
     /// <summary>
-    /// Canceled on unload, so an upload in flight when the plugin is torn down stops rather
-    /// than completing against disposed state.
+    /// Canceled on unload, so an upload in flight stops instead of completing against disposed state.
     /// </summary>
     private readonly CancellationTokenSource lifetime = new();
 
-    /// <summary>A copy of the token, taken before the source can ever be disposed.</summary>
+    /// <summary>A copy of the token, taken before the source can be disposed.</summary>
     /// <remarks>
-    /// Reading <c>lifetime.Token</c> after the source is disposed throws, and an upload started
-    /// before <see cref="Dispose"/> may still be running then, so the token is captured once in
-    /// the constructor. A token whose source was canceled and then disposed is still safe to
-    /// observe.
+    /// Reading <c>lifetime.Token</c> after disposal throws, and an upload started before
+    /// <see cref="Dispose"/> may still be running then. A token whose source was canceled and then
+    /// disposed is still safe to observe.
     /// </remarks>
     private readonly CancellationToken lifetimeToken;
 
-    // The fields below live on the game's main thread only (written and read inside the Update
-    // handler and the logout event, which reaches the plugin on that same thread through a hook on
-    // the game's own logout callback), so they need no lock. `uploadInFlight` is the exception:
-    // cleared by the background task, hence volatile.
+    // Except uploadInFlight, the fields below are framework-thread only and need no lock: the Update
+    // handler and the logout event, raised from a hook on the game's logout callback, both run there.
 
-    /// <summary>When the next game-state read is due.</summary>
     private DateTimeOffset nextReadAt = DateTimeOffset.MinValue;
 
-    /// <summary>True from the first readable tick inside an occult territory until the
-    /// character leaves that territory. A tick whose read fails mid-instance does not clear
-    /// it — the director can be momentarily unreadable while state re-syncs.</summary>
+    /// <summary>
+    /// True from the first readable tick in an occult territory until the character leaves it.
+    /// </summary>
     private bool inside;
 
     /// <summary>
-    /// Set while the enter upload is being HELD for a fingerprintable snapshot: the deadline
-    /// past which it goes out anyway. Null once the enter has been handed to the scheduler.
-    /// While the hold is on, change notifications are suppressed too — a sparse change
-    /// sneaking out ahead of the enter would create the very duplicate the hold prevents.
+    /// While the enter is held for a fingerprintable snapshot, the deadline past which it goes anyway;
+    /// null once the scheduler has it.
     /// </summary>
+    /// <remarks>
+    /// Change notices wait too, since one sent ahead of the enter would create the duplicate the hold
+    /// prevents.
+    /// </remarks>
     private DateTimeOffset? enterHoldDeadline;
 
-    /// <summary>The occult territory the character is (or was last) inside — the territory a
-    /// leave upload must name, since by then the character is standing somewhere else.</summary>
+    /// <summary>
+    /// The occult territory the character is, or was last, inside: the one a leave upload names, since
+    /// by then the character stands elsewhere.
+    /// </summary>
     private uint activeTerritory;
 
-    /// <summary>
-    /// A leave upload built at the moment the exit was observed. The snapshot must be captured
-    /// then — the tracker is reset right after, and the scheduler may not issue the leave until
-    /// later (a backoff can defer it).
-    /// </summary>
+    /// <summary>The leave upload captured at exit (see <see cref="QueueLeave"/>).</summary>
     private OccultInstanceStateRequest? pendingLeave;
 
-    /// <summary>True while an upload is on the wire, so a second one never starts under it.</summary>
+    /// <summary>
+    /// True while an upload is on the wire, so a second never starts under it. Volatile because the
+    /// background task clears it.
+    /// </summary>
     private volatile bool uploadInFlight;
 
     /// <summary>Wires the manager to the game. Subscribes only; uploads nothing on its own.</summary>
@@ -168,7 +149,7 @@ internal sealed class OccultManager : IDisposable
 
         lifetimeToken = lifetime.Token;
 
-        // Every `+=` here has a matching `-=` in Dispose.
+        // Every subscription here has a matching unsubscribe in Dispose.
         framework.Update += OnFrameworkUpdate;
         clientState.Logout += OnLogout;
     }
@@ -184,9 +165,10 @@ internal sealed class OccultManager : IDisposable
     }
 
     /// <summary>The character logged out: whatever was tracked belongs to a session that ended.</summary>
-    /// <remarks>The scheduler's backoff deliberately survives (it belongs to the token, not the
-    /// character); everything else resets. No leave upload is sent — presence ages out
-    /// server-side, and the logged-out client may have no working session to send from.</remarks>
+    /// <remarks>
+    /// The scheduler's backoff survives, since it belongs to the token. No leave upload is sent:
+    /// presence ages out on the server, and the logged-out client may have no session to send from.
+    /// </remarks>
     private void OnLogout(int type, int code)
     {
         inside = false;
@@ -196,8 +178,10 @@ internal sealed class OccultManager : IDisposable
         scheduler.Reset();
     }
 
-    /// <summary>Runs every frame on the framework thread. Must stay cheap: the real work is
-    /// gated to one pass per second.</summary>
+    /// <summary>
+    /// Runs every frame on the framework thread, so it must stay cheap; the real work runs once a
+    /// second.
+    /// </summary>
     private void OnFrameworkUpdate(IFramework _)
     {
         var now = timeProvider.GetUtcNow();
@@ -211,8 +195,8 @@ internal sealed class OccultManager : IDisposable
         }
         catch (Exception ex)
         {
-            // Never let a tracker bug escape into the game's frame dispatch. Only the first
-            // sighting earns the full report — see tickFailures for why a recurrence does not.
+            // A tracker bug must never escape into the game's frame dispatch. Only the first
+            // sighting gets the full report (see tickFailures).
             if (tickFailures.IsFirstSighting(ex))
                 log.Error(ex, "Occult tracker tick failed.");
             else
@@ -220,27 +204,20 @@ internal sealed class OccultManager : IDisposable
         }
     }
 
-    /// <summary>One per-second pass: gates, enter/leave detection, state diff, upload dispatch.</summary>
+    /// <summary>One per-second pass: gates, enter and leave detection, state diff, upload dispatch.</summary>
     private void Tick(DateTimeOffset now)
     {
         var config = syncManager.RemoteConfig;
 
-        // The tracker's consent gate (see OccultGate for the full ladder), plus the user-action
-        // halt shared with /sync: when any upload path or the config poll has been refused for
-        // something only the user can fix (bad token, a character the server would not match),
-        // this path goes quiet too rather than earning its own copy of the same refusal every
-        // minute, and all resume together on "Sync now".
+        // The halt shared with /sync: once any path is refused for something only the user can fix,
+        // this one goes quiet rather than earn its own refusal, and all resume on "Sync now".
         var enabled = OccultGate.CanTrack(settings, config)
             && !syncManager.BlockedPendingUserAction;
 
         if (!enabled)
         {
-            // Disabled mid-instance (toggle, kill switch, website log-out): go quiet
-            // immediately. No leave upload — sending one would itself be an upload the gates
-            // just refused — so the reporter simply ages out of presence server-side. The
-            // condition covers a queued leave as well as an active visit: a leave captured
-            // moments before the gate closed would otherwise survive the reset and ship,
-            // once re-enabled, for an instance left arbitrarily long ago.
+            // Disabled mid-visit: no leave upload, since the closed gate refuses it; presence ages out on the
+            // server. A queued leave is dropped too, or it would ship on re-enable for a visit long over.
             if (inside || pendingLeave is not null)
             {
                 inside = false;
@@ -249,11 +226,8 @@ internal sealed class OccultManager : IDisposable
                 tracker.Reset();
                 scheduler.Reset();
 
-                // This reset discards the remembered down ghosts: an encounter that ends
-                // before tracking resumes never gets a down from this client — the server's
-                // absence self-heal corrects it from the next full snapshot (see
-                // docs/api-contract.md § occult/instance-state). The log line marks the
-                // discontinuity for anyone tracing a tracker history that skipped an end.
+                // The reset drops the down ghosts; the server's absence self-heal repairs a missed end
+                // from the next full snapshot (see docs/api-contract.md, occult/instance-state).
                 log.Debug("Occult tracking gate closed mid-instance; local state discarded.");
             }
 
@@ -263,8 +237,8 @@ internal sealed class OccultManager : IDisposable
         // Non-null whenever the gate passes: CanTrack requires the occultTracker block.
         scheduler.ApplyHeartbeat(config!.OccultTracker!.HeartbeatSeconds);
 
-        // Without an identity there is nothing to attribute an upload to. SyncManager captures
-        // it a few seconds after login; until then (and after a capture that gave up) stay idle.
+        // SyncManager captures the identity a few seconds after login. Until then, or after a capture
+        // that gave up, there is nothing to attribute an upload to.
         var identity = syncManager.Identity;
         if (identity is null)
             return;
@@ -272,26 +246,20 @@ internal sealed class OccultManager : IDisposable
         var territory = (uint)clientState.TerritoryType;
         var inOccultZone = OccultZones.IsOccultTerritory(territory);
 
-        // Declared ahead of the && so they are definitely assigned on every path; they hold
-        // values only when `readable` lands true (the read short-circuits outside the zones).
+        // Set only when readable is true; the read is skipped outside the zones.
         List<DynamicEventReading>? events = null;
         List<FateReading>? fates = null;
         var readable = inOccultZone && OccultInstanceReader.TryRead(fateTable, out events, out fates);
 
-        // Leaving is judged by the TERRITORY, not by readability: the director can be
-        // momentarily unreadable mid-instance (state re-syncing), and treating that as an
-        // exit would drop every down stamp and re-enter with a fresh hold. A failed read
-        // while still standing in an occult zone is just a skipped tick.
+        // Leaving is judged by territory, not readability: the director can be briefly unreadable
+        // while state re-syncs, and treating that as an exit would drop every down stamp.
         if (inside && !inOccultZone)
         {
             QueueLeave(identity, now);
         }
 
-        // The occult→occult hop: readable in a DIFFERENT occult territory while still marked
-        // inside the old one (South Horn → North Horn without an intervening non-occult
-        // tick). The old visit must close first — its leave, built from ITS territory and
-        // snapshot, ships before the new instance's enter — or the new zone's encounters
-        // would upload under the old territory id into a shared tracker.
+        // A hop straight from one occult zone to the other closes the old visit, whose leave ships before
+        // the new zone's enter. Otherwise the new zone's encounters would upload into the old tracker.
         if (inside && readable && territory != activeTerritory)
         {
             QueueLeave(identity, now);
@@ -305,10 +273,8 @@ internal sealed class OccultManager : IDisposable
                 activeTerritory = territory;
                 tracker.Reset();
 
-                // The enter is HELD, not queued: the snapshot needs a server epoch before it
-                // can identify this instance (see MaxEnterSettle). A pendingLeave from a visit
-                // that ended moments ago deliberately survives this re-arm — the scheduler
-                // ships it first (leave outranks enter), closing the old visit properly.
+                // Hold the enter until the snapshot can identify the instance (see MaxEnterSettle).
+                // A pending leave from the last visit survives, and the scheduler ships it first.
                 enterHoldDeadline = now + MaxEnterSettle;
                 log.Debug($"Entered occult territory {territory}; live tracker armed.");
             }
@@ -317,9 +283,7 @@ internal sealed class OccultManager : IDisposable
 
             if (enterHoldDeadline is { } deadline)
             {
-                // Release the hold the moment the snapshot can fingerprint — or at the
-                // deadline, whichever comes first. The enter carries the full state at issue
-                // time, so the changes accumulated during the hold ride along with it.
+                // The enter carries the full state at issue, so changes during the hold ride along.
                 if (OccultFingerprint.IsFingerprintable(tracker.Current) || now >= deadline)
                 {
                     enterHoldDeadline = null;
@@ -335,10 +299,8 @@ internal sealed class OccultManager : IDisposable
         if (uploadInFlight)
             return;
 
-        // Asked again here, after the in-flight check: the upload that just finished may have
-        // raised the halt since the gate at the top of this tick read it. The halt is written
-        // before that upload clears uploadInFlight, so a tick that sees the upload finished also
-        // sees its halt.
+        // Asked again: an upload that just finished may have raised the halt after the gate above. It
+        // writes the halt before clearing uploadInFlight, so a tick that sees it finished sees its halt.
         if (syncManager.BlockedPendingUserAction)
             return;
 
@@ -356,30 +318,31 @@ internal sealed class OccultManager : IDisposable
         if (due == OccultTrigger.Leave)
             pendingLeave = null;
 
-        // Defensive only: every path that lets the scheduler issue a Leave also captured a
-        // payload first, and the disabled path resets both together.
+        // Defensive: every path that queues a Leave captures its payload first, and the disabled
+        // path resets both.
         if (request is null)
             return;
 
         uploadInFlight = true;
 
-        // The session and the "Sync now" press count this upload belongs to, captured here on the
-        // framework thread, so a refusal that lands after a logout or after the player's fix is
-        // dropped (see SyncManager.HaltFromLiveUpload).
+        // Captured on the framework thread, so a refusal landing after a logout or after the
+        // player's fix is dropped (see SyncManager.HaltFromLiveUpload).
         var generation = syncManager.SessionGeneration;
         var haltEpoch = syncManager.HaltEpoch;
 
-        // Off the framework thread, including the JSON serialization inside the client. `_ =`
-        // discards the task deliberately: nothing awaits it, and UploadAsync lets nothing escape.
+        // Off the framework thread, including the JSON serialization inside the client. Nothing
+        // awaits the task, and UploadAsync lets nothing escape.
         _ = Task.Run(() => UploadAsync(request, due.Value, generation, haltEpoch));
     }
 
     /// <summary>
-    /// Closes the current visit: captures the leave payload from the instance being left,
-    /// resets the tracker, and queues the leave with the scheduler.
+    /// Closes the current visit: captures the leave payload from the instance being left, resets the
+    /// tracker, and queues the leave.
     /// </summary>
-    /// <remarks>The payload must be built HERE — the tracker resets immediately after, and
-    /// the scheduler may defer the actual send (a backoff, an upload in flight) past that.</remarks>
+    /// <remarks>
+    /// The payload must be built here: the tracker resets right after, and the scheduler may defer the
+    /// send past that, for a backoff or an upload in flight.
+    /// </remarks>
     private void QueueLeave(CharacterIdentity identity, DateTimeOffset now)
     {
         inside = false;
@@ -394,18 +357,13 @@ internal sealed class OccultManager : IDisposable
     }
 
     /// <summary>
-    /// The reporter's CURRENT world (<c>World</c> sheet row id) — where the character is
-    /// standing, not their home world, because a data-center traveler's instance belongs to
-    /// the visited DC. Null when the game has not populated it (the server then leaves the
-    /// tracker un-scoped rather than mis-scoped).
+    /// The character's current <c>World</c> row id, or null while the game has not set it. Current, not
+    /// home, because a data-center traveler's instance belongs to the visited data center.
     /// </summary>
     /// <remarks>
-    /// Framework thread only, like every game read in this class. Reads the raw row id
-    /// rather than resolving the sheet row: an id the installed game data does not know is
-    /// still worth sending (the server resolves it against its own world table — the
-    /// catalog-trailing rule), and a plain <c>RowId</c> read cannot throw the way a name
-    /// resolution can. Zero is the game's unset world — the one "not readable yet" value —
-    /// so <c>&gt; 0</c> is the whole readability test.
+    /// Framework thread only. It sends the raw row id unresolved: the server resolves ids the installed
+    /// game data lacks, and a <c>RowId</c> read cannot throw the way a name lookup can. Zero is the
+    /// game's unset world, so <c>&gt; 0</c> is the whole readability test.
     /// </remarks>
     private uint? ReadCurrentWorldId()
     {
@@ -418,9 +376,8 @@ internal sealed class OccultManager : IDisposable
     /// hears about successes and waits, and a refusal only the player can fix raises the halt.
     /// </summary>
     /// <remarks>
-    /// No retry loop, deliberately: every upload is a full snapshot, so the next change or
-    /// heartbeat re-sends everything a failed attempt would have. The scheduler's backoff covers
-    /// the cases where the server asked for quiet.
+    /// No retry loop: every upload is a full snapshot, so the next change or heartbeat resends
+    /// everything a failed one would have. The scheduler's backoff covers a server that asked for quiet.
     /// </remarks>
     /// <param name="request">The snapshot to send.</param>
     /// <param name="trigger">Why it is being sent.</param>
@@ -437,8 +394,7 @@ internal sealed class OccultManager : IDisposable
 
             var now = timeProvider.GetUtcNow();
 
-            // What to do with the answer is OccultOutcomePolicy's rule; this switch only carries
-            // it out. Each case is a statement block, like a `case:` in a TypeScript switch.
+            // OccultOutcomePolicy decides; this switch carries it out.
             var outcome = OccultOutcomePolicy.Classify(response.Status, response.RetryAfter, now);
             switch (outcome.Kind)
             {
@@ -447,15 +403,14 @@ internal sealed class OccultManager : IDisposable
                     LogApplied(response.Value, trigger);
                     break;
 
-                // The server asked for quiet (429, or a 503 kill switch / tracker_unavailable), and
-                // a terminal rejection of the payload (400/405/413) goes quiet the same way.
-                // `when` narrows a case with an extra condition; here it unwraps the time.
+                // The server asked for quiet (429, or a 503 kill switch or tracker_unavailable), or
+                // rejected the payload outright (400, 405, 413).
                 case OccultOutcomeKind.BackOff or OccultOutcomeKind.Pause when outcome.Until is { } until:
                     scheduler.BackOffUntil(until);
                     log.Debug($"Occult tracker quiet until {until:u} after {response.Status}.");
                     break;
 
-                // Nothing to pace (see OccultOutcomeKind.Skip); just note it.
+                // Nothing to pace (see OccultOutcomeKind.Skip).
                 case OccultOutcomeKind.Skip:
                     log.Debug($"Occult {trigger} upload skipped: not configured.");
                     break;
@@ -468,8 +423,7 @@ internal sealed class OccultManager : IDisposable
                         response.Status, response.HttpStatusCode, startedFor, haltEpochAtSend);
                     break;
 
-                // Transient (a network blip, a 5xx): the next change or heartbeat carries a fresh
-                // full snapshot, so just note it.
+                // Transient: the next change or heartbeat carries a fresh full snapshot.
                 default:
                     log.Debug($"Occult {trigger} upload failed: {response.Status}.");
                     break;
@@ -481,10 +435,8 @@ internal sealed class OccultManager : IDisposable
         }
         catch (Exception ex)
         {
-            // Last-resort net: an exception in a discarded task would otherwise surface as an
-            // unobserved-task exception with no context. Reported in full once; the heartbeat
-            // would otherwise repeat a deterministic one for as long as the character stays
-            // inside, at whatever cadence the server set.
+            // An exception in a discarded task would otherwise go unobserved, with no context. Only
+            // the first gets the full report: the heartbeat would repeat it for the whole visit.
             if (uploadFailures.IsFirstSighting(ex))
                 log.Error(ex, "Unexpected failure during occult upload.");
             else
@@ -501,10 +453,8 @@ internal sealed class OccultManager : IDisposable
     /// <param name="trigger">Why the upload was sent.</param>
     private void LogApplied(OccultInstanceStateResponse? value, OccultTrigger trigger)
     {
-        // The tracker id is the server's identity for the instance — logging it is what lets a QA
-        // session (or a bug report) prove that a rejoin landed on the same tracker. It is a
-        // server-generated UUID, not player data. Both server strings are clamped: the log is
-        // durable and the backend overridable.
+        // The tracker id, a server UUID rather than player data, shows whether a rejoin landed on the
+        // same tracker. Server strings are clamped: the log is durable and the backend overridable.
         var outcome = ServerText.Clamp(value?.Outcome ?? "ok");
         var tracker = value?.TrackerId is { } id
             ? $" tracker={ServerText.Clamp(id)}"

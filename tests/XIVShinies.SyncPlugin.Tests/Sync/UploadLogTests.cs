@@ -9,13 +9,10 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// The upload log is a transparency surface: it must describe the payload that actually went out,
-// so its summarization is pinned here.
+// The upload log is a transparency surface: it must describe the payload that actually went out.
 public class UploadLogTests
 {
-    // The website address the copy names. `const` fixes the value when the code compiles, which
-    // also lets it appear inside an [InlineData] row. A made-up address, so a test can tell one
-    // that was passed in from one written into the copy.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
     private static CollectionSnapshot SnapshotWith(
@@ -37,10 +34,9 @@ public class UploadLogTests
 
     // --- What the "Sent" column counts -----------------------------------------------------
 
-    // A collector whose facts wrap several unrelated things says how many it is about, and the log
-    // takes its word. Counting the shape instead sums the wrapper's parts: a progression payload
-    // of 24 jobs beside a two-field knowledge sighting would read as 26, and the same payload with
-    // no jobs read would read as 2 — a number that moves for reasons the reader cannot see.
+    // A collector whose facts wrap unrelated things reports its own count. Counting the shape would
+    // read 24 jobs beside a two-field knowledge sighting as 26, and the same payload with no jobs as
+    // 2: a number that moves for reasons the reader cannot see.
     [Fact]
     public void A_categorys_own_count_is_preferred_over_the_shape_of_its_facts()
     {
@@ -61,8 +57,7 @@ public class UploadLogTests
         Assert.Equal(2, Assert.Single(entry.Categories).Count);
     }
 
-    // Every other category leaves the count to the facts' shape, which is the right answer when
-    // the facts ARE the collection.
+    // The shape is the right count when the facts are the collection.
     [Fact]
     public void A_category_that_reports_no_count_is_counted_from_its_facts()
     {
@@ -77,10 +72,9 @@ public class UploadLogTests
         Assert.Equal(3, Assert.Single(entry.Categories).Count);
     }
 
-    // A collector can read none of what it is about and still have something to send — phantom
-    // jobs are only legible inside the instance, while a knowledge sighting remembered from
-    // earlier travels from anywhere. The category went out, so it is not skipped; nothing was
-    // counted, so it carries no count rather than a zero.
+    // Phantom jobs are readable only inside the instance, but a remembered knowledge sighting goes
+    // out from anywhere. The category was sent, so it is not skipped; nothing was counted, so it
+    // carries no count rather than a zero.
     [Fact]
     public void A_category_that_read_nothing_this_pass_carries_no_count()
     {
@@ -104,9 +98,8 @@ public class UploadLogTests
 
     // --- What the log calls unread ---------------------------------------------------------
 
-    // A collection the user switched off is skipped, but nothing failed. Reporting it as unread
-    // would turn their own choice into a standing complaint in the log, and every user who leaves
-    // a collection unticked would carry one forever.
+    // A switched-off collection is skipped, but nothing failed. Calling it unread would turn the
+    // user's own choice into a standing complaint in the log.
     [Fact]
     public void A_switched_off_category_is_not_reported_as_unread()
     {
@@ -121,13 +114,13 @@ public class UploadLogTests
 
         Assert.Equal(new[] { "achievements" }, entry.UnreadableCategoryKeys);
 
-        // The full map still carries it: "disabled" is precisely the answer a pasted diagnostic
-        // needs for "why did this not sync?".
+        // The full map keeps it: a pasted diagnostic needs "disabled" to answer "why did this not
+        // sync?".
         Assert.Equal(CollectSkipReasons.Disabled, entry.Skipped["orchestrionRolls"]);
     }
 
-    // Filtered on the reason, never the category — so a category switched off, or one the server
-    // does not ask for, is silent whichever one it is, and every other reason still reports.
+    // Filtered on the reason, never the category: any category switched off or not asked for by the
+    // server is silent, and every other reason reports.
     [Fact]
     public void Every_reason_but_a_deliberate_skip_is_reported_as_unread()
     {
@@ -143,7 +136,7 @@ public class UploadLogTests
             },
         };
 
-        // Sorted, because the underlying map is a Dictionary and its order is not contractual.
+        // Sorted, because a Dictionary's order is not guaranteed.
         Assert.Equal(new[] { "items", "mounts", "quests" }, entry.UnreadableCategoryKeys);
     }
 
@@ -172,8 +165,8 @@ public class UploadLogTests
             c => { Assert.Equal("items", c.Key); Assert.Equal(1, c.Count); });
     }
 
-    // An empty list is a real answer ("read the source, found nothing") and must appear in the
-    // log as zero, not vanish — vanishing is what SKIPPED categories do.
+    // An empty list is a real answer ("read the source, found nothing"), so it shows as zero. Only a
+    // skipped category vanishes.
     [Fact]
     public void Draft_keeps_a_collected_but_empty_category_as_zero()
     {
@@ -188,9 +181,8 @@ public class UploadLogTests
         Assert.Equal(0, category.Count);
     }
 
-    // Object-shaped facts (questSequences: quest id → journal step) count their members, the same
-    // way an array counts its elements. The log is a transparency surface: "Quest progress 2" must
-    // mean two quests were reported.
+    // questSequences maps quest id to journal step, so "Quest progress 2" must mean two quests were
+    // reported.
     [Fact]
     public void Draft_counts_the_members_of_an_object_shaped_category()
     {
@@ -205,10 +197,8 @@ public class UploadLogTests
         Assert.Equal(2, category.Count);
     }
 
-    // A nested map (occultProgression: a "jobs" object of per-job records, plus an optional
-    // "knowledge" record) must not count its two members as two facts. A container member
-    // contributes its own entry count, so each job in the map reads as one fact — plus two
-    // for a knowledge sighting when one exists.
+    // occultProgression's "jobs" map and optional "knowledge" record are not two facts. A container
+    // member adds its own entry count: one fact per job, plus two for a sighting.
     [Fact]
     public void Draft_counts_the_entries_of_a_nested_container_member()
     {
@@ -224,8 +214,8 @@ public class UploadLogTests
         Assert.Equal(4, category.Count); // two jobs + the sighting's two fields
     }
 
-    // The knowledge-only shape a sighting produces outside an Occult instance: an empty
-    // container member contributes zero, so the log reads two facts — the sighting's fields.
+    // The knowledge-only shape a sighting produces outside an Occult instance: two facts, the
+    // sighting's fields.
     [Fact]
     public void Draft_counts_an_empty_container_member_as_zero()
     {
@@ -240,9 +230,8 @@ public class UploadLogTests
         Assert.Equal(2, Assert.Single(draft.Categories).Count);
     }
 
-    // A shape the log has never seen (neither array nor object) is purely hypothetical — but a
-    // formatter that CAN misread it as zero facts eventually will, so the "count it as one rather
-    // than crash or hide it" fallback is pinned.
+    // A scalar is hypothetical, but a formatter that can misread it as zero facts eventually will.
+    // Count it as one rather than crash or hide it.
     [Fact]
     public void Draft_counts_a_scalar_fact_node_as_one()
     {
@@ -292,7 +281,7 @@ public class UploadLogTests
         Assert.Equal(2, log.Entries[0].At.Minute);
     }
 
-    // The clear button: everything goes, and the log keeps working afterwards.
+    // Backs the clear button.
     [Fact]
     public void Clear_empties_the_log_and_recording_still_works_after()
     {
@@ -350,13 +339,10 @@ public class UploadLogTests
         Assert.Equal(expected, UploadLogText.StatusText(status, Host));
     }
 
-    // Every status, not a hand-picked few: exactly the character refusals read as a refusal about
-    // the character, so a refusal added to the status map without its own phrase fails here.
+    // Every status, so a refusal added to the status map without its own phrase fails here.
     [Fact]
     public void Exactly_the_character_refusals_read_as_refused_for_the_character()
     {
-        // Enum.GetValues<T>() returns every member of the enum as an array, as Object.values does
-        // for a TS string enum.
         foreach (var status in Enum.GetValues<ApiStatus>())
         {
             Assert.Equal(
@@ -376,8 +362,7 @@ public class UploadLogTests
         Assert.Equal(expected, UploadLogText.IsSuccess(status));
     }
 
-    // Deferrals resolve themselves (the plugin retries later); refusals need the user. The log
-    // colors them differently, so the split is pinned.
+    // Deferrals heal as the plugin retries; refusals need the user. The log colors them differently.
     [Theory]
     [InlineData(ApiStatus.RateLimited, true)]
     [InlineData(ApiStatus.SyncDisabled, true)]
@@ -394,11 +379,9 @@ public class UploadLogTests
     }
 
     // --- Change highlighting ----------------------------------------------------------------
-    // The window paints a category gold when what was sent differs from the last time the log
-    // saw it — the "you just got something new" signal. Both the count and a content
-    // fingerprint are compared: trading one watched item for another keeps the count identical
-    // while the contents change (observed live with a relic tool trade-in), and the highlight
-    // must fire for that too. The comparison rules are pinned here.
+    // The window paints a category gold when what was sent differs from the last time the log saw
+    // it. The count and a content fingerprint are both compared: trading one watched item for
+    // another, as a relic tool trade-in does, keeps the count while the contents change.
 
     [Fact]
     public void Draft_fingerprints_each_category_by_content_not_count()
@@ -416,8 +399,7 @@ public class UploadLogTests
                 ["items"] = JsonNode.Parse("""[{"id":1,"count":1},{"id":3,"count":1}]""")!,
             }));
 
-        // Same count, different contents — the fingerprints must differ. Both passes count 2, so
-        // the fingerprint is the only signal that can carry the change.
+        // Both passes count 2, so only the fingerprint can carry the change.
         Assert.Equal(2, before.Categories[0].Count);
         Assert.Equal(before.Categories[0].Count, after.Categories[0].Count);
         Assert.NotEqual(before.Categories[0].Fingerprint, after.Categories[0].Fingerprint);
@@ -438,8 +420,6 @@ public class UploadLogTests
         Assert.Equal(first.Categories[0].Fingerprint, second.Categories[0].Fingerprint);
     }
 
-    // A content swap that keeps the count identical must still flag: the diff compares the
-    // fingerprint as well as the count, so contents can never change invisibly.
     [Fact]
     public void A_same_count_content_swap_is_flagged_as_changed()
     {
@@ -458,9 +438,8 @@ public class UploadLogTests
         Assert.Contains("quests", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // A pass that read none of the category makes no claim about its contents, so it cannot have
-    // changed. Its facts really are different from the readable pass before it — no jobs against
-    // 24 — so a plain count-and-fingerprint comparison would flag it.
+    // A pass that read none of the category makes no claim about it. Its facts do differ from the
+    // pass before (no jobs against 24), so a plain count-and-fingerprint comparison would flag it.
     [Fact]
     public void A_category_that_read_nothing_is_not_flagged_as_changed()
     {
@@ -482,9 +461,8 @@ public class UploadLogTests
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // The other half of the same rule, and the one a reader feels: an unmeasured pass sitting between
-    // two identical readable ones must not make the later one look like movement. The baseline
-    // search passes over the unmeasured row and lands on the last pass that actually measured.
+    // The baseline search walks past an unmeasured row to the last pass that measured, so a gap
+    // between two identical passes does not look like movement.
     [Fact]
     public void An_unmeasured_pass_is_not_the_baseline_for_the_pass_after_it()
     {
@@ -510,9 +488,7 @@ public class UploadLogTests
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // The other direction of the same rule: passing over unmeasured rows must not HIDE real movement.
-    // The baseline search walks past the unmeasured row to the last pass that measured, so a genuine
-    // gain across the gap still flags.
+    // Walking past an unmeasured row must not hide real movement across the gap.
     [Fact]
     public void A_change_across_an_unmeasured_pass_is_still_flagged()
     {
@@ -538,9 +514,8 @@ public class UploadLogTests
         Assert.Contains("occultProgression", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // An unmeasured row as the OLDEST row leaves the category with no measurement anywhere behind it,
-    // so the first readable pass after it is deliberately not flagged — the same rule that keeps a
-    // category the log has never seen from painting the whole first upload of a session.
+    // With no measurement behind it, the first readable pass is not flagged, by the rule that keeps a
+    // session's first upload from painting every category.
     [Fact]
     public void A_first_measured_pass_after_an_unmeasured_history_is_not_flagged()
     {
@@ -562,9 +537,8 @@ public class UploadLogTests
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // A manifest-driven category is compared on its owned-entry count, so that is what makes a row
-    // a usable baseline for one — not the fact count the other categories are measured by. A row
-    // with no owned count is walked past, and the comparison lands on the last row that had one.
+    // A manifest-driven category is compared on its owned count, not its fact count, so a row
+    // without one is walked past to the last row that had one.
     [Fact]
     public void A_manifest_categorys_baseline_is_the_last_row_with_an_owned_count()
     {
@@ -596,10 +570,9 @@ public class UploadLogTests
         Assert.Contains("items", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // A manifest-driven category's contents move whenever the SERVER edits its manifest, so a
-    // content diff would claim the player obtained something when nothing happened. Its change
-    // signal is the owned-entry count instead — and with no owned count to compare (an entry
-    // whose facts were not the possession shape), nothing can honestly be flagged.
+    // A manifest-driven category's contents move whenever the server edits its manifest, so its
+    // signal is the owned count, not a content diff. With no owned count, because the facts were not
+    // the possession shape, nothing can honestly be flagged.
     [Fact]
     public void A_manifest_category_with_no_owned_count_is_not_flagged()
     {
@@ -624,8 +597,7 @@ public class UploadLogTests
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // Obtaining a first copy of a manifest item moves the owned-entry count — the movement
-    // that means the character's visible holdings changed, which is the signal's meaning.
+    // A first copy of a manifest item moves the owned count: the character's holdings changed.
     [Fact]
     public void A_manifest_category_is_flagged_when_its_owned_count_moves()
     {
@@ -652,9 +624,8 @@ public class UploadLogTests
         Assert.Contains("items", UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // Content changes that do NOT move the owned-entry count — the server growing its manifest
-    // with items the player lacks, or a currency balance moving between two positive values —
-    // must stay unflagged: neither is "the player picked something up".
+    // Neither the server adding items the player lacks nor a currency balance moving between two
+    // positive values is the player picking something up.
     [Fact]
     public void A_manifest_category_is_not_flagged_when_the_owned_count_holds_still()
     {
@@ -681,11 +652,9 @@ public class UploadLogTests
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // The owned-entry count comes from the possession shape itself: an entry is owned when any
-    // of its per-quality counts is positive, whichever quality that is. An entry with no count
-    // members at all, and a null element, both read as unowned rather than throwing.
-    // Non-manifest categories have no owned count — the concept only exists where the server's
-    // manifest sets the scope.
+    // An entry is owned when any of its per-quality counts is positive. An entry with no count
+    // members, and a null element, read as unowned rather than throwing. Only a manifest-driven
+    // category has an owned count.
     [Fact]
     public void Draft_counts_owned_entries_for_a_manifest_driven_category()
     {
@@ -716,11 +685,9 @@ public class UploadLogTests
             items => Assert.Equal(3, items.OwnedCount));
     }
 
-    // Only the possession shape can be counted honestly. Object-shaped facts and an id list
-    // under a manifest-driven key both yield null — silence — where a zero would wrongly arm
-    // the change signal to fire the moment the shape ever becomes a possession array. The empty
-    // array is the exception: "collected, owns none of it" is a real zero baseline that a
-    // first pickup genuinely moves.
+    // Only the possession shape can be counted. Any other shape yields null, because a zero would
+    // fire the change signal once the shape became a possession array. An empty array is a real zero
+    // that a first pickup moves.
     [Theory]
     [InlineData("""{"level":40}""", null)]
     [InlineData("[1,2,3]", null)]
@@ -743,9 +710,7 @@ public class UploadLogTests
         Assert.Equal(expected, draft.Categories[0].OwnedCount);
     }
 
-    // OwnedCount is nullable, so one side of a comparison can be silent while the other
-    // carries a number. Comparing a number against silence would be a guess in either
-    // direction — both stay unflagged.
+    // Comparing a number against a null would be a guess in either direction.
     [Fact]
     public void A_manifest_category_with_an_owned_count_on_only_one_side_is_not_flagged()
     {
@@ -808,8 +773,8 @@ public class UploadLogTests
         Assert.DoesNotContain("mounts", changed);
     }
 
-    // An unlock upload carries only the categories that changed, so the baseline for a category
-    // is its most recent EARLIER appearance — entries that never mention it are skipped over.
+    // An unlock upload carries only the categories that changed, so the baseline is the category's
+    // last earlier appearance.
     [Fact]
     public void The_baseline_skips_entries_that_do_not_mention_the_category()
     {
@@ -823,8 +788,7 @@ public class UploadLogTests
         Assert.Empty(UploadLogDiff.ChangedCategories(newestFirst, 0));
     }
 
-    // The first time the log ever sees a category there is nothing to compare against, and
-    // flagging everything on the session's first upload would make the highlight meaningless.
+    // Flagging everything on the session's first upload would make the highlight meaningless.
     [Fact]
     public void A_category_with_no_earlier_appearance_is_not_flagged()
     {
@@ -850,9 +814,8 @@ public class UploadLogTests
     }
 
     // --- Proof reporting for manifest-driven categories -------------------------------------
-    // The server answers an items-carrying upload with provenSteps: the relic-step rows this
-    // upload created or promoted. That delta — not a content diff — is what tells the user
-    // whether they actually progressed, so the window prints it beside the category.
+    // The server answers an items-carrying upload with provenSteps, the relic-step rows it created
+    // or promoted. That delta, not a content diff, tells the user whether they progressed.
 
     private static UploadLogEntry ManifestEntry(
         int? provenSteps, ApiStatus status = ApiStatus.Ok) => SomeEntry() with
@@ -873,23 +836,22 @@ public class UploadLogTests
         Assert.Equal(expected, UploadLogText.ProofText(ManifestEntry(steps)));
     }
 
-    // Zero means "items applied, nothing new proved" — an honest quiet, not a note.
+    // Zero means the items applied but proved nothing new.
     [Fact]
     public void Proof_text_is_silent_when_nothing_new_was_proved()
     {
         Assert.Null(UploadLogText.ProofText(ManifestEntry(0)));
     }
 
-    // No provenSteps key on an accepted items-carrying upload means derivation failed
-    // server-side; the next upload retries it, so the honest word is "pending".
+    // No provenSteps on an accepted items-carrying upload means derivation failed server-side; the
+    // next upload retries it.
     [Fact]
     public void Proof_text_says_pending_when_the_server_sent_no_proof_answer()
     {
         Assert.Equal("proof pending", UploadLogText.ProofText(ManifestEntry(null)));
     }
 
-    // A refused or failed upload has no server verdict to report — even when a step value is
-    // somehow present, the status gate wins.
+    // A refused or failed upload has no verdict to report; the status gate wins over a step value.
     [Theory]
     [InlineData(null)]
     [InlineData(3)]
@@ -905,9 +867,8 @@ public class UploadLogTests
         Assert.Null(UploadLogText.ProofText(SomeEntry()));
     }
 
-    // An EMPTY manifest-driven category carries no information (the contract reads an empty
-    // array as "nothing to apply"), so the server owes it no proof answer — a missing one is
-    // not a pending proof, and saying so would falsely report a server-side failure.
+    // The contract reads an empty array as "nothing to apply", so no proof answer is owed. Calling a
+    // missing one pending would report a server-side failure that never happened.
     [Fact]
     public void Proof_text_is_null_when_the_manifest_category_carried_no_facts()
     {
@@ -923,8 +884,7 @@ public class UploadLogTests
     }
 
     // --- Failure diagnostics ----------------------------------------------------------------
-    // Extra fields that answer "why did it fail" in a pasted bug report. Each is optional and
-    // rendered only when it carries something.
+    // Fields that answer "why did it fail" in a pasted bug report, each rendered only when set.
 
     [Fact]
     public void Draft_records_the_manifest_version_the_items_were_built_against()
@@ -956,7 +916,6 @@ public class UploadLogTests
             UploadLogText.OutcomeText(entry, Host));
     }
 
-    // An outcome that names the website names it by the address passed in, qualifiers and all.
     [Fact]
     public void Outcome_text_names_the_website_it_is_handed()
     {
@@ -983,8 +942,8 @@ public class UploadLogTests
         }));
     }
 
-    // Validation text is server-supplied and the backend is user-overridable, so a hostile
-    // server must not be able to bloat the in-memory log or the ImGui rendering with it.
+    // The text comes from a user-overridable server, so a hostile one must not bloat the in-memory
+    // log or the ImGui rendering.
     [Fact]
     public void Issues_text_truncates_absurdly_long_server_complaints()
     {
@@ -1023,9 +982,8 @@ public class UploadLogTests
     }
 
     // --- Live upload halts --------------------------------------------------------------------
-    // The live tracker's and the Crucible sharing's uploads get no row of their own, except the one
-    // that halts them: a refused character or token. That row is what tells a player with only one of
-    // them switched on why sharing stopped, so its reading is pinned.
+    // Live tracker and Crucible sharing uploads get a row only when a refused character or token
+    // halts them. That row tells a player why sharing stopped.
 
     [Fact]
     public void A_live_tracker_halt_reads_as_the_live_tracker_with_its_refusal()
@@ -1043,8 +1001,6 @@ public class UploadLogTests
         Assert.Equal("refused — character not verified", UploadLogText.OutcomeText(entry, Host));
     }
 
-    // The Crucible run sharing halts the same way, and its row names the sharing rather than the
-    // live tracker.
     [Fact]
     public void A_crucible_sharing_halt_reads_as_the_crucible_sharing_with_its_refusal()
     {
@@ -1072,8 +1028,7 @@ public class UploadLogTests
         Assert.Null(UploadLogText.LiveEndpoint(UploadLogSource.Sync));
     }
 
-    // Every live upload path names what it sent and the endpoint it sent it to, so a path added later
-    // cannot print an empty Sent column or an empty endpoint.
+    // A live upload path added later cannot print an empty Sent column or endpoint.
     [Fact]
     public void Every_live_upload_path_names_what_it_sent_and_where()
     {
@@ -1087,8 +1042,7 @@ public class UploadLogTests
         }
     }
 
-    // A live upload row carries no categories, so it is never a category's baseline: the sync rows
-    // either side of it still compare with each other.
+    // A live upload row carries no categories, so the sync rows either side of it still compare.
     [Theory]
     [InlineData(UploadLogSource.LiveTracker)]
     [InlineData(UploadLogSource.CrucibleRuns)]
@@ -1134,7 +1088,6 @@ public class UploadLogTests
             text);
     }
 
-    // A sync row that carries no trigger still names itself, by its source, in both places.
     [Fact]
     public void A_sync_row_without_a_trigger_reads_as_sync()
     {
@@ -1147,8 +1100,8 @@ public class UploadLogTests
     }
 
     // --- The clipboard dump ----------------------------------------------------------------
-    // Pasted into Discord for bug reports, so it speaks in wire terms (category keys, status
-    // names, UTC) rather than display copy — the person debugging needs stable identifiers.
+    // Pasted into Discord for bug reports, so it uses wire terms (category keys, status names, UTC):
+    // the person debugging needs stable identifiers, not display copy.
 
     [Fact]
     public void Clipboard_text_reports_each_entry_in_wire_terms()
@@ -1178,9 +1131,8 @@ public class UploadLogTests
             text);
     }
 
-    // The paste is a diagnostic, so a category that went out carrying no reading has to say so.
-    // Printing nothing after the "=" would look like a truncated dump, and printing 0 would tell
-    // the person debugging that the collector measured something when it measured nothing.
+    // Nothing after the "=" would look like a truncated dump, and 0 would claim the collector
+    // measured something.
     [Fact]
     public void Clipboard_text_reports_an_unmeasured_category_as_none_seen()
     {
@@ -1198,8 +1150,7 @@ public class UploadLogTests
         Assert.Contains("sent: occultProgression=none_seen quests=3120", text);
     }
 
-    // The backend is user-overridable, and "you are pointed at the wrong server" is a classic
-    // support case — the dump must say which server the log is about.
+    // The backend is user-overridable, and "pointed at the wrong server" is a common support case.
     [Fact]
     public void Clipboard_text_names_the_backend_in_its_header()
     {
@@ -1231,7 +1182,7 @@ public class UploadLogTests
         Assert.Contains("| issues: characterName: too long", text);
     }
 
-    // A clean first-try success stays a clean one-liner: no qualifier noise on the common case.
+    // A clean first-try success stays a one-liner.
     [Fact]
     public void Clipboard_text_omits_absent_diagnostics()
     {
@@ -1245,8 +1196,7 @@ public class UploadLogTests
         Assert.DoesNotContain("issues:", text);
     }
 
-    // The gold changed-highlight is invisible in a paste, so the dump carries the same fact as
-    // a segment: which categories' contents differ from their previous appearance.
+    // The gold highlight is invisible in a paste, so the dump carries it as a segment.
     [Fact]
     public void Clipboard_text_marks_categories_whose_contents_changed()
     {
@@ -1270,8 +1220,7 @@ public class UploadLogTests
         Assert.DoesNotContain("changed:", lines[2]);
     }
 
-    // The dump reports the proof answer in wire terms, whatever its value — including zero,
-    // which the window stays silent about but a debugger wants to see.
+    // Zero included: the window stays silent about it, but a debugger wants to see it.
     [Theory]
     [InlineData(3)]
     [InlineData(0)]
@@ -1283,8 +1232,8 @@ public class UploadLogTests
         Assert.Contains($"| provenSteps: {steps}", text);
     }
 
-    // An accepted items-carrying upload with NO proof answer is the derivation-failed case —
-    // exactly the line a bug report needs to show, so the dump says so explicitly.
+    // An accepted items-carrying upload with no proof answer is the derivation-failed case, which a
+    // bug report needs to show.
     [Fact]
     public void Clipboard_text_marks_an_absent_proof_answer()
     {
@@ -1294,8 +1243,7 @@ public class UploadLogTests
         Assert.Contains("| provenSteps: absent", text);
     }
 
-    // No answer arrived and none was owed (nothing manifest-driven was sent) — the segment
-    // would be noise on every id-list-only upload.
+    // Nothing manifest-driven was sent, so the segment would be noise on every id-list-only upload.
     [Fact]
     public void Clipboard_text_omits_proven_steps_when_none_arrived_and_none_was_owed()
     {
@@ -1305,8 +1253,7 @@ public class UploadLogTests
         Assert.DoesNotContain("provenSteps", text);
     }
 
-    // The empty-category rule, in the dump: an all-empty manifest-driven category was never
-    // owed an answer, so a missing one gets no "absent" marker.
+    // An empty manifest-driven category was never owed an answer.
     [Fact]
     public void Clipboard_text_omits_the_absent_marker_when_the_manifest_category_was_empty()
     {
@@ -1323,9 +1270,7 @@ public class UploadLogTests
         Assert.DoesNotContain("provenSteps", text);
     }
 
-    // The dump is verbatim wire truth: if an answer is present it prints, even on an entry
-    // that carried nothing manifest-driven — a contract-impossible reply is exactly what a
-    // debugger would want to see.
+    // The dump prints what the wire said: a contract-impossible reply is what a debugger wants to see.
     [Fact]
     public void Clipboard_text_reports_a_proof_answer_even_without_a_manifest_driven_category()
     {
@@ -1336,8 +1281,7 @@ public class UploadLogTests
         Assert.Contains("| provenSteps: 2", text);
     }
 
-    // The two signals are independent segments: an id-list category's "changed" mark and the
-    // upload's proof answer both appear when one upload carries both facts.
+    // The "changed" mark and the proof answer are independent segments.
     [Fact]
     public void Clipboard_text_reports_changed_and_proven_steps_together()
     {
@@ -1363,15 +1307,12 @@ public class UploadLogTests
             "1.2.3", "https://xiv-shinies.com", new[] { newest, older });
         var lines = text.Split('\n');
 
-        // Both segments land on the newest line: quests changed against its baseline, and the
-        // upload's proof answer printed verbatim.
         Assert.Contains("| changed: quests", lines[1]);
         Assert.Contains("| provenSteps: 2", lines[1]);
     }
 
-    // The window rule and the dump rule agree: with no owned count on a manifest-driven
-    // category, its contents can differ without anything reading as "changed" — a content diff
-    // cannot carry that category's signal.
+    // The dump follows the window's rule: with no owned count, a content diff cannot mark a
+    // manifest-driven category changed.
     [Fact]
     public void Clipboard_text_does_not_mark_a_manifest_category_with_no_owned_count()
     {
@@ -1389,9 +1330,8 @@ public class UploadLogTests
         Assert.DoesNotContain("changed:", text);
     }
 
-    // The other half of that rule: an owned-entry count that moved DOES read as changed in the
-    // dump, and the owned count prints on the sent line — so both the flag and its absence can
-    // be verified from the pasted text alone.
+    // The owned count prints on the sent line, so the flag and its absence can be checked from the
+    // paste alone.
     [Fact]
     public void Clipboard_text_marks_a_manifest_category_whose_owned_count_moved()
     {
@@ -1423,7 +1363,6 @@ public class UploadLogTests
         Assert.DoesNotContain("skipped", text);
     }
 
-    // Timestamps are normalized to UTC in the dump, whatever offset the entry carried.
     [Fact]
     public void Clipboard_text_normalizes_timestamps_to_utc()
     {
@@ -1438,12 +1377,10 @@ public class UploadLogTests
     }
 
     // --- Sent-column spans -------------------------------------------------------------------
-    // SentSpans is the rule behind the window's Sent column: what each category's text
-    // says, split into spans, and which spans draw highlighted (the window maps the flag to
-    // gold). Pinned here because the precedence — "(changed)" always highlights, the proof note
-    // only when steps were proved — is invisible to the eye until the rare states coincide.
-    // Counts here stay under 1000: the label formats with N0, whose thousands separator is
-    // culture-dependent.
+    // SentSpans splits each category's Sent text into spans and flags the ones drawn gold.
+    // "(changed)" always highlights, the proof note only when steps were proved, which the eye sees
+    // only when the rare states coincide. Counts stay under 1000: N0's thousands separator depends
+    // on culture.
 
     [Fact]
     public void Sent_spans_highlight_a_changed_category_as_one_span()
@@ -1456,8 +1393,7 @@ public class UploadLogTests
         Assert.Equal(new[] { ("Minions 390 (changed)", true) }, spans);
     }
 
-    // The proof note rides only a manifest-driven category, in its own span, highlighted only
-    // by proven steps — so a plain label can still carry a highlighted proof beside it.
+    // The proof note has its own span, so a plain label can carry a highlighted proof beside it.
     [Fact]
     public void Sent_spans_highlight_a_proven_proof_note_beside_a_plain_label()
     {
@@ -1470,8 +1406,8 @@ public class UploadLogTests
             new[] { ("Tracked items 189", false), (" (2 new steps proven)", true) }, spans);
     }
 
-    // The coincidence the split exists for: a possession change highlights its own span while
-    // "proof pending" — not good news — stays plain right beside it.
+    // The case the split exists for: "proof pending" is not good news, so it stays plain beside a
+    // highlighted change.
     [Fact]
     public void Sent_spans_keep_a_pending_proof_plain_beside_a_changed_mark()
     {
@@ -1485,8 +1421,7 @@ public class UploadLogTests
             new[] { ("Tracked items 189 (changed)", true), (" (proof pending)", false) }, spans);
     }
 
-    // A non-manifest category never grows a proof span, even when the entry has a proof note
-    // for its manifest neighbors.
+    // The entry's proof note belongs to its manifest-driven neighbors.
     [Fact]
     public void Sent_spans_attach_no_proof_note_to_a_non_manifest_category()
     {
@@ -1498,8 +1433,7 @@ public class UploadLogTests
         Assert.Equal(new[] { ("Quests 903", false) }, spans);
     }
 
-    // The span text, not just the record: "(none seen)" has to reach the rendered column, where a
-    // bare display name would look like a rendering bug.
+    // A bare display name in the column would look like a rendering bug.
     [Fact]
     public void Sent_spans_say_none_seen_for_a_category_with_no_count()
     {
@@ -1513,11 +1447,9 @@ public class UploadLogTests
 
     // --- The Sent column's order ---------------------------------------------------------------
 
-    // InDisplayOrder is the rule behind the Sent column's ordering. The window names the same
-    // collections in three places - this column, the consent checklist, and the sync card's chips -
-    // and a reader compares them by position, so the three have to agree.
+    // The window names the same collections in the Sent column, the consent checklist, and the sync
+    // card's chips. A reader compares them by position, so the three orders must agree.
 
-    // Alphabetical by the label the reader sees, not the order the collectors happened to run in.
     [Fact]
     public void Categories_are_listed_by_display_name()
     {
@@ -1535,9 +1467,8 @@ public class UploadLogTests
             ordered.Select(c => c.Key).ToArray());
     }
 
-    // The whole reason the order is taken from the display name: a key need not resemble the label
-    // drawn for it, so sorting on keys would put the words on screen in an order the reader cannot
-    // account for. Here the two orders are exact opposites, which no key-based sort can produce.
+    // A key need not resemble its label, so a key sort would put the words on screen in an order
+    // the reader cannot account for. Here the two orders are opposites.
     [Fact]
     public void Categories_are_ordered_by_label_rather_than_by_category_key()
     {
@@ -1553,8 +1484,7 @@ public class UploadLogTests
         Assert.Equal(new[] { "zzz", "aaa" }, ordered.Select(c => c.Key).ToArray());
     }
 
-    // Two collections may choose the same display name, and an arbitrary order between them would
-    // let the column reshuffle itself between frames. The key settles it.
+    // Without a tie-break, two collections sharing a name could swap places between frames.
     [Fact]
     public void Categories_sharing_a_display_name_are_settled_by_their_key()
     {
@@ -1569,9 +1499,8 @@ public class UploadLogTests
         Assert.Equal(new[] { "first", "second" }, ordered.Select(c => c.Key).ToArray());
     }
 
-    // The entry records the order the collectors ran in, and the clipboard export prints the
-    // categories in exactly that order for whoever is debugging a payload. Sorting in place would
-    // rewrite that surface as a side effect of drawing this one.
+    // The clipboard export prints the order the collectors ran in, for debugging. Sorting in place
+    // would rewrite it as a side effect of drawing.
     [Fact]
     public void Ordering_for_display_leaves_the_entrys_own_order_alone()
     {
@@ -1586,8 +1515,8 @@ public class UploadLogTests
         Assert.Equal(new[] { "quests", "achievements" }, categories.Select(c => c.Key).ToArray());
     }
 
-    // A category whose collector is not registered falls back to its raw key as a label, which is
-    // still a string and still has to sort - the column must not drop it or throw.
+    // An unregistered collector's category uses its raw key as a label, and the column must not drop
+    // it or throw.
     [Fact]
     public void A_category_with_no_registered_display_name_still_sorts_by_its_key()
     {
@@ -1604,8 +1533,7 @@ public class UploadLogTests
         Assert.Equal(new[] { "facewear", "mounts" }, ordered.Select(c => c.Key).ToArray());
     }
 
-    // Display names are English strings authored in this repo, so the order must not turn on
-    // casing - every user's log reads the same whatever their machine's locale.
+    // The order ignores case and the machine's locale (see UploadLogText.InDisplayOrder).
     [Fact]
     public void Ordering_ignores_case()
     {
@@ -1621,16 +1549,14 @@ public class UploadLogTests
         Assert.Equal(new[] { "lower", "upper" }, ordered.Select(c => c.Key).ToArray());
     }
 
-    // An entry carrying nothing is an ordinary state (a sweep with every collection switched off),
-    // and the column simply draws nothing.
+    // An ordinary state: a sweep with every collection switched off.
     [Fact]
     public void Ordering_an_empty_category_list_returns_nothing()
     {
         Assert.Empty(UploadLogText.InDisplayOrder([], key => key));
     }
 
-    // The "Could not read" line sits in the same table cell as the Sent column, so a reader meets
-    // both orders at once and they have to agree.
+    // The "Could not read" line shares the Sent column's cell, so the two orders must agree.
 
     [Fact]
     public void Unreadable_keys_are_listed_by_display_name()
@@ -1641,8 +1567,6 @@ public class UploadLogTests
         Assert.Equal(new[] { "achievements", "mounts", "quests" }, ordered.ToArray());
     }
 
-    // Ordered on the label because a key need not resemble the name drawn for it: a key-ordered
-    // line would read in an order the user cannot account for.
     [Fact]
     public void Unreadable_keys_are_ordered_by_label_rather_than_by_key()
     {
@@ -1676,9 +1600,8 @@ public class UploadLogTests
         ["mounts"] = "Mounts",
     };
 
-    // An explicit JSON null lands as a null array despite `required` (see ApiJson), and the one
-    // place it could throw is inside response handling, where an exception silently skips the
-    // terminal-400 bookkeeping for that attempt.
+    // An explicit JSON null lands as a null array despite `required` (see ApiJson). A throw here,
+    // inside response handling, would silently skip the attempt's terminal-400 bookkeeping.
     [Fact]
     public void A_null_field_error_array_does_not_break_the_issues_text()
     {
@@ -1694,8 +1617,7 @@ public class UploadLogTests
         Assert.Equal("quests:", UploadLogText.IssuesText(error));
     }
 
-    // The complaint is drawn in the log table, where a newline would push the rest of the cell
-    // out of sight — so the text is folded onto one line, not merely bounded.
+    // A newline in the log table would push the rest of the cell out of sight.
     [Fact]
     public void A_multi_line_server_complaint_is_folded_onto_one_line()
     {
@@ -1708,9 +1630,7 @@ public class UploadLogTests
         Assert.Equal("line one line two", UploadLogText.IssuesText(error));
     }
 
-    // Pins the null-vs-zero distinction CarriesManifestDrivenFacts draws: a measured zero owes
-    // no answer, but an absent count means the facts went out unmeasured, so the note is still
-    // owed.
+    // A missing count is not a measured zero, so the note is still owed (see CarriesManifestDrivenFacts).
     [Fact]
     public void A_manifest_category_with_no_reading_still_reports_proof_pending()
     {

@@ -11,22 +11,15 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Windows;
 
-// The settings screen's skeleton: the masthead, the collapsible sections, and the upload-log
-// card (whose table body is UploadLogTable). One part of the MainWindow class — see
-// MainWindow.cs for the class doc, the window state, and the shared card system and widget
-// bindings.
+// The settings screen: the masthead, the collapsible sections, and the upload-log card.
 internal sealed partial class MainWindow
 {
     private void DrawSettings()
     {
-        // One snapshot for the whole screen; see DrawOccultConsentRow's remoteConfig parameter for
-        // why it is passed rather than re-read. `var` lets the compiler infer the type, like an
-        // unannotated `let` in TypeScript.
+        // One snapshot for the whole screen, so every surface decides from the same answer.
         var remoteConfig = syncManager.RemoteConfig;
 
-        // The three surfaces that need the category rows — the read-status panel inside the sync card,
-        // the "New" chip on the Collections header, and the consent card itself — are all drawn
-        // from THIS list (see BuildCategoryRows).
+        // Built once, for the sync card, the header's chip and the consent card.
         var rows = BuildCategoryRows(remoteConfig);
 
         DrawSettingsHeader();
@@ -38,35 +31,25 @@ internal sealed partial class MainWindow
         BrandSeparator();
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Whether anything under the header still counts as "New": a whole collection or a manifest
-        // group inside one (see AnythingIsNew), or the Crucible run sharing's card, which sits under
-        // the same header (see CrucibleBadge).
+        // A new collection, group, or Crucible card anywhere under the header.
         var hasNewCollection = AnythingIsNew(rows)
             || CrucibleBadge.IsNew(
                 configuration.Settings.CrucibleSharingSeen, remoteConfig, crucibleBadgedThisSession);
 
-        // Captured immediately before the header so the "New" chip below can be placed on the
-        // header's own row: CollapsingHeader always spans the full available width regardless of
-        // whether it happens to sit inside a BrandCard, so the chip's right edge is the card's inner
-        // edge when there is one and the content region's right edge otherwise.
+        // Captured before the header, so its chip can sit on the header's row: at the card's inner
+        // edge, or the content edge outside a card.
         var headerRowCursorX = ImGui.GetCursorPosX();
         var headerRowScreenX = ImGui.GetCursorScreenPos().X;
         var headerRowInnerRight =
             activeCardInnerRight ?? (headerRowCursorX + ImGui.GetContentRegionAvail().X);
 
-        // The first of the settings screen's collapsible sections, and the only one that starts OPEN:
-        // ImGuiTreeNodeFlags.DefaultOpen sets the header's initial state, after which ImGui remembers
-        // whatever the user last chose. Consent is the one thing on this screen a user may want to
-        // change at any moment, so it greets them expanded — but it is a long card, so it can be
-        // folded away once they have made their choices.
-        // "Collections", like the other accordion headers (Account, Privacy, Recent uploads): a
-        // brief section name. The consent list inside labels its own sections in place.
+        // The only section open by default, since consent may change at any moment. ImGui remembers
+        // the user's fold after that.
         var collectionsOpen =
             ImGui.CollapsingHeader("Collections", ImGuiTreeNodeFlags.DefaultOpen);
 
-        // Drawn in both states, open and collapsed (see AnythingIsNew). Positioned by DrawHeaderRightChip
-        // rather than a plain SameLine(), because the header above just claimed the ENTIRE row width;
-        // see that method's remarks for why SameLine cannot place a widget beside a full-width header.
+        // Drawn open or folded. The header spans the row, so SameLine cannot place the chip (see
+        // DrawHeaderRightChip).
         if (hasNewCollection)
         {
             DrawHeaderRightChip(
@@ -79,8 +62,6 @@ internal sealed partial class MainWindow
             ImGui.Spacing();
             DrawCategoryRows(rows, showNewChips: true);
 
-            // The Crucible run sharing's and the live tracker's consent cards, below the collections
-            // card they are not part of.
             ImGui.Spacing();
             DrawCrucibleConsentRow(remoteConfig, showNewChip: true);
             ImGui.Spacing();
@@ -89,9 +70,7 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // Collapsed by default: replacing a token is rare, and the box should not invite fiddling.
-        // But it must exist — a revoked token otherwise leaves the plugin permanently stuck, since the
-        // wizard never returns once onboarding is complete.
+        // Folded by default, since replacing a token is rare, but it must exist (see DrawTokenPanel).
         if (ImGui.CollapsingHeader("Account"))
         {
             TryAutoVerifyToken();
@@ -102,16 +81,12 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // The privacy disclosure from the wizard, permanently reachable: consent context should
-        // not vanish the moment onboarding completes. Same card, with the last sentence phrased
-        // for a configured plugin rather than a wizard mid-setup.
+        // The wizard's privacy disclosure (see DrawWelcomeStep) stays reachable after onboarding, its
+        // last sentence phrased for a configured plugin.
         if (ImGui.CollapsingHeader("Privacy"))
         {
             ImGui.Spacing();
-            // Names the server the data is actually sent to — see MainWindow.BackendHost. "You choose"
-            // is said only while the server leaves something to choose (see
-            // ConsentCopy.UserHasAChoice); `a ? b : c` picks b when a is true, else c, as in
-            // TypeScript.
+
             DrawPrivacyCard(
                 "Your character is identified by a one-way fingerprint computed on this machine. " +
                 $"Your character's name and home world are sent so {BackendHost()} can match the " +
@@ -123,8 +98,7 @@ internal sealed partial class MainWindow
 
         ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
 
-        // The privacy card's receipts: what actually went out, per upload. Lives at the very
-        // bottom because it is a reference surface, not a control.
+        // What actually went out, per upload. Last, since it is a reference, not a control.
         if (ImGui.CollapsingHeader("Recent uploads"))
         {
             ImGui.Spacing();
@@ -133,9 +107,8 @@ internal sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The upload-log card: its header controls (clear, copy-to-clipboard), the in-memory
-    /// disclosure, and the table body (see <see cref="UploadLogTable"/>, which owns the rows and
-    /// the reasons this surface carries no category-name branches).
+    /// The upload-log card: Clear and Copy log, the in-memory disclosure, and the table (see
+    /// <see cref="UploadLogTable"/>).
     /// </summary>
     private void DrawUploadLog()
     {
@@ -143,16 +116,10 @@ internal sealed partial class MainWindow
 
         using (BrandCard())
         {
-            // Custom card header: title left, the copy button right-aligned on the same row.
-            // "Recent" is honest labeling — the log is in-memory and bounded, so it never claims
-            // to be a full history.
+            // "Recent": the log is in memory and bounded, never a full history.
             DrawCardTitle(FontAwesomeIcon.History, "Recent uploads");
 
-            // Two right-aligned header controls: Clear wipes the in-memory log, Copy log puts a
-            // wire-term plain-text dump on the clipboard for bug reports. Both dim while there is
-            // nothing to act on. Buttons are drawn first and their faces after — a face's text is
-            // its own item, and SameLine between the buttons must anchor on a real button
-            // rectangle, not on an overlay.
+            // Buttons first, faces after: SameLine must anchor on a button, not a face's text item.
             const string clearLabel = "Clear";
             const string copyLabel = "Copy log";
             var clearWidth = IconButtonWidth(FontAwesomeIcon.Trash, clearLabel);
@@ -176,7 +143,7 @@ internal sealed partial class MainWindow
                 var copyButtonPos = ImGui.GetCursorPos();
                 copyPressed = BoldButton("###copyLog", new Vector2(copyWidth, 0f));
 
-                // The faces. The red trash glyph marks Clear as the destructive one of the pair.
+                // The red trash marks Clear as the destructive one.
                 var textColor = ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
                 DrawButtonFeedback(
                     clearButtonPos, clearWidth, FontAwesomeIcon.Trash, Widgets.ErrorColor,
@@ -196,16 +163,14 @@ internal sealed partial class MainWindow
                 }
             }
 
-            // No confirmation on Clear on purpose: the log is a bounded, in-memory convenience
-            // that repopulates with the next upload — nothing of consequence is lost.
+            // No confirmation: the log is an in-memory convenience that refills with the next upload.
             if (clearPressed)
                 syncManager.ClearUploadHistory();
 
             if (copyPressed && !showCopied)
             {
-                // The dump names the EFFECTIVE backend (the user-overridable setting, not the
-                // default): "you are pointed at the wrong server" is a classic support case.
-                // diagnosticVersion, not the masthead's copy.
+                // The configured backend, not the default, since a wrong server is a common support
+                // case; and the real version, not the masthead's.
                 ImGui.SetClipboardText(UploadLogText.ClipboardText(
                     diagnosticVersion, configuration.Settings.BaseUrl, history));
                 logCopyFeedbackUntil = DateTime.UtcNow.AddSeconds(1.5);
@@ -213,10 +178,8 @@ internal sealed partial class MainWindow
 
             CloseCardHeader();
 
-            // Normal text color: this sentence is what tells the user the log is a memory-only
-            // record rather than a permanent one, so it is an explanation they need to read. It
-            // also says which live tracker and Crucible sharing uploads appear, since their routine
-            // ones never do.
+            // Full contrast: the user needs to know the log is memory-only and leaves out routine
+            // sharing uploads.
             DrawWrapped(
                 "What this plugin sent recently. The live Occult tracker and the Crucible run sharing " +
                 "appear only when an upload is refused. Kept in memory only: the log clears on " +
@@ -226,10 +189,8 @@ internal sealed partial class MainWindow
 
             if (history.Count == 0)
             {
-                // Muted: empty-state filler standing in for a table, with nothing in it to read.
-                // Speaks about the log rather than about the sync, because Clear log empties this
-                // while uploads have genuinely happened — and the sync card above is the surface
-                // that answers "has anything been uploaded".
+                // Muted filler. It speaks about the log, not the sync: Clear empties it after real
+                // uploads.
                 ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
                 ImGui.TextDisabled("No uploads are recorded here yet.");
                 return;
@@ -243,17 +204,16 @@ internal sealed partial class MainWindow
     /// <summary>The settings masthead: the mascot beside the plugin's name and one-line pitch.</summary>
     private void DrawSettingsHeader()
     {
-        // GetWrapOrEmpty never blocks: while the file is still loading it returns a transparent
-        // placeholder for this frame and the real pixels once ready — safe to call every frame.
+        // Never blocks: a transparent placeholder until the image has loaded.
         var mascot = mascotTexture.GetWrapOrEmpty();
-        // Sized to roughly match the header block beside it (title, punchline, and link row).
+
+        // About the height of the header block beside it.
         var mascotSize = 72f * ImGuiHelpers.GlobalScale;
 
         ImGui.Image(mascot.Handle, new Vector2(mascotSize));
         ImGui.SameLine(0f, 12f * ImGuiHelpers.GlobalScale);
 
-        // Grouping the title and pitch makes them one block beside the image: wrapped lines come
-        // back to the block's left edge instead of the window's, staying clear of the mascot.
+        // Grouped, so wrapped lines return to the block's edge, clear of the mascot.
         using (ImRaii.Group())
         {
             using (headingFont.Available ? headingFont.Push() : null)
@@ -261,20 +221,15 @@ internal sealed partial class MainWindow
                 ImGui.TextColored(Brand.Teal, PluginMeta.DisplayName);
             }
 
-            // The version, muted and right-aligned on the title line — the same spot the wizard
-            // puts its step counter. It is the first thing a bug report needs.
+            // Right-aligned on the title line, where the wizard puts its step counter. The version is the
+            // first thing a bug report needs.
             var versionLabel = $"v{pluginVersion}";
             ImGui.SameLine();
             Widgets.AlignRight(ImGui.CalcTextSize(versionLabel).X);
             ImGui.TextDisabled(versionLabel);
 
-            // The manifest punchline, with the site picked out in gold. The rest is a null span
-            // color, meaning the normal text color: it is the one sentence that says what the
-            // plugin is for, so it reads at full contrast.
-            //
-            // The official name is hardcoded here, unlike the sentences that state where data
-            // goes. This is the project's tagline quoted from the manifest, and a tagline naming
-            // whatever server a developer happens to be pointed at would be quoting nothing.
+            // The manifest's punchline, at full contrast. It names the official site, not the
+            // configured one, because it quotes the tagline rather than saying where data goes.
             Widgets.DrawWrappedSpans(
                 ("Your collections, on", null),
                 ("xiv-shinies.com,", Brand.Gold),
@@ -290,23 +245,17 @@ internal sealed partial class MainWindow
 
     /// <summary>The community links under the masthead description.</summary>
     /// <remarks>
-    /// The Dalamud icon font carries only FontAwesome's solid set — no brand logos — so each link
-    /// gets a fitting generic glyph instead. A link whose URL constant is empty draws no button,
-    /// so retiring one is a one-line change in <see cref="PluginMeta"/>.
+    /// Dalamud's icon font has no brand logos, so each link gets a generic glyph. A link whose URL in
+    /// <see cref="PluginMeta"/> is empty draws no button.
     /// </remarks>
     private void DrawLinkButtons()
     {
-        // Two passes: every button first, overlays second. An overlay's icon and word are their
-        // own (non-interactive) items, and SameLine anchors off the LAST item drawn — chaining the
-        // next button off an overlay would place it mid-button and stack the row onto itself. With
-        // the buttons drawn back-to-back, SameLine chains off real button rectangles.
+        // Buttons first, faces second: SameLine anchors on the last item, which must be a button.
         var overlays =
             new List<(Vector2 Position, float Width, FontAwesomeIcon Icon, Vector4 IconColor, string Label)>();
         var first = true;
 
-        // Taller vertical item spacing for the row's scope, so when the buttons wrap onto a
-        // second line the lines do not sit shoulder to shoulder. Horizontal gaps are unaffected
-        // (SameLine passes them explicitly).
+        // More vertical spacing, so wrapped rows of buttons do not touch.
         using var rowSpacing = ImRaii.PushStyle(
             ImGuiStyleVar.ItemSpacing,
             new Vector2(ImGui.GetStyle().ItemSpacing.X, 8f * ImGuiHelpers.GlobalScale));
@@ -316,10 +265,8 @@ internal sealed partial class MainWindow
             if (url.Length == 0)
                 continue;
 
-            // The button is blank (its icon and label need two fonts, drawn over it below) but
-            // sized for both plus the usual padding. Buttons flow like words: each tries the
-            // current line and wraps to the next when it will not fit, so a narrow window
-            // stacks the row instead of overlapping it.
+            // A blank button sized for its face. Buttons flow like words, wrapping when one does not
+            // fit.
             var width = IconButtonWidth(icon, label);
 
             if (!first)

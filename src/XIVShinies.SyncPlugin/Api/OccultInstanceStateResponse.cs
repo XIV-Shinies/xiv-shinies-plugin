@@ -9,9 +9,8 @@ public sealed record OccultInstanceStateResponse
     public bool Ok { get; init; }
 
     /// <summary>
-    /// What happened, per <see cref="OccultOutcomes"/>. <c>unresolved</c> is a normal answer,
-    /// not an error: the snapshot carried no timestamped pair to fingerprint with, so no
-    /// tracker exists yet — just upload again on the next change.
+    /// What happened, per <see cref="OccultOutcomes"/>. <c>unresolved</c> is a normal answer, not an
+    /// error.
     /// </summary>
     public string? Outcome { get; init; }
 
@@ -28,7 +27,7 @@ public static class OccultOutcomes
     /// <summary>The snapshot matched (or created) a tracker and was applied.</summary>
     public const string Applied = "applied";
 
-    /// <summary>No fingerprintable pair yet; no tracker exists. Retry on the next change.</summary>
+    /// <summary>No fingerprintable pair, so no tracker exists yet. Upload again on the next change.</summary>
     public const string Unresolved = "unresolved";
 
     /// <summary>A leave was processed; the character's presence is cleared.</summary>

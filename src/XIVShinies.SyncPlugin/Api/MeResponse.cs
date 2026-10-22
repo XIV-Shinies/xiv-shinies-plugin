@@ -3,13 +3,9 @@ using System.Collections.Generic;
 namespace XIVShinies.SyncPlugin.Api;
 
 /// <summary>
-/// The 200 body of <c>GET /api/plugin/v1/me</c> — the status/link probe. Given only its token,
-/// the plugin learns which account it belongs to and which characters that account has claimed.
+/// The 200 body of <c>GET /api/plugin/v1/me</c>, the status and link probe: the token's account and
+/// the characters it has claimed.
 /// </summary>
-// Every DTO in this folder is a `sealed record` whose properties are `required … { get; init; }`.
-// See SyncRequest.cs for what `record`, `required`, and `init` mean — briefly: a data-holding
-// class with value equality, whose properties must be supplied at construction and can never be
-// reassigned afterwards.
 public sealed record MeResponse
 {
     /// <summary>The account's claimed characters, ordered alphabetically by name.</summary>
@@ -23,8 +19,8 @@ public sealed record MeResponse
 public sealed record MeCharacter
 {
     /// <summary>
-    /// The Lodestone id. It is a BigInt on the server, so it travels as a string — do not parse
-    /// it into a number.
+    /// The Lodestone id. A BigInt on the server, so it travels as a string; do not parse it into a
+    /// number.
     /// </summary>
     public required string Id { get; init; }
 

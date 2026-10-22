@@ -3,11 +3,10 @@ using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Tests.Api;
 
-// Verifies the client-side shape check for the API token. Catching a mistyped/truncated paste
-// here means a clear error message instead of a pointless 401 round trip to the server.
+// The shape check gives a mistyped or truncated paste a clear message instead of a 401 round trip.
 public class TokenFormatTests
 {
-    // A syntactically valid token body: exactly 43 base64url characters (40 digits + "abc").
+    // A valid token body: exactly 43 base64url characters.
     private const string ValidBody = "0123456789012345678901234567890123456789abc";
 
     [Fact]
@@ -16,8 +15,6 @@ public class TokenFormatTests
         Assert.True(TokenFormat.IsWellFormed("xvs_" + ValidBody));
     }
 
-    // `[Theory]` + `[InlineData]` is xUnit's table-driven test: the method runs once per
-    // InlineData row, with the row's values as arguments. Think `test.each([...])` in Jest.
     [Theory]
     [InlineData(null)]                                     // no token configured
     [InlineData("")]                                       // empty
@@ -38,7 +35,6 @@ public class TokenFormatTests
     [InlineData('!')]  // plainly invalid
     public void Rejects_characters_outside_the_base64url_alphabet(char bad)
     {
-        // Replace the final character of an otherwise-valid body with the bad character.
         var body = ValidBody[..^1] + bad;
         Assert.False(TokenFormat.IsWellFormed("xvs_" + body));
     }

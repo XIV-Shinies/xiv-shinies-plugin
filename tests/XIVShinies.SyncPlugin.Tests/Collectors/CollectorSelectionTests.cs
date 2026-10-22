@@ -6,15 +6,14 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// Picks the collectors an upload runs. The category keys used here are deliberately ones the plugin
-// does not ship, so a name branch sneaking into the selection logic would fail these tests rather
-// than pass them by coincidence.
+// Picks the collectors an upload runs. The keys here are ones the plugin does not ship, so a
+// category-name branch in the selection fails these tests.
 public class CollectorSelectionTests
 {
     private const string Facewear = "facewear";
     private const string Orchestrion = "orchestrion";
 
-    // Implements the Dalamud-free ICollector, so constructing it never loads a game assembly.
+    // ICollector is Dalamud-free, so constructing this loads no game assembly.
     private sealed class FakeCollector : ICollector
     {
         public FakeCollector(string categoryKey) => CategoryKey = categoryKey;
@@ -29,8 +28,6 @@ public class CollectorSelectionTests
 
         public string? Details => null;
 
-        // Selection logic does not care about item-manifest grouping, so the fake reports the same
-        // fixed-scope default every real non-items collector does.
         public bool UsesItemManifest => false;
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
@@ -42,7 +39,7 @@ public class CollectorSelectionTests
     private static string[] KeysOf(IEnumerable<ICollector> collectors) =>
         collectors.Select(collector => collector.CategoryKey).ToArray();
 
-    // Null means "full sweep". This is the login, interval, and manual path.
+    // Null means a full sweep: the login, interval and manual path.
     [Fact]
     public void A_null_category_set_selects_every_collector()
     {
@@ -61,7 +58,7 @@ public class CollectorSelectionTests
         Assert.Equal(new[] {Orchestrion}, KeysOf(selected));
     }
 
-    // A key for a collection this build no longer ships must be ignored, never throw.
+    // The set can name a collection this build does not ship.
     [Fact]
     public void An_unrecognized_category_matches_nothing_rather_than_throwing()
     {
@@ -70,7 +67,7 @@ public class CollectorSelectionTests
         Assert.Empty(selected);
     }
 
-    // An empty set is not the same as null. Null is "everything"; empty is "nothing".
+    // Empty is not null: null means every collector.
     [Fact]
     public void An_empty_category_set_selects_nothing()
     {

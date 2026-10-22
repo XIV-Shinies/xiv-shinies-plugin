@@ -1,65 +1,39 @@
 #if DEBUG
-// DateTimeOffset, StringComparison and StringSplitOptions, for the development-build commands.
-// Guarded with them: a Release compile of this file needs none.
+// Only the development-build commands use it.
 using System;
 #endif
 using System.Collections.Generic;
-// Path.Combine, for locating the mascot image next to the plugin DLL.
 using System.IO;
-// Select, to project the collectors down to the category keys the seen-baseline needs.
 using System.Linq;
-// Dalamud's command system (registering the /shinies slash command).
 using Dalamud.Game.Command;
-// The windowing system that draws and manages our ImGui windows.
 using Dalamud.Interface.Windowing;
-// Provides the [PluginService] attribute used for dependency injection below.
 using Dalamud.IoC;
-// Core plugin interfaces, including IDalamudPlugin and IDalamudPluginInterface.
 using Dalamud.Plugin;
-// The injectable Dalamud "services" live here (ICommandManager, IPluginLog, etc.).
 using Dalamud.Plugin.Services;
-// Our HTTPS client and its DTOs. A child namespace is not visible automatically — only enclosing
-// namespaces are searched — so it needs an explicit using.
 using XIVShinies.SyncPlugin.Api;
-// The bestiary capture behind the tamed beasts collection.
 using XIVShinies.SyncPlugin.Beastmaster;
-// The Crucible run sharing (window observer, scheduler, uploader).
 using XIVShinies.SyncPlugin.Beastmaster.Crucible;
-// The registered fact sources.
 using XIVShinies.SyncPlugin.Collectors;
 #if DEBUG
-// UnlockSlotAudit, the development-build check behind /shinies dumpslots. Guarded with it: a
-// Release compile of this file uses nothing from this namespace.
+// Only /shinies dumpslots uses it.
 using XIVShinies.SyncPlugin.Diagnostics;
 #endif
-// The live occult instance tracker (reader, scheduler, uploader).
 using XIVShinies.SyncPlugin.Occult;
-// The upload orchestrator and its supporting policy classes.
 using XIVShinies.SyncPlugin.Sync;
-// Our own window classes.
 using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin;
 
 /// <summary>
-/// The plugin entry point. Dalamud discovers the one class that implements
-/// <see cref="IDalamudPlugin"/>, constructs it on load, and calls <see cref="Dispose"/> on
-/// unload. Think of the constructor as the plugin's "mount" and Dispose as its "unmount".
+/// The plugin entry point. Dalamud discovers the one class that implements <see cref="IDalamudPlugin"/>,
+/// constructs it on load, and calls <see cref="Dispose"/> on unload.
 /// </summary>
 public sealed class Plugin : IDalamudPlugin
 {
     // --- Injected Dalamud services -------------------------------------------------------
-    // Dalamud uses dependency injection: rather than us importing/creating these services, the
-    // framework *sets* them for us. Any static property tagged with [PluginService] gets filled
-    // in by Dalamud before our constructor runs. It's conceptually like React context/props
-    // being provided from above, except the values arrive via reflection into static slots.
-    //
-    // `internal` = visible anywhere in this project but not to other assemblies. `static` = one
-    // shared slot for the whole plugin (there's only ever one Plugin instance). `= null!` is a
-    // promise to the compiler: "this is non-null in practice (Dalamud fills it) — trust me, don't
-    // warn." The `!` is the null-forgiving operator, the C# cousin of TS's `!` non-null assertion.
+    // Dalamud fills each [PluginService] property before the constructor runs, hence `null!`.
 
-    /// <summary>Dalamud's per-plugin handle: config persistence, UI builder hooks, manifest, etc.</summary>
+    /// <summary>Dalamud's per-plugin handle: config persistence, UI builder hooks, the manifest.</summary>
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     /// <summary>Registers and routes slash commands like <c>/shinies</c>.</summary>
@@ -68,12 +42,12 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Writes to the Dalamud log (view in-game with <c>/xllog</c>).</summary>
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
-    /// <summary>Reads the game's static data sheets (quests, mounts, achievements, …).</summary>
+    /// <summary>Reads the game's static data sheets, such as quests, mounts and achievements.</summary>
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
 
     /// <summary>
-    /// Answers what the <b>local</b> player has unlocked or completed. It exposes only the local
-    /// player's state — there is no way to ask it about anyone else.
+    /// Answers what the <b>local</b> player has unlocked or completed. It cannot be asked about anyone
+    /// else.
     /// </summary>
     [PluginService] internal static IUnlockState UnlockState { get; private set; } = null!;
 
@@ -87,7 +61,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
 
     /// <summary>
-    /// The <b>local</b> character's identity — content id, name, home world. Dalamud's rules forbid
+    /// The <b>local</b> character's identity: content id, name, home world. Dalamud's rules forbid
     /// collecting identifiers for any other player, and this service exposes no way to.
     /// </summary>
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
@@ -96,15 +70,14 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
 
     /// <summary>
-    /// The live FATE table for the current zone — world state, not player data. Read by the
-    /// occult tracker while inside an Occult Crescent instance.
+    /// The live FATE table for the current zone: world state, not player data. The occult tracker
+    /// reads it inside an Occult Crescent instance.
     /// </summary>
     [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
 
     /// <summary>
-    /// Game-window lifecycle events. Used to passively read the knowledge level from the occult
-    /// review window, and the character's own bestiary from the Master's Bestiary window — each
-    /// only when the user opens it themselves.
+    /// Game-window lifecycle events, for passively reading the knowledge level from the occult review
+    /// window and the bestiary from the Master's Bestiary window, each only when the user opens it.
     /// </summary>
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 
@@ -123,179 +96,124 @@ public sealed class Plugin : IDalamudPlugin
     // --- Plugin state --------------------------------------------------------------------
 
     /// <summary>The persisted settings object (see Configuration.cs).</summary>
-    // `{ get; init; }` is an auto-property that can be set only during construction, then becomes
-    // read-only — like a `readonly` field you can still assign in the constructor.
     public Configuration Configuration { get; init; }
 
-    // `readonly` fields can be assigned only here or in the constructor, then never reassigned.
-    // The WindowSystem owns/draws our windows; the string is just a unique namespace for it.
+    // The name only has to be unique.
     private readonly WindowSystem windowSystem = new("XIVShiniesSync");
     private readonly MainWindow mainWindow;
 
-    // The HTTPS client for the XIV Shinies API. Constructed here but never called on its own —
-    // nothing is uploaded until the user explicitly opts in. It owns an HttpClient, so it must be
-    // disposed below.
     private readonly ApiClient apiClient;
 
-    // Every registered fact source. Constructed once; nothing runs them yet. They hold no
-    // unmanaged resources, so there is nothing to dispose.
+    // Every registered fact source. They hold no unmanaged resources, so nothing to dispose.
     private readonly IReadOnlyList<ICollector> collectors;
 
-    // Passively captures the knowledge level from the occult review window. Subscribes to
-    // addon-lifecycle events and to login/logout, so it must be disposed.
+    // Captures the knowledge level from the occult review window.
     private readonly KnowledgeObserver knowledgeObserver;
 
-    // Passively learns which beasts the character holds and their ranks, by reading the bestiary
-    // window when the player opens it and the Crucible NPC's conversation once the player has
-    // talked to them. Subscribes to that window's addon events, the frame tick and login/logout, so
-    // it must be disposed.
+    // Learns the held beasts and their ranks from the bestiary window and the Crucible NPC's
+    // conversation, when the player opens them.
     private readonly TamedBeastObserver tamedBeastObserver;
 
-    // Listens for login/unlock/interval and drives the uploads. Subscribes to game events, so it
-    // must be disposed — and disposed BEFORE the ApiClient it borrows.
+    // Drives uploads on login, unlock and interval.
     private readonly SyncManager syncManager;
 
-    // Watches for the character entering an Occult Crescent instance and streams its CE/FATE
-    // state to the live tracker. Subscribes to game events, so it must be disposed — before the
-    // SyncManager and ApiClient it borrows.
+    // Streams an Occult Crescent instance's CE and FATE state to the live tracker.
     private readonly OccultManager occultManager;
 
-    // Follows the character through the Crucible's boards and shares what its windows show. Subscribes
-    // to game events and window events, so it must be disposed, before the SyncManager and ApiClient
-    // it borrows.
+    // Shares what the Crucible's windows show as the character runs its boards.
     private readonly CrucibleManager crucibleManager;
 
     /// <summary>
-    /// Constructor — Dalamud calls this once on load. Wire everything up here, and be sure to
-    /// tear down in Dispose whatever you set up here (handlers, events, windows).
+    /// Dalamud calls this once on load. <see cref="Dispose"/> must undo everything wired here:
+    /// handlers, events, windows.
     /// </summary>
     public Plugin()
     {
-        // Load previously-saved settings, or start fresh. `as Configuration` is a safe cast that
-        // yields null on type mismatch; `?? new Configuration()` is the null-coalescing operator
-        // (identical to JS `??`) supplying a default. Net effect: "use the saved config if there
-        // is one, otherwise a new default config".
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        // A config written by an older plugin version runs through its migrations before
-        // anything reads it — this is what keeps a new default-on setting from silently opting
-        // in a user whose wizard ran long ago (see PluginSettings.ApplyUpgradeMigrations).
+        // Migrations run before anything reads the config, so a new default-on setting cannot opt in
+        // a user whose wizard ran long ago (see PluginSettings.ApplyUpgradeMigrations).
         if (Configuration.Version < Configuration.CurrentVersion)
         {
-            // The save happens whether or not any setting changed: persisting the version bump
-            // is what records that migrations ran, so they can never run twice.
+            // Saved even when nothing changed: the version bump records that migrations ran, so they
+            // never run twice.
             Configuration.Settings.ApplyUpgradeMigrations(Configuration.Version);
             Configuration.Version = Configuration.CurrentVersion;
             Configuration.Save();
         }
 
-        // The whole wiring sequence runs under one guard because a constructor that throws is
-        // a plugin Dalamud never received: Dispose() will never be called, so any event handler
-        // already subscribed would stay bound to a half-constructed plugin for the rest of the
-        // game session, firing every frame. The catch tears down whatever was built — in the
-        // same order Dispose() uses — and rethrows so the load still fails visibly.
+        // If this throws, Dalamud never calls Dispose(), and a subscribed handler would keep firing
+        // for the session. The catch tears down what was built, in Dispose()'s order, and rethrows.
         try
         {
-            // Build the API client from the persisted settings. The manifest carries the version
-            // the build stamped in, which becomes the User-Agent and the payload's pluginVersion
-            // field.
+            // The manifest carries the build's version, which becomes the User-Agent and the
+            // payload's pluginVersion.
             var version = PluginInterface.Manifest.AssemblyVersion?.ToString() ?? "0.0.0";
             apiClient = new ApiClient(Configuration.Settings, version);
 
-            // The knowledge-level capture, built before the collectors because the phantom jobs
-            // collector reads from it. It only records what the player puts on screen
-            // themselves — see KnowledgeObserver's remarks for the passive-capture design.
+            // Before the collectors, since the phantom jobs collector reads it. It records only what
+            // the player puts on screen (see KnowledgeObserver).
             knowledgeObserver = new KnowledgeObserver(AddonLifecycle, ClientState, Log);
 
-            // The bestiary capture, built before the collectors because the tamed beasts
-            // collector reads from it. The consent question is handed over as a callback
-            // rather than the settings object, so the observer never has to know how consent is
-            // decided — only whether it stands. It asks about its own collection, so no category is
-            // named here.
+            // Before the collectors, since the tamed beasts collector reads it. It gets a consent callback
+            // rather than the settings and asks about its own collection, so no category is named here.
             tamedBeastObserver = new TamedBeastObserver(
                 ClientState, DataManager, AddonLifecycle, Framework,
                 key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
                 Log);
 
-            // Build the fact sources. Nothing reads the game until something explicitly runs them.
+            // Nothing reads the game until something runs them.
             collectors = CollectorRegistry.Create(
                 DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver);
 
-            // Establishes which collections count as already-seen, so the settings screen can badge
-            // a genuinely new one. It runs here rather than with the migrations above because it
-            // needs the registered collectors, which do not exist until this line — and it is
-            // self-guarding, so running it on every load costs one flag read after the first.
+            // Sets the "New" badge baseline. It needs the registered collectors, so it runs here
+            // rather than with the migrations; after the first load it costs one flag read.
             if (Configuration.Settings.InitializeSeenCategories(collectors.Select(c => c.CategoryKey)))
                 Configuration.Save();
 
-            // Honors the user's standing "turn on new collections automatically" answer. It runs
-            // after the baseline above, because that is what decides which collections count as
-            // never-shown — and before the window exists, so a collection is switched on before
-            // anything can draw it and mark it shown.
-            //
-            // Only the collections a tick settles on its own — see
-            // ManifestConsent.FixedScopeCategoryKeys for why one whose groups the user answers
-            // separately must not be switched on for them.
+            // After the baseline, which defines "never shown", and before the window can mark one
+            // shown. See ManifestConsent.FixedScopeCategoryKeys for which collections qualify.
             var autoEnabled = Configuration.Settings.AutoEnableUnseenCategories(
                 ManifestConsent.FixedScopeCategoryKeys(collectors));
             if (autoEnabled.Count > 0)
             {
                 Configuration.Save();
 
-                // Logged because this is the one path that switches a collection on without a
-                // click, so the reason it happened should be findable afterwards.
+                // The one path that switches a collection on without a click, so it leaves a trace.
                 Log.Information(
                     $"Switched on {string.Join(", ", autoEnabled)} — new since this install was " +
                     "last shown the list, and new collections are set to start on.");
             }
 
-            // Start listening. The manager subscribes to login and unlock events immediately, but
-            // every path out of them checks the upload gate first, so a user who has not opted in
-            // sends nothing and the plugin never contacts the server.
-            //
-            // `Configuration.Save` is passed as a method-group callback (see
-            // CollectorRegistry.Create for how method groups work): the manager gets "persist the
-            // settings" as a plain Action, so it never needs a reference to the Dalamud config
-            // shell itself.
+            // It subscribes at once, but every path checks the upload gate first, so nothing is sent
+            // before opt-in. Configuration.Save arrives as an Action, so it never holds the config shell.
             syncManager = new SyncManager(
                 Framework, ClientState, PlayerState, UnlockState, Log,
                 apiClient, Configuration.Settings, Configuration.Save, collectors, version);
 
-            // A beast or a rank learned from the bestiary or the Crucible's NPC should upload
-            // promptly rather than waiting for the next interval, the way an unlock does; anything
-            // learned before this line rides the login sync instead. The observer cannot be told
-            // about the manager before the manager exists, so the two are joined here; the event
-            // carries the observer's own category key, so neither side names the collection.
+            // A learned beast or rank uploads promptly, like an unlock; one learned before this line rides
+            // the login sync. The event carries its category key, so neither side names the collection.
             tamedBeastObserver.BeastsLearned += syncManager.NotifyCategoryChanged;
 
-            // The live occult tracker. Built after the SyncManager because it reads the identity
-            // and server config that manager owns; gated by the same consent switches plus its own
-            // "Share live Occult instance state" toggle, so it too is silent until the user opts in.
+            // After the SyncManager, whose identity and server config it reads. Silent until the user
+            // opts in: the same consent switches gate it, plus its own toggle.
             occultManager = new OccultManager(
                 Framework, ClientState, FateTable, PlayerState, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
-            // The Crucible run sharing. Built after the SyncManager because it reads the identity,
-            // server config and halt that manager owns; gated by the same consent switches plus its
-            // own toggle, which starts off, so it reads none of the player's play and sends nothing
-            // until the user opts in. Before that it reads only static game data (see
-            // CrucibleManager).
+            // After the SyncManager, whose identity, server config and halt it reads. Its own toggle
+            // starts off; until it is on, it reads only static game data (see CrucibleManager).
             crucibleManager = new CrucibleManager(
                 Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
-            // The mascot drawn in the settings header — the same hand-made image the installer
-            // shows, shipped next to the DLL. GetFromFile returns a shared texture that loads
-            // lazily and is owned by Dalamud, so there is nothing to dispose on our side; if the
-            // file is missing the wrap comes back empty and the header simply draws without an
-            // image.
+            // The installer's hand-made icon, shipped next to the DLL. Dalamud owns the lazily loaded
+            // texture; a missing file leaves it empty and the header draws without an image.
             var mascotTexture = TextureProvider.GetFromFile(Path.Combine(
                 PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty, "images", "icon.png"));
 
-            // Create our window and hand it to the WindowSystem so it gets drawn each frame. It
-            // reads the sync manager's status and the collectors' self-descriptions, so it is
-            // built after both. The font pieces let it build a heading-sized font and draw
-            // FontAwesome icons.
+            // After the sync manager and collectors, which it reads. The font pieces give it a
+            // heading-sized font and FontAwesome icons.
             mainWindow = new MainWindow(
                 Configuration, apiClient, syncManager, collectors, mascotTexture,
                 PluginInterface.UiBuilder.FontAtlas,
@@ -304,37 +222,27 @@ public sealed class Plugin : IDalamudPlugin
                 version);
             windowSystem.AddWindow(mainWindow);
 
-            // Register the /shinies command. CommandInfo takes the handler method (OnCommand);
-            // the object-initializer sets the help text shown in /xlhelp.
+            // HelpMessage is the text /xlhelp shows.
             CommandManager.AddHandler(PluginMeta.CommandName, new CommandInfo(OnCommand)
             {
                 HelpMessage = $"Toggle the {PluginMeta.DisplayName} window.",
             });
 
-            // Register a longer alias that runs the same handler. ShowInHelp = false keeps
-            // /xlhelp to a single entry instead of listing the command twice.
             CommandManager.AddHandler(PluginMeta.CommandAlias, new CommandInfo(OnCommand)
             {
                 ShowInHelp = false,
             });
 
-            // Subscribe to UI events. `+=` adds a handler to a C# "event" (a built-in
-            // publisher/subscriber list); there's no exact React analog, but it's like
-            // addEventListener. Every `+=` here MUST be matched by a `-=` in Dispose, or we'd
-            // leak the handler after the plugin unloads.
-            // - Draw: fires every frame; we forward it to the WindowSystem to render our windows.
-            // - OpenMainUi: the "open" button next to the plugin in the installer.
-            // - OpenConfigUi: the "settings" gear next to the plugin in the installer.
+            // Every `+=` here needs a `-=` in Dispose. OpenMainUi and OpenConfigUi are the installer's
+            // open button and settings gear.
             PluginInterface.UiBuilder.Draw += windowSystem.Draw;
             PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
             PluginInterface.UiBuilder.OpenConfigUi += ToggleMainUi;
         }
         catch
         {
-            // Unassigned readonly fields are still null here, so `?.` skips whatever never got
-            // built. Unsubscribing an event that was never added does nothing, and removing a
-            // command that was never added only logs that it was not found, which is what lets this
-            // mirror Dispose() without tracking progress flags.
+            // Fields never built are still null, so `?.` skips them, and removing an event or command
+            // never added is harmless (a command only logs). So this mirrors Dispose() without flags.
             PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
             PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
             PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainUi;
@@ -344,9 +252,7 @@ public sealed class Plugin : IDalamudPlugin
             windowSystem.RemoveAllWindows();
             mainWindow?.Dispose();
 
-            // The one pairing `?.` cannot express: a null-conditional may not stand on the left of
-            // `-=`, and the handler on the right would still be evaluated against a null manager.
-            // Both halves are therefore checked by hand, in the position Dispose() unsubscribes at.
+            // Either may be unbuilt, so both are null-checked.
             if (tamedBeastObserver is not null && syncManager is not null)
                 tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
@@ -363,9 +269,8 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Cleanup on unload (Dalamud calls this). Mirror of the constructor: unsubscribe every
-    /// event, remove every window and command handler. This is the plugin's "unmount" — the
-    /// same discipline as returning a cleanup function from useEffect so nothing lingers.
+    /// Cleanup on unload. Mirrors the constructor: unsubscribes every event and removes every window
+    /// and command handler.
     /// </summary>
     public void Dispose()
     {
@@ -373,54 +278,46 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainUi;
 
-        // Before the window they dispatch into: a /shinies typed mid-teardown must not toggle
-        // a window that is already gone.
+        // Before the window they dispatch into, so a /shinies typed mid-teardown cannot toggle a
+        // window that is already gone.
         CommandManager.RemoveHandler(PluginMeta.CommandName);
         CommandManager.RemoveHandler(PluginMeta.CommandAlias);
 
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
 
-        // Before the SyncManager it notifies: once this is detached, nothing can schedule a
-        // further upload through a manager that is about to go away.
+        // Before the SyncManager it notifies, so no upload can be scheduled through a manager being
+        // torn down.
         tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
-        // Before the SyncManager and ApiClient they borrow, deliberately: each unsubscribes everything
-        // it subscribed to and cancels any upload of its own in flight first.
+        // Before the SyncManager and ApiClient they borrow: each unsubscribes and cancels its own
+        // upload in flight.
         crucibleManager.Dispose();
         occultManager.Dispose();
 
-        // Before the ApiClient, deliberately: this unsubscribes the game events and cancels any
-        // upload in flight, so nothing is still reaching for the client when it goes away.
+        // Before the ApiClient: it unsubscribes and cancels any upload in flight, so nothing still
+        // reaches for the client.
         syncManager.Dispose();
 
-        // After the SyncManager whose collection passes read them: no pass can start once the
-        // manager's handlers are detached.
+        // After the SyncManager whose collection passes read them: no pass can start once its
+        // handlers are detached.
         knowledgeObserver.Dispose();
         tamedBeastObserver.Dispose();
 
-        // Releases the underlying HttpClient and its connection pool.
         apiClient.Dispose();
     }
 
-    // The command handler. Its signature (string command, string args) is what CommandInfo
-    // expects: `command` is what was typed (/shinies), `args` is anything after it. Bare
-    // /shinies toggles the window open/closed.
+    // The /shinies handler; `args` is anything after the command. Bare /shinies toggles the window.
     private void OnCommand(string command, string args)
     {
 #if DEBUG
-        // A development build recognizes a small set of arguments, none of which exists in a
-        // Release compile — the shipped plugin recognizes no arguments at all.
-        //
-        //   /shinies seedlog              — seed the log
-        //   /shinies seedlog <version>    — seed it and draw that version in the masthead
-        //                                   (see MainWindow.OverrideVersionForScreenshots)
-        //   /shinies dumpslots            — audit the unlock bitmask's coverage of the Mount
-        //                                   sheet; the answer goes to /xllog, not the screen
-        //   /shinies dumpranks            — write the beast rank record to /xllog, to investigate
-        //                                   ranks that stop arriving after a game patch
-        //   /shinies forgetcharacter      — act as if reading the character gave up, to check
-        //                                   that "Sync now" reads it again
+        // Development builds only; the shipped plugin recognizes no arguments.
+        //   /shinies seedlog [version]   seed the log, optionally drawing that version in the
+        //                                masthead (see MainWindow.OverrideVersionForScreenshots)
+        //   /shinies dumpslots           audit the unlock bitmask's Mount sheet coverage, to /xllog
+        //   /shinies dumpranks           write the beast rank record to /xllog
+        //   /shinies forgetcharacter     act as if reading the character gave up, to check that
+        //                                "Sync now" reads it again
         var words = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > 0 && words[0].Equals("seedlog", StringComparison.OrdinalIgnoreCase))
         {
@@ -429,26 +326,20 @@ public sealed class Plugin : IDalamudPlugin
             if (words.Length > 1)
                 mainWindow.OverrideVersionForScreenshots(words[1]);
 
-            // Says what undoes it, because both are silent: a real sync lands a genuine row at the
-            // front whose counts diff against the fabricated ones and light up "(changed)" across
-            // the board, and a logout or character switch clears the log outright.
+            // Says what undoes it, since both are silent: a real sync adds a row that diffs against
+            // the seeded ones, and logging out or switching character clears the log.
             Log.Information(
                 "Upload log seeded for screenshots. Capture before the next sync; logging out clears it.");
 
-            // Opened rather than toggled: the point of the command is to look at the log, and a
-            // toggle would close the window when it is already open.
+            // Opened, not toggled, so an already open window stays open.
             mainWindow.IsOpen = true;
             return;
         }
 
         if (words.Length > 0 && words[0].Equals("dumpslots", StringComparison.OrdinalIgnoreCase))
         {
-            // Marshaled rather than called straight. Dalamud does not schedule command handlers —
-            // it invokes them where the command arrived, which is the game's main thread for chat
-            // and the console's draw for the console — so the read is on the right thread by
-            // circumstance, not by contract, and a bad read of game memory raises a
-            // corrupted-state exception no catch can rescue. RunOnFrameworkThread is a no-op when
-            // already there.
+            // Marshaled: a command handler runs wherever the command arrived, and a bad game-memory
+            // read raises a corrupted-state exception no catch can rescue.
             _ = Framework.RunOnFrameworkThread(
                 () => UnlockSlotAudit.Run(ClientState, DataManager, UnlockState, Log));
             return;
@@ -456,8 +347,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (words.Length > 0 && words[0].Equals("dumpranks", StringComparison.OrdinalIgnoreCase))
         {
-            // Marshaled rather than called straight: a command handler runs wherever the command
-            // arrived, and this reads game memory.
+            // Marshaled, since this reads game memory.
             _ = Framework.RunOnFrameworkThread(tamedBeastObserver.AuditRankRecord);
             return;
         }
@@ -474,7 +364,6 @@ public sealed class Plugin : IDalamudPlugin
         mainWindow.Toggle();
     }
 
-    // Small helper wired to the installer's open/config buttons above. `Toggle()` comes from the
-    // Window base class (show if hidden, hide if shown).
+    // Wired to the installer's open button and settings gear.
     private void ToggleMainUi() => mainWindow.Toggle();
 }

@@ -8,44 +8,23 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// when there is nothing worth saying.
 /// </summary>
 /// <remarks>
-/// <para>
-/// It maps a storage source's scan <i>status</i> to a note — the copy, and the tone that colors it.
-/// What it hands back is rendered as given, and nothing downstream branches on which source produced
-/// it, so a new source can surface a note just by reporting a status the copy set below already
-/// covers.
-/// </para>
-/// <para>
-/// The tone carries the note's meaning, and it also decides which of the note's two forms the window
-/// renders (see <see cref="SourceNote"/>). <see cref="SourceTone.Live"/> is a source read during this
-/// pass — healthy, nothing for the user to do, so it compresses into a small chip whose optional
-/// <see cref="SourceNote.Detail"/> can name what the source covers. <see cref="SourceTone.Cached"/> is
-/// a source whose contents the game only remembers — a healthy resting state for the containers that
-/// work that way, so it is a chip too, and the optional refresh action lives in its hover detail
-/// rather than raising an alarm. <see cref="SourceTone.Missing"/> is a source contributing nothing at
-/// all yet, and the plugin cannot open a container itself — so the note is a full line whose visible
-/// <see cref="SourceNote.Text"/> ends with the in-game action that folds the source in. Hover may
-/// hide optional information; it must never hide a required action.
-/// </para>
-/// <para>
-/// An unrecognized source key, or a known source in a state this set has no note for, returns null.
-/// A raw wire string like <c>"unscanned"</c> means nothing to a player, so silence beats leaking it.
-/// </para>
+/// The window renders the note as given and never branches on its source, so a new source gets a note
+/// by reporting a status this copy already covers. A source contributing nothing yet gets a full line
+/// ending in the in-game action that folds it in, since the plugin cannot open a container itself. An
+/// unknown source or state returns null: a raw wire string like <c>"unscanned"</c> means nothing to a
+/// player.
 /// </remarks>
 public static class SourceNoteText
 {
     /// <summary>Describes one source's scan status, or returns null when there is nothing to say.</summary>
-    /// <param name="sourceKey">One of the <see cref="SourceKeys"/> wire keys naming the storage source.</param>
+    /// <param name="sourceKey">The <see cref="SourceKeys"/> wire key naming the storage source.</param>
     /// <param name="status">That source's scan status from the most recent item pass.</param>
     /// <param name="host">The configured website's address, named where a note says who keeps proof.</param>
-    // A tuple switch reads the (source, state) pair like a small table: each arm is one recognized
-    // combination the item collector actually produces, and the final `_ => null` covers every
-    // unknown key and every unexpected state at once.
     public static SourceNote? Describe(string sourceKey, ItemSourceStatus status, string host) =>
         (sourceKey, status.State) switch
         {
-            // Read this pass — nothing for the user to do, so this is a chip. The detail names
-            // exactly which containers travel under the one "inventory" key, so a user wondering
-            // "is my equipped weapon counted?" can find out by hovering.
+            // The detail names which containers travel under the one "inventory" key, so a user can
+            // hover to learn whether their equipped weapon counts.
             (SourceKeys.Inventory, SourceStates.Live) =>
                 new SourceNote
                 {
@@ -55,12 +34,8 @@ public static class SourceNoteText
                         "this pass.",
                 },
 
-            // Currencies are read in the same live pass as the inventory, but they are their own
-            // source: part of them lives outside any container, in the game's currency subsystem.
-            // The detail says what the key covers in a player's vocabulary — and discloses the
-            // one gap in it: the game only exposes a content-bound currency (Occult Crescent's
-            // pieces, for example) while the character is inside that content, so those counts
-            // are read only by a sync that runs there.
+            // Its own source, though read in the inventory's pass: some currencies live outside any
+            // container. The game exposes a content-bound currency only inside that content.
             (SourceKeys.Currencies, SourceStates.Live) =>
                 new SourceNote
                 {
@@ -71,10 +46,8 @@ public static class SourceNoteText
                         "like Occult Crescent's pieces, can only be read while inside it.",
                 },
 
-            // Cached is this source's healthy resting state: the game never exposes a live read of
-            // the saddlebag, so nothing is wrong here and the note is a chip. The refresh action is
-            // optional, so it lives in the hover detail — which also names the premium half, since
-            // both halves travel under this one key.
+            // Cached is the saddlebag's healthy state: the game never offers a live read of it. The
+            // detail names the premium half, which travels under the same key.
             (SourceKeys.Saddlebag, SourceStates.Cached) =>
                 new SourceNote
                 {
@@ -84,8 +57,6 @@ public static class SourceNoteText
                         "game to refresh as needed.",
                 },
 
-            // Never opened, so it contributes nothing yet. The one action that includes it must stay
-            // visible, so this is a full line, never a chip.
             (SourceKeys.Saddlebag, SourceStates.Unscanned) =>
                 new SourceNote
                 {
@@ -94,9 +65,7 @@ public static class SourceNoteText
                     Text = "Saddlebag: not scanned yet — open it once in game to include it.",
                 },
 
-            // Retainers carry counts: how many were read from cache and, when the game can say, how
-            // many exist. Whether that is healthy (a chip) or a gap (a line with the action) depends
-            // on those counts rather than on the state alone, so this arm delegates the whole note.
+            // Whether this is healthy or a gap depends on the counts, not the state alone.
             (SourceKeys.Retainers, SourceStates.Cached) =>
                 DescribeCachedRetainers(status.Count, status.Total),
 
@@ -109,10 +78,8 @@ public static class SourceNoteText
                         "Bell to include them.",
                 },
 
-            // The armoire's "loaded" state is its live-equivalent: the game fetches its contents when
-            // the player first opens it each session, and once loaded it is current. "Loaded" is the
-            // game's own vocabulary and stays out of the player's sight: a loaded armoire is simply a
-            // healthy source, so it is the same green chip as every other read source.
+            // "Loaded" is the armoire's live state: the game fetches it on the first open each
+            // session, and it stays current after that. The player sees a plain healthy chip.
             (SourceKeys.Armoire, SourceStates.Loaded) =>
                 new SourceNote { Label = "Armoire", Tone = SourceTone.Live },
 
@@ -124,8 +91,7 @@ public static class SourceNoteText
                     Text = "Armoire: not opened yet — open it once in game to include it.",
                 },
 
-            // Same as the saddlebag above: Cached is the glamour dresser's normal resting state, not
-            // a problem, so the optional refresh action lives in the hover detail.
+            // Cached is the glamour dresser's healthy resting state.
             (SourceKeys.GlamourDresser, SourceStates.Cached) =>
                 new SourceNote
                 {
@@ -142,13 +108,8 @@ public static class SourceNoteText
                     Text = "Glamour Dresser: not scanned yet — open it once in game to include it.",
                 },
 
-            // The one source no player action can fold in: the game fetches a mannequin's contents
-            // per-interaction inside the house and never caches them, so no plugin can read them
-            // from anywhere. Information rather than a fault — a full line would nag forever about
-            // something unfixable — so this is a muted chip whose hover carries the explanation and
-            // the optional retrieve-once workaround. "Keeps proof" is deliberate: a sighting proves
-            // the piece permanently, but a count drops again once the piece leaves the bags.
-            // `$"{host}..."` is an interpolated string, like a TypeScript template literal.
+            // Never readable (see SourceKeys.Mannequins), so a muted chip, not a line that nags forever.
+            // "Keeps proof": a sighting proves a piece for good, a count does not.
             (SourceKeys.Mannequins, SourceStates.Unreadable) =>
                 new SourceNote
                 {
@@ -160,24 +121,14 @@ public static class SourceNoteText
                         $"{host} keeps proof it saw the piece.",
                 },
 
-            // Unknown source key, or a known source in a state with no note above: say nothing.
             _ => null,
         };
 
-    // Both counts are optional and degrade gracefully: with a total the chip's label shows the
-    // fraction ("Retainers 3/3"); with only the scanned count it shows that number alone; with
-    // neither it is a bare "Retainers" rather than a "0" or an empty gap.
-    //
-    // The tone — and with it the note's whole form — depends on the counts, not on the state alone,
-    // which is why this hands back a whole note. A never-summoned retainer hides its ENTIRE contents
-    // from the plugin, exactly like a saddlebag that has never been opened, so it is Missing, not
-    // Cached: the counts the user sees are a floor, not a total, and summoning the rest changes the
-    // answer — that action must stay visible, so the partial case is a full line.
+    // A never-summoned retainer hides all its contents, so a partial cache is Missing: the counts are
+    // only a floor, and the summon action must stay visible. With no count the label is bare, not "0".
     private static SourceNote DescribeCachedRetainers(int? count, int? total) =>
         (count, total) switch
         {
-            // Some retainers have never been summoned, so they contribute nothing at all — the
-            // visible text carries the fraction and targets exactly those.
             ({ } scanned, { } known) when scanned < known =>
                 new SourceNote
                 {
@@ -187,14 +138,8 @@ public static class SourceNoteText
                         "at a Summoning Bell to include them.",
                 },
 
-            // Everything the character has is already in the cache — the healthy resting state, so a
-            // chip. The fraction stays in the label (it is information, not an action), while the
-            // optional refresh hint lives in the hover detail.
-            //
-            // The fraction is clamped because the two numbers come from different places: the cache
-            // remembers every retainer it has ever read, while the count of retainers is what the
-            // character has now. Dismiss one and the cache still holds it, which would otherwise show
-            // an impossible "4/3".
+            // Clamped: the cache remembers every retainer it ever read, while the total is what the
+            // character has now, so a dismissed retainer would show "4/3".
             ({ } scanned, { } known) =>
                 new SourceNote
                 {
@@ -204,11 +149,8 @@ public static class SourceNoteText
                         "retainer to refresh as needed.",
                 },
 
-            // The game only reports how many retainers the character owns once their list has been
-            // fetched at a Summoning Bell, so until then a complete cache and a partial one look the
-            // same. These two arms stay Cached — claiming Missing on a guess would nag a user who has
-            // already summoned every retainer they own — and the detail names the cheap action that
-            // settles the question, which is opening the list rather than summoning anyone.
+            // The total is known only once the retainer list is fetched at a Summoning Bell. Until
+            // then these two arms stay Cached rather than nag on a guess, and name that cheap check.
             ({ } scanned, null) =>
                 new SourceNote
                 {
@@ -229,77 +171,65 @@ public static class SourceNoteText
 }
 
 /// <summary>
-/// How trustworthy a source note's information is, so the settings window can render it without
-/// knowing which source or scan state produced it.
+/// How trustworthy a source note is, so the settings window can render it without knowing which
+/// source or scan state produced it.
 /// </summary>
 /// <remarks>
-/// Four tones cover every note <see cref="SourceNoteText.Describe"/> can return: <see cref="Live"/>
-/// for a source read fresh this pass, <see cref="Cached"/> for one whose numbers are real but possibly
-/// stale, <see cref="Missing"/> for one that has contributed nothing at all yet, and
-/// <see cref="Unreadable"/> for one the game itself never exposes. The window maps each tone to a
-/// color, an icon, and a form (Missing notes render as full lines, every other tone as a compact chip
-/// — see <see cref="SourceNote"/>) with switches of its own — switches on this enum, never on a
-/// source name or wire state string, which is what keeps a future source's notes renderable without
-/// touching the window's drawing code.
+/// The window maps each tone to a color, an icon and a form: <see cref="Missing"/> draws as a full
+/// line, every other tone as a chip. It switches on the tone, never a source name or wire state, so a
+/// new source's notes render without touching the drawing code.
 /// </remarks>
 public enum SourceTone
 {
-    /// <summary>Read directly this pass (or, for the armoire, loaded and current) — the healthy state.</summary>
+    /// <summary>
+    /// Read directly this pass, or, for the armoire, loaded and current: the healthy state.
+    /// </summary>
     Live,
 
-    /// <summary>Real data from a local cache, but possibly stale since the source was last opened.</summary>
+    /// <summary>
+    /// Real data from a local cache, possibly stale since the source was last opened. The healthy
+    /// resting state for containers that work that way.
+    /// </summary>
     Cached,
 
-    /// <summary>Never opened this session, so the source has contributed nothing yet.</summary>
+    /// <summary>A gap the user can close: the source, or part of it, has contributed nothing yet.</summary>
     Missing,
 
     /// <summary>
-    /// The game never exposes this source to plugins, and no player action changes that. Purely
-    /// informational — a muted chip, never an alarm, with any optional workaround in its hover.
+    /// The game never exposes this source to plugins, and no player action changes that. A muted chip,
+    /// never an alarm, with any optional workaround in its hover.
     /// </summary>
     Unreadable,
 }
 
 /// <summary>
-/// One source note for the settings window's "Reading from:" panel, carrying everything both of its
-/// renderable forms need: the compact chip and the full line, which states something this pass did
-/// not read and what the user needs to know about it.
+/// One source note for the settings window's "Reading from:" panel, in either of its forms: a compact
+/// chip, or a full line stating what this pass did not read.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A note carries its own copy and tone, which keeps the window a pure printer: it renders exactly
-/// what it is handed, with no branch of its own on which source or scan state is behind a note. The
-/// tone picks the form — <see cref="SourceTone.Missing"/> notes draw as full lines; every other
-/// tone draws as a compact chip.
-/// </para>
-/// <para>
-/// The split between the optional properties encodes one design rule: <b>hover may hide optional
-/// information, never what the user needs to know.</b> <see cref="Detail"/> is hover-only and
-/// therefore only ever carries copy the user can live without seeing; <see cref="Text"/> is always
-/// visible and is where a gap and what resolves it belong. Every Missing note the builders produce carries a
-/// <see cref="Text"/> (a test sweeps the whole copy set to enforce it); the window still degrades
-/// safely if one ever does not, by drawing the note as a chip instead.
-/// </para>
+/// The window prints what it is handed, with no branch on source or scan state; the tone picks the
+/// form. Hover may hide optional information, never what the user needs to know: <see cref="Detail"/>
+/// is hover-only, and the always-visible <see cref="Text"/> carries a gap and what resolves it. A test
+/// sweeps the copy set so every Missing note has <see cref="Text"/>; one without it draws as a chip.
 /// </remarks>
 public sealed record SourceNote
 {
-    /// <summary>The source's short display name — the chip form's entire visible text.</summary>
+    /// <summary>The source's short display name, the chip's whole visible text.</summary>
     public required string Label { get; init; }
 
-    /// <summary>How trustworthy this note's information is; also selects the note's rendered form.</summary>
+    /// <summary>How trustworthy this note is; also picks its rendered form.</summary>
     public required SourceTone Tone { get; init; }
 
     /// <summary>
-    /// The full-line form's sentence, already written for a player (never a raw wire string). Present
-    /// on every Missing note, because what it says about the gap must stay visible.
+    /// The full line's sentence, written for a player and never a raw wire string. Present on every
+    /// Missing note.
     /// </summary>
     public string? Text { get; init; }
 
     /// <summary>
-    /// Optional hover copy for the chip form: what the source covers, or an optional refresh action.
-    /// Never the only home of a required action. Required on <see cref="SourceTone.Unreadable"/>
-    /// notes, where the hover is the chip's only content beyond its label (a test sweeps the copy
-    /// set to enforce it).
+    /// Optional hover copy for the chip: what the source covers, or an optional refresh action.
+    /// Required on <see cref="SourceTone.Unreadable"/> notes, where it is the chip's only content
+    /// beyond its label (a test sweeps the copy set to enforce it).
     /// </summary>
     public string? Detail { get; init; }
 }

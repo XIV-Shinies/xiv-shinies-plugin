@@ -15,10 +15,9 @@ public sealed record SyncDue
     /// The categories to collect, or <c>null</c> for "every category the user has enabled".
     /// </summary>
     /// <remarks>
-    /// Only an <see cref="SyncTrigger.Unlock"/> narrows this. Everything else is a full sweep.
-    /// The distinction matters: the server reads an <c>unlock</c> upload as evidence that the
-    /// categories it names were acquired at that moment, so naming a category that did not change
-    /// would date it wrongly, and an acquisition date is never revised by a later plugin upload.
+    /// Only an <see cref="SyncTrigger.Unlock"/> narrows this; everything else is a full sweep. The
+    /// server permanently dates every category in an <c>unlock</c> upload to that moment, so naming one
+    /// that did not change would date it wrongly.
     /// </remarks>
     public IReadOnlySet<string>? Categories { get; init; }
 }

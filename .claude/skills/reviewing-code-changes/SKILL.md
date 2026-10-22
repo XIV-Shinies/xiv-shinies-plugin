@@ -161,10 +161,9 @@ Treat any violation of a hard rule as **CRITICAL** — these gate official-repo 
 #### Reviewer 3: Conventions & test coverage
 
 **Comments are out of scope for this reviewer** — step 7.5 owns them. The one exception:
-*missing* comments. Flag **under-commented new code** as IMPORTANT (heavy beginner+contributor
-comments are a project requirement), but say nothing about the wording of the comments that
-are there. Also confirm a **learning summary** was produced (per `/learning-summary`) if the
-change is substantial.
+*missing* comments. Flag new code whose reason or constraint a reader cannot see in the code
+itself, and that has no comment, as IMPORTANT, but say nothing about the wording of the comments
+that are there.
 
 **Conventions:**
 - `ImplicitUsings` off → explicit `using`s; file-scoped namespaces; `using`s outside the namespace; `System.*` first.
@@ -194,14 +193,14 @@ Build one table:
 
 **Action rules:**
 - **CRITICAL** — always fix. **Every Dalamud hard-rule violation is CRITICAL** (rejection/ban risk), plus correctness bugs, contract mismatches, crashes, data-safety issues.
-- **IMPORTANT** — fix unless it needs architecture changes outside this changeset. Includes **missing/inadequate comments** (a project requirement here), missing pure-logic tests, framework-thread risk, incomplete teardown.
+- **IMPORTANT** — fix unless it needs architecture changes outside this changeset. Includes **missing comments** where the code cannot show a reason, missing pure-logic tests, framework-thread risk, incomplete teardown.
 - **MINOR** — fix if trivial (naming, a clarifying comment, unused using). Otherwise note.
 - **"Pre-existing" is NEVER a reason to skip a fix.** If a finding reveals a real bug/inconsistency, fix it — and if the same pattern exists elsewhere, fix **every** instance. The only valid skips: a false positive, or a genuinely large architectural change to surface to the user first (ask, don't silently skip).
 - **Duplicate findings:** merge — multiple reviewers flagging the same issue strengthens priority.
 
 ### 6. Apply Fixes
 
-Make targeted changes directly. Keep the heavy-commenting standard on any code you add or change.
+Make targeted changes directly. Follow CLAUDE.md's comment rules on any code you add or change.
 
 ### 7. Verify
 
@@ -267,7 +266,8 @@ files) — **not just the files you touched during the fix round**, because the 
 comments as they now read, together.
 
 ```text
-Read CLAUDE.md's working-style rule 2 first. Your ONLY job is to find comments that violate it.
+Read CLAUDE.md's "Working style — comments" section first. Your ONLY job is to find comments
+that violate it.
 Examine EVERY added or modified comment line in `git diff HEAD` — src/ AND tests/, inline and
 XML doc alike. A comment must document the code AS IT IS, for a reader who has never seen any
 earlier version. Flag a comment if it:
@@ -288,6 +288,16 @@ earlier version. Flag a comment if it:
    and which no grep for past-tense narration will ever match. Write what the thing IS, or what it
    is FOR, with no reference to a development status: "A run companion can only be designed against
    what the client exposes" rather than "the tab is growing a companion".
+7. Teaches C# syntax ("`sealed` means nothing can subclass it", "`=>` makes this the whole body")
+   or compares C# to another language ("like a TypeScript `const`"). The reader knows C#.
+8. Restates what the code already says, or is longer than its fact needs: a summary over two
+   lines, a `<remarks>` over three sentences, an inline comment over two lines, or filler such as
+   "Note that" or "in order to"; or uses shorthand ("e.g.", "~").
+9. Explains code by how it was built or tested ("pure, so it is unit-tested"), by the class it
+   imitates ("in the `SyncScheduler` mold"), or by "the same reason as X" without the reason.
+10. Lost a fact. Compare each removed or shortened comment with what replaced it: a constraint,
+    hazard, compliance rule or wire fact a reader needs must survive here or at a home a pointer
+    reaches. A pointer whose target no longer holds the fact counts too.
 
 NOT a violation: a mechanism contrast that is TRUE AT RUNTIME today ("painted through the draw
 list rather than a second Text call, so the layout cursor is not advanced"; "a copy, not the
@@ -314,7 +324,7 @@ a style preference:
 |---|---|---|
 | `docs/dalamud-compliance.md` table row | **1200 characters** | Keep the rule, its enforcement, and the file refs in the row. Move case-by-case reasoning to a bullet in "Project conventions that go beyond the letter of the rules" below the table, and point at it from the row. |
 | A source line this change ADDED | **110 characters** | Rewrap. (The repo has no `max_line_length`; its own distribution is p95=100, p99=105, so 110 is the tail, not a new rule. Judge added lines only — the file's existing lines are not this change's business.) |
-| A single XML `<remarks>` block | ~15 lines | Split into `<para>`s, or move the argument to the one canonical home and cross-reference. |
+| A single XML `<remarks>` block | 3 sentences | Keep the constraint, cut the argument; if the argument must survive, give it one canonical home and point there. |
 
 Measure, don't eyeball — a table row grows a clause at a time, and no reviewer notices the
 tenth one:
@@ -356,10 +366,10 @@ If every reviewer found nothing, "All reviewers passed with no findings" is a va
 
 | Changes are... | Dispatch |
 |----------------|----------|
-| Pure logic (DTOs, scheduling, mapping, state machine) | C# Correctness + Comments/Conventions/Tests |
+| Pure logic (DTOs, scheduling, mapping, state machine) | C# Correctness + Conventions & tests |
 | Touches game services / HTTP / lifecycle | **Dalamud Compliance** + C# Correctness (+ Census for teardown) |
 | New/changed collector | Census (no category-name branches; extensibility gate) + C# Correctness |
-| UI window | Dalamud Compliance (windowing, no unprompted open, teardown) + Comments |
+| UI window | Dalamud Compliance (windowing, no unprompted open, teardown) + Conventions & tests |
 | **Cross-cutting invariant** (teardown symmetry, contract field parity, kill-switch honoring) | **Census (one per invariant)** + relevant domain reviewers — the census is the main event |
 | Config/docs only | Skip this skill — review directly |
 
@@ -371,7 +381,7 @@ If every reviewer found nothing, "All reviewers passed with no findings" is a va
 | Grepping only for the old pattern | A brand-new site (a window that forgot cleanup) won't match. Grep the concept; enumerate all sites. |
 | Census by sampling | Every site gets a ✓/✗. One un-classified site is a hole. |
 | Treating a Dalamud hard-rule miss as minor | It's CRITICAL — it can get the plugin rejected or banned. |
-| Letting new code ship under-commented | Heavy beginner+contributor comments are a project requirement — flag as IMPORTANT. |
+| Letting a non-obvious reason ship uncommented | A constraint or reason the code cannot show needs a comment — flag as IMPORTANT. |
 | Faking a unit test around a live game service | Game surfaces get in-game QA, not fake unit tests. Extract pure logic and test that instead. |
 | Claiming a game-touching change is "verified" by build/test | The suite can't run game services. Call out the required in-game QA explicitly. |
 | Skipping a finding because it's "pre-existing" | Never an excuse — fix the real issue and every instance of the pattern. |

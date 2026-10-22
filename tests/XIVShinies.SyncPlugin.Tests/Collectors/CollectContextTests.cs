@@ -7,9 +7,9 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The item manifest is server-controlled and consumed on the FRAMEWORK thread (the item
-// collector scans several containers per id), so its size must be bounded here — the one
-// funnel every consumer reads it through. These tests pin that bound.
+// The item manifest comes from the server and is read on the framework thread, where the item
+// collector scans several containers per id. Every consumer reads it through CollectContext, so the
+// size bound lives there.
 public class CollectContextTests
 {
     private static ConfigResponse ConfigWith(IReadOnlyList<uint> manifest) => new()
@@ -21,7 +21,6 @@ public class CollectContextTests
         ManifestVersion = "abc123",
     };
 
-    // Builds a ConfigResponse with named item groups. Each tuple is (groupKey, ids, legacy).
     private static ConfigResponse ConfigWithGroups(
         params (string key, uint[] ids, bool legacy)[] groups)
     {
@@ -52,9 +51,8 @@ public class CollectContextTests
         Assert.Empty(context.ManifestFor(CategoryKeys.Items));
     }
 
-    // The omit-when-unseen ids reach the item collector through this funnel, as a set it can
-    // probe per manifest id. No config, or a server that does not send the field (an older
-    // server is a supported peer), both read as "omit nothing".
+    // An older server that does not send the field is a supported peer; like no config, it reads as
+    // "omit nothing".
     [Fact]
     public void The_omit_when_unseen_set_is_empty_without_a_config_or_the_field()
     {
@@ -88,9 +86,8 @@ public class CollectContextTests
         Assert.Same(manifest, context.ManifestFor(CategoryKeys.Items));
     }
 
-    // A hostile or broken backend could send millions of ids; each one costs several container
-    // scans on the game's render thread. The cap turns "the game freezes" into "the tail of an
-    // absurd manifest is ignored".
+    // A hostile or broken backend could send millions of ids, each costing several container scans on
+    // the framework thread. The cap ignores the tail instead of freezing the game.
     [Fact]
     public void An_oversized_manifest_is_truncated_to_the_cap()
     {
@@ -137,8 +134,7 @@ public class CollectContextTests
     [Fact]
     public void The_manifest_is_empty_when_no_group_is_enabled()
     {
-        // Groups present, user opted into none: nothing to scan. Distinct from the null-groups
-        // fallback below — consent is per group once groups exist.
+        // Once groups exist, consent is per group.
         var context = new CollectContext
         {
             RemoteConfig = ConfigWithGroups(("relic-proofs", new uint[] { 1 }, true)),
@@ -151,8 +147,7 @@ public class CollectContextTests
     [Fact]
     public void The_manifest_falls_back_to_the_flat_manifest_without_groups()
     {
-        // A server without groups: the flat manifest IS the manifest, ungated by group consent
-        // (the category toggle gates it, as it always has).
+        // Without groups, only the category toggle gates the flat manifest.
         var context = new CollectContext
         {
             RemoteConfig = ConfigWith(new uint[] { 1, 2 }),
@@ -162,10 +157,8 @@ public class CollectContextTests
         Assert.Equal(new uint[] { 1, 2 }, context.ManifestFor(CategoryKeys.Items));
     }
 
-    // An EMPTY groups array means the same as no groups array: the server is asking the user to choose
-    // between no groups at all, so the flat manifest is what it wants scanned. Reading it as "there are
-    // groups, and none of them are enabled" would scan nothing while the server was plainly asking for
-    // the list it sent.
+    // An empty groups array means no groups, so the flat manifest is what the server wants scanned.
+    // Reading it as "groups, none enabled" would scan nothing.
     [Fact]
     public void An_empty_group_list_falls_back_to_the_flat_manifest_too()
     {
@@ -183,8 +176,7 @@ public class CollectContextTests
         Assert.Equal(new uint[] { 1, 2 }, context.ManifestFor(CategoryKeys.Items));
     }
 
-    // The grouped path has its own cap: a hostile or broken backend could stuff millions of ids
-    // into a single group, so the union stops collecting exactly at the cap and ignores the rest.
+    // The grouped path has its own cap, since a single group could hold millions of ids.
     [Fact]
     public void An_oversized_group_union_is_truncated_to_the_cap()
     {
@@ -201,16 +193,14 @@ public class CollectContextTests
 
         Assert.Equal(CollectContext.MaxManifestItems, bounded.Count);
         Assert.Equal(1u, bounded[0]);
-        // The last kept id is the one at index MaxManifestItems - 1 of the source group —
-        // the cut lands exactly at the cap, not one before or after it.
+        // The cut lands exactly at the cap, not one before or after it.
         Assert.Equal(oversized[CollectContext.MaxManifestItems - 1], bounded[^1]);
     }
 
     // --- Truncation reporting ------------------------------------------------------------------
-    // The cap truncates silently at the point of use; the truncated-category set is how the
-    // orchestrator learns a clip happened so it can say so. "Some ids are not being scanned" must
-    // be observable — a server bug serving an oversized manifest would otherwise read as
-    // mysteriously missing counts.
+    // The cap clips silently where the manifest is read; this set is how the orchestrator learns of a
+    // clip and reports it. Otherwise an oversized manifest from a server bug would look like counts
+    // gone missing.
 
     [Fact]
     public void Truncation_is_off_without_a_config()
@@ -239,7 +229,6 @@ public class CollectContextTests
         Assert.True(context.TruncatedManifests.Contains(CategoryKeys.Items));
     }
 
-    // A manifest of exactly the cap fits whole — nothing was clipped, so nothing to warn about.
     [Fact]
     public void Truncation_is_off_at_exactly_the_cap()
     {
@@ -266,8 +255,8 @@ public class CollectContextTests
         Assert.True(context.TruncatedManifests.Contains(CategoryKeys.Items));
     }
 
-    // The union dedupes before it truncates, so the verdict must count the way the union does: two
-    // groups sharing most of their ids can sum past the cap while the deduped union fits whole.
+    // The union dedupes before it truncates, so the verdict counts the same way: two groups sharing
+    // most ids can sum past the cap while their union fits.
     [Fact]
     public void Truncation_counts_deduped_ids_not_the_raw_group_sum()
     {
@@ -276,7 +265,7 @@ public class CollectContextTests
             .ToArray();
         var context = new CollectContext
         {
-            // Raw sum is ~2x the cap; the deduped union is cap - 1 ids plus one extra.
+            // The raw sum is nearly twice the cap; the deduped union is exactly the cap.
             RemoteConfig = ConfigWithGroups(
                 ("a", shared, true),
                 ("b", shared.Append(900_000u).ToArray(), false)),
@@ -286,9 +275,8 @@ public class CollectContextTests
         Assert.Empty(context.TruncatedManifests);
     }
 
-    // Same fallback the manifest itself takes: an empty groups array means "no groups", so an
-    // oversized FLAT manifest must still be reported — routing it into the (empty) group loop
-    // would return false and mask a real clip.
+    // An empty groups array means no groups here too, so an oversized flat manifest is still reported
+    // rather than masked by an empty group loop.
     [Fact]
     public void Truncation_falls_back_to_the_flat_manifest_for_an_empty_group_list()
     {
@@ -323,15 +311,14 @@ public class CollectContextTests
     }
 
     // --- Quest sequence manifest ---------------------------------------------------------------
-    // Same funnel idea as the item manifest: server-controlled input consumed on the framework
-    // thread, so the size bound lives here, in the one place every consumer reads it through.
+    // Also server input read on the framework thread, so it is bounded here too.
 
     [Fact]
     public void The_quest_sequence_manifest_is_empty_without_a_config_or_the_field()
     {
         Assert.Empty(new CollectContext { RemoteConfig = null }.ManifestFor(CategoryKeys.QuestSequences));
 
-        // An older server that never sends the field reads the same as "nothing to check".
+        // An older server that never sends the field reads as nothing to check.
         Assert.Empty(
             new CollectContext { RemoteConfig = ConfigWith(Array.Empty<uint>()) }
                 .ManifestFor(CategoryKeys.QuestSequences));
@@ -350,8 +337,8 @@ public class CollectContextTests
         Assert.Equal(new uint[] { 70562, 69208 }, context.ManifestFor(CategoryKeys.QuestSequences));
     }
 
-    // Each id costs a walk of the game's active-quest array on the framework thread — cheap, but
-    // not free a million times over, and a hostile or broken backend could send millions.
+    // Each id walks the game's active-quest array on the framework thread: cheap, but not a million
+    // times over.
     [Fact]
     public void An_oversized_quest_sequence_manifest_is_truncated_to_the_cap()
     {
@@ -367,8 +354,7 @@ public class CollectContextTests
         Assert.Equal((uint)CollectContext.MaxManifestItems, bounded[^1]);
     }
 
-    // The quest-sequence clip gets the same observability as the item clip: silent at the point
-    // of use, surfaced as its own key in the truncated set so the orchestrator can say so.
+    // Reported under its own key in the truncated set, like the item clip.
     [Fact]
     public void Quest_sequence_truncation_is_off_without_a_config_or_at_the_cap()
     {
@@ -404,8 +390,8 @@ public class CollectContextTests
     [Fact]
     public void The_enabled_group_list_contains_only_opted_in_groups()
     {
-        // The collector needs the group view (not just the union) to stay honest about what it
-        // scanned; the settings view needs it for checkboxes. One computed property serves both.
+        // The collector needs the groups, not just the union, to report honestly what it scanned; the
+        // settings view needs them for checkboxes.
         var context = new CollectContext
         {
             RemoteConfig = ConfigWithGroups(

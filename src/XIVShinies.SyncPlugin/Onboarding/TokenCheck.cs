@@ -25,9 +25,8 @@ public enum TokenCheckState
 /// Interprets a <c>GET /me</c> probe for the onboarding wizard.
 /// </summary>
 /// <remarks>
-/// The distinction this class exists to draw is <b>"your token is wrong"</b> versus <b>"we could not
-/// ask"</b>. Collapsing the two would either blame the user for the server being down, or leave them
-/// retrying a token that will never work.
+/// It separates <b>"your token is wrong"</b> from <b>"we could not ask"</b>. Merging them would blame
+/// the user for an outage, or leave them retrying a token that will never work.
 /// </remarks>
 public static class TokenCheck
 {
@@ -39,13 +38,11 @@ public static class TokenCheck
         // A 401 never heals on retry: unknown, revoked, or malformed.
         ApiStatus.InvalidToken => TokenCheckState.Invalid,
 
-        // The request was never sent — the token failed its local shape check, or the backend is one
-        // the client refuses to send a token to. "Could not reach the server" would be a lie: nothing
-        // was ever asked. Either way the fix is in the user's hands.
+        // Never sent: the token failed its shape check, or the backend is one the client refuses.
+        // "Could not reach the server" would be false, and the fix is the user's either way.
         ApiStatus.NotConfigured => TokenCheckState.Invalid,
 
-        // Everything else — a timeout, a 500, the global kill switch, an unrecognized status — says
-        // nothing whatsoever about the token.
+        // A timeout, a 500, the kill switch, or an unknown status says nothing about the token.
         _ => TokenCheckState.Unreachable,
     };
 }

@@ -7,9 +7,9 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// The last line of defense before anything is uploaded. The API client checks the token's shape and
-// the backend's safety; only this gate knows whether the USER agreed to any of it. "No silent
-// upload" is a Dalamud compliance rule, so it is enforced in code, not just in the UI.
+// The last check before any upload. The API client vets the token's shape and the backend; only this
+// gate knows whether the user agreed. "No silent upload" is a Dalamud rule, so the code enforces it,
+// not only the UI.
 public class UploadGateTests
 {
     private const string ValidToken = "xvs_0123456789012345678901234567890123456789abc";
@@ -64,23 +64,22 @@ public class UploadGateTests
         Assert.False(UploadGate.CanUpload(settings, Remote()));
     }
 
-    // The server's global kill switch. Honoring it locally saves a round trip that would 503.
+    // Honoring the server's kill switch locally saves a round trip that would 503.
     [Fact]
     public void Refuses_while_the_server_kill_switch_is_off()
     {
         Assert.False(UploadGate.CanUpload(ReadyToUpload(), Remote(enabled: false)));
     }
 
-    // Not having fetched /config yet is not a reason to refuse: the server enforces its own
-    // switches, and refusing would strand the plugin whenever /config is unreachable.
+    // Proceeding without /config is safe (see UploadGate.CanUpload).
     [Fact]
     public void Permits_upload_before_the_config_has_been_fetched()
     {
         Assert.True(UploadGate.CanUpload(ReadyToUpload(), remoteConfig: null));
     }
 
-    // Contacting the server at all needs the user's consent and a token, but NOT the server's
-    // permission — the /config poll is how the plugin discovers the kill switch in the first place.
+    // Contact needs consent and a token, not the server's permission. Otherwise a flipped kill switch
+    // would be permanent: the plugin could never poll /config to learn it was flipped back.
     [Fact]
     public void Permits_contacting_the_server_even_while_the_kill_switch_is_off()
     {
@@ -88,8 +87,6 @@ public class UploadGateTests
 
         Assert.False(UploadGate.CanUpload(settings, Remote(enabled: false)));
 
-        // Otherwise a flipped kill switch would be permanent: the plugin could never poll /config
-        // again to learn it had been flipped back.
         Assert.True(UploadGate.CanContactServer(settings));
     }
 

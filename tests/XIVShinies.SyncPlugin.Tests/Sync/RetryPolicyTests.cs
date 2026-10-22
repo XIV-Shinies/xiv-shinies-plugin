@@ -5,11 +5,10 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// Decides what to do after an upload fails. Getting this wrong is how a plugin ends up hammering a
-// server that already told it to stop.
+// What to do after an upload fails. Getting it wrong hammers a server that already said stop.
 public class RetryPolicyTests
 {
-    // Retrying an identical request that the server refused on principle can only fail again.
+    // The server refused on principle, so the same request can only fail again.
     [Theory]
     [InlineData(ApiStatus.InvalidToken)]
     [InlineData(ApiStatus.CharacterNotClaimed)]
@@ -41,8 +40,7 @@ public class RetryPolicyTests
         Assert.False(RetryPolicy.ShouldRetryNow(status, attempt: 1));
     }
 
-    // 429 and 503 are the server saying "wait". They are never retried in-place; the caller stops
-    // uploading until the backoff expires.
+    // 429 and 503 mean "wait": the caller stops uploading until the backoff expires.
     [Theory]
     [InlineData(ApiStatus.RateLimited)]
     [InlineData(ApiStatus.SyncDisabled)]
@@ -62,8 +60,8 @@ public class RetryPolicyTests
         Assert.Equal(now.AddSeconds(90), until);
     }
 
-    // The contract advertises Retry-After on 429/503, but a proxy can strip it. Fall back to the
-    // documented defaults rather than retrying instantly.
+    // A proxy can strip the contract's Retry-After header, so fall back to a documented default
+    // rather than retrying instantly.
     [Fact]
     public void Falls_back_to_a_short_wait_when_rate_limited_without_a_header()
     {
@@ -74,7 +72,7 @@ public class RetryPolicyTests
         Assert.Equal(now.Add(RetryPolicy.DefaultRateLimitBackoff), until);
     }
 
-    // A disabled server usually means it needs breathing room; back off far longer than a poll.
+    // A disabled server usually needs breathing room, so back off far longer than a poll.
     [Fact]
     public void Falls_back_to_an_hour_when_sync_is_disabled_without_a_header()
     {
@@ -95,8 +93,8 @@ public class RetryPolicyTests
         Assert.Null(RetryPolicy.BackoffUntil(ApiStatus.InvalidToken, null, now));
     }
 
-    // A 401 never heals on retry: the token is gone. Syncing must stop until the user pastes a new
-    // one, rather than quietly retrying every interval forever.
+    // A 401 never heals on retry. Syncing stops until the user pastes a new token, rather than
+    // retrying every interval forever.
     [Fact]
     public void An_invalid_token_stops_syncing_until_the_user_intervenes()
     {

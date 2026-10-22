@@ -10,76 +10,49 @@ using System.Threading.Tasks;
 namespace XIVShinies.SyncPlugin.Api;
 
 /// <summary>
-/// The HTTPS client for the XIV Shinies plugin API. Owns a single <see cref="HttpClient"/> for the
-/// plugin's lifetime and is disposed with the plugin.
+/// The HTTPS client for the XIV Shinies plugin API. It owns one <see cref="HttpClient"/> for the
+/// plugin's lifetime.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Every method is asynchronous and must be awaited off the game's framework thread. Blocking on
-/// one of these tasks (<c>.Result</c> or <c>.Wait()</c>) from the framework thread deadlocks the
-/// game.
-/// </para>
-/// <para>
-/// No exception ever escapes these methods: every failure — transport, timeout, unload, malformed
-/// body — comes back as an <see cref="ApiStatus"/>. An exception escaping into the game's async
-/// machinery could destabilize the client.
-/// </para>
-/// <para>
-/// Nothing here fires on its own. The client is constructed at load and stays idle until something
-/// explicitly calls it, which is what keeps the "no silent first-run upload" rule intact.
-/// </para>
+/// Await every method off the framework thread; blocking on one there deadlocks the game. Every
+/// failure, unload included, comes back as an <see cref="ApiStatus"/>; only the caller's own
+/// cancellation throws <see cref="OperationCanceledException"/>. Nothing here fires on its own,
+/// which keeps the "no silent first-run upload" rule.
 /// </remarks>
-// `sealed` = nothing may inherit from it. `IDisposable` = it owns something (the HttpClient) that
-// must be released; whoever creates it must call Dispose.
 public sealed class ApiClient : IDisposable
 {
-    // Every endpoint hangs off this prefix.
     private const string ApiPrefix = "api/plugin/v1";
 
-    // The largest response body we will read. Real responses are kilobytes; this ceiling exists
-    // only to stop a hostile or broken backend (the URL is user-overridable) from streaming a
-    // huge body that exhausts the game process's memory. 4 MiB is comfortably above any legitimate
-    // config or sync response and well below anything dangerous.
+    // Real responses are kilobytes. The cap stops a hostile or broken backend (the URL is
+    // user-overridable) from streaming a body that exhausts the game's memory.
     private const long MaxResponseBytes = 4 * 1024 * 1024;
 
-    // The longest server-requested backoff we will honor. Retry-After is server-controlled, and a
-    // hostile 429/503 could otherwise silence syncing for the rest of the session (backoff
-    // deliberately survives logout). Clamped to a day, matching the full-sync interval ceiling.
+    // Retry-After is server-controlled and backoff survives logout, so an unbounded value could
+    // silence syncing for the session. A day matches the full-sync interval ceiling.
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromHours(24);
 
-    // A single HttpClient reused for every request. Creating one per call exhausts sockets — this
-    // is the single most common misuse of HttpClient in .NET.
+    // One client for every request; one per call exhausts sockets.
     private readonly HttpClient http;
 
-    // Canceled when the plugin unloads. Every request runs under this, so a request still in
-    // flight at unload is canceled cleanly instead of failing against a disposed HttpClient.
+    // Canceled at unload, so a request in flight ends cleanly instead of failing against a
+    // disposed HttpClient.
     private readonly CancellationTokenSource lifetime = new();
 
-    // A copy of the token, taken before the source can ever be disposed (see SyncManager's
-    // field of the same name for the full reasoning).
+    // Copied before the source can be disposed (see SyncManager's field of the same name).
     private readonly CancellationToken lifetimeToken;
 
-    // Read live on every request rather than captured, so a token or backend edited in the
-    // settings UI takes effect immediately without rebuilding the client.
     private readonly PluginSettings settings;
 
-    // The longest one request may take, from sending it to reading the last byte of its body.
-    // HttpClient's own Timeout stops counting once the headers arrive (SendAsync asks for
-    // ResponseHeadersRead), so SendAsync holds the body read to this deadline as well: a connection
-    // that stalls silently mid-body fails as a network error instead of leaving the request in
-    // flight for the rest of the session.
+    // Covers the body read too. HttpClient.Timeout stops counting once the headers arrive
+    // (SendAsync uses ResponseHeadersRead), so a stalled body would otherwise stay in flight.
     private readonly TimeSpan requestTimeout;
 
     /// <summary>Creates a client bound to the given settings.</summary>
     /// <param name="settings">Live settings; the token and base URL are re-read per request.</param>
     /// <param name="pluginVersion">Version string for the <c>User-Agent</c> header.</param>
-    /// <param name="messageHandler">
-    /// Optional transport override. Production passes null (a real network handler); tests pass a
-    /// stub so the client's real header/URL/status code runs against a fake socket.
-    /// </param>
+    /// <param name="messageHandler">A transport override; null uses a real network handler.</param>
     /// <param name="requestTimeout">
-    /// How long one request may take, body included; 30 seconds when omitted. Tests pass a short
-    /// one so a stalled body fails without a long wait.
+    /// How long one request may take, body included; 30 seconds when omitted.
     /// </param>
     public ApiClient(
         PluginSettings settings,
@@ -90,37 +63,33 @@ public sealed class ApiClient : IDisposable
         this.settings = settings;
         lifetimeToken = lifetime.Token;
 
-        // `??` takes the right side when the left is null, like `??` in TypeScript.
         this.requestTimeout = requestTimeout ?? TimeSpan.FromSeconds(30);
 
         if (messageHandler is null)
         {
-            // Redirects are disabled deliberately. A client that validates exactly which host may
-            // receive the token must not let the server hand that decision back by replying 3xx.
-            // (.NET does strip the Authorization header across a redirect, so this is belt and
-            // braces — but it also keeps us from silently following a 3xx to an unvalidated host.)
+            // No redirects: a 3xx would hand the choice of host back to the server, past
+            // BackendUrl's checks. .NET also strips the Authorization header on a redirect.
             var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
             http = new HttpClient(handler, disposeHandler: true);
         }
         else
         {
-            // disposeHandler: false — we did not create this handler, so we must not tear it down.
+            // The caller owns this handler.
             http = new HttpClient(messageHandler, disposeHandler: false);
         }
 
         http.Timeout = this.requestTimeout;
 
-        // Identify ourselves on every request, as the contract requires. TryParseAdd rather than
-        // ParseAdd: a malformed version string must never throw out of the plugin's constructor
-        // and abort the load. Worst case we send no User-Agent.
+        // The contract requires a User-Agent. TryParseAdd, so a malformed version sends none
+        // rather than throwing out of the constructor and aborting the load.
         http.DefaultRequestHeaders.UserAgent.TryParseAdd(PluginMeta.UserAgent(pluginVersion));
     }
 
-    /// <summary>Probes <c>GET /me</c> — which account this token belongs to and its characters.</summary>
+    /// <summary>Calls <c>GET /me</c>: the token's account and its characters.</summary>
     public Task<ApiResponse<MeResponse>> GetMeAsync(CancellationToken cancellationToken = default) =>
         SendAsync<MeResponse>(HttpMethod.Get, "me", content: null, cancellationToken);
 
-    /// <summary>Fetches <c>GET /config</c> — kill switches, cadence, and the item manifest.</summary>
+    /// <summary>Fetches <c>GET /config</c>: kill switches, cadence, and the item manifest.</summary>
     public Task<ApiResponse<ConfigResponse>> GetConfigAsync(CancellationToken cancellationToken = default) =>
         SendAsync<ConfigResponse>(HttpMethod.Get, "config", content: null, cancellationToken);
 
@@ -145,29 +114,26 @@ public sealed class ApiClient : IDisposable
         PostJsonAsync<CrucibleObservationsRequest, CrucibleObservationsResponse>(
             "crucible/observations", request, cancellationToken);
 
-    /// <summary>Serializes a request body and POSTs it, funneling into <see cref="SendAsync"/>.</summary>
-    // Generic over the request type (rather than taking `object`) so the serializer works from
-    // the compile-time type — the standard, predictable path.
+    /// <summary>Serializes a request body and POSTs it.</summary>
+    // Generic rather than object, so the serializer works from the compile-time type.
     private async Task<ApiResponse<TResponse>> PostJsonAsync<TRequest, TResponse>(
         string path, TRequest request, CancellationToken cancellationToken)
         where TResponse : class
     {
         StringContent content;
 
-        // Serializing happens before the request is built, so it needs its own guard: an
-        // exception thrown here would otherwise escape into the game rather than becoming a
-        // status value like every other failure.
+        // Serializing runs outside SendAsync's try, so it needs its own guard to keep an exception
+        // out of the game.
         try
         {
             var json = JsonSerializer.Serialize(request, ApiJson.Options);
 
-            // StringContent with a known string sets Content-Length for us. The contract
-            // *requires* that header — a chunked body without it is rejected with 413.
+            // StringContent sets Content-Length, which the contract requires: a chunked body
+            // without it is rejected with 413.
             content = new StringContent(json, Encoding.UTF8, "application/json");
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
-            // We built a payload we cannot even serialize; the server would reject it too.
             return new ApiResponse<TResponse> { Status = ApiStatus.InvalidPayload };
         }
 
@@ -178,8 +144,8 @@ public sealed class ApiClient : IDisposable
     /// <summary>
     /// Cancels any request still in flight, then releases the underlying <see cref="HttpClient"/>.
     /// </summary>
-    // Canceling before disposing matters: tearing down the handler under a live request would
-    // otherwise surface as an ObjectDisposedException inside the awaiting continuation.
+    // Cancel first: disposing the handler under a live request throws ObjectDisposedException in
+    // the awaiting continuation.
     public void Dispose()
     {
         lifetime.Cancel();
@@ -187,71 +153,58 @@ public sealed class ApiClient : IDisposable
         http.Dispose();
     }
 
-    // The one code path every request funnels through. `async Task<T>` is the same idea as an
-    // `async` function returning a Promise<T>; `await` suspends until the operation completes
-    // without blocking the calling thread.
+    // The one code path every request funnels through.
     private async Task<ApiResponse<T>> SendAsync<T>(
         HttpMethod method, string path, HttpContent? content, CancellationToken cancellationToken)
         where T : class
     {
-        // These guards run before the request is built, so any content we were handed has no owner
-        // yet — dispose it here or it never gets released.
+        // These guards run before the request owns the content, so each one disposes it.
 
-        // Refuse to send a malformed token: it can only earn an opaque 401, and the round trip
-        // tells the user nothing a local check couldn't.
+        // A malformed token can only earn an opaque 401.
         if (!settings.HasUsableToken())
         {
             content?.Dispose();
             return new ApiResponse<T> { Status = ApiStatus.NotConfigured };
         }
 
-        // Refuse to send the token anywhere we consider unsafe (plaintext to a remote host, or a
-        // raw IP address).
+        // Never send the token over plaintext to a remote host, or to a raw IP address.
         if (!BackendUrl.TryNormalize(settings.BaseUrl, out var baseUri, out _))
         {
             content?.Dispose();
             return new ApiResponse<T> { Status = ApiStatus.NotConfigured };
         }
 
-        // Defense in depth: the token is sent to whatever host is configured, so a non-default
-        // backend requires the user to have explicitly acknowledged that. Enforcing it here means
-        // a bug in the settings UI can never silently ship the token to someone else's server.
+        // A non-default backend receives the token, so it needs the user's acknowledgment.
+        // Checking here too means a settings UI bug cannot ship the token to another server.
         if (!BackendUrl.IsDefault(baseUri!) && !settings.CustomBackendAcknowledged)
         {
             content?.Dispose();
             return new ApiResponse<T> { Status = ApiStatus.NotConfigured };
         }
 
-        // The status code once the headers arrive, declared outside the `try` so a failure while the
-        // body is read can still report it. Null until then.
+        // Set once the headers arrive, so a failure during the body read can still report it.
         int? arrivedCode = null;
 
         try
         {
-            // Build from the authority only, so a stray path in the user's base URL can't rewrite
-            // the endpoint (e.g. "https://host/foo" must still hit "https://host/api/plugin/v1/me").
+            // Built from the authority only, so a path in the user's base URL cannot change the
+            // endpoint: "https://host/foo" still reaches "https://host/api/plugin/v1/me".
             var url = $"{baseUri!.GetLeftPart(UriPartial.Authority)}/{ApiPrefix}/{path}";
 
-            // A request canceled by the caller, by plugin unload, or by the deadline set just below.
-            // `using var` on a local guarantees Dispose runs when the variable leaves scope — the
-            // same job as a `finally` block, and the reason we never leak request/response objects.
+            // Canceled by the caller, by unload, or by the deadline below.
             using var linked =
                 CancellationTokenSource.CreateLinkedTokenSource(lifetimeToken, cancellationToken);
 
-            // One deadline for the whole request, body read included (see requestTimeout).
-            // `CancelAfter` cancels the source once the time is up, which ends the send or the body
-            // read, whichever is under way, with an OperationCanceledException that the first catch
-            // below reports as a network error.
+            // One deadline covers the body read too (see requestTimeout). It ends in an
+            // OperationCanceledException, which the first catch reports as a network error.
             linked.CancelAfter(requestTimeout);
 
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.Token);
             request.Content = content;
 
-            // ConfigureAwait(false) says "resume on any thread; I don't need the original context".
-            // HttpCompletionOption.ResponseHeadersRead returns as soon as the headers arrive,
-            // before the body is buffered — so the Content-Length check below can reject an
-            // oversized response before a single byte of its body is read into memory.
+            // ResponseHeadersRead returns before the body is buffered, so an oversized
+            // Content-Length is refused before any of the body is read.
             using var response = await http
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linked.Token)
                 .ConfigureAwait(false);
@@ -259,16 +212,11 @@ public sealed class ApiClient : IDisposable
             var rawCode = (int)response.StatusCode;
             arrivedCode = rawCode;
 
-            // What the number alone says. It decides only whether this is a success; a failure's
-            // final status is worked out below, once its error body has been read.
+            // Decides only success or failure; a failure's final status needs its error body.
             var status = ApiStatusMap.FromHttpStatusCode(rawCode);
 
-            // The backend URL is user-overridable, so a hostile or broken backend is in scope: a
-            // multi-hundred-megabyte body read into a string would exhaust memory and take the
-            // GAME process down, not just the plugin. Our real responses are kilobytes. Refuse
-            // anything implausibly large — both the advertised length and, for a server that lies
-            // about or omits it, the actual bytes read (see ReadBodyAsync). Reported as a network
-            // error, the same as any other unusable response.
+            // A huge body would take down the game, not just the plugin (see MaxResponseBytes).
+            // ReadBodyAsync catches a server that lies about the length or omits it.
             if (response.Content.Headers.ContentLength > MaxResponseBytes)
                 return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = rawCode };
 
@@ -280,16 +228,14 @@ public sealed class ApiClient : IDisposable
             {
                 var value = Deserialize<T>(body);
 
-                // A 200 whose body was empty or did not parse as the expected response is not a
-                // success.
+                // A 200 with an empty or unparseable body is not a success.
                 return value is null
                     ? new ApiResponse<T> { Status = ApiStatus.Unknown, HttpStatusCode = rawCode }
                     : new ApiResponse<T> { Status = ApiStatus.Ok, Value = value, HttpStatusCode = rawCode };
             }
 
-            // The error body is read before the status is settled, because a 403's `error` code is
-            // what says which of the four character refusals it is. `?.` yields null when no body
-            // parsed; on a 403 the mapping reads a null code as the not-claimed case.
+            // A 403's `error` code says which of the four character refusals it is. A body that
+            // does not parse leaves the code null, which a 403 reads as the not-claimed case.
             var error = Deserialize<ErrorResponse>(body);
 
             return new ApiResponse<T>
@@ -300,25 +246,21 @@ public sealed class ApiClient : IDisposable
                 HttpStatusCode = rawCode,
             };
         }
-        // A `when` filter narrows which exceptions this catch handles. Catch the BASE
-        // OperationCanceledException, not just TaskCanceledException: an HttpClient timeout and a
-        // canceled body read are both documented to throw the base type. When the caller's own
-        // token is not canceled, the cause was our timeout or plugin unload: a network error.
-        // A genuine caller cancellation fails the filter and propagates, as it should.
+        // Timeouts and canceled body reads may throw a plain OperationCanceledException. Unless the
+        // caller canceled, which propagates, the cause was the deadline or unload: a network error.
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
         }
         catch (HttpRequestException)
         {
-            // DNS failure, refused connection, TLS problem: the send fails before any status arrives.
+            // DNS failure, refused connection, or TLS problem: no status arrived.
             return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
         }
         catch (IOException)
         {
-            // The connection dropped after the headers arrived, while the body was being read. The
-            // read reports that with an IOException (HttpIOException derives from it) rather than
-            // an HttpRequestException.
+            // The connection dropped mid-body. That read throws IOException (HttpIOException
+            // derives from it), not HttpRequestException.
             return new ApiResponse<T> { Status = ApiStatus.NetworkError, HttpStatusCode = arrivedCode };
         }
         catch (ObjectDisposedException)
@@ -329,29 +271,23 @@ public sealed class ApiClient : IDisposable
     }
 
     /// <summary>
-    /// Reads a response body as a string, but never more than <see cref="MaxResponseBytes"/> —
-    /// returning null (an unusable response) if the server exceeds that, whether or not it
-    /// advertised an honest <c>Content-Length</c>.
+    /// Reads a response body as a string, or returns null once it passes
+    /// <see cref="MaxResponseBytes"/>, whatever its <c>Content-Length</c> claimed.
     /// </summary>
     /// <remarks>
-    /// The Content-Length pre-check in the caller catches a server that tells the truth; this
-    /// catches one that lies or omits the header and just streams. The buffer is sized from the
-    /// advertised length when there is one — real responses are kilobytes, and allocating the
-    /// full multi-MiB cap for every request would churn the garbage collector for nothing — so
-    /// only a server that omits the header costs a cap-sized buffer, and bytes past the limit
-    /// are never stored.
+    /// The buffer is sized from the advertised length, so only a server that omits the header costs
+    /// a cap-sized allocation. Bytes past the limit are never stored.
     /// </remarks>
     private static async Task<string?> ReadBodyAsync(HttpContent content, CancellationToken token)
     {
         await using var stream = await content.ReadAsStreamAsync(token).ConfigureAwait(false);
 
-        // The advertised length is server-controlled, so it is clamped to the cap here even
-        // though the caller already refused anything advertising more — this helper stays safe
-        // on its own. No header at all falls back to the cap.
+        // The advertised length is server-controlled, so it is clamped here too and this helper
+        // stays safe on its own. No header falls back to the cap.
         var limit = (int)Math.Min(content.Headers.ContentLength ?? MaxResponseBytes, MaxResponseBytes);
 
-        // +1 so a body of exactly the limit reads whole, but the very first byte past it — past
-        // the advertised length, or past the cap when nothing was advertised — trips the check.
+        // One spare byte: a body of exactly the limit reads whole, and the first byte past it trips
+        // the check.
         var buffer = new byte[limit + 1];
         var total = 0;
         while (total < buffer.Length)
@@ -375,12 +311,8 @@ public sealed class ApiClient : IDisposable
     /// Reads how long the server asked us to wait, from its <c>Retry-After</c> header.
     /// </summary>
     /// <remarks>
-    /// The header comes in two legal forms: a delta in whole seconds, or an absolute HTTP-date.
-    /// Our server sends seconds, but a proxy or CDN in between may rewrite it to a date — so read
-    /// both, or a 429/503 would silently lose its backoff. Never returns a negative wait: a date
-    /// already in the past means "you may retry now". Clamped to <see cref="MaxRetryAfter"/>,
-    /// because the header is server-controlled and an unbounded backoff would let a hostile
-    /// backend mute syncing indefinitely.
+    /// Reads both legal forms: our server sends seconds, but a proxy or CDN may rewrite them to an
+    /// HTTP date. A past date means retry now. Clamped to <see cref="MaxRetryAfter"/>.
     /// </remarks>
     private static TimeSpan? ReadRetryAfter(HttpResponseMessage response)
     {
@@ -388,7 +320,6 @@ public sealed class ApiClient : IDisposable
         if (header is null)
             return null;
 
-        // `is { } delta` is a pattern that means "is not null, and call it delta".
         if (header.Delta is { } delta)
             return Clamp(delta);
 
@@ -403,9 +334,8 @@ public sealed class ApiClient : IDisposable
             : wait;
     }
 
-    // Never let a malformed body throw into the game; an unparseable response is just "no value".
-    // NotSupportedException is caught alongside JsonException: a type the serializer cannot
-    // handle must degrade, not crash.
+    // A malformed body, or a type the serializer cannot handle, returns null rather than throwing
+    // into the game.
     private static T? Deserialize<T>(string body) where T : class
     {
         if (string.IsNullOrWhiteSpace(body))

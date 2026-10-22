@@ -7,27 +7,19 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// Chooses which collectors an upload should run.
 /// </summary>
 /// <remarks>
-/// <para>
-/// It knows nothing but a list of collectors and a set of keys. The orchestrator, which holds the
-/// Dalamud services, hands both in.
-/// </para>
-/// <para>
-/// It matters more than its size suggests. An unlock upload names the categories it carries, and the
-/// server dates them from that. Selecting one category too many would attach an acquisition date to
-/// a collection the player did not just acquire, and dates are never revised.
-/// </para>
+/// An unlock upload names the categories it carries, and the server dates them from that. Selecting
+/// one category too many would date a collection the player did not just acquire, and dates are
+/// never revised.
 /// </remarks>
 public static class CollectorSelection
 {
     /// <summary>The collectors to run for one upload.</summary>
     /// <param name="collectors">Every registered collector.</param>
     /// <param name="categories">
-    /// The categories to restrict to, or <c>null</c> for "all of them". Null is how a full sweep is
-    /// expressed; an empty set is not the same thing and correctly selects nothing.
+    /// The categories to restrict to, or <c>null</c> for a full sweep. An empty set selects nothing.
     /// </param>
     /// <remarks>
-    /// A key naming no registered collector simply matches nothing. That is deliberate: a category
-    /// the plugin no longer ships must not throw, it must be ignored.
+    /// A key naming no registered collector matches nothing, so it is ignored rather than throwing.
     /// </remarks>
     public static IEnumerable<ICollector> For(
         IEnumerable<ICollector> collectors, IReadOnlySet<string>? categories) =>

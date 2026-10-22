@@ -6,30 +6,23 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// SourceNoteText turns a (source key, scan status) pair into one note for the settings window, and
-// every piece of copy the window can show is pinned down here. The window's job is to "render whatever
-// non-null note this returns", with no source-name branch of its own — the same extensibility
-// discipline the rest of the settings surface follows.
+// SourceNoteText turns a source key and scan status into one note for the settings window, which
+// draws any non-null note and has no source-name branch of its own.
 //
-// A note has two renderable forms, and the tone decides which the window uses. Live and Cached notes
-// render as a compact chip: Label is the chip's text, and Detail — when present — is optional hover
-// copy. Missing notes render as a full line: Text carries the sentence, including the in-game action
-// that fixes the gap, which must stay visible rather than hide behind a hover. That rule is pinned as
-// an invariant at the bottom of this file: every Missing note carries a Text.
+// The tone picks the form. Live and Cached notes are chips: Label is the text and Detail is optional
+// hover copy. Missing notes are full lines whose Text names the in-game fix, which must never hide
+// behind a hover; the sweep at the bottom of this file pins that.
 public class SourceNoteTextTests
 {
-    // The website address the copy names. `const` fixes the value when the code compiles.
-    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
     private static ItemSourceStatus Status(string state, int? count = null, int? total = null) =>
         new() { State = state, Count = count, Total = total };
 
-    // Mannequins are the one source the game itself cannot expose: a mannequin's contents are
-    // fetched per-interaction inside the house and never cached, so no plugin can read them from
-    // anywhere. That is information, not a fault — nothing the user does changes it — so the note
-    // is a muted chip, and the whole explanation plus the optional retrieve-once workaround lives
-    // in the hover. A full line would nag forever about something unfixable.
+    // The game fetches a mannequin's contents per interaction and never caches them, so no plugin can
+    // read them. Nothing the user does fixes that, so the note is a muted chip with the explanation and
+    // workaround in the hover; a full line would nag forever.
     [Fact]
     public void An_unreadable_mannequin_source_is_a_chip_with_the_workaround_in_hover()
     {
@@ -45,10 +38,8 @@ public class SourceNoteTextTests
             note.Detail);
     }
 
-    // A healthy live source is a chip: the green check says "read", so the note carries no sentence.
-    // The detail names exactly which containers the inventory chip speaks for — bags, equipped gear,
-    // the armoury chest, crystals — so a user wondering "is my equipped weapon counted?" can find out
-    // by hovering rather than by asking.
+    // The detail names the containers the chip covers, so a user can check by hovering whether their
+    // equipped weapon counts.
     [Fact]
     public void A_live_inventory_is_a_chip_naming_the_containers_it_covers()
     {
@@ -62,11 +53,9 @@ public class SourceNoteTextTests
             note.Detail);
     }
 
-    // Currencies are scanned alongside the inventory (the Currency container plus the game's
-    // currency subsystem), so they get a chip of their own — without it the panel would imply
-    // currencies are never read. The detail also discloses the one gap in that coverage: the
-    // game only exposes a content-bound currency (Occult Crescent's pieces, for example) while
-    // the character is inside that content, so those counts are read only by a sync that runs there.
+    // Currencies, read from the Currency container and the game's currency subsystem, get their own
+    // chip, or the panel would imply they are never read. The game exposes a content-bound currency,
+    // such as Occult Crescent's pieces, only inside that content, so the detail discloses that gap.
     [Fact]
     public void Live_currencies_are_a_chip_naming_what_they_cover_and_the_content_bound_gap()
     {
@@ -82,8 +71,8 @@ public class SourceNoteTextTests
             note.Detail);
     }
 
-    // Cached is the saddlebag's healthy resting state, so it is a chip too; the optional refresh hint
-    // moves into the hover detail. The premium half is named there — it travels under this same key.
+    // Cached is the saddlebag's healthy resting state, so it is a chip. The detail names the premium
+    // saddlebag, which shares this key.
     [Fact]
     public void A_cached_saddlebag_is_a_chip_with_the_refresh_hint_in_its_detail()
     {
@@ -98,8 +87,8 @@ public class SourceNoteTextTests
             note.Detail);
     }
 
-    // A never-opened source contributes nothing, and only the user can open it — so the note is a
-    // full line whose visible text names the action, never a chip that hides it behind a hover.
+    // Only the user can open a never-opened source, so the action shows on a full line, never behind
+    // a hover.
     [Fact]
     public void An_unscanned_saddlebag_is_a_line_naming_the_action_that_includes_it()
     {
@@ -110,13 +99,9 @@ public class SourceNoteTextTests
         Assert.Equal("Saddlebag: not scanned yet — open it once in game to include it.", note.Text);
     }
 
-    // The fraction is the load-bearing part of the partial-retainers line: with fewer scanned than
-    // exist, the visible text targets the never-summoned rest, because they contribute nothing until
-    // summoned.
-    //
-    // Missing, not Cached: a retainer that has never been summoned hides its ENTIRE contents from the
-    // plugin, exactly like a saddlebag that has never been opened — so the counts are a floor rather
-    // than a stale total, and summoning the rest is an action that genuinely changes the answer.
+    // Missing, not Cached: a never-summoned retainer hides all its contents, like an unopened
+    // saddlebag, so the counts are a floor rather than a stale total. The line targets the rest,
+    // since summoning them changes the answer.
     [Fact]
     public void Cached_retainers_with_some_missing_are_a_line_with_the_fraction_targeting_the_rest()
     {
@@ -130,9 +115,8 @@ public class SourceNoteTextTests
             note.Text);
     }
 
-    // With every retainer read the source is healthy, so it compresses into a chip. The fraction
-    // stays visible in the chip's own label — it is information, not an action — while the optional
-    // refresh hint moves into the hover detail.
+    // With every retainer read the source is healthy, so it is a chip. The fraction is information,
+    // not an action, so it stays in the label.
     [Fact]
     public void Cached_retainers_all_scanned_are_a_chip_carrying_the_fraction_in_its_label()
     {
@@ -148,9 +132,8 @@ public class SourceNoteTextTests
             note.Detail);
     }
 
-    // The cache remembers every retainer it has ever read, while the total is what the character has
-    // now — dismiss one and the first number outgrows the second. The fraction is clamped so the chip
-    // never claims an impossible "4/3".
+    // The cache keeps every retainer it has ever read, while the total is what the character has now,
+    // so a dismissed retainer makes the count outgrow the total. Clamped, so the chip never says "4/3".
     [Fact]
     public void Cached_retainers_never_report_more_read_than_the_character_has()
     {
@@ -161,9 +144,8 @@ public class SourceNoteTextTests
         Assert.Equal(SourceTone.Cached, note.Tone);
     }
 
-    // Without a known total the chip shows the count it does have, and the detail names the action
-    // that reveals whether any retainer is missing from it: opening the list, which is what teaches
-    // the game how many retainers the character owns.
+    // Opening the retainer list is what tells the game how many retainers the character owns, so the
+    // detail names it.
     [Fact]
     public void Cached_retainers_without_a_total_carry_the_scanned_count_alone_in_the_label()
     {
@@ -204,9 +186,8 @@ public class SourceNoteTextTests
             note.Text);
     }
 
-    // The armoire's wire state is "loaded" rather than "live", but loaded IS current — so it carries
-    // the Live tone and renders as the same green chip as every other healthy source. "Loaded" is the
-    // game's vocabulary; the player never sees it.
+    // The armoire's wire state is "loaded", which is current, so it takes the Live tone. The player
+    // never sees the word.
     [Fact]
     public void A_loaded_armoire_is_a_healthy_chip()
     {
@@ -249,17 +230,14 @@ public class SourceNoteTextTests
         Assert.Equal("Glamour Dresser: not scanned yet — open it once in game to include it.", note.Text);
     }
 
-    // An unrecognized source key means nothing to show: the window renders the note only when this
-    // returns non-null, so a future source the copy set has not caught up with shows nothing rather
-    // than a raw wire string.
+    // A source the copy has not caught up with shows nothing rather than a raw wire string.
     [Fact]
     public void An_unknown_source_key_returns_null()
     {
         Assert.Null(SourceNoteText.Describe("facewearCabinet", Status(SourceStates.Live), Host));
     }
 
-    // A known source in a state this helper has no note for (for example an inventory that somehow
-    // reported "unscanned") is likewise nothing to say — better silence than an unhandled combination.
+    // Silence beats a note for a combination nothing handles.
     [Fact]
     public void A_known_source_in_an_unexpected_state_returns_null()
     {
@@ -272,11 +250,9 @@ public class SourceNoteTextTests
         Assert.Null(SourceNoteText.Describe(SourceKeys.Saddlebag, Status("teleported"), Host));
     }
 
-    // THE INVARIANT the window's rendering rule leans on: a Missing note renders as a full line whose
-    // visible text names the in-game action — so every Missing note must carry a Text. Hover may hide
-    // optional info (a Detail); it must never hide a required action. Swept across every combination
-    // of known source key, known state, and representative retainer counts, so a future arm added to
-    // SourceNoteText cannot forget its sentence without failing here.
+    // The window draws a Missing note as a full line, so it must carry Text: a hover may hide optional
+    // detail, never a required action. The sweep covers every key, state and count shape, so a new arm
+    // in SourceNoteText cannot forget its sentence.
     [Fact]
     public void Every_missing_note_carries_the_full_line_text_its_action_lives_in()
     {
@@ -284,8 +260,7 @@ public class SourceNoteTextTests
         {
             foreach (var state in WireConstantsOf(typeof(SourceStates)))
             {
-                // The count shapes the retainer arms' answer, so each (key, state) pair is tried with
-                // every count shape the collector can produce; other sources ignore the numbers.
+                // Every count shape the collector can produce; only the retainer arms read them.
                 foreach (var (count, total) in new (int?, int?)[] { (null, null), (3, 5), (3, 3), (3, null) })
                 {
                     var note = SourceNoteText.Describe(sourceKey, Status(state, count, total), Host);
@@ -297,10 +272,8 @@ public class SourceNoteTextTests
         }
     }
 
-    // The chip-form twin of the invariant above: an Unreadable note draws as a muted chip whose
-    // ONLY content beyond its label is the hover Detail — no Text, no alarm color — so a Detail-less
-    // Unreadable note would be a bare gray chip that explains nothing. Swept the same way, so a
-    // future unreadable source cannot forget its explanation without failing here.
+    // An Unreadable note is a muted chip whose only content beyond its label is the hover Detail, so
+    // without one it would be a bare gray chip that explains nothing.
     [Fact]
     public void Every_unreadable_note_carries_the_hover_detail_that_explains_it()
     {
@@ -319,8 +292,7 @@ public class SourceNoteTextTests
         }
     }
 
-    // Reads every public const string off a wire-constants class (SourceKeys, SourceStates) via
-    // reflection, so the invariant sweep above automatically covers any constant added later.
+    // By reflection, so the sweeps cover constants added later.
     private static IEnumerable<string> WireConstantsOf(System.Type constantsClass)
     {
         foreach (var field in constantsClass.GetFields(BindingFlags.Public | BindingFlags.Static))

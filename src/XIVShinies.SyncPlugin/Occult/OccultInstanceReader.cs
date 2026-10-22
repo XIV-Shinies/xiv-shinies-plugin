@@ -1,43 +1,28 @@
 using System.Collections.Generic;
-// Dalamud's safe wrapper over the game's FATE table.
 using Dalamud.Plugin.Services;
-// The game's occult public-content director and its CE container, via FFXIVClientStructs.
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 
 namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>
-/// Reads the occult instance's live state out of game memory, reducing it to the Dalamud-free
-/// reading records the tracker consumes.
+/// Reads the occult instance's live state from game memory into the Dalamud-free readings the
+/// tracker consumes. It makes no decisions; the tracker interprets them.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>Framework thread only</b>, like every game-memory read in this plugin. This is the thin
-/// unsafe layer: it makes no decisions (the tracker owns all interpretation). It reads game
-/// memory, so in-game QA verifies it.
-/// </para>
-/// <para>
-/// <c>unsafe</c> marks code that works with raw pointers — the game's objects are C++ structs
-/// at fixed memory addresses, and FFXIVClientStructs maps them as C# structs reached through
-/// pointers. There is no JavaScript analog; this is the systems-programming layer Dalamud
-/// plugins sit on.
-/// </para>
-/// <para>
-/// Nothing here reads any other player's data: the CE container and FATE table describe the
-/// instance's world state (participant counts are aggregate integers the reader does not even
-/// carry forward).
-/// </para>
+/// Framework thread only. It reads the instance's world state and never another player's data: the
+/// CE container's participant counts are aggregates the reader does not carry forward.
 /// </remarks>
 internal static class OccultInstanceReader
 {
     /// <summary>
-    /// Attempts one full read of the occult director's state. False when the director is absent
-    /// or its state has not finished syncing from the server — the moments during zone
-    /// transitions when the memory is not yet meaningful.
+    /// One full read of the occult director's state. False when the director is absent or its state
+    /// has not finished syncing, as during a zone transition.
     /// </summary>
     /// <param name="fateTable">Dalamud's live FATE table for the current zone.</param>
     /// <param name="events">One reading per populated CE container slot.</param>
-    /// <param name="fates">One reading per FATE table row (pre-init rows included; the tracker filters).</param>
+    /// <param name="fates">
+    /// One reading per FATE table row, including rows not yet synced; the tracker filters them.
+    /// </param>
     public static unsafe bool TryRead(
         IFateTable fateTable,
         out List<DynamicEventReading> events,
@@ -50,25 +35,19 @@ internal static class OccultInstanceReader
         if (director == null || !director->StateLoaded)
             return false;
 
-        // `&` takes the address of the embedded container struct — a pointer into the director,
-        // not a copy — and `->` dereferences a pointer to reach a member (the pointer cousin of
-        // `.`). `ref var` binds each loop variable to the slot IN PLACE rather than copying the
-        // ~0x1D0-byte struct per iteration; the slots are only read, never written.
+        // A slot is about 0x1D0 bytes, so the container and each slot are read in place, never copied.
         var container = &director->DynamicEventContainer;
         foreach (ref var slot in container->Events)
         {
-            // An unpopulated slot (the container always has 16) has no event id; there is no
-            // encounter to report.
+            // The container always has 16 slots; an unused one has no event id.
             if (slot.DynamicEventId == 0)
                 continue;
 
             events.Add(new DynamicEventReading(
                 slot.DynamicEventId,
-                // Two casts because enums only convert through their underlying integer: the
-                // game's enum down to its raw byte, then that byte up into our mirrored enum.
-                // Values outside the known range are handled by the tracker (they read as down).
+                // The raw byte goes into the mirror enum; the tracker reads unknown values as down.
                 (DynamicEventPhase)(byte)slot.State,
-                // Despite the game field's name, this is the CURRENT PHASE'S END deadline.
+                // Despite its name, this is when the current phase ends.
                 slot.StartTimestamp,
                 (int)slot.SecondsDuration));
         }

@@ -111,11 +111,10 @@ through payload assembly and settings enumeration to guard exactly this.
 
 ## Code style
 
-- **Comment heavily, for a beginner and for future contributors.** This codebase doubles as
-  C# learning material for its maintainer and onboarding for cold readers: comments explain
-  what a construct *is*, why it is here, and what C#/Dalamud-specific syntax means. Match the
-  density you see around you. Keep comments professional and durable — no session notes, no
-  references to removed designs.
+- **Comment the why, briefly.** Write for a contributor reading the code cold who knows C#:
+  state the reason, constraint, or consequence the code cannot show, in as few plain words as
+  it takes. Don't restate what the code says, explain C# syntax, or compare C# to other
+  languages. Describe the code as it is: no session notes, no references to removed designs.
 - `ImplicitUsings` is **off**: explicit `using`s, outside the namespace, `System.*` first.
   File-scoped namespaces. ImGui is `Dalamud.Bindings.ImGui` (not `ImGuiNET`).
 - Use `ImRaii` scopes for every ImGui push/pop pair — no bare `Begin*/End*`.

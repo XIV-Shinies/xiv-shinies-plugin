@@ -5,9 +5,9 @@ using XIVShinies.SyncPlugin.Beastmaster;
 
 namespace XIVShinies.SyncPlugin.Tests.Beastmaster;
 
-// Declaring a collection complete is what lets the site say "you marked this by hand but you do not
-// hold it". Getting it wrong contradicts the player about their own collection, so these are about
-// when the ledger may make that claim — and, mostly, when it may not.
+// A completeness claim lets the site say "you marked this by hand but you do not hold it". A wrong
+// claim contradicts the player about their own collection, so these pin when the ledger may make
+// it, and mostly when it may not.
 public class BestiaryCompletenessTests
 {
     private static BestiaryPageReading PageOf(int[] seen, int[] held, int? capturedTotal, int? beastTotal) =>
@@ -31,11 +31,10 @@ public class BestiaryCompletenessTests
         return ledger;
     }
 
-    // A window whose total comes back short, which is the shape the game's own bestiary size is
-    // here to refuse. Nothing else can: every other figure in the check is the window's own, so a
-    // window naming twelve as the whole bestiary has twelve seen out of twelve and nine held out of
-    // nine, agreeing with itself perfectly. Not the shape a filter produces — a filtered view names
-    // the real size — but a still-loading list is, and the claim it guards cannot be taken back.
+    // Only the game's own bestiary size can refuse a short window total: every other figure in the
+    // check is the window's own, so a window naming twelve as the whole agrees with itself. A
+    // filtered view names the real size, but a still-loading list comes back short, and the claim
+    // cannot be taken back.
     [Fact]
     public void A_window_total_that_disagrees_with_the_games_own_size_is_not_complete()
     {
@@ -49,9 +48,8 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // ...and a page whose total comes back short must not revoke a claim already earned, which is
-    // why the largest size ever seen wins rather than the latest. A list still loading is the
-    // ordinary way a short total arrives.
+    // The largest size ever seen wins, not the latest, so a still-loading list cannot revoke an
+    // earned claim.
     [Fact]
     public void A_window_total_that_comes_back_short_does_not_revoke_the_claim()
     {
@@ -62,11 +60,9 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.IsComplete);
     }
 
-    // The shape the game actually produces: filtering narrows the tally's held count and leaves its
-    // size alone, so "the size did not change" is no evidence the view is unfiltered. A held count
-    // taken on that evidence would replace the true one with the filtered one and revoke a claim
-    // that is still true, so the largest count ever seen wins here too — pacts are never broken, so
-    // within a session a smaller count can only be a narrower view of the same beasts.
+    // A filter narrows the tally's held count but leaves its size alone, so an unchanged size is no
+    // evidence the view is unfiltered. The largest held count ever seen wins: pacts are never broken,
+    // so within a session a smaller count can only be a narrower view.
     [Fact]
     public void A_filter_that_narrows_only_the_held_count_does_not_revoke_the_claim()
     {
@@ -78,10 +74,8 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.IsComplete);
     }
 
-    // A page whose tally would not parse must leave the remembered one alone. Reachable in play:
-    // the tally slot can fail to read while the records beside it read fine, so a refresh mid-load
-    // arrives with beasts listed and no counts. The claim has to survive that — an unreadable
-    // figure is not evidence of anything, least of all evidence against a read already finished.
+    // In play the tally can fail to read while the records beside it read fine, so a refresh mid-load
+    // lists beasts with no counts. An unreadable figure is no evidence against a finished read.
     [Fact]
     public void A_page_with_no_readable_tally_does_not_revoke_the_claim()
     {
@@ -93,10 +87,8 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.IsComplete);
     }
 
-    // A character switch must not leave the previous character's held count behind. The count only
-    // ever rises within a session, so a leftover from a character holding more beasts would sit
-    // above anything the next character can reach and withhold their claim for as long as they
-    // stay logged in.
+    // The held count only rises within a session, so a leftover from a character holding more
+    // beasts would withhold the next character's claim until they log out.
     [Fact]
     public void Clearing_forgets_the_held_count_so_the_next_character_can_be_complete()
     {
@@ -114,11 +106,9 @@ public class BestiaryCompletenessTests
         Assert.Equal(3, ledger.Count);
     }
 
-    // Holding none of them is an answer, not the absence of one. The floor the held count is
-    // compared against sits below zero precisely so that a real "0 out of 50" is recorded — at zero
-    // it would read as a tally never seen, and a player who has tamed nothing could never reach a
-    // settled state. What stops that emptiness reaching the server is the floor in
-    // CollectResult.TamedBeasts, not this class.
+    // The held-count floor sits below zero so a real "0 of 50" is recorded; at zero it would read as
+    // a tally never seen, and a player who tamed nothing could never settle. CollectResult.TamedBeasts,
+    // not this class, keeps the empty claim off the wire.
     [Fact]
     public void A_bestiary_read_with_nothing_held_is_still_complete()
     {
@@ -132,10 +122,9 @@ public class BestiaryCompletenessTests
         Assert.Equal(0, ledger.Count);
     }
 
-    // A number past the end of the game's own bestiary is refused rather than remembered. The
-    // completeness test reads "as many seen as the bestiary has" as "the whole bestiary was
-    // covered", which only follows while every remembered number is a real one — one bogus number
-    // standing in for a missing real one would make the count add up over the wrong set.
+    // The completeness test reads "as many seen as the bestiary has" as "the whole bestiary was
+    // covered", which holds only while every remembered number is real. One bogus number standing in
+    // for a missing real one would make the count add up over the wrong set.
     [Fact]
     public void A_number_past_the_end_of_the_bestiary_is_not_counted_as_seen()
     {
@@ -150,10 +139,8 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // The completeness check leans on every held beast being one of the seen ones — that is what
-    // lets "as many seen as the bestiary has" mean the whole domain was covered. A page claiming a
-    // beast it did not list would break that quietly, so the ledger refuses it rather than trusting
-    // the caller to be consistent.
+    // The completeness check relies on every held beast being a seen one. A page claiming a beast it
+    // did not list would break that quietly, so the ledger refuses it rather than trust the caller.
     [Fact]
     public void A_held_beast_the_page_never_listed_is_refused()
     {
@@ -181,9 +168,8 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // Every number seen and the right count of records found, but one held flag misread. The third
-    // agreement is what catches it: the beasts recorded as held no longer match the window's own
-    // count of them.
+    // Every number seen, but one held flag misread. The third agreement catches it: the beasts
+    // recorded as held no longer match the window's own count.
     [Fact]
     public void A_page_whose_held_flags_were_misread_withholds_the_claim()
     {
@@ -209,8 +195,8 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.IsComplete);
     }
 
-    // One page is a fragment, and a fragment presented as the whole would have the site tell the
-    // player they do not own beasts that are simply on the page they did not look at.
+    // Presented as the whole, one page would have the site tell the player they lack beasts that are
+    // on the page they did not look at.
     [Fact]
     public void One_page_of_the_bestiary_is_not_complete()
     {
@@ -222,8 +208,7 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // The agreements check each other. Seeing every number while holding a different count than
-    // the window reports means something was misread, and the claim is withheld.
+    // Holding a different count than the window reports means something was misread.
     [Fact]
     public void Seeing_every_number_is_not_enough_when_the_held_count_disagrees()
     {
@@ -236,8 +221,7 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // ...and the same in the other direction: holding the right number of beasts while having seen
-    // only part of the bestiary proves nothing about the part left unseen.
+    // The right held count proves nothing about the part of the bestiary left unseen.
     [Fact]
     public void Holding_the_reported_count_is_not_enough_without_seeing_every_number()
     {
@@ -262,8 +246,8 @@ public class BestiaryCompletenessTests
         Assert.False(ledger.IsComplete);
     }
 
-    // One page of held beasts is a real fact, and a lonely one: it says nothing about the beasts on
-    // the pages nobody looked at.
+    // One page of held beasts is still a real fact, but says nothing about the pages nobody looked
+    // at.
     [Fact]
     public void One_page_of_held_beasts_never_makes_the_ledger_complete()
     {
@@ -276,8 +260,8 @@ public class BestiaryCompletenessTests
         Assert.Equal(new[] { 30, 31 }, ledger.Snapshot());
     }
 
-    // Pages overlap when a player scrolls back, and the same beast must not be counted twice —
-    // double counting would make the held total overshoot and silently withhold completeness.
+    // Pages overlap when a player scrolls back. Counting a beast twice would overshoot the held total
+    // and silently withhold completeness.
     [Fact]
     public void Reading_the_same_page_twice_changes_nothing()
     {
@@ -291,9 +275,8 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.IsComplete);
     }
 
-    // Taming a beast and looking at the bestiary again is the ordinary way a beastmaster's
-    // collection grows. The new beast is recorded and the claim survives, because the window's own
-    // tally moved with it.
+    // Taming a beast is the ordinary way the collection grows. The claim survives because the
+    // window's tally moved with the new beast.
     [Fact]
     public void A_beast_tamed_after_a_complete_read_is_picked_up_on_the_next_look()
     {
@@ -308,9 +291,8 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.IsComplete);
     }
 
-    // Session edges empty the character's data, the window's tally included — a leftover
-    // denominator would judge the next character's bestiary. The bestiary's size is game data
-    // rather than character data, so that survives.
+    // A leftover tally would judge the next character's bestiary. The bestiary's size is game data,
+    // not character data, so it survives.
     [Fact]
     public void Clearing_forgets_the_tally_as_well_as_the_beasts()
     {
@@ -324,8 +306,7 @@ public class BestiaryCompletenessTests
         Assert.Empty(ledger.Snapshot());
     }
 
-    // Recording a page answers whether it brought news, so the caller acts on the answer rather
-    // than diffing a count around the write.
+    // The caller acts on this answer rather than diffing a count around the write.
     [Fact]
     public void Recording_a_page_reports_whether_it_held_anything_new()
     {
@@ -336,8 +317,8 @@ public class BestiaryCompletenessTests
         Assert.True(ledger.RecordPage(PageOf(new[] { 1, 2 }, new[] { 1, 2 }, 2, 50)));
     }
 
-    // A page listing beasts the player holds none of is still worth recording — it is what proves
-    // they hold none of them — but it is not news that should prompt an upload.
+    // A page of beasts the player holds none of is still recorded, since it proves they hold none,
+    // but it should not prompt an upload.
     [Fact]
     public void A_page_of_beasts_none_of_which_are_held_is_not_news()
     {
@@ -347,8 +328,8 @@ public class BestiaryCompletenessTests
         Assert.Equal(3, ledger.SeenCount);
     }
 
-    // The emptiness floor the other collections have: an empty list never carries the claim,
-    // whatever the ledger thinks, because "owns nothing" and "read nothing" look identical.
+    // "Owns nothing" and "read nothing" look the same, so an empty list never carries the claim,
+    // whatever the ledger thinks.
     [Fact]
     public void An_empty_list_never_ships_a_completeness_claim()
     {

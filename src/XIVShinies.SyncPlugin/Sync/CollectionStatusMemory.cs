@@ -5,20 +5,13 @@ namespace XIVShinies.SyncPlugin.Sync;
 
 /// <summary>
 /// The merge rules for the settings window's per-category status memory: which skip reasons,
-/// partial-read phrases, and chip hover copy survive from pass to pass.
+/// partial-read phrases and chip hover copy survive from pass to pass.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The rules exist because an unlock pass runs only the collectors whose categories changed, so
-/// it can speak for those and no others — overwriting the whole memory with its results would
-/// erase every absent category's status and make the window claim it is fine. Each merge starts
-/// from the previous memory and lets the new pass overrule only the categories it actually ran.
-/// </para>
-/// <para>
-/// <see cref="SyncManager"/> holds the fields and the thread discipline; this class holds the
-/// arithmetic. Every merge returns a fresh dictionary and never touches its inputs, which is what
-/// lets the manager publish the result to the draw thread without a lock.
-/// </para>
+/// An unlock pass runs only the collectors whose categories changed, so each merge lets the new pass
+/// overrule only the categories it ran; overwriting the whole memory would make the window call every
+/// absent category fine. Every merge returns a fresh dictionary and never touches its inputs, so
+/// <see cref="SyncManager"/> can publish the result to the draw thread without a lock.
 /// </remarks>
 public static class CollectionStatusMemory
 {
@@ -37,7 +30,6 @@ public static class CollectionStatusMemory
         foreach (var (category, reason) in snapshot.Skipped)
             merged[category] = reason;
 
-        // Whatever was read successfully this pass is no longer skipped.
         foreach (var category in snapshot.Collections.Keys)
             merged.Remove(category);
 
@@ -45,14 +37,13 @@ public static class CollectionStatusMemory
     }
 
     /// <summary>
-    /// Merges a pass's partial-read phrases over the remembered ones: a category collected WITH
-    /// a phrase keeps (or gains) it, one collected without a phrase was read in full and loses
-    /// its old one, and one this pass never collected keeps whatever it last said.
+    /// Merges a pass's partial-read phrases over the remembered ones: a category collected with a
+    /// phrase keeps or gains it, one collected without a phrase was read in full and loses its old
+    /// one, and one this pass never collected keeps whatever it last said.
     /// </summary>
     /// <remarks>
-    /// A category that was <i>skipped</i> this pass also keeps its stale phrase: the
-    /// read-status panel shows a skip reason ahead of a partial phrase, so the stale entry is
-    /// invisible until a collected pass settles it one way or the other.
+    /// A category skipped this pass also keeps its stale phrase, which stays hidden: the read-status
+    /// panel shows a skip reason ahead of a partial phrase.
     /// </remarks>
     /// <param name="previous">The memory before this pass.</param>
     /// <param name="snapshot">The pass to merge in.</param>
@@ -61,8 +52,8 @@ public static class CollectionStatusMemory
         MergeCollectedValues(previous, snapshot, snapshot.PartialNotes);
 
     /// <summary>
-    /// Merges a pass's healthy-chip hover copy over the remembered set — the same rules as
-    /// <see cref="MergePartialNotes"/>, applied to <see cref="CollectionSnapshot.CollectedDetails"/>.
+    /// Merges a pass's healthy-chip hover copy over the remembered set, by
+    /// <see cref="MergePartialNotes"/>'s rules.
     /// </summary>
     /// <param name="previous">The memory before this pass.</param>
     /// <param name="snapshot">The pass to merge in.</param>
@@ -70,8 +61,7 @@ public static class CollectionStatusMemory
         IReadOnlyDictionary<string, string> previous, CollectionSnapshot snapshot) =>
         MergeCollectedValues(previous, snapshot, snapshot.CollectedDetails);
 
-    // The shared body behind both collected-value merges — MergePartialNotes states the rule;
-    // this method only applies it to whichever dictionary it is handed.
+    // The body of both collected-value merges; MergePartialNotes states the rule.
     private static IReadOnlyDictionary<string, string> MergeCollectedValues(
         IReadOnlyDictionary<string, string> previous,
         CollectionSnapshot snapshot,

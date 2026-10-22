@@ -3,23 +3,14 @@ using XIVShinies.SyncPlugin.Api;
 namespace XIVShinies.SyncPlugin.Windows;
 
 /// <summary>
-/// What the plugin tells a player whose upload the server refused because it could not match
-/// their character (on the sync card, and through <see cref="HaltCopy"/> on the live tracker's
-/// and Crucible run sharing's cards): one sentence per refusal, each naming the fix that refusal
-/// needs.
+/// One sentence for each way the server refuses an upload because it cannot match the character,
+/// each naming that refusal's fix.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The four refusals look alike from inside the game (the upload was refused) but are fixed in
-/// different places: a claim to make on the website, a Lodestone bio code to add, a duplicate claim
-/// to remove, or a link only the site's admins can change. A sentence that named the wrong fix would
-/// send the player to a page with nothing on it for them.
-/// </para>
-/// <para>
-/// The name and home world are the local character's own, read from the game, not the copies the
-/// server echoes in the refusal's body. They are the same values on an honest server, and the local
-/// ones need no bounding before they are drawn.
-/// </para>
+/// The four look alike in game but are fixed in different places: a claim to make on the website, a
+/// Lodestone bio code to add, a duplicate claim to remove, or a link only the site's admins can
+/// change. The name and home world come from the game, not the refusal's body, so they need no
+/// bounding.
 /// </remarks>
 public static class CharacterRefusalCopy
 {
@@ -32,8 +23,8 @@ public static class CharacterRefusalCopy
     /// <param name="host">The configured server's host, which every sentence names.</param>
     public static string? For(ApiStatus status, string? characterName, string? homeWorld, string host)
     {
-        // "this character" mid-sentence, "This character" when it opens one. The `is { Length: > 0 }`
-        // pattern reads "is a string with at least one character", so an empty name counts as none.
+        // "this character" mid-sentence, "This character" when it opens one. An empty name counts as
+        // none.
         var name = characterName is { Length: > 0 } ? characterName : "this character";
         var subject = characterName is { Length: > 0 } ? characterName : "This character";
 
@@ -45,9 +36,8 @@ public static class CharacterRefusalCopy
             ApiStatus.CharacterNotVerified =>
                 $"Verify {name} on {host} by adding the code to your Lodestone bio, then press Sync now.",
 
-            // The one sentence that names the home world: the duplicate claims share both name and
-            // world, and naming both tells the player exactly which of their claims to look
-            // through. "Name (World)" matches how the account panel lists claimed characters.
+            // Only this sentence names the world, so the player knows which duplicate claims to look
+            // through. "Name (World)" matches the account panel's list.
             ApiStatus.CharacterAmbiguous =>
                 $"You have more than one claim for {WithWorld(name, characterName, homeWorld)} on {host}. " +
                 "Remove all but one, then press Sync now.",

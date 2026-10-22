@@ -5,7 +5,7 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// <summary>How much of a frame's sync work may run.</summary>
 public enum TickAction
 {
-    /// <summary>Nothing at all — the plugin must not contact the server or read the game.</summary>
+    /// <summary>Nothing at all: the plugin must not contact the server or read the game.</summary>
     Nothing,
 
     /// <summary>Refresh the server's config, but collect and upload nothing.</summary>
@@ -19,16 +19,9 @@ public enum TickAction
 /// How much of the per-frame sync work a tick may do, given consent and the current halt.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is an ordering with two rules that matter: consent gates absolutely everything, and a halt
-/// stops the collecting and uploading without stopping a poll the server would still answer. The
-/// frame callback in <c>SyncManager</c> asks this class and does only the work it allows.
-/// </para>
-/// <para>
-/// Nothing here lifts a halt — only the user does, by fixing what caused it. The poll that survives
-/// one is how a change on the server's side reaches the plugin meanwhile. Whether it survives
-/// depends on which refusal raised the halt; <see cref="PollSurvivesHalt"/> is that rule.
-/// </para>
+/// Consent gates everything, and a halt stops collecting and uploading without stopping a poll the
+/// server would still answer. Only the user lifts a halt; the poll that survives it is how a change
+/// on the server's side reaches the plugin meanwhile.
 /// </remarks>
 public static class SyncTickPlan
 {
@@ -38,11 +31,10 @@ public static class SyncTickPlan
     /// </summary>
     /// <param name="haltStatus">The status that raised the halt, or null when there is none.</param>
     /// <remarks>
-    /// <c>/config</c> answers 200 or 401 and never 403. So a character refusal (any of the four
-    /// 403s) leaves the poll working, and it is how the plugin learns a server pause has lifted
-    /// while the player sorts out the claim. A token-shaped halt would draw the same 401 on every
-    /// poll, and a backend the client refused to use sends nothing at all, so neither is worth
-    /// polling through.
+    /// <c>/config</c> answers 200 or 401, never 403, so a character refusal (any of the four 403s)
+    /// leaves the poll working, and the poll shows when a server pause lifts while the player sorts out
+    /// the claim. A token-shaped halt would draw the same 401 every poll, and a backend the client
+    /// refused to use sends nothing, so neither is worth polling through.
     /// </remarks>
     public static bool PollSurvivesHalt(ApiStatus? haltStatus) =>
         haltStatus is { } status && ApiStatusMap.IsCharacterRefusal(status);
@@ -53,9 +45,8 @@ public static class SyncTickPlan
     /// fresh install, which is what keeps it silent.
     /// </param>
     /// <param name="pollIsWorthwhile">
-    /// Whether the halt in force is one <c>/config</c> would answer normally, so a poll is still
-    /// worth making. Consulted only while <paramref name="blockedPendingUserAction"/> holds; an
-    /// unblocked tick polls regardless.
+    /// Whether <c>/config</c> would answer the halt in force normally. Consulted only while
+    /// <paramref name="blockedPendingUserAction"/> holds.
     /// </param>
     /// <param name="blockedPendingUserAction">
     /// Whether syncing has stopped for something only the user can resolve.

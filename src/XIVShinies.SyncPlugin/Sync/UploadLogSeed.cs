@@ -7,48 +7,29 @@ using XIVShinies.SyncPlugin.Collectors;
 namespace XIVShinies.SyncPlugin.Sync;
 
 /// <summary>
-/// Builds a set of plausible upload-log entries for capturing screenshots of the log, without
-/// waiting on real syncs.
+/// Builds plausible upload-log entries for screenshots, without waiting on real syncs. Reads neither
+/// the game nor the clock.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The upload log's interesting states are slow or expensive to reach honestly: the interval
-/// sync is half an hour away, a "(changed)" mark needs an actual new acquisition, and the proof
-/// note needs the server to derive a relic step. Capturing all of them in one window means
-/// either a long wait or buying increasingly expensive minions, and it has to be repeated
-/// whenever the log's layout changes. This produces the same shapes on demand.
-/// </para>
-/// <para>
-/// <b>Compiled only into DEBUG builds.</b> The whole file sits inside an <c>#if DEBUG</c>, so a
-/// Release build — the only kind that ships — contains no trace of it. That is deliberate:
-/// these entries are fabricated, and a released plugin must never be able to put invented sync
-/// history in front of a user.
-/// </para>
-/// <para>
-/// The entries are built from the <b>registered collectors</b> rather than a hardcoded list of
-/// collections, so a new collection appears in the screenshot on its own — at a fallback count
-/// until someone gives it a figure in <see cref="PlausibleCounts"/>, which the test suite
-/// requires. Where a row needs one specific collection, it names it through
-/// <see cref="CategoryKeys"/>, so renaming a key is a compile error here rather than a silently
-/// wrong screenshot.
-/// </para>
-/// <para>
-/// It takes the collectors and the current moment, and returns records; it reads neither the game
-/// nor the clock.
-/// </para>
+/// The log's interesting states are slow or expensive to reach honestly: the interval sync is half an
+/// hour away, a "(changed)" mark needs a real acquisition, and the proof note needs the server to
+/// derive a relic step. Compiled into DEBUG builds only, because these entries are fabricated and a
+/// shipped Release build must never show invented sync history. Rows are built from the registered
+/// collectors, so a new collection appears on its own, and a row that needs one collection names it
+/// through <see cref="CategoryKeys"/>, so a renamed key fails to compile.
 /// </remarks>
 public static class UploadLogSeed
 {
     /// <summary>
-    /// A believable fact count for a category, used when nothing more specific is called for.
+    /// A believable fact count per category, used when nothing more specific is called for.
     /// </summary>
     /// <remarks>
-    /// Deliberately not real numbers from anyone's character, and deliberately not round ones —
-    /// a screenshot showing "500" reads as placeholder art, while an odd number reads as somebody's
-    /// actual collection. Keyed by category so each collection gets a figure in the right ballpark
-    /// (there are far more quests than minions), with a fallback for a collection added later.
+    /// Not real numbers from anyone's character, and not round ones: "500" reads as placeholder art,
+    /// while an odd number reads as a real collection. Keyed by category so each figure is in the
+    /// right range, since there are far more quests than minions.
+    /// <c>UploadLogSeedTests.Every_declared_category_has_a_figure_on_file</c> fails when a declared
+    /// category has no figure here.
     /// </remarks>
-    // Internal rather than private so the test that enforces its coverage can reach it.
     internal static readonly Dictionary<string, int> PlausibleCounts = new()
     {
         [CategoryKeys.Quests] = 2847,
@@ -63,56 +44,47 @@ public static class UploadLogSeed
         [CategoryKeys.OccultProgression] = 24,
         [CategoryKeys.OccultRecords] = 31,
 
-        // Single digits, because the whole bestiary is fifty rows. A three-figure count like its
-        // larger neighbors would photograph as a collection this one can never be.
+        // Single digits: the whole bestiary is fifty rows, and a three-figure count would photograph
+        // as a collection this one can never be.
         [CategoryKeys.TamedBeasts] = 3,
     };
 
-    /// <summary>The count to show for a collection this file has never heard of.</summary>
+    /// <summary>The count for a collection missing from <see cref="PlausibleCounts"/>.</summary>
     private const int UnknownCategoryCount = 62;
 
     /// <summary>
-    /// Builds the entries, oldest first — the order <see cref="UploadLog.Record"/> wants, since it
+    /// Builds the entries oldest first, the order <see cref="UploadLog.Record"/> wants, since it
     /// pushes each new entry to the front.
     /// </summary>
     /// <param name="collectors">The registered collectors, in registration order.</param>
     /// <param name="now">
-    /// The moment the newest entry should appear to have happened. The window renders these as
-    /// local times, so passing the real current time is what makes the log look live.
+    /// When the newest entry should appear to have happened. The window shows local times, so the
+    /// real current time makes the log look live.
     /// </param>
     public static IReadOnlyList<UploadLogEntry> Build(
         IReadOnlyList<ICollector> collectors, DateTimeOffset now)
     {
-        // An empty registry has nothing to photograph, and every row below assumes at least one
-        // collection to talk about. Returning an empty log says that plainly; reaching into the
-        // list first would throw, and the caller is a command handler whose exceptions Dalamud
-        // catches and logs — so the failure would be a silent no-op with nothing on screen to
-        // explain it. This guard is also what makes Find's collectors[0] fallback safe.
+        // Every row needs a collection. Reading an empty list would throw in a command handler, which
+        // Dalamud catches and logs with nothing on screen to explain it. This also keeps Find safe.
         if (collectors.Count == 0)
             return [];
 
-        // Every entry claims the same manifest version, the way a real session does: the value
-        // comes from /config and does not change between uploads.
+        // One manifest version for every entry, as in a real session: it comes from /config and does
+        // not change between uploads.
         const string manifestVersion = "a1b9c4e7";
 
         var everything = new List<UploadLogCategory>(collectors.Count);
         foreach (var collector in collectors)
             everything.Add(Category(collector));
 
-        // The collection the login row reports as unreadable. One value feeds both the skip map
-        // and the omission, so the row can never blame a collection it also sent.
-        //
-        // Null when that collection is not among the ones being seeded — switched off by the user
-        // or the server, so it never reaches this list. The skip reason names a specific in-game
-        // place, so falling back to whichever collector was registered first would put a sentence
-        // about the Occult Crescent under, say, Achievements. The row goes without its unreadable
-        // line instead: a screenshot missing one state beats one asserting a wrong state.
+        // The login row's unreadable collection, both skipped and left out so the row never blames one it
+        // sent. Null when absent: its skip reason names the Occult Crescent, so no other may stand in.
         var unreadable = FindOrNull(collectors, CategoryKeys.OccultProgression)?.CategoryKey;
 
         return
         [
-            // Oldest. A login sync reads everything it can, and one collection could not be read
-            // at all — the state that draws the "Could not read:" line under the row.
+            // Oldest. A login sync with one collection unreadable: the state that draws the
+            // "Could not read:" line under the row.
             new UploadLogEntry
             {
                 At = now.AddMinutes(-47),
@@ -129,8 +101,7 @@ public static class UploadLogSeed
                 ProvenSteps = 0,
             },
 
-            // A manual sync where the server proved relic steps from the items sent — the row that
-            // shows the proof note beside the manifest-driven category.
+            // A manual sync where the server proved relic steps: the row with the proof note.
             new UploadLogEntry
             {
                 At = now.AddMinutes(-31),
@@ -142,8 +113,8 @@ public static class UploadLogSeed
                 ProvenSteps = 2,
             },
 
-            // A scheduled sync that swept everything, with a single collection moved since the
-            // manual sync above — one "(changed)" mark among many steady counts.
+            // A scheduled sync with one collection moved since the manual sync: one "(changed)" mark
+            // among steady counts.
             new UploadLogEntry
             {
                 At = now.AddMinutes(-12),
@@ -155,8 +126,8 @@ public static class UploadLogSeed
                 ProvenSteps = 0,
             },
 
-            // Newest. An unlock upload carries only the collection that changed, which is what
-            // makes this row short — and its one category is necessarily marked changed.
+            // Newest. An unlock upload carries only the collection that changed, so the row is short
+            // and its one category is marked changed.
             new UploadLogEntry
             {
                 At = now.AddMinutes(-1),
@@ -172,8 +143,8 @@ public static class UploadLogSeed
 
     /// <summary>One category as an upload sent it, with a count in a believable range.</summary>
     /// <remarks>
-    /// The fingerprint is derived from the key and count rather than hashed from facts: nothing
-    /// here has facts, and the diff only ever asks whether two fingerprints are equal.
+    /// The fingerprint comes from the key and count: there are no facts here, and the diff only checks
+    /// fingerprints for equality.
     /// </remarks>
     private static UploadLogCategory Category(ICollector collector)
     {
@@ -187,26 +158,17 @@ public static class UploadLogSeed
             $"{collector.CategoryKey}-{count}",
             collector.UsesItemManifest,
 
-            // A manifest-driven category is compared on how many of its entries the character
-            // holds, so it needs one for the diff to have anything to say. Fewer than the fact
-            // count, since a manifest asks about items the character does not have.
+            // The diff compares a manifest-driven category on its owned count, so it needs one. Below
+            // the fact count, since a manifest asks about items the character lacks.
             collector.UsesItemManifest ? 43 : null);
     }
 
     /// <summary>The same categories with one of them moved, so the diff marks it "(changed)".</summary>
     /// <remarks>
-    /// <para>
-    /// Moves whichever signal that category is actually compared on — the owned-entry count for a
-    /// manifest-driven collection, the fact count and fingerprint for every other. Asking the same
-    /// question the diff asks is what keeps a seeded row from claiming a change the window then
-    /// declines to draw.
-    /// </para>
-    /// <para>
-    /// Falls back to the first collection when the named one is not registered, so the row still
-    /// demonstrates a "(changed)" mark. A key naming a collection that has been de-registered
-    /// would otherwise leave the row with nothing marked at all — a screenshot that looks fine
-    /// and shows the wrong thing.
-    /// </para>
+    /// Moves the signal the diff compares for that category (the owned count for a manifest-driven
+    /// one, the fact count and fingerprint otherwise), so a seeded row never claims a change the
+    /// window declines to draw. Falls back to the first collection when the named one is not
+    /// registered, so the row still shows a "(changed)" mark rather than quietly showing none.
     /// </remarks>
     private static IReadOnlyList<UploadLogCategory> Moved(
         IReadOnlyList<UploadLogCategory> categories, string categoryKey)
@@ -220,7 +182,6 @@ public static class UploadLogSeed
         return moved;
     }
 
-    /// <summary>Where a category sits in the list, or null when it is not there.</summary>
     private static int? IndexOf(IReadOnlyList<UploadLogCategory> categories, string categoryKey)
     {
         for (var i = 0; i < categories.Count; i++)
@@ -243,8 +204,8 @@ public static class UploadLogSeed
 
     /// <summary>The categories minus one, for a row where that collection could not be read.</summary>
     /// <remarks>
-    /// Drops the first collection when the named one is not registered: the row exists to show a
-    /// category missing from the sent list, and dropping nothing would quietly lose that.
+    /// Drops the first collection when the named one is not registered, because the row exists to
+    /// show a category missing from the sent list.
     /// </remarks>
     private static IReadOnlyList<UploadLogCategory> Without(
         IReadOnlyList<UploadLogCategory> categories, string categoryKey)
@@ -261,11 +222,10 @@ public static class UploadLogSeed
         return kept;
     }
 
-    /// <summary>The collector for a key, or null when none of them announces it.</summary>
-    /// <remarks>
-    /// For a row that would rather say nothing than say the wrong thing. Where a row can carry on
-    /// with any collection at all, <see cref="Find"/>'s fallback is the one to use.
-    /// </remarks>
+    /// <summary>
+    /// The collector for a key, or null when none announces it: for a row that would rather say
+    /// nothing than the wrong thing. <see cref="Find"/> falls back to any collection instead.
+    /// </summary>
     private static ICollector? FindOrNull(IReadOnlyList<ICollector> collectors, string categoryKey)
     {
         foreach (var collector in collectors)
@@ -281,9 +241,8 @@ public static class UploadLogSeed
     /// The registered collector for a key, or the first registered one when nothing matches.
     /// </summary>
     /// <remarks>
-    /// The fallback keeps a screenshot possible from whatever collectors a developer's build
-    /// happens to register. <see cref="Build"/> returns early on an empty list, so there is always
-    /// a first collector to fall back to.
+    /// The fallback keeps a screenshot possible with whatever collectors a build registers.
+    /// <see cref="Build"/> returns early on an empty list, so a first collector always exists.
     /// </remarks>
     private static ICollector Find(IReadOnlyList<ICollector> collectors, string categoryKey)
     {

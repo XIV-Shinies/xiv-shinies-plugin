@@ -30,11 +30,7 @@ public enum TokenFeedbackKind
 /// <summary>
 /// Chooses which message the token box shows, from what is typed and what the server last said.
 /// </summary>
-/// <remarks>
-/// The decision lives here: it consults both the probe's outcome and the contents of the text box.
-/// The window holds only the mapping from a kind to a color and a sentence, which is the part that
-/// cannot be wrong in an interesting way.
-/// </remarks>
+/// <remarks>The window only maps each kind to a color and a sentence.</remarks>
 public static class TokenFeedback
 {
     /// <summary>Decides what to say about the token as it currently stands.</summary>
@@ -47,9 +43,8 @@ public static class TokenFeedback
         TokenCheckState.Invalid => TokenFeedbackKind.Rejected,
         TokenCheckState.Unreachable => TokenFeedbackKind.Unreachable,
 
-        // Nothing has been checked. What to say depends on what is in the box: an empty box needs an
-        // instruction, a malformed one needs a correction, and a well-formed one needs a nudge to
-        // press the button. Telling the user "select Verify" beside an empty box would be silly.
+        // Unchecked: an empty box needs an instruction, a malformed one a correction, and a
+        // well-formed one a nudge to press Verify.
         _ when string.IsNullOrEmpty(token) => TokenFeedbackKind.Empty,
         _ when !TokenFormat.IsWellFormed(token) => TokenFeedbackKind.Malformed,
         _ => TokenFeedbackKind.ReadyToVerify,

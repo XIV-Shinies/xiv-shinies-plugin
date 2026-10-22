@@ -8,8 +8,6 @@ namespace XIVShinies.SyncPlugin.Api;
 /// Every field but <see cref="Ok"/> is nullable because each outcome carries a different set of
 /// them; an absent field reads as null. Error bodies use <see cref="ErrorResponse"/> instead.
 /// </remarks>
-// `sealed record` is an immutable data type nothing can subclass; each `{ get; init; }` property
-// is filled in by the JSON reader and read-only afterwards.
 public sealed record CrucibleObservationsResponse
 {
     /// <summary>True on every 200.</summary>
@@ -24,12 +22,15 @@ public sealed record CrucibleObservationsResponse
     /// </summary>
     public string? RunId { get; init; }
 
-    /// <summary>On <c>applied</c>, how many run events the snapshots produced.</summary>
+    /// <summary>
+    /// On <c>applied</c>, how many run events the server wrote for the upload, which can include an
+    /// earlier piece's outcome.
+    /// </summary>
     public int? Events { get; init; }
 
     /// <summary>
-    /// On <c>applied</c>, how many snapshots produced nothing because the player had already
-    /// logged that piece themselves on the website.
+    /// On <c>applied</c>, how many run events the server did not write because the player had
+    /// already logged them on the website.
     /// </summary>
     public int? Skipped { get; init; }
 
@@ -38,19 +39,16 @@ public sealed record CrucibleObservationsResponse
 }
 
 /// <summary>The <c>outcome</c> words the contract defines.</summary>
-// A `static class` only holds shared members and is never instantiated, and each `const string`
-// is a value fixed when the code is compiled: together, a module of exported string constants.
 public static class CrucibleOutcomes
 {
     /// <summary>The character has a run on this board, and the snapshots were applied to it.</summary>
     public const string Applied = "applied";
 
-    /// <summary>
-    /// The server kept the snapshots for a while rather than applying them to a run. A board's
-    /// snapshots are held while the character has no active run, and applied once a run on that
-    /// board starts; the entrance's are held whether or not a run is active, and never applied to
-    /// one.
-    /// </summary>
+    /// <summary>The server kept the snapshots rather than applying them.</summary>
+    /// <remarks>
+    /// A board's are held while the character has no active run and applied once a run on that board
+    /// starts; the entrance's are held either way and never applied to a run.
+    /// </remarks>
     public const string Held = "held";
 
     /// <summary>The character's run is on a different board; nothing was written to it.</summary>

@@ -33,17 +33,16 @@ public class SyncPayloadBuilderTests
     [Fact]
     public void A_snapshot_built_without_source_notes_yields_no_item_sources()
     {
-        // The Snapshot helper never sets SourceNotes, so this pins the property's default (an
-        // empty dictionary) flowing through Build as an omitted itemSources key.
+        // The Snapshot helper leaves SourceNotes at its default, an empty dictionary.
         var request = SyncPayloadBuilder.Build(
             Identity, "1.0.0", SyncTrigger.Manual, Snapshot("quests"), manifestVersion: null);
 
         Assert.Null(request.ItemSources);
     }
 
-    // The unreadable state exists for the settings panel only: it marks a source the game never
-    // exposes (mannequins), so it carries no counts the server could judge. Sending it would be
-    // a constant fact repeated on every upload — noise the data-minimization rule says to omit.
+    // The unreadable state is for the settings panel: it marks a source the game never exposes
+    // (mannequins) and carries no counts. Data minimization keeps a fact that never changes off the
+    // wire.
     [Fact]
     public void An_unreadable_source_note_stays_off_the_wire()
     {
@@ -67,8 +66,7 @@ public class SyncPayloadBuilderTests
     [Fact]
     public void A_snapshot_whose_only_source_note_is_unreadable_yields_no_item_sources()
     {
-        // With the unreadable note dropped there is nothing left to say, and an empty itemSources
-        // object is exactly the noise the omitted-key rule exists to avoid.
+        // An empty itemSources object is the noise the omitted-key rule avoids.
         var snapshot = Snapshot("items") with
         {
             SourceNotes = new Dictionary<string, ItemSourceStatus>
@@ -107,12 +105,9 @@ public class SyncPayloadBuilderTests
         Assert.Equal(2, request.Collections.Count);
     }
 
-    // An unlock names the one category that changed rather than sweeping all of them, because the
-    // contract says an `unlock` upload "stamps the upload moment as the acquisition time for every
-    // category in it". A sweep would therefore date rows in categories that did not change, and an
-    // acquisition date, once written, is never revised by a later plugin upload. Routing also keeps
-    // the work small: unlocks arrive in bursts, and a sweep would re-scan every inventory container
-    // to re-report what the server already knows.
+    // The contract stamps an unlock upload's moment as the acquisition time for every category in
+    // it, and a later upload never revises that date, so a sweep would misdate unchanged rows.
+    // Naming one category also spares a burst of unlocks a re-scan of every inventory container.
     [Fact]
     public void An_unlock_upload_carries_only_the_category_that_was_unlocked()
     {
@@ -142,7 +137,7 @@ public class SyncPayloadBuilderTests
         Assert.Equal("a1b2c3d4e5f6", request.ManifestVersion);
     }
 
-    // A snapshot that read nothing still round-trips: `collections` is an empty object, not null.
+    // `collections` is an empty object, never null.
     [Fact]
     public void An_empty_snapshot_produces_an_empty_collections_object()
     {
@@ -152,7 +147,7 @@ public class SyncPayloadBuilderTests
         Assert.Empty(request.Collections);
     }
 
-    // The contract trims the name and caps it at 100 characters; sending untrimmed input would fail
+    // The contract trims the name but length-checks the world as sent, so a padded world could fail
     // validation and reject the whole upload.
     [Fact]
     public void Trims_the_character_name_and_world()
@@ -166,8 +161,7 @@ public class SyncPayloadBuilderTests
         Assert.Equal("Excalibur", request.HomeWorld);
     }
 
-    // Nothing to upload is not the same as nothing to say — but the caller decides that, not the
-    // builder. The builder must never invent facts.
+    // The builder never invents facts; whether an empty pass is worth sending is the caller's call.
     [Fact]
     public void Never_adds_a_category_the_snapshot_did_not_contain()
     {
@@ -206,10 +200,9 @@ public class SyncPayloadBuilderTests
         Assert.Null(request.ItemSources);
     }
 
-    // "full" tells the server this list is the character's COMPLETE set — the one declaration that
-    // makes an id's ABSENCE meaningful (it powers the site's disputed-manual-mark surface). Note
-    // the category key here is one the plugin has never heard of: scope declaration is generic
-    // collector self-description, exactly like the facts themselves.
+    // "full" says the list is the character's complete set, the one declaration that makes an absent
+    // id meaningful (the site's disputed manual marks). The key is one the plugin does not know: a
+    // scope is generic collector self-description, like the facts.
     [Fact]
     public void A_complete_enumeration_is_declared_full_on_a_snapshot_upload()
     {
@@ -221,9 +214,8 @@ public class SyncPayloadBuilderTests
         Assert.Equal(CollectionScopeValues.Full, request.CollectionScopes!["facewear"]);
     }
 
-    // A delta upload must not claim completeness, so the builder withholds every declaration on an
-    // unlock trigger whatever the collector read. Keyed on the trigger alone — no category is
-    // consulted — so it holds for every collection.
+    // A delta upload must not claim completeness. Keyed on the trigger alone, so it holds for every
+    // collection.
     [Fact]
     public void An_unlock_upload_never_declares_full_scope()
     {
@@ -234,8 +226,7 @@ public class SyncPayloadBuilderTests
         Assert.Null(request.CollectionScopes);
     }
 
-    // Omitting the object means "partial" server-side, so when nothing was complete there is
-    // nothing to say — an empty scopes object would be noise, like an empty itemSources.
+    // The server reads a missing object as "partial", so an empty one would be noise.
     [Fact]
     public void Omits_collection_scopes_when_nothing_was_complete()
     {
@@ -245,8 +236,7 @@ public class SyncPayloadBuilderTests
         Assert.Null(request.CollectionScopes);
     }
 
-    // A scope may only describe a list that is actually in this upload. Declaring "full" for an
-    // absent category would assert completeness of facts the server never received.
+    // "full" for an absent category would claim completeness of facts the server never received.
     [Fact]
     public void A_scope_is_never_declared_for_a_category_the_upload_does_not_carry()
     {
@@ -257,9 +247,8 @@ public class SyncPayloadBuilderTests
         Assert.Null(request.CollectionScopes);
     }
 
-    // The uncarried key must cost only ITSELF. An implementation that bailed out of the whole
-    // object on seeing one missing key would pass every other test here while silently dropping a
-    // legitimate declaration whenever some other collector's category went absent.
+    // The uncarried key costs only itself. Bailing out of the whole object would pass every other
+    // test here while dropping real declarations.
     [Fact]
     public void An_uncarried_complete_key_does_not_suppress_the_categories_that_are_carried()
     {
@@ -278,8 +267,7 @@ public class SyncPayloadBuilderTests
         Assert.False(request.CollectionScopes.ContainsKey("ornaments"));
     }
 
-    // "partial" is the server's default for an absent key, so spending bytes to state it would say
-    // nothing at all. The plugin emits "full" or emits nothing.
+    // "partial" is the server's default for an absent key, so the plugin sends "full" or nothing.
     [Fact]
     public void The_literal_partial_value_is_never_sent()
     {
@@ -293,9 +281,9 @@ public class SyncPayloadBuilderTests
         Assert.DoesNotContain(CollectionScopeValues.Partial, request.CollectionScopes!.Values);
     }
 
-    // The contract caps manifestVersion at 100 characters and a 400 is terminal, so an over-long
-    // echo sent verbatim would stop syncing outright. Dropped rather than shortened: the field is
-    // optional, and a shortened version string is just a different wrong value.
+    // The contract caps manifestVersion at 100 characters, so an over-long echo would fail every
+    // upload with a 400. Dropped, not shortened: the field is optional, and a shortened version is a
+    // different wrong value.
     [Fact]
     public void An_over_long_manifest_echo_is_dropped_rather_than_sent()
     {

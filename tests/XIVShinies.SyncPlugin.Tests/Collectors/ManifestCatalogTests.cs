@@ -6,10 +6,9 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// The catalog is the single place that knows a server manifest exists: what its ids are, whether
-// the server sent more than the ceiling allows, and the words to warn in. These tests guard the
-// two things a table cannot enforce about itself — that every descriptor names a category a
-// collector could actually pass, and that each one bounds its own read at the ceiling.
+// ManifestCatalog is the one place that knows a server manifest exists. These tests guard what a
+// table cannot enforce itself: every descriptor names a real category, and each bounds its read at
+// the ceiling.
 public class ManifestCatalogTests
 {
     private static ConfigResponse Config(
@@ -27,12 +26,12 @@ public class ManifestCatalogTests
     private static IReadOnlyList<uint> Ids(int count) =>
         Enumerable.Range(1, count).Select(i => (uint)i).ToList();
 
-    // Every key a collector could pass to ManifestFor, as a set for lookup.
+    // Every key a collector could pass to ManifestFor.
     private static readonly HashSet<string> KnownCategoryKeys =
         CategoryKeyReflection.All().ToHashSet();
 
-    // A descriptor keyed to something no collector can name is unreachable: ManifestFor would
-    // answer empty for the real category and nothing would ever read the manifest.
+    // A descriptor keyed to no real category is unreachable: ManifestFor would answer empty for the
+    // real one, and nothing would read the manifest.
     [Fact]
     public void Every_descriptor_names_a_real_category()
     {
@@ -45,8 +44,8 @@ public class ManifestCatalogTests
             ManifestCatalog.All.Select(d => d.CategoryKey).Distinct().Count());
     }
 
-    // Without this, every "empty manifest" assertion elsewhere would still pass if a descriptor
-    // were dropped from the table — ManifestFor answers empty for anything unregistered.
+    // ManifestFor answers empty for anything unregistered, so without this every empty-manifest
+    // assertion elsewhere would still pass with a descriptor dropped.
     [Fact]
     public void The_manifest_driven_categories_are_registered()
     {
@@ -54,8 +53,7 @@ public class ManifestCatalogTests
         Assert.NotNull(ManifestCatalog.For(CategoryKeys.QuestSequences));
     }
 
-    // Walks the table rather than naming manifests, so a descriptor added later inherits the
-    // ceiling coverage instead of quietly having none.
+    // Walks the table, so a descriptor added later is covered too.
     [Fact]
     public void Every_descriptor_bounds_its_read_at_the_ceiling()
     {
@@ -72,8 +70,8 @@ public class ManifestCatalogTests
         });
     }
 
-    // A category with no manifest is the ordinary case — most collectors read the game directly —
-    // so asking for one must answer "nothing to look up" rather than throwing.
+    // Most collectors read the game directly, so asking for a missing manifest must answer empty,
+    // not throw.
     [Fact]
     public void A_category_with_no_manifest_reads_as_empty()
     {
@@ -104,8 +102,6 @@ public class ManifestCatalogTests
         Assert.Empty(context.TruncatedManifests);
     }
 
-    // Each manifest is measured against the ceiling on its own, so one oversized list never
-    // implicates another.
     [Fact]
     public void Only_the_oversized_manifest_is_reported_as_truncated()
     {
@@ -135,8 +131,8 @@ public class ManifestCatalogTests
             context.TruncatedManifests);
     }
 
-    // The orchestrator holds the logger but knows nothing about a manifest beyond its key, so the
-    // catalog has to hand back wording specific enough to act on.
+    // The orchestrator knows a manifest only by its key, so the catalog supplies wording specific
+    // enough to act on.
     [Theory]
     [InlineData(CategoryKeys.Items, "item manifest", "scanned")]
     [InlineData(CategoryKeys.QuestSequences, "quest-sequence manifest", "looked up")]

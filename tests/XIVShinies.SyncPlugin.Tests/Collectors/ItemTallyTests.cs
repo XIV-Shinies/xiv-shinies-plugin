@@ -7,11 +7,10 @@ using XIVShinies.SyncPlugin.Collectors;
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
 /// <summary>
-/// Tests for item tally aggregation and possession emission. The explicit-zero rule: every
-/// scanned manifest id emits an entry, even at count zero — a present entry is a reported
-/// fact, an absent id carries no information. What the server does with a count is its call
-/// per id (see docs/api-contract.md); the plugin's job is only to report honestly.
+/// Pins item tallies and the explicit-zero rule: every scanned manifest id emits an entry, even at
+/// zero, because an absent id carries no information.
 /// </summary>
+/// <remarks>What the server does with a count is its call per id; see docs/api-contract.md.</remarks>
 public class ItemTallyTests
 {
     [Fact]
@@ -30,11 +29,9 @@ public class ItemTallyTests
         Assert.True(entry.Fresh);              // the live scan ran; caches only ever ADD to a count
     }
 
-    // The omit-when-unseen rule: the server lists the ids (content-bound currencies — see
-    // docs/api-contract.md) whose absence from every scan source means "not visible from
-    // here", never "you own 0" — the game only exposes them while the character is inside
-    // their content. For those ids an ABSENT entry is the honest report; an explicit zero
-    // would overwrite the real count the server already holds.
+    // The server lists content-bound currencies, which the game exposes only inside their content
+    // (see docs/api-contract.md). For those, no source resolving the id means "not visible here",
+    // and an explicit zero would overwrite the real count the server holds.
     [Fact]
     public void An_unseen_omit_listed_id_gets_no_entry_instead_of_an_explicit_zero()
     {
@@ -44,15 +41,13 @@ public class ItemTallyTests
             cached: new Dictionary<uint, ItemTally>(),
             omitWhenUnseen: new HashSet<uint> { 45043 });
 
-        // The ordinary id keeps its explicit zero; the omit-listed one is absent entirely.
         var entry = Assert.Single(result);
         Assert.Equal(42u, entry.Id);
         Assert.Equal(0u, entry.Count);
     }
 
-    // "Unseen" means no source resolved the id at all. A value from any source — here the
-    // live pass, which is what an in-zone scan produces for a content-bound currency — is a
-    // real reading and reports exactly like any other id's.
+    // "Unseen" means no source resolved the id. A live reading, which an in-zone scan produces, is
+    // as real as any other id's.
     [Fact]
     public void An_omit_listed_id_resolved_live_is_reported_normally()
     {
@@ -68,9 +63,8 @@ public class ItemTallyTests
         Assert.True(entry.Fresh);
     }
 
-    // "Resolved" is PRESENCE in a tally, not a nonzero count: a source that positively
-    // reported a zero has seen the id, so its reading must ship. Omission keys on absence
-    // from every source, never on a zero total — those are different rules.
+    // "Resolved" means present in a tally, not a nonzero count: a source that reported a zero has
+    // seen the id.
     [Fact]
     public void An_omit_listed_id_present_with_a_zero_tally_still_ships_its_zero()
     {
@@ -103,8 +97,7 @@ public class ItemTallyTests
     [Fact]
     public void Live_and_cached_counts_sum_and_a_cache_contribution_marks_the_entry_stale()
     {
-        // 5 in the bags plus 300 on a retainer is 305 held; part of the number came from a cache,
-        // so the entry is reported not-fresh.
+        // 5 in the bags plus 300 on a retainer.
         var live = new Dictionary<uint, ItemTally> { [42] = new(Nq: 5, Hq: 0, Collectable: 0) };
         var cached = new Dictionary<uint, ItemTally> { [42] = new(Nq: 300, Hq: 0, Collectable: 0) };
 
@@ -129,8 +122,8 @@ public class ItemTallyTests
     [Fact]
     public void Id_zero_is_skipped_and_duplicate_manifest_ids_emit_one_entry()
     {
-        // Id 0 matches the padding in the game's cached arrays, and the server rejects the whole
-        // upload over a single invalid id. A duplicate manifest id would double-report the item.
+        // Id 0 is padding in the game's cached arrays, and one invalid id makes the server reject
+        // the whole upload. A duplicate manifest id would double-report the item.
         var live = new Dictionary<uint, ItemTally> { [42] = new(Nq: 1, Hq: 0, Collectable: 0) };
 
         var result = ItemTallies.BuildPossessions(
@@ -153,9 +146,8 @@ public class ItemTallyTests
     [Fact]
     public void A_cached_only_item_reports_cached_counts_with_fresh_false()
     {
-        // The live containers were scanned and readable (or the scan wouldn't have run), so a live
-        // absence (item not found in any live container) is a real zero. A cache presence with
-        // no live match means the count came from a previous scan, not this one.
+        // The live scan runs only when its containers are readable, so a live absence is a real
+        // zero. A cached count came from an earlier scan.
         var cached = new Dictionary<uint, ItemTally> { [42] = new(Nq: 100, Hq: 20, Collectable: 0) };
 
         var entry = Assert.Single(ItemTallies.BuildPossessions(
@@ -171,9 +163,7 @@ public class ItemTallyTests
     [Fact]
     public void Mixed_quality_contributions_merge_per_quality_and_any_cache_share_marks_stale()
     {
-        // Live holds NQ and HQ copies; only the collectables came from a cache. Each quality is
-        // still reported from its own source — never blended — and the single cached quality is
-        // enough to mark the whole entry not-fresh.
+        // Live holds the NQ and HQ copies; only the collectables come from a cache.
         var live = new Dictionary<uint, ItemTally> { [42] = new(Nq: 5, Hq: 2, Collectable: 0) };
         var cached = new Dictionary<uint, ItemTally> { [42] = new(Nq: 0, Hq: 0, Collectable: 3) };
 
@@ -199,8 +189,7 @@ public class ItemTallyTests
     [Fact]
     public void An_id_outside_the_manifest_is_never_reported()
     {
-        // The server names the ids it wants; anything else the scan happened to tally stays
-        // off the wire. Only the manifest drives the output.
+        // The server names the ids it wants; anything else the scan tallied stays off the wire.
         var live = new Dictionary<uint, ItemTally> { [99] = new(Nq: 5, Hq: 0, Collectable: 0) };
 
         var result = ItemTallies.BuildPossessions(
@@ -215,9 +204,8 @@ public class ItemTallyTests
     [Fact]
     public void Entries_come_out_in_manifest_order()
     {
-        // Entries mirror the order of the manifest the server sent — a deterministic, obvious
-        // order that makes uploads reproducible and logs easy to compare against the manifest.
-        // Iterating one of the dictionaries instead would make the order arbitrary.
+        // Manifest order keeps uploads reproducible and logs easy to compare with the manifest.
+        // Iterating a dictionary would make the order arbitrary.
         var live = new Dictionary<uint, ItemTally>
         {
             [7] = new(Nq: 1, Hq: 0, Collectable: 0),

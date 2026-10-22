@@ -9,43 +9,28 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Sync;
 
-/// <summary>
-/// One category's contribution to an upload: its wire key, how many facts went out, a short
-/// content fingerprint, whether its scope comes from the server's item manifest, and — for a
-/// manifest-driven category — how many of its entries the character holds a copy of.
-/// </summary>
-/// <remarks>
-/// The fingerprint exists because the count alone cannot see an exchange: swapping one fact for
-/// another leaves the count identical while the payload's contents change. It is a hash of the
-/// facts, so the log still carries no ids — just enough to answer "did this category's contents
-/// change since last time?".
-/// <para>
-/// <paramref name="Count"/> is null when the pass read none of what the category is about while
-/// still having something to send (see <see cref="CollectResult.NothingReadThisPass"/>). That is
-/// not the same as a count of zero: zero is a measurement, null is the absence of one. A null
-/// count makes no claim about the category's contents, so the content diff passes over it; a
-/// manifest-driven category is still compared on its owned-entry count.
-/// </para>
-/// <para>
-/// <paramref name="UsesItemManifest"/> mirrors the collector's own
-/// <see cref="Collectors.ICollector.UsesItemManifest"/> flag. It decides the category's change
-/// signal: a manifest-driven category's contents move whenever the server edits the manifest, so
-/// a content diff cannot tell "the player obtained something" from "the manifest grew". Its
-/// signal compares <paramref name="OwnedCount"/> instead — how many manifest entries the
-/// character holds at least one copy of, in any quality. That number ignores manifest growth
-/// with items the character lacks (a newly asked-about item adds an unowned entry) and ignores
-/// balance movement on items already held (a currency ticking between two positive values), so
-/// when it moves, the set of items the plugin could see the character holding changed. Usually
-/// that is a pickup — but a storage source becoming readable mid-session (opening the armoire,
-/// glamour dresser, or saddlebag for the first time), a consent-group toggle, or a manifest
-/// edit touching an item already held moves it too, so the mark reads "your visible holdings
-/// changed", not strictly "you looted something". Null for every other category, and for a
-/// manifest-driven one whose facts were not the possession shape — with nothing honest to
-/// compare, no flag is shown.
-/// </para>
-/// </remarks>
-// A "positional record": the parameter list declares init-only properties and a constructor in
-// one line — the C# shorthand for a tiny immutable data shape.
+/// <summary>One category's part of an upload. The log keeps counts and a fingerprint, never ids.</summary>
+/// <param name="Key">The category's wire key.</param>
+/// <param name="Count">
+/// How many facts went out, or null when the pass read none of what the category is about but still
+/// sent something (see <see cref="CollectResult.NothingReadThisPass"/>). Null is no measurement, not
+/// zero, so the content diff skips it.
+/// </param>
+/// <param name="Fingerprint">
+/// A short hash of the facts. It catches a one-for-one swap that leaves the count unchanged.
+/// </param>
+/// <param name="UsesItemManifest">
+/// Mirrors <see cref="Collectors.ICollector.UsesItemManifest"/>. Such a category's contents move
+/// whenever the server edits the manifest, so its change signal compares
+/// <paramref name="OwnedCount"/> instead of its contents.
+/// </param>
+/// <param name="OwnedCount">
+/// For a manifest-driven category, how many entries the character holds at least one copy of, in any
+/// quality. It ignores new unowned entries and balance changes on held items, so it moves when the
+/// visible holdings change: usually a pickup, but also a first look in the armoire, glamour dresser or
+/// saddlebag, a consent-group toggle, or a manifest edit to a held item. Null for every other
+/// category, and when the facts are not the possession shape; then no change is flagged.
+/// </param>
 public sealed record UploadLogCategory(
     string Key,
     int? Count,
@@ -73,42 +58,33 @@ public enum UploadLogSource
 }
 
 /// <summary>
-/// One upload, as shown in the settings window's upload log: when, why, what was sent, and how
-/// the server answered.
+/// One upload in the settings window's upload log: when, why, what was sent, and how the server
+/// answered.
 /// </summary>
 /// <remarks>
-/// A transparency surface: a sync row is built from the same snapshot the payload was built from,
-/// at the moment the payload was assembled — never reconstructed after the fact. A live tracker
-/// or Crucible sharing row records a halting refusal instead (see <see cref="LiveHalt"/>). Rows
-/// carry category <b>keys</b>, not names: the window maps keys to whatever the registered
-/// collectors call themselves, so this type stays free of category-name knowledge.
+/// For transparency, a sync row is built from the snapshot the payload was built from, when the
+/// payload was assembled, never reconstructed later. A live tracker or Crucible sharing row records a
+/// halting refusal instead (see <see cref="LiveHalt"/>). Rows carry category keys, not names, which
+/// the window maps to the registered collectors' names, so this type knows no category names.
 /// </remarks>
 public sealed record UploadLogEntry
 {
     /// <summary>
-    /// When a sync row's payload was assembled, or when a live tracker or Crucible sharing row's
-    /// refusal arrived (UTC; the window renders it in local time).
+    /// When a sync row's payload was assembled, or a live tracker or Crucible sharing row's refusal
+    /// arrived. UTC; the window shows local time.
     /// </summary>
     public required DateTimeOffset At { get; init; }
 
-    /// <summary>
-    /// Which upload path the row is about: a collection sync, the live tracker, or the Crucible
-    /// sharing.
-    /// </summary>
+    /// <summary>Which upload path the row is about.</summary>
     public UploadLogSource Source { get; init; } = UploadLogSource.Sync;
 
-    /// <summary>
-    /// What prompted a sync upload; null on a live tracker or Crucible sharing row, which has no
-    /// trigger.
-    /// </summary>
-    // `required` with a nullable type: the caller must still set it, so a sync row cannot leave it
-    // out by accident, but a live tracker or Crucible sharing row may set it to null.
+    /// <summary>What prompted a sync upload; null on a live tracker or Crucible sharing row.</summary>
+    // Required although nullable, so a sync row cannot leave it out by accident.
     public required SyncTrigger? Trigger { get; init; }
 
     /// <summary>
-    /// The longest server-supplied string an entry will keep (the validation detail, the manifest
-    /// version). The backend is user-overridable and therefore untrusted; entries persist for up
-    /// to twenty uploads and render in ImGui, so adopted text is clamped at the door.
+    /// The longest server-supplied string an entry keeps (the validation detail, the manifest
+    /// version); see <see cref="ServerText.MaxAdoptedLength"/>.
     /// </summary>
     public const int MaxServerStringLength = ServerText.MaxAdoptedLength;
 
@@ -124,19 +100,12 @@ public sealed record UploadLogEntry
     /// <summary>The categories this pass could not read, keyed by category, with the reason code.</summary>
     public required IReadOnlyDictionary<string, string> Skipped { get; init; }
 
-    /// <summary>
-    /// The keys from <see cref="Skipped"/> that represent something going wrong, in key order.
-    /// </summary>
+    /// <summary>The keys from <see cref="Skipped"/> that mean something went wrong, in key order.</summary>
     /// <remarks>
-    /// <para>
-    /// A category skipped by a decision, such as one the user switched off, is not a failure, so it
-    /// is not listed (see <see cref="CollectSkipReasons.IsDeliberate"/>).
-    /// </para>
-    /// <para>
-    /// Filtered on the REASON, never on a category, so nothing here knows which collections exist.
-    /// The full <see cref="Skipped"/> map is left intact for the pasted diagnostic, where
-    /// "disabled" is exactly the answer to "why did this not sync?".
-    /// </para>
+    /// A skip the user chose, such as a switched-off category, is not a failure (see
+    /// <see cref="CollectSkipReasons.IsDeliberate"/>). It filters on the reason, never the category,
+    /// so it knows no collections. <see cref="Skipped"/> stays whole for the pasted diagnostic, where
+    /// "disabled" answers "why did this not sync?".
     /// </remarks>
     public IReadOnlyList<string> UnreadableCategoryKeys
     {
@@ -149,29 +118,27 @@ public sealed record UploadLogEntry
                     keys.Add(key);
             }
 
-            // Sorted so the line reads the same twice running: the underlying map is a Dictionary,
-            // whose enumeration order is not part of its contract.
+            // Sorted so the line reads the same twice running: a Dictionary's order is not guaranteed.
             keys.Sort(StringComparer.Ordinal);
             return keys;
         }
     }
 
     // --- Failure diagnostics -----------------------------------------------------------------
-    // Optional, and filled at settle time (except the manifest version, known at build time).
-    // They exist for the pasted-into-Discord bug report: each answers a "why did it fail"
-    // question the status alone cannot. None carries identity — the log must stay structurally
-    // incapable of leaking who the character is.
+    // Optional, and filled at settle time except the manifest version, known at build time. Each
+    // answers a "why did it fail" question for the bug report a user pastes. None carries identity:
+    // the log must be unable to leak who the character is.
 
     /// <summary>Which attempt settled the upload: 1 on the first try, 2 after a retry.</summary>
     public int Attempt { get; init; } = 1;
 
     /// <summary>
-    /// The <c>/config</c> manifest version the items list was built against, or null when no
-    /// config had been fetched — the first question when relic counts look wrong server-side.
+    /// The <c>/config</c> manifest version the items list was built against, or null when no config
+    /// had been fetched. The first question when relic counts look wrong server-side.
     /// </summary>
     public string? ManifestVersion { get; init; }
 
-    /// <summary>How long the server asked us to wait, on rate-limited/paused deferrals.</summary>
+    /// <summary>How long the server asked us to wait, on a rate-limited or paused deferral.</summary>
     public TimeSpan? RetryAfter { get; init; }
 
     /// <summary>
@@ -181,24 +148,26 @@ public sealed record UploadLogEntry
     public int? HttpStatusCode { get; init; }
 
     /// <summary>
-    /// The server's validation complaints on a rejected payload, flattened to one line — a 400
-    /// is by definition a plugin bug, and this is the server saying exactly which field it hated.
+    /// The server's validation complaints on a rejected payload, flattened to one line. A 400 is
+    /// always a plugin bug, and this names the field the server rejected.
     /// </summary>
     public string? Detail { get; init; }
 
     /// <summary>
-    /// The relic-step rows this upload created or promoted, from the response's
-    /// <c>provenSteps</c> key — the server's answer to "did these items prove anything new?".
-    /// Zero means the items were applied but nothing new was proved. Null means the server sent
-    /// no answer: on an accepted upload that sent item facts, that is derivation failing
-    /// server-side (the next upload retries it). A manifest-driven category that went out empty
-    /// carries no information — the server applies nothing — so it is never owed an answer.
+    /// How many relic-step rows this upload created or promoted, from the response's
+    /// <c>provenSteps</c> key.
     /// </summary>
+    /// <remarks>
+    /// Zero means the items applied but proved nothing new. Null on an accepted upload that sent item
+    /// facts means derivation failed server-side, and the next upload retries it. A manifest-driven
+    /// category that went out empty carries no information, so the server applies nothing and owes
+    /// no answer.
+    /// </remarks>
     public int? ProvenSteps { get; init; }
 
     /// <summary>
-    /// Summarizes a collection snapshot into a draft entry, before the upload's outcome is known.
-    /// Settle it once the response lands: <c>draft with { Status = response.Status, … }</c>.
+    /// Summarizes a collection snapshot into a draft entry, before the outcome is known. Settle it
+    /// when the response lands: <c>draft with { Status = response.Status, … }</c>.
     /// </summary>
     public static UploadLogEntry Draft(
         DateTimeOffset at,
@@ -211,10 +180,8 @@ public sealed record UploadLogEntry
         {
             var manifestDriven = snapshot.ManifestDrivenKeys.Contains(key);
 
-            // No count at all where the collector read none of what it is about; otherwise the
-            // collector's own count wins where it gave one, since it knows which part of its facts
-            // is the thing being counted and the shape count below cannot (see
-            // CollectResult.FactCount). Most categories give none, and are counted from shape.
+            // Null when the pass read none of what the category is about. Otherwise the collector's
+            // own count when it gave one (see CollectResult.FactCount), else a shape count.
             var count = snapshot.NothingReadKeys.Contains(key)
                 ? (int?)null
                 : snapshot.FactCounts.TryGetValue(key, out var reported)
@@ -237,24 +204,21 @@ public sealed record UploadLogEntry
             Categories = categories,
             Skipped = snapshot.Skipped,
 
-            // A content hash (12 chars from our server), but the backend is user-overridable, so
-            // clamp it like every other adopted server string before it persists in the log. No
-            // ellipsis: this is a hash a reader checks back against the server's, so a trailing
-            // marker would make it unrecognizable.
+            // Our server sends a 12-character hash, but this is clamped like any adopted server
+            // string. No ellipsis: a reader checks it against the server's, and a marker would hide it.
             ManifestVersion = manifestVersion is null ? null : ServerText.Clamp(manifestVersion),
         };
     }
 
     /// <summary>
-    /// The row for a live tracker or Crucible sharing upload the server refused in a way only the
-    /// player can fix (a character refusal or a rejected token), which halts syncing as a /sync
-    /// refusal does.
+    /// The row for a live tracker or Crucible sharing upload refused in a way only the player can fix
+    /// (a character refusal or a rejected token), which halts syncing as a /sync refusal does.
     /// </summary>
     /// <remarks>
-    /// Those paths' ordinary uploads get no row: they are frequent, are not the player's
-    /// collection, and succeed or back off on their own. The halt is the exception, because a
-    /// player with only one of them switched on has no sync row to explain why sharing stopped. It
-    /// carries no categories, so the change signal never uses it as a baseline.
+    /// Those paths' ordinary uploads get no row: they are frequent, are not the player's collection,
+    /// and succeed or back off on their own. A halt gets one because a player with only that sharing
+    /// on has no sync row to explain why it stopped. It has no categories, so the change signal never
+    /// uses it as a baseline.
     /// </remarks>
     /// <param name="source">The upload path the server refused.</param>
     /// <param name="at">When the refusal arrived.</param>
@@ -274,15 +238,13 @@ public sealed record UploadLogEntry
         };
 
     /// <summary>
-    /// How many facts a category's JSON carries. Array categories (id lists, item-count objects)
-    /// count their elements; object categories count their members, except that a member which
-    /// is itself a container counts its own entries — so a flat map (quest id → sequence byte)
-    /// counts one per quest, and a nested map (a "jobs" object of 24 per-job records) counts one
-    /// per job rather than collapsing to a single fact. Shape alone decides; no category names.
-    /// Any other shape counts as one fact rather than crashing or hiding it in the log.
+    /// How many facts a category's JSON carries, judged by shape alone, never by category name.
     /// </summary>
-    // A `switch` EXPRESSION: each arm is `pattern => value`, and `_` is the required
-    // catch-all — like a chain of ternaries in JS, but the compiler checks the patterns.
+    /// <remarks>
+    /// An array counts its elements. An object counts its members, but a container member counts its
+    /// own entries: a map of quest id to sequence counts one per quest, and a "jobs" object of per-job
+    /// records counts one per job. Any other shape counts as one rather than crashing or hiding it.
+    /// </remarks>
     private static int CountFacts(JsonNode facts) => facts switch
     {
         JsonArray array => array.Count,
@@ -291,29 +253,29 @@ public sealed record UploadLogEntry
     };
 
     /// <summary>
-    /// The per-quality count members of the manifest possession shape
-    /// (<see cref="Api.ItemPossession"/> on the wire) — every way an entry can hold copies.
+    /// Every per-quality count member of the possession shape (<see cref="Api.ItemPossession"/> on
+    /// the wire).
     /// </summary>
-    // If ItemPossession ever grows another quality, it must be added here too, or entries owned
-    // only in that quality would read as unowned and their pickups would go unflagged.
+    // A quality added to ItemPossession must be added here, or an entry owned only in that quality
+    // reads as unowned and its pickup goes unflagged.
     private static readonly string[] PossessionCountMembers = ["count", "hqCount", "collectableCount"];
 
     /// <summary>
-    /// How many entries of a manifest possession array the character holds at least one copy of,
-    /// in any quality — the number <see cref="UploadLogCategory.OwnedCount"/> carries. Null when
-    /// the facts are not a possession array (not an array at all, or an array of something other
-    /// than objects — an id list, say): there is no possession shape to count, and null keeps
-    /// the change signal honestly silent instead of comparing a guess. An empty array counts as
-    /// zero, not null — "collected, owns none of it" is a real baseline a first pickup can move.
+    /// How many entries of a possession array the character holds at least one copy of, in any
+    /// quality: the <see cref="UploadLogCategory.OwnedCount"/> value.
     /// </summary>
+    /// <remarks>
+    /// Null when the facts are not an array of objects, such as an id list, so the change signal stays
+    /// silent rather than comparing a guess. An empty array counts zero, not null: "collected, owns
+    /// none" is a real baseline a first pickup can move.
+    /// </remarks>
     private static int? CountOwned(JsonNode facts)
     {
         if (facts is not JsonArray entries)
             return null;
 
-        // Shape-sniff the first element: possession arrays are homogeneous, so a non-object
-        // first element means this whole array is some other kind of list and a count of zero
-        // would be a lie, not an answer.
+        // Possession arrays are homogeneous, so a non-object first element means some other kind of
+        // list, where a count of zero would be a lie.
         if (entries.Count > 0 && entries[0] is not JsonObject)
             return null;
 
@@ -332,13 +294,8 @@ public sealed record UploadLogEntry
     {
         foreach (var member in PossessionCountMembers)
         {
-            // The pattern handles an absent member (the indexer returns null); TryGetValue
-            // handles a present member that is not a whole number a uint can hold — a string,
-            // a negative, a fraction. Both simply mean "no copies in this quality". The uint
-            // read works because possession facts come from SyncFacts.Items, which serializes
-            // the DTOs with SerializeToNode and so hands back JsonElement-backed values; a
-            // hand-built JsonValue remembers its source CLR type and can refuse the read —
-            // the trap SyncFacts.Sequences documents where it widens a byte to int.
+            // An absent member, or one no uint can hold, means no copies. The uint read relies on the
+            // JsonElement-backed values SyncFacts.Items builds; SyncFacts.Sequences says why.
             if (possession[member] is JsonValue value
                 && value.TryGetValue(out uint count)
                 && count > 0)
@@ -368,51 +325,40 @@ public sealed record UploadLogEntry
     }
 
     /// <summary>
-    /// A short, deterministic hash of a category's facts. Collectors build their facts in a
-    /// stable order (game sheets iterate in ascending row order), so identical contents always
-    /// hash identically — and any change, even one that leaves the count the same, changes the
-    /// hash.
+    /// A short, deterministic hash of a category's facts. Any change, even one that keeps the count,
+    /// changes it.
     /// </summary>
     /// <remarks>
-    /// The stability depends on that ordering: if a source ever reordered identical facts, the
-    /// hash would change and the log would show a spurious "(changed)". Cosmetic-only — the
-    /// payload and the diff of real content are unaffected — but worth knowing if a gold
-    /// highlight ever appears with no visible difference.
+    /// Stable only because collectors build their facts in a stable order (game sheets iterate in
+    /// ascending row order). A source that reordered identical facts would show a spurious
+    /// "(changed)" with no visible difference; the payload is unaffected.
     /// </remarks>
     private static string Fingerprint(JsonNode facts)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(facts.ToJsonString()));
 
-        // Eight hex characters: not a security boundary, just a change detector — 32 bits is
-        // plenty to make an accidental collision between two consecutive uploads implausible.
+        // Eight hex characters: a change detector, not a security boundary. 32 bits makes a
+        // collision between two consecutive uploads implausible.
         return Convert.ToHexStringLower(bytes.AsSpan(0, 4));
     }
 }
 
-/// <summary>
-/// The most recent uploads, newest first — what the settings window's upload log renders.
-/// </summary>
+/// <summary>The most recent uploads, newest first: what the settings window's upload log renders.</summary>
 /// <remarks>
-/// In memory only, deliberately: persisting a history of what a character owns would be a new
-/// data store to disclose, for a feature whose job is transparency about the current session.
-/// Bounded so a long session cannot grow it forever.
+/// In memory only: a persisted history of what a character owns would be a new data store to
+/// disclose, for a log about the current session. Bounded so a long session cannot grow it forever.
 /// </remarks>
 public sealed class UploadLog
 {
     /// <summary>How many entries are kept before the oldest falls off.</summary>
     public const int Capacity = 20;
 
-    // Readers get whatever list this reference points at; writers publish a NEW list and swap
-    // the reference. A reference swap is atomic in .NET, so the draw thread can read Entries at
-    // any moment without locks — at worst it sees the list from one moment earlier. `volatile`
-    // keeps either thread from caching a stale reference.
+    // Writers publish a new list and swap the reference, so the draw thread reads without a lock and
+    // at worst sees the previous list.
     private volatile IReadOnlyList<UploadLogEntry> entries = Array.Empty<UploadLogEntry>();
 
-    // Guards the WRITERS against each other (readers need no lock — see above). Record runs on
-    // every upload task (the sync upload's, the live tracker's and the Crucible sharing's), and
-    // Clear on the draw thread and at logout; without this, two writers landing together would each
-    // build from the same old list and one change would be lost (a Clear undone, or an entry
-    // dropped).
+    // Serializes the writers: the upload tasks, the clear button on the draw thread, logout, and the
+    // Debug seeding. Two writers building from the same old list would lose one change.
     private readonly object writeLock = new();
 
     /// <summary>The recorded uploads, newest first. The returned list is never mutated.</summary>
@@ -438,7 +384,10 @@ public sealed class UploadLog
         }
     }
 
-    /// <summary>Empties the log — the settings window's clear button.</summary>
+    /// <summary>
+    /// Empties the log. Called by the settings window's clear button, at logout, and before the Debug
+    /// build's screenshot seeding.
+    /// </summary>
     public void Clear()
     {
         lock (writeLock)
@@ -449,25 +398,21 @@ public sealed class UploadLog
 }
 
 /// <summary>
-/// Compares log entries so the window can highlight what changed — the "you just got something
-/// new" signal beside a count.
+/// Compares log entries so the window can highlight what changed: the "you just got something new"
+/// signal beside a count.
 /// </summary>
 public static class UploadLogDiff
 {
     /// <summary>
-    /// The category keys in <c>newestFirst[index]</c> whose signal moved against that category's
-    /// most recent earlier appearance in the log — a different count or fingerprint, or, for a
-    /// manifest-driven category, a different owned-entry count.
+    /// The category keys in <c>newestFirst[index]</c> whose count or fingerprint, or for a
+    /// manifest-driven category whose owned count, differs from the category's last measurement.
     /// </summary>
     /// <remarks>
-    /// The baseline is the nearest OLDER entry that MEASURED the category — not simply the
-    /// previous entry, and not merely one that mentions it: an unlock upload carries only the
-    /// categories that changed, and a carried category may go out with no reading of its own.
-    /// A category the log has never seen before is not flagged — with no baseline, "changed"
-    /// would be a guess, and it would paint the whole first upload of every session.
-    /// Manifest-driven categories compare their owned-entry count rather than their contents —
-    /// <see cref="UploadLogCategory"/> explains why a content diff cannot carry their signal —
-    /// and stay unflagged when either side has no owned count to offer.
+    /// The baseline is the nearest older entry that measured the category, since an unlock upload
+    /// carries only the categories that changed and a carried one may have no reading. A category
+    /// with no baseline is not flagged: "changed" would be a guess that paints each session's first
+    /// upload. A manifest-driven category stays unflagged when either side lacks an owned count (see
+    /// <see cref="UploadLogCategory"/> for why it compares that).
     /// </remarks>
     public static IReadOnlySet<string> ChangedCategories(
         IReadOnlyList<UploadLogEntry> newestFirst, int index)
@@ -476,9 +421,6 @@ public static class UploadLogDiff
 
         foreach (var category in newestFirst[index].Categories)
         {
-            // `is not { } baseline` is a null test and an unwrap in one: the loop moves on when
-            // no baseline exists, and every line past it has `baseline` as the record inside
-            // the nullable.
             if (Baseline(newestFirst, index, category) is not { } baseline)
                 continue;
 
@@ -494,9 +436,8 @@ public static class UploadLogDiff
                 continue;
             }
 
-            // A category that read nothing this pass makes no claim about its contents, so it
-            // cannot have changed. The baseline it would otherwise be compared against is the last
-            // pass that measured, and "different from a reading taken earlier" is not movement.
+            // A pass that read nothing makes no claim about the contents, so it cannot have changed;
+            // differing from an older reading is not movement.
             if (category.Count is null)
                 continue;
 
@@ -511,21 +452,13 @@ public static class UploadLogDiff
     }
 
     /// <summary>
-    /// The category's entry in the nearest log row older than <paramref name="index"/> that
-    /// measured it, or null when no older row did.
+    /// The category's entry in the nearest row older than <paramref name="index"/> that measured it,
+    /// or null when none did.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Rows that carried the category without measuring it are passed over, not treated as the
-    /// baseline: they hold nothing to compare against. Skipping them means the last row that
-    /// actually measured stays the point of comparison, so an unmeasured pass in the middle
-    /// neither hides a real change nor invents one.
-    /// </para>
-    /// <para>
-    /// Which number counts as the measurement depends on the category, so the caller's own
-    /// category decides it — a manifest-driven one is compared on its owned-entry count, every
-    /// other on its fact count (<see cref="UploadLogCategory"/> explains why they differ).
-    /// </para>
+    /// Rows that carried the category without measuring it are skipped, so an unmeasured pass in
+    /// between neither hides a real change nor invents one. The caller's category decides what counts
+    /// as measured: the owned count for a manifest-driven one, the fact count otherwise.
     /// </remarks>
     private static UploadLogCategory? Baseline(
         IReadOnlyList<UploadLogEntry> newestFirst, int index, UploadLogCategory category)
@@ -554,8 +487,8 @@ public static class UploadLogDiff
 public static class UploadLogText
 {
     /// <summary>
-    /// What a live tracker or Crucible sharing row's Sent column says: each path sends one kind of
-    /// thing. Null for a sync row, which lists its categories instead.
+    /// What a live tracker or Crucible sharing row's Sent column says. Null for a sync row, which
+    /// lists its categories instead.
     /// </summary>
     /// <param name="source">The row's upload path.</param>
     public static string? LiveSentText(UploadLogSource source) => source switch
@@ -578,12 +511,12 @@ public static class UploadLogText
     };
 
     /// <summary>
-    /// The Trigger column for a row: the path's name for a live tracker or Crucible sharing row,
-    /// the sync trigger for a sync row, and plain "sync" for a sync row that carries none.
+    /// The Trigger column: the path's name for a live tracker or Crucible sharing row, the sync
+    /// trigger for a sync row, and plain "sync" for a sync row that carries none.
     /// </summary>
     /// <remarks>
-    /// Decided by <see cref="UploadLogEntry.Source"/> first, as <see cref="ClipboardText"/> is, so
-    /// the table and the pasted log always agree on which path a row belongs to.
+    /// Decided by <see cref="UploadLogEntry.Source"/> first, as <see cref="ClipboardText"/> is, so the
+    /// table and the pasted log always agree on a row's path.
     /// </remarks>
     public static string TriggerText(UploadLogEntry entry) => entry.Source switch
     {
@@ -603,8 +536,8 @@ public static class UploadLogText
     };
 
     /// <summary>
-    /// The outcome, one short phrase. "Refused" means the user must fix something; "deferred"
-    /// means the plugin will simply try again later; "failed" covers everything else.
+    /// The outcome, one short phrase. "Refused" means the user must fix something; "deferred" means
+    /// the plugin will try again later; "failed" covers everything else.
     /// </summary>
     /// <param name="status">The upload's outcome.</param>
     /// <param name="host">The configured website's address, named where the website is the subject.</param>
@@ -619,19 +552,17 @@ public static class UploadLogText
         ApiStatus.RateLimited => "deferred — rate limited",
         // Every 503 maps here, whatever sent it (see ApiStatus.SyncDisabled), so the phrase names no
         // cause. A pause is named on the settings card, which reads it from /config.
-        // `$"...{host}..."` is an interpolated string, like a template literal.
         ApiStatus.SyncDisabled => $"deferred — {host} is not taking uploads",
         ApiStatus.NetworkError => $"failed — could not reach {host}",
         _ => "failed",
     };
 
-    /// <summary>True only for an accepted upload — the one outcome the log paints green.</summary>
+    /// <summary>True only for an accepted upload, the one outcome the log paints green.</summary>
     public static bool IsSuccess(ApiStatus status) => status == ApiStatus.Ok;
 
     /// <summary>
-    /// The full Outcome-column text: the status phrase plus its qualifiers — the wait the server
-    /// asked for, and the attempt number when a retry was needed. Qualifiers appear only when
-    /// they carry information, so the common first-try success stays one clean word.
+    /// The Outcome column: the status phrase, plus the wait the server asked for and, after a retry,
+    /// the attempt number. A first-try success stays one word.
     /// </summary>
     /// <param name="entry">The logged upload.</param>
     /// <param name="host">The configured website's address (see <see cref="StatusText"/>).</param>
@@ -649,14 +580,12 @@ public static class UploadLogText
     }
 
     /// <summary>
-    /// Flattens a rejected payload's validation complaints to one line, or null when the server
-    /// sent none — form-level errors first, then each failing field with its messages.
+    /// Flattens a rejected payload's validation complaints to one line, form errors first, then each
+    /// failing field with its messages. Null when the server sent none, or the line folds to nothing.
     /// </summary>
     /// <remarks>
-    /// The strings come from the backend, which is user-overridable and therefore not trusted:
-    /// the result is truncated so a hostile server cannot make a log entry (kept for up to 20
-    /// uploads and rendered in ImGui) arbitrarily large. The response body is already capped
-    /// upstream; this is defense in depth at the point the text is adopted.
+    /// Bounded like every adopted server string (see <see cref="UploadLogEntry.MaxServerStringLength"/>).
+    /// The response body is already capped upstream; this is defense in depth.
     /// </remarks>
     public static string? IssuesText(ErrorResponse? error)
     {
@@ -675,8 +604,8 @@ public static class UploadLogText
         {
             foreach (var (field, messages) in fieldErrors)
             {
-                // A null array is an explicit JSON null, which gets past `required` (see ApiJson)
-                // — and Join throws on a null collection even though it tolerates null elements.
+                // An explicit JSON null gets past `required` (see ApiJson), and Join throws on a null
+                // collection though it tolerates null elements.
                 parts.Add($"{field}: {string.Join("; ", messages ?? Array.Empty<string>())}");
             }
         }
@@ -686,34 +615,26 @@ public static class UploadLogText
 
         var text = string.Join(" · ", parts);
 
-        // Folded as well as bounded: this is drawn in the log table, where a newline inside a
-        // server complaint would push the rest of the cell out of sight. SingleLine marks a cut
-        // the same way, and its null-for-blank answer matches this method's contract.
+        // Folded as well as bounded: a newline would push the rest of the log cell out of sight.
         return ServerText.SingleLine(text);
     }
 
     /// <summary>
-    /// True when the outcome is only a delay the plugin handles by itself (it will retry later).
-    /// The log draws these at the normal text color: they need no action, unlike refusals, which
-    /// render red.
+    /// True when the outcome is a delay the plugin retries by itself. The log draws these in the
+    /// normal text color: they need no action, unlike refusals, which render red.
     /// </summary>
     public static bool IsDeferral(ApiStatus status) =>
         status is ApiStatus.RateLimited or ApiStatus.SyncDisabled or ApiStatus.NetworkError;
 
     /// <summary>
-    /// The note the window prints beside a manifest-driven category, from the server's proof
-    /// answer — or null when there is nothing worth saying.
+    /// The note the window prints beside a manifest-driven category, from the server's proof answer,
+    /// or null when there is nothing worth saying.
     /// </summary>
     /// <remarks>
-    /// A manifest-driven category's "(changed)" mark tracks possession only (see
-    /// <see cref="UploadLogDiff.ChangedCategories"/>); this note is the server's side of the
-    /// story — what the sent items proved. The cases:
-    /// steps were proved → say how many; zero proved → silence (the items applied, nothing new —
-    /// no note is the honest rendering); no answer on an accepted upload that sent item facts →
-    /// "proof pending", because derivation failed server-side and the next upload retries it. An
-    /// upload that was not accepted was never owed an answer, and neither was one whose
-    /// manifest-driven categories were all empty — the contract treats an empty array as "no
-    /// information", so the server applies nothing and correctly stays silent. Both return null.
+    /// The "(changed)" mark tracks possession (see <see cref="UploadLogDiff.ChangedCategories"/>);
+    /// this note says what the sent items proved. It counts proved steps, stays silent on zero, and
+    /// says "proof pending" when an upload owed an answer and got none (see
+    /// <see cref="UploadLogEntry.ProvenSteps"/> for which uploads owe one).
     /// </remarks>
     public static string? ProofText(UploadLogEntry entry)
     {
@@ -725,8 +646,8 @@ public static class UploadLogText
             if (steps == 0)
                 return null;
 
-            // "New" is load-bearing: the server's number is the delta this upload proved (rows
-            // created plus promoted), never a running total, and the wording must not read as one.
+            // "New" matters: the server's number is what this upload proved (rows created plus
+            // promoted), never a running total, and the wording must not read as one.
             return steps == 1 ? "1 new step proven" : $"{steps} new steps proven";
         }
 
@@ -737,26 +658,15 @@ public static class UploadLogText
     /// The entry's categories ordered by the name the reader sees, for the window's Sent column.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The settings checklist and the sync card's chips both name the collections alphabetically, and
-    /// this column names the same collections a third time. Ordering all three the same way is what
-    /// lets a reader compare them by position instead of hunting for a name in each list.
-    /// </para>
-    /// <para>
-    /// A COPY is returned rather than the list being sorted in place. The entry records the order the
-    /// collectors ran in, which is a fact about the upload, and the clipboard export prints the
-    /// categories in exactly that order for whoever is debugging a payload — sorting the entry itself
-    /// would quietly rewrite that surface too.
-    /// </para>
+    /// The settings checklist and the sync card's chips also name the collections alphabetically, so
+    /// a reader can compare all three by position. It returns a copy: the entry keeps the order the
+    /// collectors ran in, which the clipboard export prints for whoever is debugging a payload.
     /// </remarks>
     /// <param name="categories">The entry's categories, in the order the collectors ran.</param>
     /// <param name="displayNameFor">
-    /// The label the window draws for a category key. Passed in rather than looked up here: the names
-    /// come from the registered collectors, which only the window can reach. Ordering on this rather
-    /// than on the key matters because a key is a wire identifier that need not resemble its label,
-    /// so a key order would put the words on screen in an order the reader cannot account for.
-    /// Compared with OrdinalIgnoreCase: these labels are English strings authored in this repo, so
-    /// every user gets the same order whatever their locale.
+    /// The label the window draws for a category key; only the window can reach the collectors' names.
+    /// Sorting on the label, not the key, because a wire key need not resemble its label.
+    /// OrdinalIgnoreCase: the labels are English strings from this repo, so every locale gets one order.
     /// </param>
     public static IReadOnlyList<UploadLogCategory> InDisplayOrder(
         IReadOnlyList<UploadLogCategory> categories,
@@ -764,9 +674,8 @@ public static class UploadLogText
     {
         var ordered = new List<UploadLogCategory>(categories);
 
-        // A category key is unique within an entry, so the key breaks a tie between two collections
-        // that chose the same display name. List.Sort is unstable, so without a tie-break their
-        // order could differ between two runs over equal input.
+        // A key is unique within an entry, so it breaks a tie between equal display names. List.Sort
+        // is unstable, so without it their order could differ between runs.
         ordered.Sort((left, right) =>
         {
             var byName = string.Compare(
@@ -781,10 +690,8 @@ public static class UploadLogText
     /// The category keys ordered by the name the reader sees, for the window's "Could not read" line.
     /// </summary>
     /// <remarks>
-    /// Ordered by the same rule as <see cref="InDisplayOrder"/>: the two lines sit in one table cell,
-    /// so a reader meets both orders at once. Keys rather than categories because an unreadable
-    /// category has nothing recorded about it beyond its key: it is named precisely because nothing
-    /// was collected for it.
+    /// Same order as <see cref="InDisplayOrder"/>, because both lines sit in one table cell. It takes
+    /// keys because an unreadable category has nothing recorded but its key.
     /// </remarks>
     /// <param name="categoryKeys">The unreadable category keys.</param>
     /// <param name="displayNameFor">The label the window draws for a category key.</param>
@@ -794,8 +701,7 @@ public static class UploadLogText
     {
         var ordered = new List<string>(categoryKeys);
 
-        // Tie broken by the key, so two collections sharing a display name keep the same order on
-        // every run.
+        // The key breaks ties, as in InDisplayOrder.
         ordered.Sort((left, right) =>
         {
             var byName = string.Compare(
@@ -807,17 +713,13 @@ public static class UploadLogText
     }
 
     /// <summary>
-    /// The text spans the window prints for one sent category, each paired with whether it draws
-    /// highlighted (gold). A span-based answer because one category can carry two independently
-    /// colored parts: the label with its "(changed)" mark, and — for a manifest-driven category —
-    /// the server's proof note beside it.
+    /// The text spans the window prints for one sent category, each with whether it draws gold: the
+    /// label with its "(changed)" mark, and for a manifest-driven category the proof note.
     /// </summary>
     /// <remarks>
-    /// The highlight rules: "(changed)" always highlights its span — that is the "you just got
-    /// something" signal. The proof note highlights only when steps were actually proved;
-    /// "proof pending" is not good news and stays plain even when it lands next to a highlighted
-    /// change mark. The proof note only ever attaches to a manifest-driven category — the server
-    /// answers about sent items, so it would be noise beside any other category.
+    /// "(changed)" always highlights: it is the "you just got something" signal. The proof note
+    /// highlights only when steps were proved, since "proof pending" is not good news. The note
+    /// attaches only to a manifest-driven category, because the server answers about sent items.
     /// </remarks>
     /// <param name="displayName">The category's collector-declared display name.</param>
     /// <param name="category">The category as the log entry recorded it.</param>
@@ -831,11 +733,8 @@ public static class UploadLogText
         string? proof,
         bool stepsProven)
     {
-        // No count means the pass read none of what this category is about, so the column names
-        // that state instead of printing a number. Deliberately not worded around "read": that
-        // word belongs to the categories that never went out at all, both in this window's
-        // "Could not read:" line and in the settings panel's "not read yet" hints. This category
-        // was sent — the plugin simply saw none of the collection it is about.
+        // No count means the pass saw none of the collection. Not worded with "read", which names
+        // categories that never went out ("Could not read:" here, "not read yet" in settings).
         var label = category.Count is { } count
             ? $"{displayName} {count:N0}"
             : $"{displayName} (none seen)";
@@ -849,15 +748,13 @@ public static class UploadLogText
     }
 
     /// <summary>
-    /// True when the entry sent at least one fact under a manifest-driven category. The count
-    /// matters: an empty category carries no information, so the server applies nothing and owes
-    /// no proof answer for it.
+    /// True when the entry sent at least one fact under a manifest-driven category, so the server
+    /// owes a proof answer.
     /// </summary>
     /// <remarks>
-    /// A measured zero and an absent count are decided differently on purpose. Zero is a reading —
-    /// the category was measured and holds nothing — so the server owes no answer. Null is the
-    /// absence of a reading, and the facts went out regardless, so an answer may well be owed;
-    /// treating it as empty would silence the proof note exactly where a reader needs it.
+    /// A measured zero is empty and owes no answer. A null count is not: the facts went out
+    /// unmeasured, so an answer may be owed, and treating it as empty would hide the proof note where
+    /// a reader needs it.
     /// </remarks>
     private static bool CarriesManifestDrivenFacts(UploadLogEntry entry)
     {
@@ -871,22 +768,21 @@ public static class UploadLogText
     }
 
     /// <summary>
-    /// Renders the log as plain text for the clipboard, one line per upload — what a user pastes
-    /// into Discord when reporting a problem.
+    /// Renders the log as plain text for the clipboard, one line per upload, for a user to paste into
+    /// Discord when reporting a problem.
     /// </summary>
     /// <remarks>
-    /// Deliberately in wire terms — category keys, status enum names, UTC timestamps, invariant
-    /// formatting — because the reader is whoever is debugging, and stable identifiers beat
-    /// localized display copy there. Contains only what the log already shows: counts and
-    /// outcomes, never the ids themselves.
+    /// In wire terms (category keys, status enum names, UTC, invariant formatting), because the reader
+    /// is debugging and stable identifiers beat display copy. It holds only what the log shows:
+    /// counts and outcomes, never the ids.
     /// </remarks>
     public static string ClipboardText(
         string pluginVersion, string backendUrl, IReadOnlyList<UploadLogEntry> entries)
     {
         var text = new StringBuilder();
 
-        // The backend matters because it is user-overridable: "you are pointed at the wrong
-        // server" is a classic support case that is otherwise invisible in a pasted log.
+        // The backend is user-overridable, and "pointed at the wrong server" is a common support case
+        // a paste would otherwise hide.
         text.AppendLine($"XIV Shinies Sync v{pluginVersion} upload log — backend: {backendUrl}");
 
         for (var index = 0; index < entries.Count; index++)
@@ -895,15 +791,12 @@ public static class UploadLogText
 
             text.Append(entry.At.UtcDateTime.ToString(
                 "yyyy-MM-dd HH:mm:ss'Z'", CultureInfo.InvariantCulture));
-            // A live tracker or Crucible sharing row names its source; a sync row names its
-            // trigger, or its source when it carries none. Source first, as TriggerText decides it.
+            // Source first, as TriggerText decides it.
             text.Append(" | ").Append(entry.Source != UploadLogSource.Sync
                 ? entry.Source.ToString()
                 : entry.Trigger?.ToString() ?? entry.Source.ToString());
             text.Append(" | ").Append(entry.Status);
 
-            // A live tracker or Crucible sharing row names the endpoint it uploaded to, in the same
-            // wire terms.
             text.Append(" | sent:");
             if (UploadLogText.LiveEndpoint(entry.Source) is { } endpoint)
                 text.Append(' ').Append(endpoint);
@@ -912,16 +805,14 @@ public static class UploadLogText
             {
                 text.Append(' ').Append(category.Key).Append('=');
 
-                // A word rather than an empty slot or a zero: the paste is a diagnostic, and "the
-                // category went out carrying no reading" is exactly the fact a reader needs.
-                // Underscored to sit alongside the skip reason codes further down the same line.
+                // A word, not a blank or a zero: "went out with no reading" is the fact a debugger
+                // needs. Underscored to match the skip reason codes on the same line.
                 text.Append(category.Count is { } sentCount
                     ? sentCount.ToString(CultureInfo.InvariantCulture)
                     : "none_seen");
 
-                // A manifest category's "changed:" flag compares this owned-entry count, not the
-                // fact count — printing it makes the flag (and its absence) verifiable from the
-                // paste alone, which is this surface's whole job.
+                // A manifest category's "changed:" flag compares this count, so printing it lets
+                // the paste alone confirm the flag or its absence.
                 if (category.OwnedCount is { } owned)
                     text.Append(" owned=").Append(owned);
             }
@@ -933,9 +824,7 @@ public static class UploadLogText
                     text.Append(' ').Append(key).Append('=').Append(reason);
             }
 
-            // The same fact the window's gold highlight shows, in text: which categories moved
-            // against their previous appearance. The printed fact counts alone cannot carry
-            // it — a one-for-one content swap leaves an ordinary category's count identical.
+            // The window's gold highlight, as text. The counts alone miss a one-for-one swap.
             var changed = UploadLogDiff.ChangedCategories(entries, index);
             if (changed.Count > 0)
             {
@@ -944,18 +833,15 @@ public static class UploadLogText
                     text.Append(' ').Append(key);
             }
 
-            // The server's proof answer, verbatim — including zero, which the window stays
-            // silent about but a debugger wants to see. An accepted upload that sent item facts
-            // and got NO answer is the derivation-failed case, and "absent" is exactly the fact
-            // a pasted bug report needs. (An all-empty manifest-driven category was never owed
-            // an answer, so it gets no marker — same rule as the window's "proof pending".)
+            // The proof answer verbatim, zero included, which the window hides. "absent" marks the
+            // derivation-failed case, by the same rule as the window's "proof pending".
             if (entry.ProvenSteps is { } steps)
                 text.Append(" | provenSteps: ").Append(steps);
             else if (entry.Status == ApiStatus.Ok && CarriesManifestDrivenFacts(entry))
                 text.Append(" | provenSteps: absent");
 
-            // Diagnostics, only when they say something: a clean first-try success stays a clean
-            // one-liner. The raw HTTP code is skipped on Ok — it can only be 200 there.
+            // Only when they say something, so a first-try success stays short. The HTTP code is
+            // skipped on Ok, where it can only be 200.
             if (entry.Attempt > 1)
                 text.Append(" | attempt: ").Append(entry.Attempt);
 
@@ -965,8 +851,8 @@ public static class UploadLogText
             if (entry.HttpStatusCode is { } code && entry.Status != ApiStatus.Ok)
                 text.Append(" | http: ").Append(code);
 
-            // On every line, not just failures: when relic counts look wrong server-side, the
-            // question is which manifest the SUCCESSFUL upload counted against.
+            // On every line: when relic counts look wrong, the question is which manifest the
+            // successful upload counted against.
             if (entry.ManifestVersion is { } manifest)
                 text.Append(" | manifest: ").Append(manifest);
 

@@ -2,29 +2,26 @@ using System;
 
 namespace XIVShinies.SyncPlugin.Occult;
 
-/// <summary>
-/// One encounter's wire-ready state: what the upload payload will say about it.
-/// </summary>
+/// <summary>One encounter's wire-ready state: what the upload will say about it.</summary>
 public sealed record OccultEncounterState
 {
     /// <summary>
-    /// True when <see cref="Id"/> is a <c>Fate</c> sheet row id, false when it is a
-    /// <c>DynamicEvent</c> sheet row id. The payload serializes them under different JSON
-    /// keys (<c>fateId</c> / <c>dynamicEventId</c>), so the distinction must survive here.
+    /// True when <see cref="Id"/> is a <c>Fate</c> row id, false for a <c>DynamicEvent</c> row id. The
+    /// payload sends them under different keys, <c>fateId</c> and <c>dynamicEventId</c>.
     /// </summary>
     public required bool IsFate { get; init; }
 
-    /// <summary>The Excel sheet row id (see <see cref="IsFate"/> for which sheet).</summary>
+    /// <summary>The sheet row id; <see cref="IsFate"/> says which sheet.</summary>
     public required ushort Id { get; init; }
 
-    /// <summary>The three-word wire status.</summary>
+    /// <summary>The wire status.</summary>
     public required OccultEncounterStatus Status { get; init; }
 
-    /// <summary>
-    /// The moment this status began, in whole seconds — the contract's <c>sinceUtc</c>.
-    /// Server-assigned epochs where the game exposes them (these fingerprint the instance);
-    /// the plugin's own observation time only for transitions the game zeroes; null when
-    /// nothing is known (an idle CE never observed up).
-    /// </summary>
+    /// <summary>When this status began, in whole seconds: the contract's <c>sinceUtc</c>.</summary>
+    /// <remarks>
+    /// A server-assigned epoch where the game exposes one, which fingerprints the instance; the
+    /// plugin's own observation time for a transition the game zeroes; null when nothing is known,
+    /// such as an idle CE never seen up.
+    /// </remarks>
     public DateTimeOffset? SinceUtc { get; init; }
 }

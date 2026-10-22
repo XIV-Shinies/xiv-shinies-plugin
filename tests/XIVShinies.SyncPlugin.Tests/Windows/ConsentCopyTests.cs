@@ -6,13 +6,11 @@ using XIVShinies.SyncPlugin.Windows;
 
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
-// The consent surfaces' claims about the user's choices, each true only in some states: the
-// wizard's opening sentence, and whether a privacy card may say "you choose". Each `[Fact]` is one
-// test, like `it(...)` in Jest; a `[Theory]` runs once per `[InlineData]` row, like `it.each`.
+// Consent copy that is true only in some states: the wizard's opening sentence, and whether a privacy
+// card may say "you choose".
 public class ConsentCopyTests
 {
-    // The website address the copy names. `const` fixes the value when the code compiles.
-    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
     private const string Choose = "Choose what to upload. ";
@@ -28,13 +26,10 @@ public class ConsentCopyTests
 
     private const string Closing = "You can change any of this later.";
 
-    // --- The wizard's opening sentence --------------------------------------------------------------
+    // --- The wizard's opening sentence ---
 
-    // Every combination of the three inputs, with a choice to make. "Start switched off" holds only
-    // while nothing is chosen on; the tracker's "starts on" only while the server offers it and it is
-    // chosen on.
-    // `[InlineData]` needs values fixed when the code compiles, which `const` strings joined with `+`
-    // are.
+    // "Start switched off" holds only while nothing is chosen on; the tracker's "starts on" only while
+    // the server offers it and it is chosen on.
     [Theory]
     [InlineData(false, true, true, Choose + AllStartOff + TrackerSentence + Closing)]
     [InlineData(false, true, false, Choose + AllStartOff + Closing)]
@@ -47,8 +42,6 @@ public class ConsentCopyTests
     public void The_opening_sentence_matches_the_boxes_beneath_it(
         bool anythingSwitchedOn, bool trackerOffered, bool trackerOn, string expected)
     {
-        // `trackerOffered: trackerOffered` names the parameter each value fills, so a row of booleans
-        // says which is which, like the keys of an options object.
         Assert.Equal(
             expected,
             ConsentCopy.WizardIntro(
@@ -59,8 +52,8 @@ public class ConsentCopyTests
                 host: Host));
     }
 
-    // With nothing the server permits, as during a pause, the sentence says so instead of inviting a
-    // choice the grayed boxes below would refuse.
+    // With nothing permitted, as during a pause, an invitation to choose would point at grayed-out
+    // boxes.
     [Fact]
     public void With_nothing_to_choose_the_sentence_says_so()
     {
@@ -75,12 +68,8 @@ public class ConsentCopyTests
                 host: Host));
     }
 
-    // --- What counts as switched on -----------------------------------------------------------------
+    // --- What counts as switched on ---
 
-    /// <summary>A collection row with the given switches.</summary>
-    // `bool userEnabled = false` is an optional parameter with a default, like a TypeScript default
-    // parameter. `=> new() { ... }` builds a CategorySettingsRow and sets these properties on it, like
-    // an object literal.
     private static CategorySettingsRow Row(bool serverEnabled, bool userEnabled = false) => new()
     {
         Key = "quests",
@@ -92,12 +81,9 @@ public class ConsentCopyTests
         UsesItemManifest = false,
     };
 
-    /// <summary>A config with the sharing features' switches as given.</summary>
-    // `[]` is an empty list.
     private static ConfigResponse Config(bool crucible = false, bool tracker = false, bool enabled = true) =>
         new()
         {
-            // `Dictionary<string, bool>` maps text to a bool, like `Map<string, boolean>`.
             Categories = new Dictionary<string, bool>(),
             Enabled = enabled,
             Intervals = new ConfigIntervals { FullSyncMinutes = 30, UnlockDebounceSeconds = 5 },
@@ -107,9 +93,7 @@ public class ConsentCopyTests
             OccultTracker = new OccultTrackerConfig { Enabled = tracker },
         };
 
-    // A collection the user chose counts, even one the server has since grayed out: the choice is still
-    // theirs and takes effect once the server permits it. `new[] { ... }` builds an array whose type is
-    // taken from its items.
+    // A choice the server has since grayed out still counts: it takes effect once the server permits it.
     [Fact]
     public void A_chosen_collection_counts_whatever_the_server_says()
     {
@@ -119,7 +103,6 @@ public class ConsentCopyTests
             new[] { Row(serverEnabled: false, userEnabled: true) }, shareCrucibleRuns: false));
     }
 
-    // The Crucible choice counts on its own; with nothing chosen at all, nothing counts.
     [Fact]
     public void The_crucible_choice_counts_and_no_choice_does_not()
     {
@@ -129,16 +112,14 @@ public class ConsentCopyTests
         Assert.False(ConsentCopy.AnythingChosenOn(nothingChosen, shareCrucibleRuns: false));
     }
 
-    // --- Whether a privacy card may say "you choose" ------------------------------------------------
+    // --- Whether a privacy card may say "you choose" ---
 
-    // One collection the server permits is a choice.
     [Fact]
     public void A_permitted_collection_leaves_a_choice()
     {
         Assert.True(ConsentCopy.UserHasAChoice(new[] { Row(serverEnabled: true) }, Config()));
     }
 
-    // With every collection off, a sharing feature the server still offers is a choice too.
     [Fact]
     public void A_permitted_sharing_feature_leaves_a_choice()
     {
@@ -148,9 +129,8 @@ public class ConsentCopyTests
         Assert.True(ConsentCopy.UserHasAChoice(rows, Config(tracker: true)));
     }
 
-    // Nothing the server permits leaves the user nothing to choose: every switch off, a pause with the
-    // sharing switches left on, or a server that advertises neither sharing feature at all.
-    // `with { ... }` copies the record with the listed properties changed.
+    // Covers every switch off, a pause with the sharing switches left on, and a server that advertises
+    // neither sharing feature.
     [Fact]
     public void Nothing_permitted_leaves_no_choice()
     {
@@ -162,8 +142,7 @@ public class ConsentCopyTests
             rows, Config() with { CrucibleRuns = null, OccultTracker = null }));
     }
 
-    // Before the server answers it has refused nothing, so the sharing features remain choices even
-    // with no collection permitted.
+    // Before the server answers it has refused nothing.
     [Fact]
     public void Before_the_server_answers_the_choice_stands()
     {

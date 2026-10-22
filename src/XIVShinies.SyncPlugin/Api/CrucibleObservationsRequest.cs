@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
-// The Crucible wire enums: CrucibleTrigger and CrucibleOfferSource.
 using XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 namespace XIVShinies.SyncPlugin.Api;
@@ -10,14 +9,10 @@ namespace XIVShinies.SyncPlugin.Api;
 /// windows showed, each at one moment (docs/api-contract.md, crucible/observations).
 /// </summary>
 /// <remarks>
-/// The server's schema is strict: a key it does not name fails the whole upload, and so does a
-/// key it names that is missing. A key the contract shows as <c>null</c> is therefore written as
-/// an explicit <c>null</c> (the <c>JsonIgnoreCondition.Never</c> properties below), where the
-/// shared serializer would otherwise leave a null out.
+/// The server's schema is strict: an unknown key fails the whole upload, and so does a missing one.
+/// So a key the contract shows as <c>null</c> is written as an explicit <c>null</c> (the
+/// <c>JsonIgnoreCondition.Never</c> properties below), where the shared serializer would leave it out.
 /// </remarks>
-// `sealed record` is an immutable data type nothing can subclass. Each `{ get; init; }`
-// property can be set only while the object is being built, like a field of a frozen object
-// literal, and `required` makes leaving it unset a compile error.
 public sealed record CrucibleObservationsRequest
 {
     /// <summary>SHA-256 of the character's ContentId, lowercase hex. The raw id never travels.</summary>
@@ -39,14 +34,12 @@ public sealed record CrucibleObservationsRequest
     /// The TerritoryType row id the upload concerns: the board, the entrance for its two
     /// windows, or on a leave the board just left.
     /// </summary>
-    // `uint` is a whole number that cannot be negative, which is how the game stores ids.
     public required uint TerritoryTypeId { get; init; }
 
     /// <summary>
     /// The snapshots, at most one per kind, in the order they were observed. Empty on a heartbeat
     /// or a leave, and still sent as an empty list.
     /// </summary>
-    // `IReadOnlyList<T>` is a list its holder cannot change, like `readonly T[]` in TypeScript.
     public required IReadOnlyList<CrucibleObservation> Observations { get; init; }
 }
 
@@ -55,11 +48,8 @@ public sealed record CrucibleObservationsRequest
 /// that inherits this one.
 /// </summary>
 /// <remarks>
-/// <c>JsonPolymorphic</c> and the six <c>JsonDerivedType</c> attributes make the serializer write
-/// a <c>kind</c> key naming the record's type, as the first key of each snapshot, whenever it
-/// serializes a value declared as this base type (the request's list, for one). It is the same
-/// idea as a discriminated union in TypeScript, where a literal <c>kind</c> field says which shape
-/// an object has.
+/// Serialized through this base type, as the request's list is, each snapshot starts with a
+/// <c>kind</c> key naming its type.
 /// </remarks>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(CrucibleBoardObservation), "board")]
@@ -68,7 +58,6 @@ public sealed record CrucibleObservationsRequest
 [JsonDerivedType(typeof(CrucibleOfferObservation), "offer")]
 [JsonDerivedType(typeof(CrucibleResultsObservation), "results")]
 [JsonDerivedType(typeof(CrucibleSelfObservation), "self")]
-// `abstract` means no snapshot is ever just this base: every one is one of the six kinds.
 public abstract record CrucibleObservation
 {
     /// <summary>When this was observed, as second-exact UTC text (see <see cref="WireTime"/>).</summary>
@@ -76,8 +65,6 @@ public abstract record CrucibleObservation
 }
 
 /// <summary>The board window: every piece of the board with its progress.</summary>
-// `: CrucibleObservation` makes this record inherit the base's members (like `extends`), so it
-// has an `ObservedAtUtc` too.
 public sealed record CrucibleBoardObservation : CrucibleObservation
 {
     /// <summary>True on the last snapshot before the window closed.</summary>
@@ -87,8 +74,6 @@ public sealed record CrucibleBoardObservation : CrucibleObservation
     public required int View { get; init; }
 
     /// <summary>The piece being played, in the scoped view; null in the other views.</summary>
-    // `uint?` is an id that may be null (`number | null`). With `required` the builder must still
-    // set it, even if only to null, and `JsonIgnoreCondition.Never` writes that null into the JSON.
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public required uint? CurrentNodeIndex { get; init; }
 
@@ -199,9 +184,8 @@ public sealed record CrucibleOfferObservation : CrucibleObservation
 
 /// <summary>One offered item.</summary>
 /// <remarks>
-/// A treasure or loot offer carries its item id alone. The three shop fields are not
-/// <c>required</c> and hold null there; the shared serializer leaves a null out, so those keys
-/// are absent rather than null.
+/// A treasure or loot offer carries its item id alone: the three shop fields are null there, and the
+/// shared serializer leaves those keys out rather than writing null.
 /// </remarks>
 public sealed record CrucibleOfferUpload
 {

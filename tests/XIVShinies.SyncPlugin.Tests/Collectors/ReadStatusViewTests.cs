@@ -7,21 +7,17 @@ using XIVShinies.SyncPlugin.Collectors;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
-// ReadStatusView assembles the settings window's whole "Reading from:" panel: the collections the sync
-// will actually upload, and the storage containers the item counts are drawn from, returned as two
-// separate groups so the window can label each. Every note the panel can show is pinned here. Like
-// CategorySettingsView, it must contain no category-name or source-name branch, which is what these
-// tests exist to enforce.
+// ReadStatusView builds the settings window's "Reading from:" panel in two groups: the collections the
+// sync will upload, and the containers the item counts come from. Like CategorySettingsView, it must
+// contain no category-name or source-name branch.
 //
-// A note's tone picks its rendered form (see SourceNote): healthy notes are chips whose Label is their
-// entire visible text, notes needing an in-game action are full lines carried in Text.
+// A note's tone picks its form (see SourceNote): a healthy note is a chip whose Label is all its
+// visible text; a note needing an in-game action is a full line in Text.
 public class ReadStatusViewTests
 {
-    // The website address the copy names. `const` fixes the value when the code compiles.
-    // A made-up address, so a test can tell one that was passed in from one written into the copy.
+    // Made up, so a test can tell an address passed in from one written into the copy.
     private const string Host = "shinies.example";
 
-    // A category this plugin has never heard of — the extensibility gate below rides on it.
     private const string UnknownCategory = "facewear";
 
     private static CategorySettingsRow Row(
@@ -46,22 +42,19 @@ public class ReadStatusViewTests
     private static IReadOnlyDictionary<string, ItemSourceStatus> NoSources() =>
         new Dictionary<string, ItemSourceStatus>();
 
-    // One container the panel has copy for, so the container group is non-empty. Every suppression
-    // test needs this: a manifest-driven collection's note is only dropped when there is a container
-    // note left standing to report in its place.
+    // Suppression tests need a container note: a manifest-driven collection's note drops only when one
+    // stands in its place.
     private static IReadOnlyDictionary<string, ItemSourceStatus> OneSource() =>
         new Dictionary<string, ItemSourceStatus>
         {
             [SourceKeys.Inventory] = Status(SourceStates.Live),
         };
 
-    // The containers are read on behalf of a manifest-driven collection, so any test that expects
-    // container notes must have one of those collections switched on for them to belong to.
+    // Container notes appear only while a manifest-driven collection is switched on.
     private static CategorySettingsRow ManifestRow(string key = "items") =>
         Row(key, usesItemManifest: true);
 
-    // An unreadable source (mannequins) reaches the panel as a container chip like any other note
-    // the copy set describes — Build has no tone branch that could drop it, and this pins that.
+    // Pins that Build has no tone branch that could drop an unreadable source.
     [Fact]
     public void An_unreadable_source_flows_through_as_a_container_chip()
     {
@@ -81,9 +74,8 @@ public class ReadStatusViewTests
         Assert.Contains(Host, note.Detail);
     }
 
-    // Container notes keep the order the item pass reported them in — the collector reports the
-    // unreadable mannequins source last on purpose, so the one chip nothing can change sits at the
-    // end of the row rather than among the working sources.
+    // The collector reports mannequins last, so the one chip nothing can change sits at the end of the
+    // row.
     [Fact]
     public void Container_notes_keep_the_order_the_sources_were_reported_in()
     {
@@ -101,8 +93,7 @@ public class ReadStatusViewTests
             status.Containers.Select(note => note.Label));
     }
 
-    // A healthy chip may carry optional hover copy the collector attached — information a reader
-    // can live without, which is all a hover is allowed to hide.
+    // Hover copy may hide only what a reader can live without.
     [Fact]
     public void A_healthy_collections_chip_carries_the_collectors_hover_copy()
     {
@@ -115,8 +106,8 @@ public class ReadStatusViewTests
         Assert.Equal("Optional hover copy.", note.Detail);
     }
 
-    // The hover copy belongs to the healthy chip alone: a partial line is already visible and says
-    // what reads the unread half.
+    // Hover copy belongs to the healthy chip alone: a partial line is visible and already says what
+    // reads the unread half.
     [Fact]
     public void A_partial_line_does_not_carry_the_chip_hover_copy()
     {
@@ -131,9 +122,8 @@ public class ReadStatusViewTests
         Assert.Null(Assert.Single(status.Collections).Detail);
     }
 
-    // A partially read collection keeps a visible line: the phrase the collector authored names the
-    // unread half and what reads it, drawn in the Missing tone so it stays on screen rather than
-    // hiding behind a healthy-looking chip.
+    // Drawn in the Missing tone, so the unread half stays on screen instead of hiding behind a healthy
+    // chip.
     [Fact]
     public void A_partially_read_collection_draws_a_line_naming_the_unread_half()
     {
@@ -146,8 +136,8 @@ public class ReadStatusViewTests
         Assert.Equal("facewear display: half read — visit the place.", note.Text);
     }
 
-    // A collector writes the website as a placeholder, because it cannot know the configured address;
-    // the panel fills it in on both of the notes a collector authors.
+    // A collector cannot know the configured address, so it writes a placeholder; the panel fills it
+    // in on both notes a collector authors.
     [Fact]
     public void A_collectors_notes_name_the_configured_website()
     {
@@ -169,8 +159,7 @@ public class ReadStatusViewTests
             status.Collections, note => note.Detail == "Read in full, so " + Host + " has it all.");
     }
 
-    // The suppression takes the hover copy with it — no chip means nowhere to hover — unlike a
-    // partial phrase, which survives because it says something no container line says.
+    // With no chip there is nowhere to hover, so the suppression takes the hover copy too.
     [Fact]
     public void A_manifest_rows_chip_hover_copy_is_suppressed_with_its_chip()
     {
@@ -181,8 +170,7 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // A manifest-driven row's healthy line is suppressed in favor of the container lines, but a
-    // partial phrase says something no container line says, so it must survive the suppression.
+    // A partial phrase says something no container line says, so it survives the suppression.
     [Fact]
     public void A_manifest_rows_partial_note_survives_the_container_suppression()
     {
@@ -194,8 +182,8 @@ public class ReadStatusViewTests
         Assert.Equal("items display: half read — visit the place.", note.Text);
     }
 
-    // A remembered partial note can outlive a category's readability (the memory merges across
-    // passes), but a fresh skip reason is the current story and must win the line.
+    // The status memory merges across passes, so a partial note can outlive the read that wrote it. A
+    // fresh skip reason is current and wins the line.
     [Fact]
     public void A_skip_reason_outranks_a_stale_partial_note()
     {
@@ -208,9 +196,8 @@ public class ReadStatusViewTests
         Assert.Equal("facewear display: could not be read.", note.Text);
     }
 
-    // A collection that was read this pass has nothing for the user to do, so it is a chip: the
-    // green check IS "read", and the label is the collection's own display name. No sentence, and
-    // no hover copy for a collector that attached none — a bare healthy chip is the whole message.
+    // A read collection needs nothing from the user, so it is a bare chip: the green check means
+    // "read".
     [Fact]
     public void An_enabled_collection_that_was_read_is_a_chip_labeled_with_its_name()
     {
@@ -223,10 +210,9 @@ public class ReadStatusViewTests
         Assert.Null(note.Detail);
     }
 
-    // The mechanism that carries the "open your Achievements window once" hint into the panel: the
-    // collector reported a reason, CollectSkipReasons turned it into advice, and this appends it after
-    // the category's own display name. Nothing here names achievements. The action must stay visible,
-    // so the note is a full line, never a chip.
+    // How the "open your Achievements window once" hint reaches the panel without naming achievements:
+    // CollectSkipReasons turns the collector's reason into advice. It asks for an action, so it is a
+    // full line, never a chip.
     [Fact]
     public void A_collection_skipped_for_a_described_reason_appends_that_reasons_hint()
     {
@@ -242,9 +228,9 @@ public class ReadStatusViewTests
         Assert.Equal(SourceTone.Missing, note.Tone);
     }
 
-    // A reason the user cannot act on (a collector bug, an unloadable game sheet) has no advice to
-    // give. The note still has to appear — the collection genuinely did not make it into the upload —
-    // so it falls back to a plain statement rather than leaking a raw wire string like "collector_error".
+    // A reason the user cannot act on, such as a collector bug or an unloadable game sheet, has no
+    // advice. The collection still missed the upload, so the note is a plain statement, never a raw
+    // wire string like "collector_error".
     [Fact]
     public void A_collection_skipped_for_an_undescribed_reason_says_only_that_it_could_not_be_read()
     {
@@ -256,8 +242,7 @@ public class ReadStatusViewTests
         Assert.Equal(SourceTone.Missing, note.Tone);
     }
 
-    // A collection the server answered without asking for was skipped by the server's decision,
-    // not missed, so the panel draws no line for it, as for one the server switched off.
+    // The server chose not to ask for it, so it was skipped, not missed.
     [Fact]
     public void A_collection_the_server_does_not_ask_for_draws_no_line()
     {
@@ -266,8 +251,7 @@ public class ReadStatusViewTests
         Assert.Empty(ReadStatusView.Build(rows, NoSources(), Host).Collections);
     }
 
-    // A collection the user switched off has no status worth reporting: they chose not to sync it, so
-    // saying it was not read would read as a fault rather than as their own decision.
+    // The user chose not to sync it, so "not read" would look like a fault.
     [Fact]
     public void A_collection_the_user_switched_off_gets_no_note_at_all()
     {
@@ -276,8 +260,7 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // The server's per-category kill switch gets no note: the settings card already explains the
-    // grayed-out checkbox, and the collection is not being uploaded either way.
+    // The settings card already explains the grayed-out checkbox.
     [Fact]
     public void A_collection_the_server_switched_off_gets_no_note_at_all()
     {
@@ -286,10 +269,8 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // A healthy manifest-driven collection would only show a bare "read" chip — which the container
-    // notes beneath it already say, in more detail, since the containers ARE where its items were
-    // counted. So it is omitted rather than repeating them. The rule is keyed on the collector's own
-    // UsesItemManifest flag, never on its category name.
+    // Its items were counted in the containers, whose notes already say "read" in more detail. The rule
+    // keys on UsesItemManifest, never on a category name.
     [Fact]
     public void A_manifest_driven_collection_that_was_read_gets_no_note_of_its_own()
     {
@@ -299,11 +280,8 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // The suppression stands down when there are no container notes. Suppressing costs the reader
-    // nothing only while a container note is there to report in the collection's place; when the
-    // server's manifest is empty the pass opens no container and reports no source note at all, so
-    // dropping the collection's note too would leave the panel silent about a collection the user has
-    // switched on.
+    // With an empty server manifest the pass opens no container, so dropping this note too would leave
+    // a switched-on collection unmentioned.
     [Fact]
     public void A_manifest_driven_collection_keeps_its_note_when_no_container_note_stands_in_for_it()
     {
@@ -315,9 +293,8 @@ public class ReadStatusViewTests
         Assert.Equal(SourceTone.Live, note.Tone);
     }
 
-    // The suppression asks whether a container NOTE exists, not whether a container status arrived: a
-    // status SourceNoteText has no copy for is dropped from the panel, so it cannot stand in for
-    // anything the reader can actually see.
+    // The suppression asks whether a container note exists, not a status: a status SourceNoteText has
+    // no copy for is dropped, so the reader never sees it.
     [Fact]
     public void A_manifest_driven_collection_keeps_its_note_when_every_container_status_was_dropped()
     {
@@ -332,9 +309,8 @@ public class ReadStatusViewTests
         Assert.Equal("items display", Assert.Single(status.Collections).Label);
     }
 
-    // The other half of that rule: a manifest-driven collection that was SKIPPED still gets its note.
-    // Why it was missed (the config has not arrived, the inventory is unreadable) exists nowhere else in
-    // the panel — the container notes cannot say it.
+    // Why a collection was skipped, such as no config yet or an unreadable inventory, exists nowhere
+    // else in the panel, so a skipped one keeps its note even beside a container note.
     [Fact]
     public void A_manifest_driven_collection_that_was_skipped_still_reports_its_hint()
     {
@@ -343,8 +319,7 @@ public class ReadStatusViewTests
             Row("items", skipReason: CollectSkipReasons.NoRemoteConfig, usesItemManifest: true),
         };
 
-        // With a container note present — the state that would suppress a HEALTHY manifest-driven
-        // collection. A skipped one is owed its note regardless, because no container note explains why.
+        // A container note is present, which would suppress a healthy collection.
         var note = Assert.Single(ReadStatusView.Build(rows, OneSource(), Host).Collections);
 
         Assert.Equal(
@@ -353,9 +328,8 @@ public class ReadStatusViewTests
         Assert.Equal(SourceTone.Missing, note.Tone);
     }
 
-    // The suppression is scoped to manifest-driven collections alone: an ordinary collection has no
-    // container notes standing in for it, so its healthy chip is the only thing that says the sync can
-    // see it at all.
+    // No container note stands in for an ordinary collection, so its chip is the only sign the sync
+    // can see it.
     [Fact]
     public void A_collection_that_is_not_manifest_driven_keeps_its_chip()
     {
@@ -384,8 +358,8 @@ public class ReadStatusViewTests
             note);
     }
 
-    // SourceNoteText returns null for a (source, state) pair it has no note for. A null means "nothing
-    // worth saying", so the panel must drop it rather than show a raw wire string.
+    // SourceNoteText returns null for a source and state it has no note for, and the panel drops it
+    // rather than show a raw wire string.
     [Fact]
     public void A_storage_container_with_nothing_worth_saying_is_dropped()
     {
@@ -400,8 +374,7 @@ public class ReadStatusViewTests
         Assert.Equal("Inventory", note.Label);
     }
 
-    // The two groups are returned separately so the window can head each with its own label. A
-    // collection note must never end up among the containers, or vice versa.
+    // The window heads each group with its own label, so no note may land in the other group.
     [Fact]
     public void Collections_and_containers_are_returned_as_separate_groups()
     {
@@ -416,9 +389,8 @@ public class ReadStatusViewTests
         Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
     }
 
-    // Collection notes are ordered by label, not by the order their collectors were registered, so
-    // this panel and the consent checklist above it list the same collections the same way. A reader
-    // comparing "what I turned on" against "what is being read" should not have to search.
+    // Sorted by label, not registration order, so this panel lists collections in the same order as
+    // the consent checklist above it.
     [Fact]
     public void Collection_notes_are_ordered_by_label()
     {
@@ -438,8 +410,7 @@ public class ReadStatusViewTests
         Assert.Empty(status.Containers);
     }
 
-    // THE GATE: a collection this plugin has never heard of gets a note built from its own row, proving
-    // the panel holds no table of known category names.
+    // The gate itself: the panel holds no table of known category names.
     [Fact]
     public void A_collection_for_an_unknown_category_still_gets_a_note()
     {
@@ -450,9 +421,7 @@ public class ReadStatusViewTests
         Assert.Equal(SourceTone.Live, note.Tone);
     }
 
-    // THE GATE, extended to the suppression rule: a manifest-driven collector for a category this plugin
-    // has never heard of is suppressed exactly like the one it ships with, proving the rule is keyed on
-    // the self-reported flag rather than on any category name.
+    // The gate for the suppression rule: it keys on the collector's flag, never on a category name.
     [Fact]
     public void A_manifest_driven_collection_for_an_unknown_category_is_also_suppressed_when_read()
     {
@@ -462,9 +431,8 @@ public class ReadStatusViewTests
         Assert.Empty(status.Collections);
     }
 
-    // The containers are only ever opened on behalf of a manifest-driven collection. With every such
-    // collection switched off, nothing is reading them — and a note urging the user to open their
-    // saddlebag for a scan that is not happening is advice they cannot act on.
+    // Containers are opened only for a manifest-driven collection. With none on, nothing reads them,
+    // and a note urging the user to open their saddlebag would be advice they cannot act on.
     [Fact]
     public void Container_notes_are_dropped_when_no_manifest_driven_collection_is_on()
     {
@@ -474,8 +442,7 @@ public class ReadStatusViewTests
         Assert.Equal(new[] { "mounts display" }, status.Collections.Select(note => note.Label));
     }
 
-    // The real shape of the rule: the user unticks the collection whose scan the containers exist for.
-    // Its saddlebag and retainer notes have to go with it — they describe a scan that is not happening.
+    // The common case: unticking the collection takes its container notes with it.
     [Fact]
     public void Container_notes_are_dropped_when_the_user_switches_the_manifest_collection_off()
     {
@@ -485,7 +452,6 @@ public class ReadStatusViewTests
         Assert.Empty(status.Containers);
     }
 
-    // Same when the server is the one that switched it off: nothing is reading the containers either way.
     [Fact]
     public void Container_notes_are_dropped_when_the_server_switches_the_manifest_collection_off()
     {
@@ -495,8 +461,7 @@ public class ReadStatusViewTests
         Assert.Empty(status.Containers);
     }
 
-    // Switching the collection back on brings its containers back with it — the notes are dropped, not
-    // forgotten.
+    // The notes are hidden, not forgotten.
     [Fact]
     public void Container_notes_return_once_a_manifest_driven_collection_is_on()
     {
@@ -506,9 +471,8 @@ public class ReadStatusViewTests
         Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
     }
 
-    // A manifest-driven collection with every consent group switched off scans nothing at all, and the
-    // collector reports that as a skip. The panel must say so: with no containers read, the suppression
-    // rule would otherwise leave the user's ticked collection entirely unmentioned.
+    // With every group off, the collector scans nothing and reports a skip. No container is read, so
+    // without this note the ticked collection would go unmentioned.
     [Fact]
     public void A_manifest_driven_collection_with_no_groups_enabled_says_what_to_do_about_it()
     {
@@ -524,9 +488,9 @@ public class ReadStatusViewTests
         Assert.Equal(SourceTone.Missing, note.Tone);
     }
 
-    // The order must not turn on casing: these labels are English strings authored in this repo,
-    // and every user is owed the same order whatever their machine's locale. An ordinal sort would
-    // put every capitalized label ahead of every lower-case one.
+    // The order must not depend on case or on the machine's locale: the labels are English strings from
+    // this repo. A case-sensitive ordinal sort would put every capitalized label ahead of every
+    // lowercase one.
     [Fact]
     public void Collection_notes_are_ordered_regardless_of_case()
     {
@@ -537,14 +501,11 @@ public class ReadStatusViewTests
             status.Collections.Select(note => note.Label));
     }
 
-    // Two collections may choose the same display name. Without a tie-break their order would be
-    // whatever the sort happened to leave — and List.Sort is unstable, so it need not be the same
-    // between two runs over equal input. A chip row that reshuffles itself is worse than one in an
-    // arbitrary but fixed order, so the note's own text settles it.
+    // List.Sort is unstable, so two notes sharing a label could swap between runs. The note's text
+    // breaks the tie, so the row never reshuffles itself.
     [Fact]
     public void Collection_notes_sharing_a_label_are_settled_by_their_text()
     {
-        // Same DisplayName, different skip reasons — so the two notes differ only in their text.
         var rows = new[]
         {
             Row("second", skipReason: CollectSkipReasons.NotInOccultInstance) with

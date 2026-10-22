@@ -2,12 +2,10 @@ namespace XIVShinies.SyncPlugin.Occult;
 
 /// <summary>The Occult Crescent territories the tracker watches.</summary>
 /// <remarks>
-/// The one place this plugin hardcodes game ids — a deliberate exception to the
-/// "the server's catalog owns the ids" rule, because this is not catalog knowledge: the
-/// client has to know where it is standing before it can decide to upload anything at all.
-/// A future Occult zone means adding its TerritoryType row id here in a plugin release,
-/// which is acceptable: the tracker categories for a new zone need server-side curation
-/// shipped in lockstep anyway.
+/// These ids are hardcoded, an exception to "the server's catalog owns the ids", because the client
+/// must know where it stands before it decides to upload anything. A new Occult zone means adding its
+/// TerritoryType row id here in a release, which ships alongside the server's curation of that zone's
+/// tracker categories anyway.
 /// </remarks>
 public static class OccultZones
 {

@@ -8,8 +8,6 @@ namespace XIVShinies.SyncPlugin.Tests.Crucible;
 // fields the contract gives it.
 public class CrucibleObservationsResponseTests
 {
-    // Each body is a `"""` raw string: everything between the triple quotes is literal text, so
-    // the JSON's own quotes need no escaping.
     [Fact]
     public void An_applied_upload_reads_its_run_and_the_events_it_wrote()
     {
@@ -24,7 +22,6 @@ public class CrucibleObservationsResponseTests
         Assert.Null(response.BoardId);
     }
 
-    // Held with no run active yet: there is no run id.
     [Fact]
     public void A_held_upload_reads_with_no_run()
     {
@@ -35,8 +32,7 @@ public class CrucibleObservationsResponseTests
         Assert.Null(response.Events);
     }
 
-    // The entrance's windows are held even while a run is active, never applied to it, and the
-    // answer names that run.
+    // The entrance's windows are held, never applied, even while a run is active.
     [Fact]
     public void An_entrance_upload_held_during_a_run_reads_that_run()
     {
@@ -47,7 +43,6 @@ public class CrucibleObservationsResponseTests
         Assert.Null(response.Events);
     }
 
-    // The website's run is on another board, which the response names.
     [Fact]
     public void A_board_mismatch_reads_the_board_the_run_is_on()
     {
@@ -66,7 +61,7 @@ public class CrucibleObservationsResponseTests
         Assert.Equal(CrucibleOutcomes.Left, response.Outcome);
     }
 
-    // A field the plugin does not know is ignored, so the server can add one without breaking it.
+    // Ignoring unknown fields lets the server add one without breaking the plugin.
     [Fact]
     public void An_unknown_field_is_ignored()
     {
@@ -75,9 +70,6 @@ public class CrucibleObservationsResponseTests
         Assert.Equal(CrucibleOutcomes.Held, response.Outcome);
     }
 
-    /// <summary>Reads a response body with the plugin's own wire settings.</summary>
-    // `Deserialize<T>` parses JSON into the type named in the angle brackets, like `JSON.parse`
-    // with a type; the `!` after it tells the compiler the result is not null.
     private static CrucibleObservationsResponse Parse(string json) =>
         JsonSerializer.Deserialize<CrucibleObservationsResponse>(json, ApiJson.Options)!;
 }

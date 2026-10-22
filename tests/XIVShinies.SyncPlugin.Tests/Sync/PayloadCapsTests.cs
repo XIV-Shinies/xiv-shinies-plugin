@@ -10,7 +10,7 @@ namespace XIVShinies.SyncPlugin.Tests.Sync;
 // than costing the whole upload a 400.
 public class PayloadCapsTests
 {
-    // Builds an id-list array (numbers) with the given count, as SyncFacts.Ids would produce.
+    // The shape SyncFacts.Ids produces.
     private static JsonArray IdArray(int count)
     {
         var array = new JsonArray();
@@ -20,7 +20,7 @@ public class PayloadCapsTests
         return array;
     }
 
-    // Builds an entry-list array (objects) with the given count, as SyncFacts.Items would produce.
+    // The shape SyncFacts.Items produces.
     private static JsonArray EntryArray(int count)
     {
         var array = new JsonArray();
@@ -112,9 +112,6 @@ public class PayloadCapsTests
     [Fact]
     public void A_compliant_payload_is_returned_by_the_same_dictionary_instance()
     {
-        // No truncation happened, so nothing needed to be rebuilt: bounding a compliant payload
-        // must not allocate a new dictionary, and its values must be the very same JsonNode
-        // instances that were passed in (no needless copying).
         var collections = new Dictionary<string, JsonNode>
         {
             ["quests"] = IdArray(5),
@@ -143,9 +140,8 @@ public class PayloadCapsTests
     [Fact]
     public void A_non_array_category_value_passes_through_untouched()
     {
-        // The caps are count limits on arrays — any other JSON shape a category carries (the
-        // questSequences object, for example) is not this class's business and rides through
-        // untouched.
+        // The caps limit array counts. Any other shape, such as the questSequences object, rides
+        // through.
         var collections = new Dictionary<string, JsonNode>
         {
             ["future"] = new JsonObject { ["someFlag"] = true },
@@ -158,8 +154,7 @@ public class PayloadCapsTests
         Assert.Same(collections["future"], bounded["future"]);
     }
 
-    // A truncated list is not the character's complete set, so the cut must retract the claim
-    // (PayloadCaps.Bound's remarks carry the reasoning).
+    // A truncated list is not the character's complete set (see PayloadCaps.Bound).
     [Fact]
     public void Capping_a_category_retracts_its_completeness_claim()
     {
@@ -179,8 +174,7 @@ public class PayloadCapsTests
         Assert.DoesNotContain("facewear", bounded.CompleteKeys);
     }
 
-    // Only the category that was cut loses its claim: an untouched list is still complete, and
-    // one over-cap category must not silently disarm the rest of the upload's declarations.
+    // One over-cap category must not disarm the upload's other declarations.
     [Fact]
     public void Capping_one_category_leaves_another_categorys_claim_intact()
     {
@@ -201,8 +195,6 @@ public class PayloadCapsTests
         Assert.Contains("ornaments", bounded.CompleteKeys);
     }
 
-    // Nothing was over a cap, so there is nothing to rebuild: the snapshot that ships is the very
-    // one that was collected, claims and all.
     [Fact]
     public void A_compliant_snapshot_is_returned_as_the_same_instance()
     {

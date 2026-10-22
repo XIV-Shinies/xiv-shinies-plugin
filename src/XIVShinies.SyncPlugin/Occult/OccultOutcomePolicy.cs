@@ -16,21 +16,20 @@ public enum OccultOutcomeKind
     BackOff,
 
     /// <summary>
-    /// The client refused to send (an unusable token or backend setting). No request left the
-    /// machine, so there is nothing to pace, and a backoff would only delay the first upload once
-    /// the setting is fixed.
+    /// The client refused to send, over an unusable token or backend setting. No request left the
+    /// machine, so a backoff would only delay the first upload once the setting is fixed.
     /// </summary>
     Skip,
 
     /// <summary>
-    /// A refusal only the player can fix (a rejected token, or a character the server would not
-    /// match): raise the halt shared with /sync.
+    /// A refusal only the player can fix, such as a rejected token or a character the server would
+    /// not match: raise the halt shared with /sync.
     /// </summary>
     Halt,
 
     /// <summary>
-    /// A terminal rejection of the payload itself (400, 405, 413), a plugin bug the same snapshot
-    /// would hit again: go quiet until <see cref="OccultOutcome.Until"/>. Nothing for the player to do.
+    /// A terminal rejection of the payload (400, 405, 413), a plugin bug the same snapshot would hit
+    /// again: go quiet until <see cref="OccultOutcome.Until"/>. Nothing for the player to do.
     /// </summary>
     Pause,
 
@@ -42,16 +41,15 @@ public enum OccultOutcomeKind
 /// <param name="Kind">What to do.</param>
 /// <param name="Until">When a <see cref="OccultOutcomeKind.BackOff"/> or
 /// <see cref="OccultOutcomeKind.Pause"/> ends; null for every other outcome.</param>
-// A `record struct`: a small value with value equality, copied rather than shared like a class.
 public readonly record struct OccultOutcome(OccultOutcomeKind Kind, DateTimeOffset? Until = null);
 
 /// <summary>Decides what the live tracker does with an upload's answer.</summary>
 /// <remarks>
-/// The order of the checks is part of the rule, because the status sets overlap.
-/// <see cref="ApiStatus.NotConfigured"/> comes before the halt, although
-/// <see cref="RetryPolicy.RequiresUserAction"/> counts it: no request left the machine, so there is
-/// no refusal to report, and the config poll raises that halt on its own. The halt comes before the
-/// pause, because <see cref="ApiStatusMap.IsTerminal"/> counts every user-action status too.
+/// The check order is part of the rule, because the status sets overlap.
+/// <see cref="ApiStatus.NotConfigured"/> comes before the halt, though
+/// <see cref="RetryPolicy.RequiresUserAction"/> counts it: no request left the machine, and the
+/// config poll raises that halt itself. The halt comes before the pause, because
+/// <see cref="ApiStatusMap.IsTerminal"/> counts every user-action status too.
 /// </remarks>
 public static class OccultOutcomePolicy
 {

@@ -6,8 +6,8 @@ using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
 
-// The settings window's per-category status memory. CollectionStatusMemory's remarks explain
-// why the memory is merged rather than replaced; these tests hold each merge to that rule.
+// The settings window's per-category status memory. CollectionStatusMemory explains why each pass
+// merges into it rather than replacing it.
 public class CollectionStatusMemoryTests
 {
     private static CollectionSnapshot Snapshot(
@@ -78,8 +78,7 @@ public class CollectionStatusMemoryTests
         Assert.Equal("half read.", merged["facewear"]);
     }
 
-    // The transition the panel's honesty rests on: a session that later reads the category in
-    // full must stop being described as partial.
+    // A later full read must stop the panel calling the category partial.
     [Fact]
     public void A_category_collected_without_a_note_loses_its_old_one()
     {
@@ -98,8 +97,8 @@ public class CollectionStatusMemoryTests
         Assert.Equal("half read.", merged["facewear"]);
     }
 
-    // A skipped category is not a collected one, so its stale note survives — invisibly, because
-    // the panel shows the skip reason ahead of it (see ReadStatusViewTests).
+    // A skip is not a collection, so the stale note survives. The panel shows the skip reason ahead
+    // of it (see ReadStatusViewTests).
     [Fact]
     public void A_skipped_category_keeps_its_stale_note_for_the_skip_reason_to_outrank()
     {

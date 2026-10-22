@@ -4,17 +4,11 @@ using XIVShinies.SyncPlugin.Windows;
 namespace XIVShinies.SyncPlugin.Tests.Windows;
 
 // The warning a sharing card draws when its toggle is ticked but nothing is shared, and which
-// reason wins when several hold. Each `[Fact]` is one test, like `it(...)` in Jest; a `[Theory]`
-// runs once per `[InlineData]` row, like `it.each`.
+// reason wins when several hold.
 public class SharingCardLineTests
 {
-    // `const` fixes the value when the code compiles, like a module-level `const` in TypeScript;
-    // `private` keeps it inside this class.
     private const string HaltSentence = "Fix it on the website.";
 
-    // `=>` makes the expression after it the whole method body, like an arrow function without
-    // braces. `string?` means the result may be null, like `string | null`. The named arguments say
-    // which flag each value is.
     private static string? LineFor(bool switchOff, bool canRun, bool halted, bool characterNotRead) =>
         SharingCardLine.For(
             stoppedBySyncSwitch: switchOff,
@@ -23,8 +17,7 @@ public class SharingCardLineTests
             characterNotRead: characterNotRead,
             haltSentence: HaltSentence);
 
-    // The master switch names itself whatever else holds: while it is off, nothing else runs. Every
-    // combination of the other three is pinned.
+    // While the master switch is off nothing else runs, so it names itself whatever else holds.
     [Theory]
     [InlineData(false, false, false)]
     [InlineData(false, false, true)]
@@ -40,8 +33,8 @@ public class SharingCardLineTests
             SharingCardLine.SyncSwitchedOffSentence, LineFor(true, canRun, halted, characterNotRead));
     }
 
-    // With another gate shut (the toggle, the server, onboarding, the token, or a config that has not
-    // arrived), none is a reason the line names, so no line is added.
+    // canRun is false while another gate is shut: the toggle, the server, onboarding, the token, or a
+    // config not yet arrived. The line names none of those.
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -52,8 +45,7 @@ public class SharingCardLineTests
         Assert.Null(LineFor(false, canRun: false, halted, characterNotRead));
     }
 
-    // A halt names its fix, and outranks a character that could not be read: one press clears both.
-    // `$"...{x}..."` is an interpolated string, like a TypeScript template literal.
+    // A halt outranks a character that could not be read: one press clears both.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

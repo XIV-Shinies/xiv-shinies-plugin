@@ -24,7 +24,6 @@ public class PayloadCapWarningsTests
         Assert.Equal("quests: dropped 1 entry over the contract cap of 50000", Assert.Single(lines));
     }
 
-    // Pairs with the singular case above, so both branches of the noun are pinned.
     [Fact]
     public void The_line_agrees_its_noun_with_the_number_dropped()
     {
@@ -35,7 +34,7 @@ public class PayloadCapWarningsTests
         Assert.Equal("quests: dropped 2 entries over the contract cap of 50000", Assert.Single(lines));
     }
 
-    // The dedupe's reason for existing — see PayloadCapWarnings for why the condition is standing.
+    // An overage is a standing condition; see PayloadCapWarnings.
     [Fact]
     public void The_same_category_is_not_reported_twice()
     {
@@ -47,8 +46,7 @@ public class PayloadCapWarningsTests
         Assert.Empty(second);
     }
 
-    // Silence is per category, not global. A second category going over is news the first one's
-    // warning never carried.
+    // Silence is per category: a second category going over is news.
     [Fact]
     public void A_category_that_has_not_been_reported_still_gets_its_line()
     {
@@ -61,8 +59,7 @@ public class PayloadCapWarningsTests
             "items: dropped 1 entry over the contract cap of 10000", Assert.Single(second));
     }
 
-    // The obvious dedupe key is the whole drop; a growing overage would then re-report the same
-    // condition.
+    // Keyed by category, not by the whole drop, which would re-report a growing overage.
     [Fact]
     public void A_larger_overage_in_a_reported_category_stays_silent()
     {
@@ -74,7 +71,7 @@ public class PayloadCapWarningsTests
         Assert.Empty(second);
     }
 
-    // Exists for the character switch — see SyncManager.OnLogout for why the memory is dropped.
+    // For the character switch; SyncManager.OnLogout says why the memory is dropped.
     [Fact]
     public void A_reset_lets_a_reported_category_be_reported_again()
     {
@@ -96,9 +93,8 @@ public class PayloadCapWarningsTests
         Assert.Empty(warnings.LinesFor([]));
     }
 
-    // Two categories cut together each earn their own line rather than one combined summary, so the
-    // log names every category a reader would otherwise have to go looking for. Asserted as an
-    // ordered list: LinesFor returns the lines in the order the cuts were handed over.
+    // One line per category rather than a summary, so the log names each one. LinesFor keeps the
+    // order the cuts were handed over.
     [Fact]
     public void Every_category_over_a_cap_gets_its_own_line()
     {

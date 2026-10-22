@@ -30,7 +30,7 @@ public class OnboardingStateTests
         Assert.False(state.IsComplete);
     }
 
-    // The welcome step only tells the user what the plugin does. There is nothing to get wrong.
+    // The welcome step only describes the plugin, so there is nothing to get wrong.
     [Fact]
     public void The_welcome_step_can_always_be_left()
     {
@@ -54,8 +54,7 @@ public class OnboardingStateTests
         Assert.True(state.IsComplete);
     }
 
-    // The account link is the one step with a real precondition: the server has to have confirmed
-    // the token. Otherwise the user finishes a wizard that cannot possibly sync.
+    // Without a server-confirmed token the user would finish a wizard that cannot sync.
     [Fact]
     public void The_account_step_cannot_be_left_until_the_token_is_verified()
     {
@@ -69,10 +68,9 @@ public class OnboardingStateTests
         Assert.True(state.CanAdvance);
     }
 
-    // The account step's second precondition. The next step asks the user to consent to the collections
-    // the server offers, and the per-group checkboxes within them come from a config fetched on the back
-    // of the verified token. Arriving before that answer means being asked to consent to a list that is
-    // still loading — and watching group checkboxes appear beneath a category already ticked.
+    // The consent step's group checkboxes come from a config fetched after the token is verified.
+    // Arriving early would ask for consent to a list still loading, with boxes appearing under a ticked
+    // category.
     [Fact]
     public void The_account_step_cannot_be_left_while_the_server_config_is_still_outstanding()
     {
@@ -88,12 +86,9 @@ public class OnboardingStateTests
         Assert.True(state.CanAdvance);
     }
 
-    // The wait is a precondition of the account step alone. It can never hold up a step that was not
-    // waiting on the server in the first place — including the consent step it exists to protect, which
-    // by then has what it was waiting for.
-    //
-    // (Whether the wait ends on a FAILED poll as well as a successful one is SyncManager's contract, not
-    // this class's: it lowers the flag on any answer at all, and in-game QA verifies that.)
+    // The wait keeps the user off the consent step until its checkboxes are known, so it holds up
+    // the account step alone. Ending it on a failed poll is SyncManager's job: it lowers the flag
+    // on any answer.
     [Theory]
     [InlineData(OnboardingStep.Welcome)]
     [InlineData(OnboardingStep.ChooseCategories)]
@@ -110,9 +105,8 @@ public class OnboardingStateTests
         Assert.True(state.CanAdvance);
     }
 
-    // `Advance()` is `Step++` on an enum, guarded only by CanAdvance's `_ => false` arm. If that guard
-    // were ever loosened, Step would walk past Done into an undefined value and IsComplete would
-    // silently start returning false.
+    // Advance increments the enum, guarded only by CanAdvance's `_ => false` arm. Loosen that and Step
+    // walks past Done, and IsComplete turns false.
     [Fact]
     public void Advancing_past_the_last_step_stays_at_the_last_step()
     {
@@ -152,8 +146,8 @@ public class OnboardingStateTests
         Assert.False(state.CanAdvance);
     }
 
-    // Editing the token invalidates whatever the last probe said. Otherwise a user could verify one
-    // token, paste a different one, and walk forward on the strength of the old answer.
+    // Keeping the verification would let a user verify one token, paste another, and walk forward on
+    // the old answer.
     [Fact]
     public void Editing_the_token_discards_the_previous_verification()
     {
@@ -207,7 +201,6 @@ public class OnboardingStateTests
         Assert.Equal(OnboardingStep.Welcome, state.Step);
     }
 
-    // Going back and forth must not require re-verifying a token that has not changed.
     [Fact]
     public void Stepping_back_keeps_a_verified_token()
     {
@@ -233,7 +226,7 @@ public class OnboardingStateTests
         Assert.True(settings.MasterEnabled);
     }
 
-    // A safety interlock: the wizard is the only thing that sets these, and only at the end of it.
+    // The wizard is the only thing that sets these, and only at its end.
     [Fact]
     public void Finishing_before_the_last_step_records_nothing()
     {
@@ -246,7 +239,6 @@ public class OnboardingStateTests
         Assert.False(settings.MasterEnabled);
     }
 
-    // Finishing must not silently opt the user into categories they never ticked.
     [Fact]
     public void Finishing_does_not_enable_any_category_on_the_users_behalf()
     {

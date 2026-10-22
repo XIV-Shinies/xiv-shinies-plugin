@@ -6,13 +6,12 @@ using XIVShinies.SyncPlugin.Beastmaster;
 namespace XIVShinies.SyncPlugin.Tests.Beastmaster;
 
 // Reads which beasts the Master's Bestiary says the character holds. The layout is positional, so
-// most of these are really about one question: does a page that is not shaped the way this expects
-// get refused, rather than read as beasts from the wrong slots?
+// most of these check that a misshapen page is refused rather than read from the wrong slots.
 public class BestiaryPageTests
 {
-    // Builds a page shaped like the real window: a tally at slot 7, then fixed-size records from
-    // slot 24 — the bestiary number, three flags with the held flag second of them, an icon, the
-    // caption, and two more slots this reader has no use for.
+    // Shaped like the real window: a tally at slot 7, then fixed-size records from slot 24. Each
+    // record is the bestiary number, three flags with the held flag second, an icon, the caption,
+    // and two unused slots.
     private static List<AddonValue> Page(
         string? tally,
         params (int Number, bool Held)[] beasts)
@@ -44,8 +43,7 @@ public class BestiaryPageTests
         Assert.Equal(new[] { 1, 3 }, page.Captured);
     }
 
-    // Every number on the page is "seen" whether held or not, because seeing a beast you do not
-    // hold is exactly what proves you do not hold it.
+    // Seeing a beast you do not hold is what proves you do not hold it.
     [Fact]
     public void Every_listed_beast_is_seen_whether_held_or_not()
     {
@@ -80,7 +78,7 @@ public class BestiaryPageTests
     }
 
     // A missing tally costs the completeness claim but not the beasts: what the page listed is
-    // still true about the character.
+    // still true.
     [Fact]
     public void A_page_with_no_tally_still_reports_its_beasts()
     {
@@ -90,15 +88,14 @@ public class BestiaryPageTests
         Assert.Null(page.BeastTotal);
     }
 
-    // The run of records ends where the window's other data begins, and that shows up as a slot
-    // not holding what a record holds. Everything past that point belongs to something else.
+    // The records end where a slot stops holding what a record holds; everything past it is other
+    // window data.
     [Fact]
     public void Reading_stops_where_the_records_stop()
     {
         var values = Page("2/50", (1, true), (2, true));
 
-        // The window's detail pane for the selected beast, which follows the list in the real
-        // window and must not be read as more beasts.
+        // The detail pane for the selected beast, which follows the list in the real window.
         values.Add(AddonValue.Unreadable);
         values.Add(AddonValue.FromBoolean(true));
         values.Add(AddonValue.FromBoolean(true));
@@ -113,8 +110,7 @@ public class BestiaryPageTests
         Assert.Equal(new[] { 1, 2 }, page.Seen);
     }
 
-    // The caption names the beast's number, so it proves the record is aligned. A run of slots that
-    // merely looks like a record will not also caption itself correctly — and a misaligned read is
+    // The caption names the beast's number, which proves the record is aligned. A misaligned read is
     // the one failure that could permanently mark beasts the character does not hold.
     [Fact]
     public void A_record_whose_caption_names_a_different_beast_is_refused()
@@ -148,8 +144,7 @@ public class BestiaryPageTests
         Assert.Empty(BestiaryPage.Read(values).Seen);
     }
 
-    // The held flag has to be a flag. A slot holding something else means the layout moved, and
-    // guessing which way it moved is exactly what this must not do.
+    // A non-flag in the held slot means the layout moved, and the reader must not guess how.
     [Fact]
     public void A_record_whose_held_slot_is_not_a_flag_is_refused()
     {
@@ -159,8 +154,8 @@ public class BestiaryPageTests
         Assert.Empty(BestiaryPage.Read(values).Seen);
     }
 
-    // The caption slot holding something that is not text at all, as distinct from text that names
-    // the wrong beast. Both mean the layout moved; this is the arm that catches it first.
+    // A caption slot holding no text at all means the layout moved, as a caption naming the wrong
+    // beast does; this check catches it first.
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -172,8 +167,8 @@ public class BestiaryPageTests
         Assert.Empty(BestiaryPage.Read(values).Seen);
     }
 
-    // With no tally there is no bestiary-sized bound, so a generous ceiling stands in — its job is
-    // to refuse an absurd number, not to encode how many beasts the game has.
+    // With no tally to bound the numbers, a generous ceiling stands in. It refuses absurd numbers; it
+    // does not encode the bestiary's size.
     [Fact]
     public void An_absurd_number_is_refused_even_with_no_tally_to_bound_it()
     {
@@ -219,8 +214,7 @@ public class BestiaryPageTests
         Assert.Null(page.BeastTotal);
     }
 
-    // A record cut short by the end of the values is not a record. Reading it would take the
-    // remaining slots from beyond the array the window actually handed over.
+    // Reading such a record would take slots from beyond the array the window handed over.
     [Fact]
     public void A_record_running_past_the_end_of_the_values_is_refused()
     {
@@ -230,8 +224,7 @@ public class BestiaryPageTests
         Assert.Empty(BestiaryPage.Read(values).Seen);
     }
 
-    // The real window, as captured from the game: 25 records a page, and the ten the character does
-    // not hold are the ones whose held flag is false.
+    // As captured from the game: 25 records a page, with the ten not held flagged false.
     [Fact]
     public void A_full_page_shaped_like_the_real_window_reads_end_to_end()
     {
