@@ -123,6 +123,12 @@ internal sealed class OccultManager : IDisposable
     /// </summary>
     private volatile bool uploadInFlight;
 
+    /// <summary>
+    /// The tracker's wait after a 503 <c>sync_disabled</c>, which can end early once the website says the
+    /// tracker is back on (see <see cref="SyncResumeWait"/>). The upload task arms it; the tick asks.
+    /// </summary>
+    private readonly SyncResumeWait syncWait = new();
+
     /// <summary>Wires the manager to the game. Subscribes only; uploads nothing on its own.</summary>
     public OccultManager(
         IFramework framework,
@@ -207,7 +213,19 @@ internal sealed class OccultManager : IDisposable
     /// <summary>One per-second pass: gates, enter and leave detection, state diff, upload dispatch.</summary>
     private void Tick(DateTimeOffset now)
     {
+        // The poll number before the config, so the config is from that poll or a later one (see
+        // SyncManager.ConfigAnsweredPoll).
+        var answeredPoll = syncManager.ConfigAnsweredPoll;
         var config = syncManager.RemoteConfig;
+
+        // Ends a switched-off wait once the latest /config says the tracker is on (see SyncResumeWait).
+        // Asked before the gate below, so a wait set while the gate was closed still ends.
+        var trackerOn = config is not null && !OccultGate.ServerHasSwitchedOff(config);
+        if (syncWait.TryEnd(answeredPoll, trackerOn, now))
+        {
+            scheduler.SyncResumed();
+            log.Debug("Occult tracker: syncing is back on; uploads resume.");
+        }
 
         // The halt shared with /sync: once any path is refused for something only the user can fix,
         // this one goes quiet rather than earn its own refusal, and all resume on "Sync now".
@@ -395,18 +413,33 @@ internal sealed class OccultManager : IDisposable
             var now = timeProvider.GetUtcNow();
 
             // OccultOutcomePolicy decides; this switch carries it out.
-            var outcome = OccultOutcomePolicy.Classify(response.Status, response.RetryAfter, now);
+            var outcome = OccultOutcomePolicy.Classify(
+                response.Status, response.RetryAfter, now, response.Error?.Error);
             switch (outcome.Kind)
             {
                 case OccultOutcomeKind.Applied:
                     scheduler.MarkUploaded(now);
+                    syncWait.UploadAccepted();
                     LogApplied(response.Value, trigger);
                     break;
 
                 // The server asked for quiet (429, or a 503 kill switch or tracker_unavailable), or
                 // rejected the payload outright (400, 405, 413).
                 case OccultOutcomeKind.BackOff or OccultOutcomeKind.Pause when outcome.Until is { } until:
-                    scheduler.BackOffUntil(until);
+                    // syncWait is armed before the scheduler's wait is set (see SyncResumeWait).
+                    if (outcome.EndsWhenSyncResumes
+                        && syncWait.Arm(syncManager.ConfigPollsStarted, now, until))
+                    {
+                        scheduler.BackOffUntilSyncResumes(until);
+                    }
+                    else
+                    {
+                        scheduler.BackOffUntil(until);
+                    }
+
+                    if (outcome.EndsWhenSyncResumes)
+                        syncManager.BringConfigPollForward();
+
                     log.Debug($"Occult tracker quiet until {until:u} after {response.Status}.");
                     break;
 

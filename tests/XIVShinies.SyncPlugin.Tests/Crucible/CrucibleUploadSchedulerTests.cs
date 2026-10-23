@@ -31,6 +31,10 @@ public class CrucibleUploadSchedulerTests
             At(seconds),
             closed);
 
+    private static CrucibleObservation Familiars(bool afterFight, double seconds, int hp = 500) =>
+        CrucibleUploadBuilder.Familiars(
+            afterFight, [new CrucibleFieldedFamiliar(13, hp, 560, true, At(seconds))], At(seconds));
+
     private static string[] Kinds(CrucibleUpload upload) =>
         upload.Observations.Select(CrucibleUploadScheduler.KindOf).ToArray();
 
@@ -185,6 +189,37 @@ public class CrucibleUploadSchedulerTests
 
         var second = scheduler.Poll(At(3))!;
         Assert.True(second.Observations.Single() is CrucibleTeamObservation { Closed: false });
+    }
+
+    // Only the snapshot taken as a fight ended lists the familiars that left the field during it, so
+    // a later familiars snapshot never replaces it.
+    [Fact]
+    public void A_familiars_snapshot_after_the_fight_ends_goes_in_the_next_upload()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Familiars(afterFight: true, 0), Board, At(0));
+        scheduler.Queue(Familiars(afterFight: false, 1), Board, At(1));
+
+        var first = scheduler.Poll(At(3))!;
+        Assert.True(first.Observations.Single() is CrucibleFamiliarsObservation { AfterFight: true });
+        scheduler.MarkAccepted(first, At(3));
+
+        var second = scheduler.Poll(At(3))!;
+        Assert.True(second.Observations.Single() is CrucibleFamiliarsObservation { AfterFight: false });
+    }
+
+    // Only the familiar's newest HP needs to go up.
+    [Fact]
+    public void A_familiars_snapshot_outside_a_fight_is_replaced_by_a_newer_one()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Familiars(afterFight: false, 0, hp: 300), Board, At(0));
+        scheduler.Queue(Familiars(afterFight: false, 1, hp: 560), Board, At(1));
+
+        var upload = scheduler.Poll(At(3))!;
+
+        var familiars = Assert.IsType<CrucibleFamiliarsObservation>(upload.Observations.Single());
+        Assert.Equal(560, familiars.Familiars.Single().Hp.Current);
     }
 
     [Fact]
@@ -784,6 +819,142 @@ public class CrucibleUploadSchedulerTests
         Assert.Equal(["bag"], Kinds(scheduler.Poll(At(100))!));
     }
 
+    // RetryPolicy.EndsWhenSyncResumes says which waits syncing coming back on can end.
+    [Fact]
+    public void A_wait_for_sync_to_resume_ends_when_sync_resumes()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        Assert.Null(scheduler.Poll(At(60)));
+
+        scheduler.SyncResumed();
+
+        Assert.Same(upload, scheduler.Poll(At(60)));
+    }
+
+    // This keeps syncing coming back on at once from turning into a tight loop of requests.
+    [Fact]
+    public void Sync_resuming_still_waits_the_least_retry_wait()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(At(16.9)));
+        Assert.Same(upload, scheduler.Poll(At(17)));
+    }
+
+    // With no word that syncing is back on, the wait ends when the server said it would.
+    [Fact]
+    public void A_wait_for_sync_to_resume_still_ends_at_its_deadline()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+
+        Assert.Null(scheduler.Poll(At(3601)));
+        Assert.Same(upload, scheduler.Poll(At(3602)));
+    }
+
+    // Syncing coming back on says nothing about load.
+    [Fact]
+    public void Sync_resuming_leaves_a_rate_limit_in_force()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(100), At(2));
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(At(99)));
+        Assert.Same(upload, scheduler.Poll(At(100)));
+    }
+
+    [Fact]
+    public void The_later_of_two_waits_for_sync_to_resume_wins()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+        scheduler.MarkRetry(upload, At(600), At(2), endsWhenSyncResumes: true);
+
+        Assert.Null(scheduler.Poll(At(1800)));
+    }
+
+    // Late means a reset came between the request and its answer.
+    [Fact]
+    public void A_late_wait_for_sync_to_resume_still_holds_until_sync_resumes()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var early = scheduler.Poll(At(2))!;
+
+        scheduler.Reset();
+        scheduler.MarkRetry(early, At(3603), At(3), endsWhenSyncResumes: true);
+        scheduler.Queue(Bag(120, 3), Board, At(3));
+
+        Assert.Null(scheduler.Poll(At(60)));
+
+        scheduler.SyncResumed();
+
+        Assert.Equal(["bag"], Kinds(scheduler.Poll(At(60))!));
+    }
+
+    // The wait is about the token, not the queue.
+    [Fact]
+    public void A_reset_keeps_a_wait_for_sync_to_resume()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+
+        scheduler.Reset();
+        scheduler.Queue(Bag(120, 10), Board, At(10));
+
+        Assert.Null(scheduler.Poll(At(60)));
+    }
+
+    // Syncing coming back on ends only its own wait.
+    [Fact]
+    public void Sync_resuming_leaves_a_refused_payloads_hold()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        scheduler.MarkDropped(scheduler.Poll(At(2))!, At(2), At(62));
+        scheduler.Queue(Bag(120, 3), Board, At(3));
+
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(At(61)));
+        Assert.NotNull(scheduler.Poll(At(62)));
+    }
+
+    // The wait moves back with the clock.
+    [Fact]
+    public void A_clock_that_jumps_backwards_keeps_a_wait_for_sync_to_resume_its_length()
+    {
+        var scheduler = new CrucibleUploadScheduler();
+        scheduler.Queue(Bag(100, 0), Board, At(0));
+        var upload = scheduler.Poll(At(2))!;
+        scheduler.MarkRetry(upload, At(3602), At(2), endsWhenSyncResumes: true);
+
+        Assert.Null(scheduler.Poll(At(-3598)));
+        Assert.Same(upload, scheduler.Poll(At(2)));
+    }
+
     // --- Resetting ------------------------------------------------------------------------------
 
     // A reset, as on logging out, also forgets the retry and the content change detection compares
@@ -866,6 +1037,7 @@ public class CrucibleUploadSchedulerTests
                 new CrucibleOfferReading(CrucibleOfferSource.Shop, 0, null, []), T0, false),
             CrucibleUploadBuilder.Results(results, T0, null, null, _ => null),
             CrucibleUploadBuilder.Self(1, 2, T0),
+            CrucibleUploadBuilder.Familiars(false, [new CrucibleFieldedFamiliar(1, 2, 3, true, T0)], T0),
         ];
 
         foreach (var observation in observations)
@@ -873,5 +1045,20 @@ public class CrucibleUploadSchedulerTests
             var json = JsonNode.Parse(JsonSerializer.Serialize(observation, ApiJson.Options))!;
             Assert.Equal(json["kind"]!.GetValue<string>(), CrucibleUploadScheduler.KindOf(observation));
         }
+    }
+
+    // No sort by name or by declared order, ascending or descending, gives this order.
+    [Fact]
+    public void An_uploads_kinds_are_listed_in_its_order()
+    {
+        Assert.Equal(
+            "familiars, team, bag",
+            CrucibleUploadScheduler.KindsOf([Familiars(false, 0), Team(false, 0), Bag(1, 0)]));
+    }
+
+    [Fact]
+    public void An_upload_with_no_snapshots_says_so()
+    {
+        Assert.Equal("no snapshots", CrucibleUploadScheduler.KindsOf([]));
     }
 }

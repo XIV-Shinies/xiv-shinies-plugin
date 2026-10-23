@@ -1,9 +1,11 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using Serilog.Events;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Diagnostics;
 using XIVShinies.SyncPlugin.Sync;
@@ -11,28 +13,30 @@ using XIVShinies.SyncPlugin.Sync;
 namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 
 /// <summary>
-/// Runs the Crucible run sharing: follows the character in and out of the boards, feeds what the
-/// windows and the character's own HP show into the scheduler, and uploads what the scheduler hands out.
+/// Runs the Crucible run sharing: follows the character through the boards, feeds the windows and the
+/// character's and familiar's HP into the scheduler, and uploads what it hands out.
 /// </summary>
 /// <remarks>
 /// The rules live in classes that touch no game state (<see cref="CrucibleGate"/>,
-/// <see cref="CrucibleTerritories"/>, <see cref="CrucibleFeed"/>, <see cref="CrucibleUploadScheduler"/>,
-/// <see cref="CrucibleOutcomePolicy"/>); this class moves data between them, the game and the API
-/// client. The game is read on its main thread, and each upload, a plain object with no game handles,
-/// is sent and settled on a background task. A frame that finds the gate closed stands down and
-/// discards what was waiting, sending no leave, since a leave would be an upload the gate refused.
+/// <see cref="CrucibleTerritories"/>, <see cref="CrucibleFeed"/>, <see cref="CrucibleFamiliarTracker"/>,
+/// <see cref="CrucibleUploadScheduler"/>, <see cref="CrucibleOutcomePolicy"/>); this class moves data
+/// between them, the game and the API client. The game is read on its main thread, and each upload,
+/// a plain object with no game handles, is sent and settled on a background task. A frame that finds
+/// the gate closed stands down and discards what was waiting, sending no leave, since a leave would be
+/// an upload the gate refused.
 /// </remarks>
 internal sealed class CrucibleManager : IDisposable
 {
     /// <summary>
-    /// How often the character's own HP is read inside a board out of combat, and how often a visit
-    /// still waiting for its bag tries the run HUD again.
+    /// How often a board reads the familiar that is out, fights included, and the character's own HP out
+    /// of combat, and how often a visit still waiting for its bag tries the run HUD again.
     /// </summary>
     private static readonly TimeSpan ReadInterval = TimeSpan.FromSeconds(1);
 
     private readonly IFramework framework;
     private readonly IClientState clientState;
     private readonly ICondition condition;
+    private readonly IBuddyList buddyList;
     private readonly IPluginLog log;
     private readonly ApiClient apiClient;
     private readonly PluginSettings settings;
@@ -51,6 +55,15 @@ internal sealed class CrucibleManager : IDisposable
 
     private readonly CrucibleFeed feed;
     private readonly CrucibleObserver observer;
+
+    /// <summary>
+    /// Which familiar each <c>Pet</c> row belongs to, or null when the sheet could not be read, in
+    /// which case no familiar HP is sent.
+    /// </summary>
+    private readonly CrucibleFamiliarLinks? familiarLinks;
+
+    /// <summary>Decides when a snapshot of the familiars' HP is handed out.</summary>
+    private readonly CrucibleFamiliarTracker familiarTracker = new();
 
     /// <summary>
     /// Which frame failures have been logged in full, so a fault repeating every frame does not fill
@@ -74,6 +87,12 @@ internal sealed class CrucibleManager : IDisposable
     private readonly CancellationToken lifetimeToken;
 
     /// <summary>
+    /// The wait after a switched-off 503, which can end early once the website says sharing is back on (see
+    /// <see cref="SyncResumeWait"/>). Armed by the upload task, asked by the frame handler.
+    /// </summary>
+    private readonly SyncResumeWait syncWait = new();
+
+    /// <summary>
     /// Whether a refused payload has been logged as a warning since the sharing last started over: a
     /// login, a logout or a stand-down.
     /// </summary>
@@ -87,8 +106,16 @@ internal sealed class CrucibleManager : IDisposable
 
     private bool wasInCombat;
 
-    /// <summary>When the character's own HP and a pending bag are next due to be read.</summary>
+    /// <summary>
+    /// When the familiar, the character's own HP and a pending bag are next due to be read.
+    /// </summary>
     private DateTimeOffset nextReadAt;
+
+    /// <summary>
+    /// Whether a familiar the links could not name has been logged since the sharing last started over.
+    /// Only the first is, since every reading of it would log it again.
+    /// </summary>
+    private bool unnamedFamiliarReported;
 
     /// <summary>Wires the manager to the game. Subscribes only; uploads nothing on its own.</summary>
     public CrucibleManager(
@@ -98,6 +125,7 @@ internal sealed class CrucibleManager : IDisposable
         IGameGui gameGui,
         IAddonLifecycle addonLifecycle,
         IDataManager dataManager,
+        IBuddyList buddyList,
         IPluginLog log,
         ApiClient apiClient,
         PluginSettings settings,
@@ -108,6 +136,7 @@ internal sealed class CrucibleManager : IDisposable
         this.framework = framework;
         this.clientState = clientState;
         this.condition = condition;
+        this.buddyList = buddyList;
         this.log = log;
         this.apiClient = apiClient;
         this.settings = settings;
@@ -123,6 +152,9 @@ internal sealed class CrucibleManager : IDisposable
         observer = new CrucibleObserver(
             addonLifecycle, gameGui, condition, () => GateOpen(syncManager.RemoteConfig),
             OnWindowRead, OnWindowClosed, CrucibleNameSheets.Load(dataManager, log), log);
+
+        // The familiar links are fixed game data too, so they also load once.
+        familiarLinks = CrucibleFamiliarLinkSheet.Load(dataManager, log);
 
         // Every `+=` here has a matching `-=` in Dispose.
         framework.Update += OnFrameworkUpdate;
@@ -189,9 +221,19 @@ internal sealed class CrucibleManager : IDisposable
     /// <summary>One frame: the gate, the visit, the reads that are due, and the upload that is.</summary>
     private void Tick(DateTimeOffset now)
     {
-        // Read once: the background config poll can replace it at any moment, and the gate and the
-        // heartbeat must see the same one.
+        // Read once: the config poll can replace it at any moment, and the gate and heartbeat must agree.
+        // The poll number is read first (see SyncManager.ConfigAnsweredPoll).
+        var answeredPoll = syncManager.ConfigAnsweredPoll;
         var config = syncManager.RemoteConfig;
+
+        // Once the latest /config says the sharing is on again, a switched-off 503's wait ends (see
+        // SyncResumeWait). Asked before the gate, so a wait set while the gate was closed still ends.
+        var sharingOn = config is not null && !CrucibleGate.ServerHasSwitchedOff(config);
+        if (syncWait.TryEnd(answeredPoll, sharingOn, now))
+        {
+            scheduler.SyncResumed();
+            log.Debug("Crucible run sharing: syncing is back on; uploads resume.");
+        }
 
         if (!GateOpen(config))
         {
@@ -207,6 +249,7 @@ internal sealed class CrucibleManager : IDisposable
         Follow(now);
 
         var inCombat = condition[ConditionFlag.InCombat];
+        var combatChanged = inCombat != wasInCombat;
 
         // The loot window can open a moment before the in-combat flag clears and may not redraw after,
         // so it is read once when the flag clears.
@@ -219,15 +262,22 @@ internal sealed class CrucibleManager : IDisposable
         if (nextReadAt > now + ReadInterval)
             nextReadAt = now;
 
-        if (feed.Board is not null && !inCombat && now >= nextReadAt)
+        // Also read on the frame the flag changes, so a fight's familiars go up as it ends and the
+        // familiar out as it begins is its first reading.
+        if (feed.Board is not null && (now >= nextReadAt || combatChanged))
         {
             nextReadAt = now + ReadInterval;
-            ReadOwnHp(now);
+            ReadFamiliar(inCombat, now);
 
-            // The HUD may not exist yet on the frame the character zones in, so a visit still waiting
-            // for its bag tries again (see CrucibleFeed.BagPending).
-            if (feed.BagPending)
-                observer.ReadIfOpen(CrucibleWindows.Hud);
+            if (!inCombat)
+            {
+                ReadOwnHp(now);
+
+                // The HUD may not exist yet on the frame the character zones in, so a visit still
+                // waiting for its bag tries again (see CrucibleFeed.BagPending).
+                if (feed.BagPending)
+                    observer.ReadIfOpen(CrucibleWindows.Hud);
+            }
         }
 
         Send(now);
@@ -280,8 +330,14 @@ internal sealed class CrucibleManager : IDisposable
     private void Follow(DateTimeOffset now)
     {
         var territory = (uint)clientState.TerritoryType;
+        var change = feed.Follow(territory, now);
 
-        switch (feed.Follow(territory, now))
+        // Each visit follows its familiars afresh: a fight cut short by leaving the board never ends
+        // inside it, so what was kept for that fight is dropped rather than sent.
+        if (change != CrucibleVisitChange.None)
+            familiarTracker.Reset();
+
+        switch (change)
         {
             case CrucibleVisitChange.Entered:
                 log.Debug($"Entered Crucible board {territory}; run sharing armed.");
@@ -340,6 +396,47 @@ internal sealed class CrucibleManager : IDisposable
             now);
     }
 
+    /// <summary>
+    /// Reads the familiar that is out, in combat or not, and feeds in the snapshot the reading calls for
+    /// (see <see cref="CrucibleFamiliarTracker"/>).
+    /// </summary>
+    /// <remarks>
+    /// Read from the game's record of the player's own pet, which holds the local player's familiar
+    /// alone. Only its data id and HP are read, never its <c>GameObject</c>, which would look the pet up
+    /// in the object table.
+    /// </remarks>
+    private void ReadFamiliar(bool inCombat, DateTimeOffset now)
+    {
+        // The links could not be read, so no familiar can be named and none is followed.
+        if (familiarLinks is null)
+            return;
+
+        if (familiarTracker.Observe(SummonedFamiliar(familiarLinks), inCombat, now) is { } observation)
+            feed.Offer(observation, (uint)clientState.TerritoryType, now);
+    }
+
+    /// <summary>
+    /// The familiar that is out, or null when none is, the record holds no reading of one, or it cannot
+    /// be named (see <see cref="CrucibleFamiliarLinks.Summoned"/>).
+    /// </summary>
+    private CrucibleSummoned? SummonedFamiliar(CrucibleFamiliarLinks links)
+    {
+        if (buddyList.PetBuddy is not { } pet)
+            return null;
+
+        var summoned = links.Summoned(pet.DataID, pet.CurrentHP, pet.MaxHP);
+
+        // A pet the bestiary does not link is reported once, so a moved sheet column shows in the log.
+        if (summoned is null && pet.DataID != 0 && links.PetIdFor(pet.DataID) is null
+            && !unnamedFamiliarReported)
+        {
+            unnamedFamiliarReported = true;
+            log.Debug($"Crucible run sharing: pet {pet.DataID} is no familiar the bestiary links.");
+        }
+
+        return summoned;
+    }
+
     /// <summary>Feeds in a window reading, filed under the territory the character stands in.</summary>
     private void OnWindowRead(string windowName, CrucibleSnapshot snapshot)
     {
@@ -378,8 +475,10 @@ internal sealed class CrucibleManager : IDisposable
     private void Discard()
     {
         feed.Reset();
+        familiarTracker.Reset();
         wasInCombat = false;
         rejectionReported = false;
+        unnamedFamiliarReported = false;
     }
 
     /// <summary>
@@ -395,6 +494,20 @@ internal sealed class CrucibleManager : IDisposable
 
         try
         {
+            var kinds = CrucibleUploadScheduler.KindsOf(upload.Observations);
+            var label = $"Crucible {upload.Trigger} upload ({kinds})";
+
+            // Verbose: a run sends many snapshots, and a full team one is about two kilobytes. Logging the
+            // snapshots alone keeps the character's name, world and id hash out of the log.
+            if (log.MinimumLogLevel <= LogEventLevel.Verbose)
+            {
+                foreach (var observation in upload.Observations)
+                {
+                    var json = JsonSerializer.Serialize(observation, ApiJson.Options);
+                    log.Verbose($"Crucible {upload.Trigger} snapshot: {json}");
+                }
+            }
+
             // Nothing below touches the game, so the method may resume on any thread.
             var response = await apiClient
                 .PostCrucibleObservationsAsync(request, lifetimeToken)
@@ -410,24 +523,32 @@ internal sealed class CrucibleManager : IDisposable
             {
                 case CrucibleOutcomeKind.Accepted:
                     scheduler.MarkAccepted(upload, now);
+                    syncWait.UploadAccepted();
                     settled = true;
-                    LogAccepted(response.Value, upload.Trigger);
+                    LogAccepted(response.Value, label);
                     break;
 
+                // syncWait.Arm decides whether Tick may end the wait early. It runs before the
+                // scheduler's wait is set (see SyncResumeWait).
                 case CrucibleOutcomeKind.Retry:
-                    scheduler.MarkRetry(upload, outcome.Until ?? now, now);
+                    var retryAt = outcome.Until ?? now;
+                    var endsEarly = outcome.EndsWhenSyncResumes
+                        && syncWait.Arm(syncManager.ConfigPollsStarted, now, retryAt);
+                    scheduler.MarkRetry(upload, retryAt, now, endsEarly);
                     settled = true;
+                    if (outcome.EndsWhenSyncResumes)
+                        syncManager.BringConfigPollForward();
+
                     // The note is the plugin's own text, chosen by matching the code, so no
                     // server-supplied text reaches the log.
                     var busyNote = CrucibleOutcomePolicy.IsBusy(errorCode) ? " (busy)" : string.Empty;
-                    log.Debug(
-                        $"Crucible {upload.Trigger} upload will be sent again: {response.Status}{busyNote}.");
+                    log.Debug($"{label} will be sent again: {response.Status}{busyNote}.");
                     break;
 
                 case CrucibleOutcomeKind.Drop:
                     scheduler.MarkDropped(upload, now, outcome.Until);
                     settled = true;
-                    LogRejected(upload.Trigger, response);
+                    LogRejected(label, response);
                     break;
 
                 // The halt names the fix on the sync card and each sharing card it stops, and keeps the
@@ -470,14 +591,15 @@ internal sealed class CrucibleManager : IDisposable
 
     /// <summary>Logs an accepted upload with what the server made of it.</summary>
     /// <param name="value">The 200 body, when one was parsed.</param>
-    private void LogAccepted(CrucibleObservationsResponse? value, CrucibleTrigger trigger)
+    /// <param name="label">The upload's trigger and kinds, as the log names it.</param>
+    private void LogAccepted(CrucibleObservationsResponse? value, string label)
     {
         // Server strings are clamped: the log is durable, and the backend is user-overridable.
         var outcome = ServerText.Clamp(value?.Outcome ?? "ok");
         var run = value?.RunId is { } id ? $" run={ServerText.Clamp(id)}" : string.Empty;
         var events = value?.Events is { } count ? $" events={count}" : string.Empty;
 
-        log.Debug($"Crucible {trigger} upload: {outcome}{run}{events}.");
+        log.Debug($"{label}: {outcome}{run}{events}.");
     }
 
     /// <summary>Logs an upload the server refused as a payload it will not take.</summary>
@@ -485,9 +607,10 @@ internal sealed class CrucibleManager : IDisposable
     /// The first since the sharing last started over is a warning, since the plugin and the server
     /// disagree about the contract; the rest are debug lines, so a run of refusals does not fill the log.
     /// </remarks>
-    private void LogRejected(CrucibleTrigger trigger, ApiResponse<CrucibleObservationsResponse> response)
+    /// <param name="label">The upload's trigger and kinds, as the log names it.</param>
+    private void LogRejected(string label, ApiResponse<CrucibleObservationsResponse> response)
     {
-        var message = $"Crucible {trigger} upload refused: {response.Status} ({response.HttpStatusCode}).";
+        var message = $"{label} refused: {response.Status} ({response.HttpStatusCode}).";
 
         if (rejectionReported)
         {

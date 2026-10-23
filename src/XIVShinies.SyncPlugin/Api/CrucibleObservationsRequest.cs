@@ -37,15 +37,15 @@ public sealed record CrucibleObservationsRequest
     public required uint TerritoryTypeId { get; init; }
 
     /// <summary>
-    /// The snapshots, at most one per kind, in the order they were observed. Empty on a heartbeat
-    /// or a leave, and still sent as an empty list.
+    /// The snapshots, at most one per kind, in the order they were observed. Empty on a heartbeat, a
+    /// leave, or an enter with nothing read, and still sent as an empty list.
     /// </summary>
     public required IReadOnlyList<CrucibleObservation> Observations { get; init; }
 }
 
 /// <summary>
-/// One snapshot: what a window showed, or the character's own HP. Each kind below is a record
-/// that inherits this one.
+/// One snapshot: what a window showed, the character's own HP, or the familiars' HP. Each kind below
+/// is a record that inherits this one.
 /// </summary>
 /// <remarks>
 /// Serialized through this base type, as the request's list is, each snapshot starts with a
@@ -58,6 +58,7 @@ public sealed record CrucibleObservationsRequest
 [JsonDerivedType(typeof(CrucibleOfferObservation), "offer")]
 [JsonDerivedType(typeof(CrucibleResultsObservation), "results")]
 [JsonDerivedType(typeof(CrucibleSelfObservation), "self")]
+[JsonDerivedType(typeof(CrucibleFamiliarsObservation), "familiars")]
 public abstract record CrucibleObservation
 {
     /// <summary>When this was observed, as second-exact UTC text (see <see cref="WireTime"/>).</summary>
@@ -300,4 +301,45 @@ public sealed record CrucibleSelfObservation : CrucibleObservation
 {
     /// <summary>The character's current and maximum HP.</summary>
     public required CrucibleHpUpload Hp { get; init; }
+}
+
+/// <summary>
+/// The HP of the familiars the player had out, from the game's record of the player's own pet.
+/// </summary>
+/// <remarks>
+/// Sent as a fight ends, listing each familiar that was out during it: one that left the field with
+/// its HP as it left, and one still out with its HP at the end. Outside a fight, sent when the
+/// familiar that is out changes HP, listing that one.
+/// </remarks>
+public sealed record CrucibleFamiliarsObservation : CrucibleObservation
+{
+    /// <summary>
+    /// True when taken as a fight ended, so each familiar carries its final HP for that fight.
+    /// </summary>
+    public required bool AfterFight { get; init; }
+
+    /// <summary>The familiars, in the order they first came out.</summary>
+    public required IReadOnlyList<CrucibleFieldedFamiliarUpload> Familiars { get; init; }
+}
+
+/// <summary>One familiar's last reading while it was out.</summary>
+public sealed record CrucibleFieldedFamiliarUpload
+{
+    /// <summary>The familiar's <c>XBMPet</c> row id.</summary>
+    public required uint PetId { get; init; }
+
+    /// <summary>Its current and maximum HP at that reading.</summary>
+    public required CrucibleHpUpload Hp { get; init; }
+
+    /// <summary>
+    /// Whether it was out when the snapshot was taken. False does not mean it went down (see
+    /// <see cref="CrucibleFamiliarTracker"/>).
+    /// </summary>
+    public required bool Summoned { get; init; }
+
+    /// <summary>
+    /// When that reading was taken, as second-exact UTC text: for a familiar that left the field,
+    /// about when it left.
+    /// </summary>
+    public required string ReadAtUtc { get; init; }
 }

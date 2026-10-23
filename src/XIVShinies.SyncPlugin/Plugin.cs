@@ -82,10 +82,16 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
 
     /// <summary>
-    /// The local character's condition flags. The Crucible run sharing reads only "in combat", and
-    /// reads nothing while it is set.
+    /// The local character's condition flags. The Crucible run sharing reads only "in combat"; while it
+    /// is set it reads no Crucible window or own HP, only the familiar's (see <see cref="BuddyList"/>).
     /// </summary>
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
+
+    /// <summary>
+    /// The <b>local</b> player's own companion, pet and allies. The Crucible run sharing reads only the
+    /// pet's data id and HP; there, the pet is the familiar the player has out.
+    /// </summary>
+    [PluginService] internal static IBuddyList BuddyList { get; private set; } = null!;
 
     /// <summary>
     /// Finds a game window by name. The Crucible run sharing uses it to read a Crucible window the
@@ -204,7 +210,7 @@ public sealed class Plugin : IDalamudPlugin
             // After the SyncManager, whose identity, server config and halt it reads. Its own toggle
             // starts off; until it is on, it reads only static game data (see CrucibleManager).
             crucibleManager = new CrucibleManager(
-                Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, Log,
+                Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, BuddyList, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
             // The installer's hand-made icon, shipped next to the DLL. Dalamud owns the lazily loaded

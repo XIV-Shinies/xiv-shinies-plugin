@@ -46,6 +46,8 @@ public class CrucibleTerritoriesTests
             new CrucibleOfferReading(CrucibleOfferSource.Shop, 100, null, []), ObservedAt, false),
         Results(),
         CrucibleUploadBuilder.Self(500, 1000, ObservedAt),
+        CrucibleUploadBuilder.Familiars(
+            true, [new CrucibleFieldedFamiliar(13, 358, 560, true, ObservedAt)], ObservedAt),
     ];
 
     // The five boards, in board order.

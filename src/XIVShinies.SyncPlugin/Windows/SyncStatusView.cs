@@ -17,7 +17,10 @@ public enum SyncStatusKind
     /// <summary>The user's own master switch is off.</summary>
     SwitchedOffByUser,
 
-    /// <summary>The server has paused syncing for everyone.</summary>
+    /// <summary>
+    /// The server has paused syncing: its own pause, or the user's "Sync from the plugin" switch on
+    /// their profile, which reach the plugin as the same signal.
+    /// </summary>
     PausedByServer,
 
     /// <summary>Syncing has stopped for something only the user can resolve.</summary>
@@ -135,14 +138,15 @@ public static class SyncStatusView
     /// once a server-requested wait ended either, so the button should not offer to.
     /// </summary>
     /// <remarks>
-    /// The first two are refused at the upload gate, the next two collect an empty snapshot the
-    /// uploader skips, and while nobody is logged in a press merges into the login sync. In all five
-    /// the "Syncing" flash would reassure beneath a line saying nothing will upload.
+    /// The first is refused at the upload gate, the next two collect an empty snapshot the uploader
+    /// skips, and while nobody is logged in a press merges into the login sync. In all four the
+    /// "Syncing" flash would reassure beneath a line saying nothing will upload. A pause is not among
+    /// them: there a press asks the website whether syncing is back on (see
+    /// <see cref="SyncNowEnabled"/>).
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     public static bool ManualSyncWouldDoNothing(SyncStatusKind kind) =>
         kind is SyncStatusKind.SwitchedOffByUser
-            or SyncStatusKind.PausedByServer
             or SyncStatusKind.NothingSwitchedOnByUser
             or SyncStatusKind.NothingPermittedByServer
             or SyncStatusKind.LoggedOut;
@@ -152,33 +156,35 @@ public static class SyncStatusView
     /// beneath the read-status panel.
     /// </summary>
     /// <remarks>
-    /// Two states beyond <see cref="ManualSyncWouldDoNothing"/> bring nothing sooner: while the
-    /// character is being read a press merges into the login sync, and during a server-requested wait
-    /// it uploads nothing until the wait ends. A halt still offers the press during a wait, since the
-    /// press lifts the halt. The character wait stays out of <see cref="ManualSyncWouldDoNothing"/>
-    /// because a server-requested wait still needs its line there (see <see cref="NeedsWaitLine"/>).
-    /// Neither sentence draws during a halt, so there the answer reaches only the button (see
-    /// <see cref="SyncNowEnabled"/>).
+    /// Three states beyond <see cref="ManualSyncWouldDoNothing"/> must not promise an immediate update:
+    /// while the character is being read a press merges into the login sync, during a pause it syncs
+    /// only if the website has turned syncing back on, and during a server-requested wait it uploads
+    /// nothing until the wait ends. The character wait stays out of
+    /// <see cref="ManualSyncWouldDoNothing"/> because a server-requested wait still needs its line
+    /// there (see <see cref="NeedsWaitLine"/>). A halt still offers the press during a wait, since the
+    /// press lifts it; neither sentence draws during a halt, so only the button carries that answer
+    /// (see <see cref="SyncNowEnabled"/>).
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool SyncNowOffered(SyncStatusKind kind, bool backingOff) =>
         !ManualSyncWouldDoNothing(kind)
-        && kind != SyncStatusKind.WaitingForCharacter
+        && kind is not (SyncStatusKind.WaitingForCharacter or SyncStatusKind.PausedByServer)
         && (!backingOff || kind == SyncStatusKind.BlockedPendingUserAction);
 
     /// <summary>Whether the "Sync now" button is enabled.</summary>
     /// <remarks>
-    /// Wherever the sentences invite a press, and in one state more: a character the plugin stopped
-    /// trying to read, during a server-requested wait. There a press starts reading the character
-    /// again, which the wait does not hold back, so the button stays live although no upload follows
-    /// until the wait ends.
+    /// Wherever the sentences invite a press, and in two states more that a server-requested wait
+    /// does not hold back. For a character the plugin stopped trying to read, a press starts reading
+    /// it again, though no upload follows until the wait ends. During a pause, a press asks the website
+    /// once whether syncing is back on and syncs if it is (see <see cref="Sync.PausedPress"/>).
     /// </remarks>
     /// <param name="kind">The status the card is stating, from <see cref="Select"/>.</param>
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool SyncNowEnabled(SyncStatusKind kind, bool backingOff) =>
         SyncNowOffered(kind, backingOff)
-        || (backingOff && kind == SyncStatusKind.CharacterNotRead);
+        || (backingOff && kind == SyncStatusKind.CharacterNotRead)
+        || kind == SyncStatusKind.PausedByServer;
 
     /// <summary>What the card says in <see cref="SyncStatusKind.CharacterNotRead"/>.</summary>
     public const string CharacterNotReadSentence =
@@ -201,7 +207,7 @@ public static class SyncStatusView
     /// </summary>
     /// <remarks>
     /// The status line already states a wait that is the refused upload's outcome, but a wait survives
-    /// a relog, which clears that outcome. A halt and the states in
+    /// a relog, which clears that outcome. A halt, a pause and the states in
     /// <see cref="ManualSyncWouldDoNothing"/> need no second line: their own already says why nothing
     /// uploads.
     /// </remarks>
@@ -210,8 +216,12 @@ public static class SyncStatusView
     /// <param name="backingOff">Whether the server has asked the plugin to wait.</param>
     public static bool NeedsWaitLine(SyncStatusKind kind, ApiStatus? lastStatus, bool backingOff)
     {
-        if (!backingOff || ManualSyncWouldDoNothing(kind) || kind == SyncStatusKind.BlockedPendingUserAction)
+        if (!backingOff
+            || ManualSyncWouldDoNothing(kind)
+            || kind is SyncStatusKind.BlockedPendingUserAction or SyncStatusKind.PausedByServer)
+        {
             return false;
+        }
 
         var statusLineSaysIt = kind == SyncStatusKind.LastUploadOutcome
             && lastStatus is ApiStatus.RateLimited or ApiStatus.SyncDisabled;

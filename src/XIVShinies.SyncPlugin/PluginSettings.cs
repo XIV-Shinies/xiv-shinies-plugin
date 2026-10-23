@@ -42,11 +42,12 @@ public class PluginSettings
 
     /// <summary>
     /// True while the user shares Crucible runs with the website's run companion: what the Crucible's
-    /// windows show out of combat, the character's own HP, and an empty check-in while on a board.
+    /// windows show out of combat, the character's and familiar's HP, and an empty check-in on a board.
     /// </summary>
     /// <remarks>
-    /// Off by default, and <see cref="AutoEnableNewFeatures"/> never turns it on: it shares the
-    /// player's own play as it happens, so only the user's own tick enables it.
+    /// The familiar's HP is read during fights too, and sent once each fight is over. Off by default,
+    /// and <see cref="AutoEnableNewFeatures"/> never turns it on: it shares the player's own play as it
+    /// happens, so only the user's own tick enables it.
     /// </remarks>
     public bool ShareCrucibleRuns { get; set; }
 

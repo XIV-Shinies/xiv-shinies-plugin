@@ -8,7 +8,7 @@ using XIVShinies.SyncPlugin.Collectors;
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
 // Kill-switch precedence: four switches must all be on and onboarding complete, and any one failing
-// wins. Two switches belong to the user, two to the server.
+// wins. Two switches are the plugin's own, two come from the server's /config.
 public class CollectorGateTests
 {
     private const string Category = "quests";

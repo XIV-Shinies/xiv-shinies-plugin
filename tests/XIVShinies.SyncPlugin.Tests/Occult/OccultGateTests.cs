@@ -17,6 +17,11 @@ public class OccultGateTests
     // copy. The rows below spell each sentence out rather than call ServerOffCopy.
     private const string Host = "shinies.example";
 
+    // The paused line, which two rows below expect.
+    private const string PausedLine =
+        "Syncing is off on " + Host + ". If you turned off \"Sync from the plugin\" on your profile, "
+        + "turn it back on there. Your own choices are unchanged.";
+
     private static PluginSettings OptedIn() => new()
     {
         MasterEnabled = true,
@@ -161,8 +166,8 @@ public class OccultGateTests
     [Theory]
     [InlineData(true, true, null)]
     [InlineData(true, false, "Temporarily switched off by " + Host + ".")]
-    [InlineData(false, true, Host + " has paused syncing for everyone. Your own choices are unchanged.")]
-    [InlineData(false, false, Host + " has paused syncing for everyone. Your own choices are unchanged.")]
+    [InlineData(false, true, PausedLine)]
+    [InlineData(false, false, PausedLine)]
     public void The_chip_names_the_pause_before_the_feature(
         bool globallyEnabled, bool trackerEnabled, string? expected)
     {

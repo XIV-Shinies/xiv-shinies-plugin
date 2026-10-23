@@ -288,19 +288,21 @@ internal sealed partial class MainWindow
     private string CrucibleWhatGetsSent() =>
         "From the beasts you pick at the entrance until you leave a board, shares what the " +
         "Crucible's windows show between fights (the board, your beasts, bag, tokens, treasure, " +
-        "loot, shop offers and results) and your own HP, each stamped with when and where it was " +
-        $"read or closed, to fill in your run on {BackendHost()}. On a board it also checks in " +
-        "regularly, fights included, and says when you leave.";
+        "loot, shop offers and results), your own HP, and the HP of each beast you call out (fights " +
+        "included, sent once each fight is over), each stamped with when and where it was read or " +
+        $"closed, to fill in your run on {BackendHost()}. On a board it also checks in regularly, " +
+        "fights included, and says when you leave.";
 
     /// <summary>
-    /// The sharing's hover text: what is not read or sent, since the natural worries are fights,
-    /// enemies and other players.
+    /// The sharing's hover text: what is read during a fight and what is never read or sent, since
+    /// the natural worries are fights, enemies and other players.
     /// </summary>
     private const string CrucibleRunsDetails =
-        "No battle data is collected: nothing is read from the Crucible's windows or your HP during a " +
-        "fight, and anything sent then was read before it began. Enemies are skipped: nothing about " +
-        "them is sent beyond how many your run beat and the points they were worth, as the results " +
-        "screen shows them. Nothing about other players is read or sent.";
+        "During a fight the only thing read about your run is which beast you have out and its HP, " +
+        "sent once the fight is over: nothing is read from the Crucible's windows or your own HP " +
+        "until then, and nothing about damage, actions or the battle log is ever read. Enemies are " +
+        "skipped: nothing about them is sent beyond how many your run beat and the points they were " +
+        "worth, as the results screen shows them. Nothing about other players is read or sent.";
 
     /// <summary>
     /// The Crucible sharing's consent card, on both consent surfaces: its toggle, disclosure and

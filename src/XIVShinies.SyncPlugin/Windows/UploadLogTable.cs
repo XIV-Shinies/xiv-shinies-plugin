@@ -81,10 +81,10 @@ internal sealed class UploadLogTable
         // With no vertical borders, each gap between columns takes two paddings and the outer edges none.
         var stretchRoom = tableWidth - whenWidth - triggerWidth - (3 * 2f * padding.X);
 
-        // Two scaled pixels over the widest word: one because BreakForWrap breaks a scaled pixel short
-        // of the edge, and one because ImGui rounds a column's width down to a whole pixel.
+        // A scaled pixel over the widest word, since BreakForWrap breaks a scaled pixel short of the
+        // edge, and a whole pixel more, since ImGui rounds a column's width down to a whole pixel.
         var outcomeWidth =
-            Math.Max(outcomeWord + (2f * ImGuiHelpers.GlobalScale), stretchRoom * (0.8f / 3f));
+            Math.Max(outcomeWord + 1f + ImGuiHelpers.GlobalScale, stretchRoom * (0.8f / 3f));
 
         using var cellPadding = ImRaii.PushStyle(ImGuiStyleVar.CellPadding, padding);
 

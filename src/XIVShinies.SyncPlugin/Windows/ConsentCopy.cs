@@ -33,15 +33,17 @@ public static class ConsentCopy
     /// "Start switched off" is only said while nothing is chosen on, and the tracker's "starts on"
     /// only while the server offers it and it is chosen on; otherwise the sentence would contradict
     /// the boxes beneath it, or the choices behind them (see <see cref="AnythingChosenOn"/>). With
-    /// nothing to choose, as during a pause, it says so instead of inviting a choice.
+    /// nothing to choose, as during a pause, it says so instead of inviting a choice, and names no
+    /// one as having switched things off, since a pause may be the user's own switch on their profile
+    /// (see <see cref="ServerOffCopy.Paused"/>).
     /// </remarks>
     public static string WizardIntro(
         bool anythingSwitchedOn, bool trackerOffered, bool trackerOn, bool userHasAChoice, string host)
     {
         if (!userHasAChoice)
         {
-            return $"Nothing about your progress is sent: {host} has everything below switched " +
-                "off for now. Once it allows them, you can choose what to upload in the settings.";
+            return $"Nothing about your progress is sent: everything below is switched off on {host} " +
+                "for now. Once it is back on, you can choose what to upload in the settings.";
         }
 
         var defaults = anythingSwitchedOn

@@ -11,8 +11,8 @@ public enum CrucibleOutcomeKind
     Accepted,
 
     /// <summary>
-    /// The same upload goes again once <see cref="CrucibleOutcome.Until"/> has passed, or later if the
-    /// scheduler's least wait is longer.
+    /// The same upload goes again at <see cref="CrucibleOutcome.Until"/>, or possibly sooner (see
+    /// <see cref="CrucibleOutcome.EndsWhenSyncResumes"/>), but never before the scheduler's least wait.
     /// </summary>
     Retry,
 
@@ -34,7 +34,12 @@ public enum CrucibleOutcomeKind
 /// When a <see cref="CrucibleOutcomeKind.Retry"/> may go again, or when a
 /// <see cref="CrucibleOutcomeKind.Drop"/>'s hold ends; null for the other outcomes.
 /// </param>
-public readonly record struct CrucibleOutcome(CrucibleOutcomeKind Kind, DateTimeOffset? Until = null);
+/// <param name="EndsWhenSyncResumes">
+/// Whether the website saying syncing is back on may end a retry's wait before
+/// <paramref name="Until"/> (see <see cref="RetryPolicy.EndsWhenSyncResumes"/>).
+/// </param>
+public readonly record struct CrucibleOutcome(
+    CrucibleOutcomeKind Kind, DateTimeOffset? Until = null, bool EndsWhenSyncResumes = false);
 
 /// <summary>Decides what the Crucible run sharing does with each answer to an upload.</summary>
 /// <remarks>
@@ -79,7 +84,10 @@ public static class CrucibleOutcomePolicy
 
         // A 429 or 503: the server asked for quiet, for as long as it said.
         if (RetryPolicy.BackoffUntil(status, retryAfter, now) is { } until)
-            return new CrucibleOutcome(CrucibleOutcomeKind.Retry, until);
+        {
+            return new CrucibleOutcome(
+                CrucibleOutcomeKind.Retry, until, RetryPolicy.EndsWhenSyncResumes(status, errorCode));
+        }
 
         if (status == ApiStatus.NotConfigured)
             return new CrucibleOutcome(CrucibleOutcomeKind.Retry, now);

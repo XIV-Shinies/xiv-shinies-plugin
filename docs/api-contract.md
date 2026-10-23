@@ -93,8 +93,9 @@ Characters are ordered alphabetically by name. Statuses: **200**, **401**, **405
 
 ### GET /api/plugin/v1/config
 
-Remote config + item manifest. The plugin polls this roughly every 30 minutes. Values are
-read per request, so a flipped kill switch reaches the plugin on its next poll.
+Remote config + item manifest. The plugin polls this roughly every 30 minutes, a few minutes
+after a 503 `sync_disabled`, and once when the player presses Sync now while `enabled` is false.
+Values are read per request, so a flipped kill switch reaches the plugin on its next poll.
 
 ```jsonc
 200
@@ -121,7 +122,7 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
     "heartbeatSeconds": 60,    // idle upload cadence while inside a board
     "note": "In testing — …"   // optional: present only when the flag alone switched it off
   },
-  "enabled": true,             // global kill switch
+  "enabled": true,             // global kill switch (the account's own switch folded in)
   "intervals": {
     "fullSyncMinutes": 30,     // full-sweep upload cadence
     "unlockDebounceSeconds": 5 // debounce after an Unlock event before uploading
@@ -145,8 +146,10 @@ read per request, so a flipped kill switch reaches the plugin on its next poll.
 - **Kill switches.** `enabled` is the global switch; `categories` is per-category. **The
   client must honor both**: stop uploading entirely when `enabled` is false, and skip
   collecting/sending disabled categories. The server enforces them too, but a compliant
-  client saves the round trips. A gated category ships as an explicit `false`, never omitted —
-  an absent key means "the server has never heard of it", which the client reads as enabled.
+  client saves the round trips. `enabled` is also false while the account's owner has turned off
+  "Sync from the plugin" on their profile, and the response does not say which switch is off. A
+  gated category ships as an explicit `false`, never omitted — an absent key means "the server
+  has never heard of it", which the client reads as enabled.
 - **Category notes.** `categoryNotes` is optional, keyed like `categories`, and explains why a
   category is off. It is absent entirely when nothing needs explaining, never an empty map.
   **Presence is the whole signal** — the client prints the sentence verbatim and never parses
@@ -278,7 +281,7 @@ Field constraints:
 | `itemSources`            | optional object keyed by source name; each value `{state: "live"\|"cached"\|"unscanned"\|"loaded", count?: int, total?: int}` |
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
-| `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet for what the deployed server enforces |
+| `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
@@ -385,10 +388,7 @@ Field constraints:
   game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
   category declares itself `"full"` (see the `collectionScopes` bullet below). Storage is
   sticky insert-only, and uncataloged ids drop under the catalog-trailing rule.
-- **`tamedBeasts` id space & semantics.** ⚠️ *The deployed server does not implement this category:
-  its key is stripped on arrival under the unknown-key rule, so none of the validation described
-  here is enforced, and this describes what the plugin sends rather than what the server does. The
-  deployed server wins over this doc, as always.* Entries are objects, not bare ids: `{"number": n}`,
+- **`tamedBeasts` id space & semantics.** Entries are objects, not bare ids: `{"number": n}`,
   where `n` is the bestiary number — the `XBMPet` sheet row id (1–50), which is what the
   server's catalog is keyed on. `rank` (1–25) and `battlehorn` (1–3) are accepted alongside
   `number`. The plugin reads the game's record set of the character's beasts, which the game
@@ -463,7 +463,7 @@ them.
 | **413** | `{"error": "payload_too_large"}`                                | `Content-Length` missing, non-numeric, or over the cap. Don't retry unchanged; split the upload.                    |
 | **429** | `{"error": "rate_limited"}` + `Retry-After: <s>`                | Over the per-token limit. Sleep at least `Retry-After` seconds (whole seconds, rounded up).                          |
 | **500** | —                                                               | The transactional apply failed. Safe to retry later — writes are idempotent. The plugin treats any other 5xx but 503 the same way, such as the 502, 504 or other 5xx a proxy sends when it cannot reach or hear back from the server. |
-| **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | Global kill switch is off. Back off the full hour.                                                                   |
+| **503** | `{"error": "sync_disabled"}` + `Retry-After: 3600`              | The global kill switch, or the account's "Sync from the plugin" switch, is off. Back off the full hour, or until a `/config` poll started after the 503 answers `enabled: true` (for the live tracker and the Crucible sharing, their own block's `enabled` too). |
 
 ### POST /api/plugin/v1/occult/instance-state
 
@@ -546,9 +546,9 @@ absent — back off, server-side problem.
 ### POST /api/plugin/v1/crucible/observations
 
 The Crucible run companion's feed: **snapshots**, each of what one Crucible window (or the
-character's own HP) showed at one moment. The server turns them into the companion's run
-events; the client never names an event, so the event model can change without a plugin
-release. Like the occult tracker it is small, frequent and duty-scoped, and it needs its own
+character's own HP, or the familiars' HP) showed at one moment. The server turns them into the
+companion's run events; the client never names an event, so the event model can change without a
+plugin release. Like the occult tracker it is small, frequent and duty-scoped, and it needs its own
 consent toggle (off by default, and outside "Turn on new collections automatically"). A server
 whose `/config` carries no `crucibleRuns` block does not have this endpoint; the client must
 stay silent then. The server's schema is **strict**: a key it does not name fails the whole
@@ -557,15 +557,17 @@ upload with 400 `invalid_payload`, and so does a named key that is missing.
 **What the client may read, and must never read.** Only what the game shows the player, and
 only while the character is out of combat: board progress, the player's own familiars, the
 player's own bag and tokens, treasure, loot and shop offers, the results screen, and the local
-character's own HP. Never the battle log or chat, the object table, statuses, damage, or
-anything about an enemy (its name, stats, weaknesses or state). A client skips the board
+character's own HP. The one exception is the familiar the player has out: its HP is read during
+fights too, from the game's record of the local player's own pet (its data id and HP alone), and
+goes up only once the fight is over. Never the battle log or chat, the object table, statuses,
+damage, or anything about an enemy (its name, stats, weaknesses or state). A client skips the board
 window's enemy rows by their record type, and the results screen's beaten counts are score
 figures, not enemy data.
 
 #### Request
 
-`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). A six-kind
-upload with fifteen familiars is about 6 KB; the cap is 64 KB.
+`Content-Type: application/json`; `Content-Length` required (same gate as `/sync`). An upload
+carrying every kind, with fifteen familiars in the team window, is about 6 KB; the cap is 64 KB.
 
 ```jsonc
 {
@@ -595,7 +597,12 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
      "bonuses": [{"bonusId": 7, "points": 250}],
      "familiars": [{"petId": 8, "rankBefore": 7, "rankAfter": 8,
                     "expBefore": 65, "expAfter": 62}]},
-    {"kind": "self", "observedAtUtc": "…", "hp": {"current": 1180, "max": 1300}}
+    {"kind": "self", "observedAtUtc": "…", "hp": {"current": 1180, "max": 1300}},
+    {"kind": "familiars", "observedAtUtc": "…", "afterFight": true,
+     "familiars": [{"petId": 1, "hp": {"current": 386, "max": 608}, "summoned": false,
+                    "readAtUtc": "…"},
+                   {"petId": 13, "hp": {"current": 358, "max": 560}, "summoned": true,
+                    "readAtUtc": "…"}]}
   ]
 }
 ```
@@ -608,12 +615,30 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
 | `offer` | `XBMContentsTreasure`, `XBMContentsBooty`, `XBMContentsItemShop` | `source` `treasure`, `loot` or `shop`; `tokens`; `tokensEarned` on loot, else null; `offers[]` each `itemId`, plus `price`, `discounted` and `bought` on the shop only; `closed`. |
 | `results` | `XBMResult` | `degree` 0–3, or null; `rankIndex` 0 (Apprentice) to 8 (Legendary), or null; `score` as the numbers on screen, where `remainingHp` is the HP the run ended on; `bonuses[]` each `bonusId` (an `XBMScoreBonus` row id, or null) with `points`; `familiars[]` each `petId`, `rankBefore`, `rankAfter`, `expBefore`, `expAfter`. |
 | `self` | the local player | `hp`. |
+| `familiars` | the game's record of the local player's own pet | `afterFight`; `familiars[]` each `petId` (the `XBMPet` row, from the pet's `Pet` row through the `XBMPet` sheet's link), `hp` (its max includes feeds, as the team window's does), `summoned`, `readAtUtc`, in the order they first came out. |
 
 - **Null or absent.** `currentNodeIndex`, `itemId`, `tokensEarned`, `degree`, `rankIndex` and
   `bonusId` are always present, as `null` where they do not apply or did not resolve. The three
-  shop fields are absent from a treasure or loot offer, and `closed` from a `bag`, `results` or
-  `self`, not null. Every list is present, empty where it holds nothing (`observations: []` on a
-  heartbeat or a leave, `feedItemIds: []`).
+  shop fields are absent from a treasure or loot offer, and `closed` from a `bag`, `results`,
+  `self` or `familiars`, not null. Every list is present, empty where it holds nothing
+  (`observations: []` on a heartbeat or a leave, `feedItemIds: []`).
+- **`familiars`** carries the HP of the familiars the player had out. The game's record holds only
+  the familiar that is out, updated every three seconds, so the client reads it once a second,
+  fights included, and keeps each familiar's last reading. No `familiars` snapshot is taken during a
+  fight (one queued just before a fight can still go up during it, like any snapshot):
+  - **As the in-combat flag clears**, a snapshot with `afterFight: true` lists every familiar out
+    since the flag set, at most the lineup's three: one that left the field with its HP and
+    `readAtUtc` from its last reading before it left, one still out with its HP at the end and
+    `summoned: true`. A fight with no familiar out sends none. Nothing replaces it once queued: a
+    later `familiars` snapshot goes in the next upload, like a fresh one after a `closed` one.
+  - **Outside a fight**, a snapshot with `afterFight: false` lists the familiar that is out when its
+    HP changes while it stays out (an item used while it is out, or the record catching up with a
+    fight's last hit). Calling a familiar out sends nothing.
+  - **`summoned: false` does not mean downed.** The record drops a familiar that goes down exactly as
+    it drops one called back or swapped out, holding the HP of its last update, so a downed
+    familiar's entry carries that HP. The client never sends a 0 from this record; a down is the
+    team window's 0 HP.
+  - **`readAtUtc` is never later than the snapshot's `observedAtUtc`.**
 - **`closed`** marks a window's last snapshot before it closed: a `board`, `team` or `offer`
   snapshot goes up on each refresh that changed it, and once more with `closed: true` when the
   window closes, whether or not its content changed. The closing snapshot is the window as read
@@ -672,7 +697,9 @@ upload with fifteen familiars is about 6 KB; the cap is 64 KB.
   which piece the rest of a baseline belongs to. A 429 or 503 is retried after its
   `Retry-After`, and a network failure after a backoff, each with the same content; a 503 `busy`
   that arrives without its `Retry-After` is retried on the client's own backoff rather than the
-  hour this client otherwise waits after a 503 without one. A 400 or 403 is not retried unchanged.
+  hour this client otherwise waits after a 503 without one. A 503 `sync_disabled` may go again
+  sooner, once a `/config` poll started after it says the sharing is on (`enabled` and
+  `crucibleRuns.enabled`). A 400 or 403 is not retried unchanged.
 
 #### Response
 
@@ -857,7 +884,10 @@ players.
   through which game mechanism, is recorded in [currency-coverage.md](currency-coverage.md)
   — the reference for curating currency ids into manifest groups.
 - **Rate limits and backoff.** The default limit is 60 uploads per token per hour. Honor
-  `Retry-After` on 429 and 503 and back off — do not tight-loop retries.
+  `Retry-After` on 429 and 503 and back off — do not tight-loop retries. The one early end is a 503
+  `sync_disabled`: the plugin goes again once a `/config` poll started after it says that upload
+  path is on (see the `/sync` 503 row), and a second such 503 inside the wait it ended early, with
+  no upload accepted in between, waits its whole `Retry-After`.
 - **Kill switches are server-enforced too.** A disabled category is stripped from the payload
   before any write; the stripped keys ride back in `skippedCategories` so the plugin can tell
   the user why a category didn't sync. Stripping covers both reasons a category can be off: the

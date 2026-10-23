@@ -29,7 +29,10 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     private static readonly TimeSpan ConfigPollInterval = TimeSpan.FromMinutes(30);
 
-    /// <summary>How long to wait before retrying a <c>/config</c> poll that did not answer.</summary>
+    /// <summary>
+    /// How long to wait before retrying a <c>/config</c> poll that did not answer, and before asking
+    /// again after a 503 <c>sync_disabled</c> (see <see cref="BringConfigPollForward"/>).
+    /// </summary>
     /// <remarks>
     /// Without a config the plugin does not know which items to read, so a failed first poll must not
     /// leave the item collection unread for a full interval. Two minutes spares a struggling server and
@@ -116,6 +119,21 @@ internal sealed class SyncManager : IDisposable
     private volatile bool configPollInFlight;
 
     /// <summary>
+    /// How many <c>/config</c> polls have started, so each poll knows its number and a refusal or a
+    /// press can note how many had started before it (see <see cref="ConfigPollsStarted"/>).
+    /// </summary>
+    /// <remarks>
+    /// Written only on the framework thread, where every poll starts, and read from the upload tasks.
+    /// </remarks>
+    private volatile int configPollsStarted;
+
+    /// <summary>
+    /// Backs <see cref="ConfigAnsweredPoll"/>, which gives the read order. The poll task writes it
+    /// right after <see cref="remoteConfig"/>.
+    /// </summary>
+    private volatile int configAnsweredPoll;
+
+    /// <summary>
     /// True while the wizard is owed a config answer: set when it asks for one, cleared when any poll
     /// answers.
     /// </summary>
@@ -124,6 +142,18 @@ internal sealed class SyncManager : IDisposable
     /// Verify press after pasting a different token still waits.
     /// </remarks>
     private volatile bool onboardingConfigPending;
+
+    /// <summary>
+    /// The collections upload's wait after a 503 <c>sync_disabled</c>, which can end early once the
+    /// website says syncing is back on (see <see cref="SyncResumeWait"/>). It takes its own lock.
+    /// </summary>
+    private readonly SyncResumeWait syncWait = new();
+
+    /// <summary>
+    /// A "Sync now" press made during a pause, waiting for its <c>/config</c> answer. It takes its own
+    /// lock.
+    /// </summary>
+    private readonly PausedPress pausedPress = new();
 
     /// <summary>True once a collection pass has run for the character currently logged in.</summary>
     /// <remarks>
@@ -350,6 +380,38 @@ internal sealed class SyncManager : IDisposable
     public ConfigResponse? RemoteConfig => remoteConfig;
 
     /// <summary>
+    /// How many <c>/config</c> polls have started. An upload path arms its
+    /// <see cref="SyncResumeWait"/> with this when a 503 <c>sync_disabled</c> arrives.
+    /// </summary>
+    public int ConfigPollsStarted => configPollsStarted;
+
+    /// <summary>
+    /// The number of the poll <see cref="RemoteConfig"/> came from, or 0 until a poll has brought a
+    /// config back.
+    /// </summary>
+    /// <remarks>
+    /// Read this before <see cref="RemoteConfig"/>: the poll writes the config first and this second,
+    /// so the config read afterwards is from this poll or a later one, never an earlier one.
+    /// </remarks>
+    public int ConfigAnsweredPoll => configAnsweredPoll;
+
+    /// <summary>
+    /// Brings the next <c>/config</c> poll forward to a few minutes away, after a 503
+    /// <c>sync_disabled</c> on any upload path.
+    /// </summary>
+    /// <remarks>
+    /// The sync card then names the switch within minutes, not at the next scheduled poll, and the
+    /// plugin learns sooner when it is back on. Never pushes back a poll due sooner (see
+    /// <see cref="SyncTickPlan.BringPollForward"/>). Safe from any thread: the upload tasks call it as
+    /// their answers arrive.
+    /// </remarks>
+    public void BringConfigPollForward()
+    {
+        log.Information("Syncing is switched off; checking /config again in a few minutes.");
+        RescheduleConfigPollSoon();
+    }
+
+    /// <summary>
     /// True while the wizard is still owed the config answer it asked for when the token verified.
     /// </summary>
     /// <remarks>
@@ -373,7 +435,11 @@ internal sealed class SyncManager : IDisposable
     /// True while the server has asked the plugin to wait before its next upload, so a "Sync now"
     /// press would upload nothing until the wait ends.
     /// </summary>
-    /// <remarks>The scheduler takes its lock to answer, so this is safe from the draw call.</remarks>
+    /// <remarks>
+    /// A wait a 503 <c>sync_disabled</c> started can also end once the website says syncing is back
+    /// on (see <see cref="SyncResumeWait"/>). The scheduler takes its lock to answer, so this is safe
+    /// from the draw call.
+    /// </remarks>
     public bool IsBackingOff => scheduler.IsBackingOff(timeProvider.GetUtcNow());
 
     /// <summary>The recent uploads, newest first, for the settings window's upload log.</summary>
@@ -568,7 +634,9 @@ internal sealed class SyncManager : IDisposable
     /// <summary>Queues an immediate full sweep, as when the user presses "Sync now".</summary>
     /// <remarks>
     /// Clears the user-action halt, since a press says the user fixed it. Any backoff still holds: a
-    /// button must not become a way to hammer a server that said stop.
+    /// button must not become a way to hammer a server that said stop. While the website has syncing
+    /// switched off, the press asks <c>/config</c> once instead, and sweeps only if the answer says
+    /// syncing is back on (see <see cref="PausedPress"/>).
     /// </remarks>
     public void RequestManualSync()
     {
@@ -596,6 +664,15 @@ internal sealed class SyncManager : IDisposable
                 loginSettledAt = now;
                 identityAttempts = 0;
                 identityCaptureGaveUp = false;
+            }
+
+            // During a pause the press waits for its own poll (see PausedPress).
+            if (remoteConfig is { Enabled: false })
+            {
+                if (UploadGate.CanContactServer(settings))
+                    pausedPress.Press(configPollsStarted);
+
+                return;
             }
 
             scheduler.Request(SyncTrigger.Manual, now);
@@ -785,6 +862,10 @@ internal sealed class SyncManager : IDisposable
 
         // Polled even while the kill switch is off: that is how the plugin learns it flipped back.
         PollConfigIfDue(now);
+
+        DispatchPausedPress(now);
+
+        EndSyncWaitIfResumed(now);
 
         if (plan == TickAction.PollOnly)
             return;
@@ -1161,6 +1242,9 @@ internal sealed class SyncManager : IDisposable
             if (outcomeWarnings.NoteSuccess())
                 log.Information($"Sync recovered on the {trigger} upload.");
 
+            // It also shows a wait that ended early was rightly ended (see SyncResumeWait.UploadAccepted).
+            syncWait.UploadAccepted();
+
             // Categories a per-category kill switch refused, logged so the user knows why one never
             // appears on the website.
             var skipped = response.Value?.SkippedCategories;
@@ -1176,11 +1260,27 @@ internal sealed class SyncManager : IDisposable
             return true;
         }
 
-        // The server asked for a wait; honor Retry-After when it sent one.
+        // The server asked for a wait; honor Retry-After when it sent one. A 503 sync_disabled may end
+        // early, and syncWait is armed before the scheduler's wait is set (see SyncResumeWait).
         if (RetryPolicy.BackoffUntil(response.Status, response.RetryAfter, now) is { } until)
         {
-            log.Information($"Backing off until {until:u} after {response.Status}.");
-            scheduler.BackOffUntil(until);
+            var switchedOff = RetryPolicy.EndsWhenSyncResumes(response.Status, response.Error?.Error);
+            if (switchedOff && syncWait.Arm(configPollsStarted, now, until))
+            {
+                scheduler.BackOffUntilSyncResumes(until, trigger);
+                log.Information(
+                    $"Backing off until {until:u}, or until syncing is back on, after {response.Status}.");
+            }
+            else
+            {
+                scheduler.BackOffUntil(until);
+                log.Information($"Backing off until {until:u} after {response.Status}.");
+            }
+
+            // Either way it brings the next poll forward, so the card names the pause.
+            if (switchedOff)
+                BringConfigPollForward();
+
             return true;
         }
 
@@ -1232,32 +1332,42 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Starts a <c>/config</c> poll and schedules the next. Every poll starts here, from the frame tick
-    /// or a Verify press (see <see cref="RequestOnboardingConfigPoll"/>).
+    /// Starts a <c>/config</c> poll and schedules the next. Every poll starts here: the frame tick,
+    /// <see cref="RequestOnboardingConfigPoll"/> and <see cref="DispatchPausedPress"/>.
     /// </summary>
     /// <remarks>Framework thread only: it writes <see cref="nextConfigPollAt"/>.</remarks>
     private void StartConfigPoll(DateTimeOffset now)
     {
-        // Both callers run on the framework thread, so a due poll and a Verify press in the same frame
-        // cannot both get through.
+        // Every caller runs on the framework thread, so two polls asked for in the same frame cannot
+        // both get through.
         if (configPollInFlight)
             return;
 
         nextConfigPollAt = now + ConfigPollInterval;
         configPollInFlight = true;
 
+        // Numbered as it starts (see configPollsStarted). The framework thread is the only writer, so
+        // the increment needs no Interlocked.
+        configPollsStarted++;
+        var pollNumber = configPollsStarted;
+
         // No token: an already-canceled one would make Task.Run skip the delegate, stranding
         // configPollInFlight at true.
         var startedFor = sessionGeneration;
-        _ = Task.Run(() => PollConfigAsync(startedFor));
+        _ = Task.Run(() => PollConfigAsync(startedFor, pollNumber));
     }
 
     /// <param name="startedFor">The session generation this poll belongs to.</param>
-    private async Task PollConfigAsync(int startedFor)
+    /// <param name="pollNumber">This poll's number, counting polls from 1 as they start.</param>
+    private async Task PollConfigAsync(int startedFor, int pollNumber)
     {
         // The finally reads this to choose the full interval or the short retry, so every exit follows
         // one rule.
         var answered = false;
+
+        // The answer's `enabled`, or null when no config came back. The finally settles a press made
+        // during a pause with it.
+        bool? answeredEnabled = null;
 
         try
         {
@@ -1274,6 +1384,11 @@ internal sealed class SyncManager : IDisposable
                 var config = response.Value!;
 
                 remoteConfig = config;
+
+                // After the config, never before: see ConfigAnsweredPoll.
+                configAnsweredPoll = pollNumber;
+                answeredEnabled = config.Enabled;
+
                 scheduler.ApplyIntervals(config.Intervals);
 
                 // One-time pre-group consent migration, so an existing user's item scan does not go silent.
@@ -1344,6 +1459,11 @@ internal sealed class SyncManager : IDisposable
             // Any answer ends the wizard's wait; see OnboardingConfigPending.
             onboardingConfigPending = false;
 
+            // Settles a paused press this poll answers, whatever came back, and queues the sweep if
+            // syncing is back on (see PausedPress.Settle).
+            if (pausedPress.Settle(pollNumber, answeredEnabled))
+                QueueManualSweep(answeredAt: timeProvider.GetUtcNow());
+
             configPollInFlight = false;
 
             if (!answered)
@@ -1352,7 +1472,61 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
-    /// Brings the next <c>/config</c> poll forward to the short retry delay, on the framework thread.
+    /// Starts the poll a "Sync now" press made during a pause asked for, once it is due (see
+    /// <see cref="PausedPress.PollDue"/>).
+    /// </summary>
+    /// <remarks>Framework thread only: it starts the poll through <see cref="StartConfigPoll"/>.</remarks>
+    private void DispatchPausedPress(DateTimeOffset now)
+    {
+        if (!pausedPress.PollDue(configPollsStarted, configPollInFlight, now))
+            return;
+
+        pausedPress.PollStarted(now);
+        StartConfigPoll(now);
+    }
+
+    /// <summary>
+    /// Ends the collections upload's wait for syncing to resume once the latest <c>/config</c> says
+    /// syncing is back on (see <see cref="SyncResumeWait.TryEnd"/>).
+    /// </summary>
+    private void EndSyncWaitIfResumed(DateTimeOffset now)
+    {
+        // The poll number before the config, so the config is from that poll or a later one (see
+        // ConfigAnsweredPoll).
+        var answeredPoll = configAnsweredPoll;
+        var config = remoteConfig;
+
+        if (!syncWait.TryEnd(answeredPoll, config is { Enabled: true }, now))
+            return;
+
+        scheduler.SyncResumed();
+        log.Information("Syncing is back on; uploads resume.");
+    }
+
+    /// <summary>
+    /// Queues the sweep a "Sync now" press made during a pause was for. The poll task calls it, so it
+    /// marshals to the framework thread, where every scheduler request is made.
+    /// </summary>
+    /// <param name="answeredAt">When the answer saying syncing is back on arrived.</param>
+    /// <remarks>
+    /// The same answer may also end the collections wait, whose sweep can go out before this lands;
+    /// <see cref="SyncScheduler.RequestUnlessSweptSince"/> then drops this request. A sweep handed out
+    /// on a frame that began just before the answer lets it through, costing one extra upload.
+    /// </remarks>
+    private void QueueManualSweep(DateTimeOffset answeredAt)
+    {
+        _ = framework.RunOnFrameworkThread(() =>
+        {
+            if (lifetimeToken.IsCancellationRequested)
+                return;
+
+            scheduler.RequestUnlessSweptSince(SyncTrigger.Manual, answeredAt, timeProvider.GetUtcNow());
+        });
+    }
+
+    /// <summary>
+    /// Brings the next <c>/config</c> poll forward to the short retry delay, on the framework thread,
+    /// never pushing back one due sooner (see <see cref="SyncTickPlan.BringPollForward"/>).
     /// </summary>
     private void RescheduleConfigPollSoon()
     {
@@ -1361,7 +1535,8 @@ internal sealed class SyncManager : IDisposable
             if (lifetimeToken.IsCancellationRequested)
                 return;
 
-            nextConfigPollAt = timeProvider.GetUtcNow() + ConfigPollRetryDelay;
+            nextConfigPollAt = SyncTickPlan.BringPollForward(
+                nextConfigPollAt, timeProvider.GetUtcNow() + ConfigPollRetryDelay);
         });
     }
 }

@@ -180,6 +180,36 @@ public static class CrucibleUploadBuilder
             Hp = new CrucibleHpUpload { Current = currentHp, Max = maxHp },
         };
 
+    /// <summary>A snapshot of the familiars' HP (see <see cref="CrucibleFamiliarTracker"/>).</summary>
+    /// <param name="familiars">Each familiar's last reading, in the order they first came out.</param>
+    public static CrucibleObservation Familiars(
+        bool afterFight, IReadOnlyList<CrucibleFieldedFamiliar> familiars, DateTimeOffset observedAt)
+    {
+        // A new list, so the snapshot keeps its readings even when the caller's list is cleared.
+        var uploads = new List<CrucibleFieldedFamiliarUpload>(familiars.Count);
+        foreach (var familiar in familiars)
+        {
+            // A reading is never later than its snapshot, which a clock set back during a fight could
+            // otherwise make it.
+            var readAt = familiar.ReadAt < observedAt ? familiar.ReadAt : observedAt;
+
+            uploads.Add(new CrucibleFieldedFamiliarUpload
+            {
+                PetId = familiar.PetId,
+                Hp = new CrucibleHpUpload { Current = familiar.CurrentHp, Max = familiar.MaxHp },
+                Summoned = familiar.Summoned,
+                ReadAtUtc = WireTime.Format(readAt),
+            });
+        }
+
+        return new CrucibleFamiliarsObservation
+        {
+            ObservedAtUtc = WireTime.Format(observedAt),
+            AfterFight = afterFight,
+            Familiars = uploads,
+        };
+    }
+
     /// <summary>One upload request.</summary>
     /// <param name="characterContentIdHash">SHA-256 of the character's ContentId, lowercase hex.</param>
     /// <param name="characterName">The character's name, part of the binding identity as on /sync.</param>

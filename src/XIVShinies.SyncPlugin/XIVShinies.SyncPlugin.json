@@ -1,8 +1,8 @@
 {
   "Author": "Noranda",
   "Name": "XIV Shinies Sync",
-  "Punchline": "Your collections, on xiv-shinies.com, the moment you earn them.",
-  "Description": "Automatically records your collection progress on XIV Shinies (https://xiv-shinies.com). New quest, achievement, mount, and minion unlocks appear on the site within seconds; Triple Triad cards, orchestrion rolls, Occult Crescent progress, and the items the site tracks sync automatically in the background. Fully opt-in: nothing uploads until you finish the short setup, and you choose exactly which collections to send. Use /shinies to get started.",
+  "Punchline": "Your collections, on xiv-shinies.com, as you earn them.",
+  "Description": "Records your collection progress on XIV Shinies (https://xiv-shinies.com). New quest, achievement, mount, minion, and orchestrion unlocks appear within seconds; Triple Triad cards, tamed beasts, Occult Crescent progress, and tracked items sync in the background. Nothing uploads until you finish setup and choose what to send; Crucible run sharing is opt-in. Use /shinies to get started.",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/XIV-Shinies/xiv-shinies-plugin",
   "IconUrl": "https://raw.githubusercontent.com/XIV-Shinies/xiv-shinies-plugin/main/src/XIVShinies.SyncPlugin/images/icon.png",

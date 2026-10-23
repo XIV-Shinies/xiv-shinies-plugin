@@ -349,7 +349,7 @@ public class ApiClientTests
     }
 
     [Fact]
-    public async Task A_503_means_the_global_kill_switch_is_off()
+    public async Task A_503_means_syncing_is_switched_off()
     {
         var (client, _) = Build(_ =>
         {

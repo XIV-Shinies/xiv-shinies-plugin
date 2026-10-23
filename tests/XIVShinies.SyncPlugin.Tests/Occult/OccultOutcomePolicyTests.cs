@@ -57,6 +57,23 @@ public class OccultOutcomePolicyTests
         Assert.Equal(Now.AddSeconds(90), outcome.Until);
     }
 
+    // A 503 `sync_disabled` waits until syncing is back on or the server's wait ends. Any other 503,
+    // such as a tracker that cannot answer, and a 429 wait the whole time.
+    [Theory]
+    [InlineData(ApiStatus.SyncDisabled, "sync_disabled", true)]
+    [InlineData(ApiStatus.SyncDisabled, "tracker_unavailable", false)]
+    [InlineData(ApiStatus.SyncDisabled, null, false)]
+    [InlineData(ApiStatus.RateLimited, null, false)]
+    public void Only_a_switched_off_503_waits_for_sync_to_resume(
+        ApiStatus status, string? errorCode, bool expected)
+    {
+        var outcome = OccultOutcomePolicy.Classify(status, TimeSpan.FromHours(1), Now, errorCode);
+
+        Assert.Equal(OccultOutcomeKind.BackOff, outcome.Kind);
+        Assert.Equal(Now.AddHours(1), outcome.Until);
+        Assert.Equal(expected, outcome.EndsWhenSyncResumes);
+    }
+
     [Fact]
     public void A_terminal_rejection_pauses_for_the_fixed_quiet_period()
     {

@@ -139,9 +139,12 @@ digraph release_flow {
    changelog so the two products read as one voice in the shared #releases channel:
    - **Every bullet starts with a verb** (Stop, Support, Link, Show, Count, Fix, …) —
      "Count outfit gear toward relic proofs", never "Outfit gear now counts…".
-   - **Keep each bullet to at most 75 characters**: at the embed's rendered width that is
-     one line, and a bullet that wraps mid-sentence reads worse in Discord than a shorter
-     one that says less.
+   - **Keep each bullet to at most 60 characters**: at the embed's rendered width on
+     desktop that is one line, and a bullet that wraps mid-sentence reads worse in Discord
+     than a shorter one that says less.
+   - **Keep the section to at most six bullets**, each a headline a player would notice.
+     Copy and reliability fixes stay in the commits; fold related changes into one
+     headline rather than listing one bullet per pull request.
 3. Present the section as plain text for approval. Wait.
 4. If on `main`, `git switch -c release/vX.Y.Z`; on any other branch, stay put and say so.
 5. Insert the section directly under the CHANGELOG's intro (newest first), stage the file,
@@ -161,7 +164,11 @@ digraph release_flow {
      `https://github.com/XIV-Shinies/xiv-shinies-plugin/releases/download/vX.Y.Z/XIVShinies.SyncPlugin.zip`.
      Keep the descriptive fields (Author, Name, Punchline, Description, Tags…) identical to
      the built manifest at `src/XIVShinies.SyncPlugin/bin/Release/XIVShinies.SyncPlugin/XIVShinies.SyncPlugin.json`
-     — the manifest is the source; repo.json mirrors it.
+     — the manifest is the source; repo.json mirrors it. `StoreListingTests` fails step 3's
+     `dotnet test` when repo.json differs from a field of the source manifest
+     (`src/XIVShinies.SyncPlugin/XIVShinies.SyncPlugin.json`). It does not compare the
+     build-stamped fields (`AssemblyVersion`, `InternalName`, `DalamudApiLevel`) or the download
+     links, so those are this step's to get right.
 3. `dotnet build --configuration Release -warnaserror`, then verify before anything ships:
    the packaged manifest's `AssemblyVersion` equals `X.Y.Z.0`, and
    `bin/Release/XIVShinies.SyncPlugin/latest.zip` exists. Run `dotnet test` too.

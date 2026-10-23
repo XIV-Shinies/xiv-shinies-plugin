@@ -11,7 +11,8 @@ public enum OccultOutcomeKind
     Applied,
 
     /// <summary>
-    /// The server asked for quiet (429 or 503): wait until <see cref="OccultOutcome.Until"/>.
+    /// The server asked for quiet (429 or 503): wait until <see cref="OccultOutcome.Until"/>, or
+    /// possibly less when <see cref="OccultOutcome.EndsWhenSyncResumes"/> is set.
     /// </summary>
     BackOff,
 
@@ -41,7 +42,11 @@ public enum OccultOutcomeKind
 /// <param name="Kind">What to do.</param>
 /// <param name="Until">When a <see cref="OccultOutcomeKind.BackOff"/> or
 /// <see cref="OccultOutcomeKind.Pause"/> ends; null for every other outcome.</param>
-public readonly record struct OccultOutcome(OccultOutcomeKind Kind, DateTimeOffset? Until = null);
+/// <param name="EndsWhenSyncResumes">True when the website saying syncing is back on may end a
+/// <see cref="OccultOutcomeKind.BackOff"/> before <paramref name="Until"/> (see
+/// <see cref="RetryPolicy.EndsWhenSyncResumes"/>).</param>
+public readonly record struct OccultOutcome(
+    OccultOutcomeKind Kind, DateTimeOffset? Until = null, bool EndsWhenSyncResumes = false);
 
 /// <summary>Decides what the live tracker does with an upload's answer.</summary>
 /// <remarks>
@@ -60,13 +65,18 @@ public static class OccultOutcomePolicy
     /// <param name="status">The answer's status.</param>
     /// <param name="retryAfter">The server's <c>Retry-After</c>, if it sent one.</param>
     /// <param name="now">The current time, which a waiting outcome counts from.</param>
-    public static OccultOutcome Classify(ApiStatus status, TimeSpan? retryAfter, DateTimeOffset now)
+    /// <param name="errorCode">The error body's code, if it had one.</param>
+    public static OccultOutcome Classify(
+        ApiStatus status, TimeSpan? retryAfter, DateTimeOffset now, string? errorCode = null)
     {
         if (status == ApiStatus.Ok)
             return new OccultOutcome(OccultOutcomeKind.Applied);
 
         if (RetryPolicy.BackoffUntil(status, retryAfter, now) is { } until)
-            return new OccultOutcome(OccultOutcomeKind.BackOff, until);
+        {
+            return new OccultOutcome(
+                OccultOutcomeKind.BackOff, until, RetryPolicy.EndsWhenSyncResumes(status, errorCode));
+        }
 
         if (status == ApiStatus.NotConfigured)
             return new OccultOutcome(OccultOutcomeKind.Skip);

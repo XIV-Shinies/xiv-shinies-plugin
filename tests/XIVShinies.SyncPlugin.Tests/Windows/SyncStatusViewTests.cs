@@ -90,8 +90,8 @@ public class SyncStatusViewTests
             Select(true, Paused(), true, hasCharacter: true, hasUploaded: true));
     }
 
-    // A pause also turns every row off, and "nothing is switched on" would blame the user for the
-    // server's outage.
+    // A pause also turns every row off, and "nothing is switched on" would send the user to the
+    // plugin's checkboxes when the switch that is off is on the website.
     [Fact]
     public void A_paused_server_is_not_reported_as_the_user_having_switched_everything_off()
     {
@@ -305,12 +305,11 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.CadenceHolds(kind));
     }
 
-    // Refused where a press would flash "Syncing" and add no upload; logged out, the login brings its
-    // own sync. WaitingForCharacter stays out so a server wait keeps its own line, and SyncNowOffered
-    // refuses the press there. The halt and CharacterNotRead stay live: their own copy says to press.
+    // Refused where a press would flash "Syncing" and add no upload. WaitingForCharacter stays out to keep a
+    // wait's line; the halt, CharacterNotRead and a pause stay live, since a press does something there.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]
-    [InlineData(SyncStatusKind.PausedByServer, true)]
+    [InlineData(SyncStatusKind.PausedByServer, false)]
     [InlineData(SyncStatusKind.NothingSwitchedOnByUser, true)]
     [InlineData(SyncStatusKind.NothingPermittedByServer, true)]
     [InlineData(SyncStatusKind.LoggedOut, true)]
@@ -327,9 +326,8 @@ public class SyncStatusViewTests
 
     // --- Whether the card offers "Sync now" ---
 
-    // backingOff is a server-requested wait, during which a press uploads nothing. A halt still
-    // invites one, since the press lifts it. While the character is still being read, a press brings
-    // nothing sooner.
+    // During a server-requested wait only the halt invites a press, since the press lifts it. A press
+    // while the character is being read brings nothing sooner, and in a pause only asks if syncing is back.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
@@ -357,13 +355,13 @@ public class SyncStatusViewTests
         Assert.Equal(expected, SyncStatusView.SyncNowOffered(kind, backingOff));
     }
 
-    // The button follows the sentences, plus CharacterNotRead during a wait: a press restarts the read,
-    // which the wait does not hold back.
+    // The button follows the sentences, plus two states a wait does not hold back: CharacterNotRead,
+    // where a press restarts the read, and a pause, where a press asks whether syncing is back on.
     [Theory]
     [InlineData(SyncStatusKind.SwitchedOffByUser, false, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true, false)]
-    [InlineData(SyncStatusKind.PausedByServer, false, false)]
-    [InlineData(SyncStatusKind.PausedByServer, true, false)]
+    [InlineData(SyncStatusKind.PausedByServer, false, true)]
+    [InlineData(SyncStatusKind.PausedByServer, true, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, false, true)]
     [InlineData(SyncStatusKind.BlockedPendingUserAction, true, true)]
     [InlineData(SyncStatusKind.CharacterNotRead, false, true)]
@@ -416,8 +414,8 @@ public class SyncStatusViewTests
             SyncStatusKind.LastUploadOutcome, ApiStatus.NetworkError, backingOff: true));
     }
 
-    // Without a wait there is no line. A halt and each state where a press does nothing already say
-    // why nothing uploads (see NeedsWaitLine).
+    // Without a wait there is no line. A halt, a pause and each state where a press does nothing
+    // already say why nothing uploads (see NeedsWaitLine).
     [Theory]
     [InlineData(SyncStatusKind.LastUploadOutcome, false)]
     [InlineData(SyncStatusKind.SwitchedOffByUser, true)]

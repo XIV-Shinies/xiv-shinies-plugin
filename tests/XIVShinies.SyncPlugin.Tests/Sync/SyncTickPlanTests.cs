@@ -1,3 +1,4 @@
+using System;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Sync;
@@ -9,6 +10,29 @@ namespace XIVShinies.SyncPlugin.Tests.Sync;
 /// </summary>
 public class SyncTickPlanTests
 {
+    // A poll brought forward comes no later than `soon`, and never later than it was already due.
+    [Theory]
+    [InlineData(30, 2)]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    public void A_poll_brought_forward_is_never_pushed_back(int dueInMinutes, int expectedInMinutes)
+    {
+        var now = new DateTimeOffset(2026, 10, 20, 20, 0, 0, TimeSpan.Zero);
+
+        Assert.Equal(
+            now.AddMinutes(expectedInMinutes),
+            SyncTickPlan.BringPollForward(now.AddMinutes(dueInMinutes), now.AddMinutes(2)));
+    }
+
+    // A null due time means the first opportunity, which is already sooner than `soon`.
+    [Fact]
+    public void A_poll_due_at_the_first_opportunity_stays_due()
+    {
+        var soon = new DateTimeOffset(2026, 10, 20, 20, 2, 0, TimeSpan.Zero);
+
+        Assert.Null(SyncTickPlan.BringPollForward(due: null, soon));
+    }
+
     // SyncTickPlan.PollSurvivesHalt says why these halts leave the poll worth making. No halt at all
     // is not a refusal.
     [Theory]

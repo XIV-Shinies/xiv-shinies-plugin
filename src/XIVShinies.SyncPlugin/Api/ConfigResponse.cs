@@ -43,7 +43,10 @@ public sealed record ConfigResponse
             ? ServerText.SingleLine(note)
             : null;
 
-    /// <summary>The global kill switch. False means stop uploading entirely.</summary>
+    /// <summary>
+    /// The global kill switch, with the account's own "Sync from the plugin" switch folded in.
+    /// False means stop uploading entirely; it does not say which of the two is off.
+    /// </summary>
     public required bool Enabled { get; init; }
 
     /// <summary>Server-chosen sync cadence.</summary>

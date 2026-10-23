@@ -6,9 +6,10 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// Decides whether a category may be collected and uploaded at all.
 /// </summary>
 /// <remarks>
-/// Onboarding must be complete and four switches on: the user's master switch and per-category
-/// opt-in, and the server's global kill switch and per-category switch. One function gates every
-/// category, so no collector can forget a check.
+/// Onboarding must be complete and four switches on: the plugin's master switch and per-category
+/// opt-in, and the <c>/config</c> global kill switch and per-category switch. The global switch folds
+/// in the account's "Sync from the plugin" switch. One function gates every category, so no collector
+/// can forget a check.
 /// </remarks>
 public static class CollectorGate
 {
@@ -27,8 +28,8 @@ public static class CollectorGate
         if (!settings.IsCategoryEnabled(categoryKey))
             return false;
 
-        // Proceed without /config: the server strips disabled categories and answers 503 when switched
-        // off anyway, and refusing would strand the plugin whenever /config is unreachable.
+        // Proceed without /config: the server strips disabled categories and answers 503 while syncing
+        // is off anyway, and refusing would strand the plugin whenever /config is unreachable.
         if (remoteConfig is null)
             return true;
 
@@ -42,12 +43,13 @@ public static class CollectorGate
     /// Whether a collection may capture a fact into memory, before any upload is in sight.
     /// </summary>
     /// <param name="categoryKey">The collection asking.</param>
-    /// <param name="settings">The user's own switches.</param>
+    /// <param name="settings">The plugin's own switches.</param>
     /// <remarks>
     /// For a collection whose source is a window the player opens: the read happens when the game fills
-    /// that window, not during a pass. A collection the user switched off captures nothing, not even
-    /// into memory. The server's switches are left out: consent is the user's answer, and
-    /// <see cref="IsEnabled"/> and the server both keep a server-disabled category out of the payload.
+    /// that window, not during a pass. A collection switched off in the plugin captures nothing, not even
+    /// into memory. The <c>/config</c> switches, the account's "Sync from the plugin" switch among them,
+    /// are left out: consent given in the plugin is the answer that counts this early, and
+    /// <see cref="IsEnabled"/> and the server both keep what they switch off out of the payload.
     /// </remarks>
     public static bool IsCapturePermitted(string categoryKey, PluginSettings settings) =>
         settings.MasterEnabled

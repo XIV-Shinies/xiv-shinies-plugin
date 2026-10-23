@@ -20,6 +20,20 @@ public static class PluginMeta
     /// <summary>Where the plugin's source lives (mirrors the manifest <c>RepoUrl</c> field).</summary>
     public const string SourceUrl = "https://github.com/XIV-Shinies/xiv-shinies-plugin";
 
+    /// <summary>The manifest <c>Punchline</c>'s words before the site's name.</summary>
+    /// <remarks>
+    /// The settings masthead draws the tagline in three pieces so it can color the name. This,
+    /// <see cref="TaglineSite"/> and <see cref="TaglineTail"/>, joined by single spaces, are the
+    /// punchline word for word.
+    /// </remarks>
+    public const string TaglineLead = "Your collections, on";
+
+    /// <summary>The site's name within the tagline, with its comma (see <see cref="TaglineLead"/>).</summary>
+    public const string TaglineSite = "xiv-shinies.com,";
+
+    /// <summary>The tagline's words after the site's name (see <see cref="TaglineLead"/>).</summary>
+    public const string TaglineTail = "as you earn them.";
+
     /// <summary>The community Discord invite (the same one the website links to).</summary>
     public const string DiscordUrl = "https://discord.gg/UuNe5BwAGG";
 

@@ -1006,7 +1006,7 @@ public class CategorySettingsViewTests
         Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
     }
 
-    // A collection must not spend its one-time introduction during an outage: the user would see the
+    // A collection must not spend its one-time introduction during a pause: the user would see the
     // badge, find the row unusable, and never hear of it again.
     [Fact]
     public void A_paused_server_withholds_the_new_badge()

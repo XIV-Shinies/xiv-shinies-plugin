@@ -239,6 +239,43 @@ public class CrucibleUploadBuilderTests
             CrucibleUploadBuilder.Self(1180, 1300, ObservedAt));
     }
 
+    // Each familiar carries when it was last read, which for one that left the field is about when
+    // it left.
+    [Fact]
+    public void A_familiars_snapshot_sends_each_familiars_hp_and_when_it_was_read()
+    {
+        AssertJson(
+            """
+            {"kind":"familiars","observedAtUtc":"2026-09-28T12:00:00Z","afterFight":true,
+             "familiars":[
+               {"petId":1,"hp":{"current":386,"max":608},"summoned":false,
+                "readAtUtc":"2026-09-28T11:59:10Z"},
+               {"petId":13,"hp":{"current":358,"max":560},"summoned":true,
+                "readAtUtc":"2026-09-28T12:00:00Z"}]}
+            """,
+            CrucibleUploadBuilder.Familiars(
+                afterFight: true,
+                [
+                    new CrucibleFieldedFamiliar(1, 386, 608, Summoned: false, ObservedAt.AddSeconds(-50)),
+                    new CrucibleFieldedFamiliar(13, 358, 560, Summoned: true, ObservedAt),
+                ],
+                ObservedAt));
+    }
+
+    // A clock set back mid-fight can leave a reading stamped after its snapshot; it goes up at the
+    // snapshot's moment instead.
+    [Fact]
+    public void A_familiar_reading_is_never_stamped_after_its_snapshot()
+    {
+        var familiars = Assert.IsType<CrucibleFamiliarsObservation>(
+            CrucibleUploadBuilder.Familiars(
+                afterFight: true,
+                [new CrucibleFieldedFamiliar(13, 358, 560, Summoned: true, ObservedAt.AddMinutes(5))],
+                ObservedAt));
+
+        Assert.Equal(ObservedAtText, Assert.Single(familiars.Familiars).ReadAtUtc);
+    }
+
     // The identity fields are the ones /sync uses.
     [Fact]
     public void A_request_carries_the_identity_trigger_territory_and_observations_in_order()

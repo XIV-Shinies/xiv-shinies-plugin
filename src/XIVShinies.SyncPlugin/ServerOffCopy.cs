@@ -7,7 +7,7 @@ namespace XIVShinies.SyncPlugin;
 /// <remarks>
 /// The collections, the live tracker and the Crucible run sharing draw these on one screen, so one
 /// copy keeps a reword from making them disagree. The four differ on purpose: a decision about one
-/// thing, that decision for every collection, an outage affecting everything, and a feature not
+/// thing, that decision for every collection, syncing switched off altogether, and a feature not
 /// offered; saying the first during either of the last two sends the user looking for a decision
 /// nobody made. Each names the website by its address (see <see cref="HostPlaceholder"/>).
 /// </remarks>
@@ -36,21 +36,24 @@ public static class ServerOffCopy
     /// </summary>
     /// <remarks>
     /// Each row wears its own "Off" chip, but a whole grayed list needs one sentence above it saying
-    /// the choice is the website's and the user's own is kept, as during a pause.
+    /// the choice is the website's and the user's own is kept.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string EveryCollection(string host) =>
         $"{host} has switched off every collection for now. Your own choices are unchanged.";
 
     /// <summary>
-    /// What everything says while the website has paused syncing altogether.
+    /// What everything says while syncing is off altogether on the website.
     /// </summary>
     /// <remarks>
-    /// A pause clears every checkbox at once, which looks like the plugin discarded the user's
-    /// choices, so this says plainly that they survive. Nothing is written to their stored consent
-    /// while it shows.
+    /// The website sends the same <c>enabled: false</c> for its own pause and for the "Sync from the
+    /// plugin" switch on the player's profile, and the plugin cannot tell them apart, so the sentence
+    /// names no audience and points at the switch the player can flip. A pause clears every checkbox at
+    /// once, which looks like the plugin discarded the user's choices, so this says plainly that they
+    /// survive. Nothing is written to their stored consent while it shows.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     public static string Paused(string host) =>
-        $"{host} has paused syncing for everyone. Your own choices are unchanged.";
+        $"Syncing is off on {host}. If you turned off \"Sync from the plugin\" on your profile, "
+        + "turn it back on there. Your own choices are unchanged.";
 }

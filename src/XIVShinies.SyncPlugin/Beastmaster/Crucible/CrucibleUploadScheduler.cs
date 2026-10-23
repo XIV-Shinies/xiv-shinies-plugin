@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using XIVShinies.SyncPlugin.Api;
 
@@ -88,7 +89,7 @@ public sealed class CrucibleUploadScheduler
     /// <param name="Observation">Null for a marker.</param>
     /// <param name="Key">Its kind and territory: the unit change detection and replacement work on.</param>
     /// <param name="Kind">Its kind's wire name.</param>
-    /// <param name="Closed">True for a window's closing snapshot.</param>
+    /// <param name="Final">Whether nothing may replace it (see <see cref="IsFinal"/>).</param>
     /// <param name="WaitingSince">
     /// When it began waiting. A replacement inherits this from the snapshot it replaced.
     /// </param>
@@ -99,7 +100,7 @@ public sealed class CrucibleUploadScheduler
         CrucibleObservation? Observation = null,
         string Key = "",
         string Kind = "",
-        bool Closed = false,
+        bool Final = false,
         DateTimeOffset WaitingSince = default,
         DateTimeOffset QueuedAt = default);
 
@@ -160,12 +161,21 @@ public sealed class CrucibleUploadScheduler
     /// <summary>When the wait was set, so a backward clock jump can move it back.</summary>
     private DateTimeOffset? waitSetAt;
 
+    /// <summary>
+    /// When a wait that <see cref="SyncResumed"/> may end early ends (see <see cref="MarkRetry"/>), or
+    /// null when there is none.
+    /// </summary>
+    private DateTimeOffset? syncResumesBy;
+
+    /// <summary>When that wait was set, so a backward clock jump can move it back.</summary>
+    private DateTimeOffset? syncResumesSetAt;
+
     /// <summary>How long a quiet board waits before a heartbeat.</summary>
     public TimeSpan Heartbeat { get; private set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// The wire name of an observation's kind: <c>board</c>, <c>team</c>, <c>bag</c>, <c>offer</c>,
-    /// <c>results</c> or <c>self</c>.
+    /// <c>results</c>, <c>self</c> or <c>familiars</c>.
     /// </summary>
     public static string KindOf(CrucibleObservation observation) =>
         observation switch
@@ -176,8 +186,13 @@ public sealed class CrucibleUploadScheduler
             CrucibleOfferObservation => "offer",
             CrucibleResultsObservation => "results",
             CrucibleSelfObservation => "self",
+            CrucibleFamiliarsObservation => "familiars",
             _ => throw new ArgumentException("An unknown observation kind.", nameof(observation)),
         };
+
+    /// <summary>An upload's kinds in its order, for the log, or "no snapshots" when it has none.</summary>
+    public static string KindsOf(IReadOnlyList<CrucibleObservation> observations) =>
+        observations.Count == 0 ? "no snapshots" : string.Join(", ", observations.Select(KindOf));
 
     /// <summary>Adopts the server's heartbeat cadence from <c>/config</c>, held within its bounds.</summary>
     public void ApplyHeartbeat(int heartbeatSeconds)
@@ -219,32 +234,29 @@ public sealed class CrucibleUploadScheduler
         }
     }
 
-    /// <summary>Queues a snapshot read from a window, or the character's own HP.</summary>
+    /// <summary>
+    /// Queues a snapshot read from a window, the character's own HP, or the familiars' HP.
+    /// </summary>
     /// <param name="observation">
     /// The snapshot. One read earlier than a snapshot queued before it starts a new upload (see
     /// <see cref="TakeBatch"/>).
     /// </param>
     /// <param name="territoryTypeId">The territory it was read in.</param>
     /// <remarks>
-    /// A snapshot matching the last of its kind and territory is dropped, unless it is a window's
-    /// closing snapshot. A newer snapshot replaces an unsent one of its kind and territory and moves to
-    /// the back of its run, but never replaces a closing one or reaches across a marker.
+    /// A snapshot matching the last of its kind and territory is dropped, unless it is final (see
+    /// <see cref="IsFinal"/>). A newer snapshot replaces an unsent one of its kind and territory and
+    /// moves to the back of its run, but never replaces a final one or reaches across a marker.
     /// </remarks>
     public void Queue(CrucibleObservation observation, uint territoryTypeId, DateTimeOffset now)
     {
         var kind = KindOf(observation);
         var key = $"{kind}@{territoryTypeId}";
         var content = ContentOf(observation);
-
-        // Only the three window kinds that close carry the flag.
-        var closed = observation is CrucibleBoardObservation { Closed: true }
-            or CrucibleTeamObservation { Closed: true }
-            or CrucibleOfferObservation { Closed: true };
+        var final = IsFinal(observation);
 
         lock (gate)
         {
-            // A closing snapshot goes even when unchanged: it marks the window's final state.
-            if (!closed && lastContent.TryGetValue(key, out var last) && last == content)
+            if (!final && lastContent.TryGetValue(key, out var last) && last == content)
                 return;
 
             lastContent[key] = content;
@@ -270,15 +282,14 @@ public sealed class CrucibleUploadScheduler
                 break;
             }
 
-            // A closing snapshot is the window's final word, so a fresh one queues behind it instead
-            // of replacing it.
+            // A fresh snapshot queues behind a final one (see IsFinal) instead of replacing it.
             var waitingSince = now;
             for (var index = insertAt - 1; index >= 0 && queue[index].Type == EntryType.Snapshot; index--)
             {
                 if (queue[index].Key != key)
                     continue;
 
-                if (!queue[index].Closed)
+                if (!queue[index].Final)
                 {
                     // It inherits the replaced one's waiting start, so MaxChangeWait still bounds it.
                     waitingSince = queue[index].WaitingSince;
@@ -290,11 +301,21 @@ public sealed class CrucibleUploadScheduler
             }
 
             var snapshot = new Entry(
-                EntryType.Snapshot, territoryTypeId, observation, key, kind, closed, waitingSince, now);
+                EntryType.Snapshot, territoryTypeId, observation, key, kind, final, waitingSince, now);
             queue.Insert(insertAt, snapshot);
             changeDueAt = now + ChangeDebounce;
         }
     }
+
+    /// <summary>
+    /// True for a snapshot nothing queued after it may replace: a window's closing one, its final state,
+    /// or the after-fight familiars one, the only one listing the familiars that left the field.
+    /// </summary>
+    private static bool IsFinal(CrucibleObservation observation) =>
+        observation is CrucibleBoardObservation { Closed: true }
+            or CrucibleTeamObservation { Closed: true }
+            or CrucibleOfferObservation { Closed: true }
+            or CrucibleFamiliarsObservation { AfterFight: true };
 
     /// <summary>The character left the board: what it left queued goes up, then the leave.</summary>
     public void NotifyLeft(DateTimeOffset now)
@@ -335,6 +356,15 @@ public sealed class CrucibleUploadScheduler
                     return null;
 
                 waitUntil = null;
+            }
+
+            // So does a wait that syncing coming back on may end early (see SyncResumed).
+            if (syncResumesBy is { } resumesBy)
+            {
+                if (now < resumesBy)
+                    return null;
+
+                syncResumesBy = null;
             }
 
             if (!BudgetAllows(now))
@@ -419,12 +449,19 @@ public sealed class CrucibleUploadScheduler
     /// </summary>
     /// <param name="upload">The upload <see cref="Poll"/> handed out.</param>
     /// <param name="retryAt">When the server, or the caller's backoff, says it may go again.</param>
+    /// <param name="endsWhenSyncResumes">
+    /// Whether <see cref="SyncResumed"/> may end the wait before <paramref name="retryAt"/>, as the
+    /// caller allows for a 503 saying syncing is switched off (see <see cref="Sync.SyncResumeWait.Arm"/>).
+    /// </param>
     /// <remarks>
     /// The wait is at least <see cref="MinRetryWait"/>, doubled for each failure in a row, so no answer
     /// can become a tight loop. It applies even when the upload is no longer in flight: a 429 or 503
     /// limits the token, and a network failure means the server is unreachable, whichever upload met it.
+    /// Only the part of the wait past that least wait can end on <see cref="SyncResumed"/>, so the least
+    /// wait and any rate limit still hold.
     /// </remarks>
-    public void MarkRetry(CrucibleUpload upload, DateTimeOffset retryAt, DateTimeOffset now)
+    public void MarkRetry(
+        CrucibleUpload upload, DateTimeOffset retryAt, DateTimeOffset now, bool endsWhenSyncResumes = false)
     {
         lock (gate)
         {
@@ -437,7 +474,15 @@ public sealed class CrucibleUploadScheduler
                 leastWait = MaxRetryWait;
 
             var waitEnds = retryAt > now + leastWait ? retryAt : now + leastWait;
-            Hold(waitEnds, now);
+            if (endsWhenSyncResumes)
+            {
+                Hold(now + leastWait, now);
+                HoldUntilSyncResumes(waitEnds, now);
+            }
+            else
+            {
+                Hold(waitEnds, now);
+            }
 
             if (!IsInFlight(upload))
                 return;
@@ -494,6 +539,19 @@ public sealed class CrucibleUploadScheduler
         }
     }
 
+    /// <summary>
+    /// Ends the wait a <see cref="MarkRetry"/> for a switched-off 503 started, because the website
+    /// says syncing is back on. Every other wait stays in force.
+    /// </summary>
+    public void SyncResumed()
+    {
+        lock (gate)
+        {
+            syncResumesBy = null;
+            syncResumesSetAt = null;
+        }
+    }
+
     /// <summary>Whether this is the very upload in flight.</summary>
     /// <remarks>
     /// By identity, not by value: two heartbeats for the same board are equal records, and a late
@@ -512,6 +570,19 @@ public sealed class CrucibleUploadScheduler
     }
 
     /// <summary>
+    /// Holds everything until the given moment or <see cref="SyncResumed"/>, whichever comes first;
+    /// the later of two such holds wins.
+    /// </summary>
+    private void HoldUntilSyncResumes(DateTimeOffset until, DateTimeOffset now)
+    {
+        if (syncResumesBy is null || until > syncResumesBy)
+        {
+            syncResumesBy = until;
+            syncResumesSetAt = now;
+        }
+    }
+
+    /// <summary>
     /// Pulls every reference point past now back into line after the clock jumps backwards, so
     /// nothing timed from a later moment stalls by the size of the jump.
     /// </summary>
@@ -523,7 +594,7 @@ public sealed class CrucibleUploadScheduler
         if (changeDueAt > now + ChangeDebounce)
             changeDueAt = now + ChangeDebounce;
 
-        // The budget and a wait keep their lengths: each moves back by as far as the clock did.
+        // The budget and both waits keep their lengths: each moves back by as far as the clock did.
         if (budgetSetAt is { } spent && now < spent && budgetFullAt is { } full)
         {
             budgetFullAt = full - (spent - now);
@@ -534,6 +605,12 @@ public sealed class CrucibleUploadScheduler
         {
             waitUntil = until - (set - now);
             waitSetAt = now;
+        }
+
+        if (syncResumesSetAt is { } resumesSet && now < resumesSet && syncResumesBy is { } resumesBy)
+        {
+            syncResumesBy = resumesBy - (resumesSet - now);
+            syncResumesSetAt = now;
         }
 
         for (var index = 0; index < queue.Count; index++)
@@ -629,6 +706,10 @@ public sealed class CrucibleUploadScheduler
     /// A snapshot's content without its moment, as JSON text: two snapshots read at different
     /// moments with the same content give the same text.
     /// </summary>
+    /// <remarks>
+    /// A familiars snapshot keeps each familiar's <c>readAtUtc</c>, so two of those match only when
+    /// every reading was taken at the same moment.
+    /// </remarks>
     // Covers every field of the snapshot's own kind, plus the `kind` key. CrucibleFeed compares a
     // closing reading with its last one through this too.
     internal static string ContentOf(CrucibleObservation observation) =>

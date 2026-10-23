@@ -231,9 +231,9 @@ internal sealed partial class MainWindow
             // The manifest's punchline, at full contrast. It names the official site, not the
             // configured one, because it quotes the tagline rather than saying where data goes.
             Widgets.DrawWrappedSpans(
-                ("Your collections, on", null),
-                ("xiv-shinies.com,", Brand.Gold),
-                ("the moment you earn them.", null));
+                (PluginMeta.TaglineLead, null),
+                (PluginMeta.TaglineSite, Brand.Gold),
+                (PluginMeta.TaglineTail, null));
 
             ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));
             DrawLinkButtons();

@@ -174,7 +174,7 @@ public static class ManifestConsent
         foreach (var row in rows)
         {
             // Both halves, so a row that claims a pause while still usable cannot make the window
-            // announce an outage over live checkboxes.
+            // announce a pause over live checkboxes.
             if (row.ServerGloballyOff && !row.ServerEnabled)
                 return true;
         }

@@ -1,3 +1,4 @@
+using System;
 using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Sync;
@@ -16,7 +17,8 @@ public enum TickAction
 }
 
 /// <summary>
-/// How much of the per-frame sync work a tick may do, given consent and the current halt.
+/// How much of the per-frame sync work a tick may do, given consent and the current halt, and when the
+/// next <c>/config</c> poll falls once it is brought forward.
 /// </summary>
 /// <remarks>
 /// Consent gates everything, and a halt stops collecting and uploading without stopping a poll the
@@ -38,6 +40,18 @@ public static class SyncTickPlan
     /// </remarks>
     public static bool PollSurvivesHalt(ApiStatus? haltStatus) =>
         haltStatus is { } status && ApiStatusMap.IsCharacterRefusal(status);
+
+    /// <summary>
+    /// When the next <c>/config</c> poll is due once it is brought forward to <paramref name="soon"/>.
+    /// </summary>
+    /// <param name="due">When it was due, or null for "at the first opportunity".</param>
+    /// <param name="soon">The latest it should now wait.</param>
+    /// <remarks>
+    /// Never pushes a poll back: one already due sooner keeps its time, and one due at the first
+    /// opportunity stays so.
+    /// </remarks>
+    public static DateTimeOffset? BringPollForward(DateTimeOffset? due, DateTimeOffset soon) =>
+        due is { } d && d > soon ? soon : due;
 
     /// <summary>Decides how much of this frame's work may run.</summary>
     /// <param name="canContactServer">

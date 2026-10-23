@@ -72,7 +72,7 @@ public class RetryPolicyTests
         Assert.Equal(now.Add(RetryPolicy.DefaultRateLimitBackoff), until);
     }
 
-    // A disabled server usually needs breathing room, so back off far longer than a poll.
+    // Without the header, the wait is the hour the website sends with `sync_disabled`.
     [Fact]
     public void Falls_back_to_an_hour_when_sync_is_disabled_without_a_header()
     {
@@ -81,6 +81,34 @@ public class RetryPolicyTests
         var until = RetryPolicy.BackoffUntil(ApiStatus.SyncDisabled, retryAfter: null, now);
 
         Assert.Equal(now.Add(RetryPolicy.DefaultSyncDisabledBackoff), until);
+    }
+
+    // Only a 503 with the exact code `sync_disabled` may end early. A 429, a busy server, a tracker
+    // that cannot answer and a proxy page with no body keep their whole wait.
+    [Theory]
+    [InlineData(ApiStatus.SyncDisabled, "sync_disabled", true)]
+    [InlineData(ApiStatus.SyncDisabled, "busy", false)]
+    [InlineData(ApiStatus.SyncDisabled, "tracker_unavailable", false)]
+    [InlineData(ApiStatus.SyncDisabled, null, false)]
+    [InlineData(ApiStatus.SyncDisabled, "SYNC_DISABLED", false)]
+    [InlineData(ApiStatus.RateLimited, "sync_disabled", false)]
+    public void Only_a_switched_off_503_waits_for_sync_to_resume(
+        ApiStatus status, string? errorCode, bool expected)
+    {
+        Assert.Equal(expected, RetryPolicy.EndsWhenSyncResumes(status, errorCode));
+    }
+
+    // Polls are numbered as they start. One already on its way at the refusal, 3 or lower here, may
+    // carry the answer from before syncing went off, so only a later poll saying it is on counts.
+    [Theory]
+    [InlineData(true, 4, 3, true)]
+    [InlineData(true, 3, 3, false)]
+    [InlineData(true, 2, 3, false)]
+    [InlineData(false, 4, 3, false)]
+    public void Only_a_later_poll_saying_sync_is_on_ends_the_wait(
+        bool syncEnabled, int pollNumber, int pollsStartedAtRefusal, bool expected)
+    {
+        Assert.Equal(expected, RetryPolicy.ResumesSync(syncEnabled, pollNumber, pollsStartedAtRefusal));
     }
 
     [Fact]

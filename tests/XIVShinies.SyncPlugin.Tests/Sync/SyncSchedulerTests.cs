@@ -183,6 +183,172 @@ public class SyncSchedulerTests
         Assert.Equal(SyncTrigger.Login, due.Trigger);
     }
 
+    // A wait for sync to resume holds work like any backoff until syncing comes back on.
+    [Fact]
+    public void A_wait_for_sync_to_resume_holds_work_until_sync_resumes()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        Assert.True(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(1)));
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(1)));
+
+        scheduler.SyncResumed();
+
+        Assert.False(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(1)));
+        Assert.Equal(SyncTrigger.Login, scheduler.Poll(T0 + TimeSpan.FromMinutes(1))?.Trigger);
+    }
+
+    // With no word that syncing is back on, the wait still ends when the server said it would.
+    [Fact]
+    public void A_wait_for_sync_to_resume_still_ends_at_its_deadline()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(59)));
+        Assert.False(scheduler.IsBackingOff(T0 + TimeSpan.FromHours(1)));
+        Assert.Equal(SyncTrigger.Login, scheduler.Poll(T0 + TimeSpan.FromHours(1))?.Trigger);
+    }
+
+    // Syncing coming back on says nothing about load, so a rate limit in force outlasts it.
+    [Fact]
+    public void Sync_resuming_leaves_a_rate_limit_in_force()
+    {
+        var scheduler = NewScheduler();
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(5));
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        scheduler.SyncResumed();
+
+        Assert.True(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(4)));
+        Assert.False(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(5)));
+    }
+
+    // A second refusal never shortens the wait the first one set.
+    [Fact]
+    public void A_wait_for_sync_to_resume_is_never_shortened()
+    {
+        var scheduler = NewScheduler();
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromMinutes(10), SyncTrigger.Interval);
+
+        Assert.True(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(30)));
+    }
+
+    // The refused upload was already handed out, so an early end sends it again. A login or manual
+    // sweep goes as itself.
+    [Theory]
+    [InlineData(SyncTrigger.Login)]
+    [InlineData(SyncTrigger.Manual)]
+    public void Sync_resuming_sends_a_refused_sweep_again(SyncTrigger refused)
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(refused, T0);
+        Assert.Equal(refused, scheduler.Poll(T0)?.Trigger);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), refused);
+
+        scheduler.SyncResumed();
+
+        Assert.Equal(refused, scheduler.Poll(T0 + TimeSpan.FromMinutes(2))?.Trigger);
+    }
+
+    // A refused interval or unlock upload brings the periodic sweep forward, which covers every
+    // category an unlock upload would have named.
+    [Theory]
+    [InlineData(SyncTrigger.Interval)]
+    [InlineData(SyncTrigger.Unlock)]
+    public void Sync_resuming_after_a_refused_partial_upload_sweeps_at_once(SyncTrigger refused)
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.Poll(T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), refused);
+
+        scheduler.SyncResumed();
+
+        Assert.Equal(SyncTrigger.Interval, scheduler.Poll(T0 + TimeSpan.FromMinutes(2))?.Trigger);
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(3)));
+    }
+
+    // Two refusals owe the stronger upload: a login sweep outranks an interval one.
+    [Fact]
+    public void Sync_resuming_sends_the_stronger_of_two_refused_uploads()
+    {
+        var scheduler = NewScheduler();
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Login);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        scheduler.SyncResumed();
+
+        Assert.Equal(SyncTrigger.Login, scheduler.Poll(T0 + TimeSpan.FromMinutes(2))?.Trigger);
+    }
+
+    // A wait that runs out on its own owes nothing: the next upload goes on its own schedule, and a
+    // later refusal's early end sends only what that refusal owed.
+    [Fact]
+    public void A_wait_that_runs_out_owes_no_upload()
+    {
+        var scheduler = NewScheduler();
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Manual);
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromHours(1)));
+
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(2), SyncTrigger.Unlock);
+        scheduler.SyncResumed();
+
+        Assert.Equal(SyncTrigger.Interval, scheduler.Poll(T0 + TimeSpan.FromHours(1.1))?.Trigger);
+    }
+
+    // A press that resumes syncing queues its own sweep, which covers the refused upload, so one sweep
+    // goes, not two. The next test covers the other order.
+    [Fact]
+    public void A_requested_sweep_covers_the_upload_owed_on_resume()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.Poll(T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        scheduler.Request(SyncTrigger.Manual, T0 + TimeSpan.FromMinutes(2));
+        scheduler.SyncResumed();
+
+        Assert.Equal(SyncTrigger.Manual, scheduler.Poll(T0 + TimeSpan.FromMinutes(2))?.Trigger);
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(3)));
+    }
+
+    [Fact]
+    public void A_sweep_owed_on_resume_covers_a_requested_sweep_that_arrives_after_it()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.Poll(T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+        var answeredAt = T0 + TimeSpan.FromMinutes(2);
+
+        scheduler.SyncResumed();
+        Assert.Equal(SyncTrigger.Interval, scheduler.Poll(answeredAt)?.Trigger);
+
+        scheduler.RequestUnlessSweptSince(SyncTrigger.Manual, answeredAt, answeredAt.AddSeconds(1));
+
+        Assert.Null(scheduler.Poll(answeredAt.AddSeconds(2)));
+    }
+
+    // With no sweep since its reason, the request goes like any other.
+    [Fact]
+    public void A_request_with_no_sweep_since_its_reason_is_queued()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.Poll(T0);
+
+        scheduler.RequestUnlessSweptSince(SyncTrigger.Manual, T0.AddMinutes(1), T0.AddMinutes(2));
+
+        Assert.Equal(SyncTrigger.Manual, scheduler.Poll(T0.AddMinutes(2))?.Trigger);
+    }
+
     // "Sync now" is the strongest signal, so it outranks a queued unlock. It still waits out a
     // backoff, so a button cannot hammer a server that said stop.
     [Fact]
@@ -267,6 +433,23 @@ public class SyncSchedulerTests
 
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(1)));
         Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(5)));
+    }
+
+    // A wait for sync to resume applies to the token, so switching characters keeps it. The upload
+    // it owed was the previous character's, so Reset forgets it.
+    [Fact]
+    public void Reset_keeps_a_wait_for_sync_to_resume_but_forgets_the_upload_it_owed()
+    {
+        var scheduler = NewScheduler();
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Manual);
+
+        scheduler.Reset();
+
+        Assert.True(scheduler.IsBackingOff(T0 + TimeSpan.FromMinutes(1)));
+
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(2)));
     }
 
     // The next login sweeps at once rather than waiting out the previous character's interval.

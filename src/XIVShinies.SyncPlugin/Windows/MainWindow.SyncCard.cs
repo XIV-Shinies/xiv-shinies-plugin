@@ -94,7 +94,8 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.PausedByServer)
         {
-            // The toggle still reads ON, the user's own setting; this line says the server stopped it.
+            // The toggle still reads ON, the plugin's own setting; this line says the switch that is
+            // off is on the website, either its pause or the user's profile switch.
             DrawWarning(ServerOffCopy.Paused(BackendHost()));
         }
         else if (status == SyncStatusKind.BlockedPendingUserAction)
@@ -118,8 +119,8 @@ internal sealed partial class MainWindow
         }
         else if (status == SyncStatusKind.NothingPermittedByServer)
         {
-            // A warning, like the other states the server imposes; the rows' "Off" chips are a fold
-            // away.
+            // A warning: it is not the user's doing, and nothing in the plugin can change it. The rows'
+            // "Off" chips are a fold away.
             DrawWarning(ServerOffCopy.EveryCollection(BackendHost()));
         }
         else if (status == SyncStatusKind.WaitingForCharacter)
@@ -379,12 +380,14 @@ internal sealed partial class MainWindow
                 DrawWarning($"Your token was rejected. Generate a new one on {BackendHost()}.");
                 break;
 
-            // Self-healing, so not red, but still the status line, so full contrast.
+            // Nothing to fix in the plugin, so not red, but the status line, so full contrast. A 503 from
+            // the profile switch is named by ServerOffCopy.Paused once the next /config poll reports it.
             case ApiStatus.RateLimited:
             case ApiStatus.SyncDisabled:
                 DrawWrapped(SyncStatusView.DeferredUploadLine(backingOff, BackendHost()), ImGuiCol.Text);
                 break;
 
+            // Not red either: the plugin tries again on its own.
             case ApiStatus.NetworkError:
                 DrawWrapped($"Could not reach {BackendHost()}. Will try again.", ImGuiCol.Text);
                 break;

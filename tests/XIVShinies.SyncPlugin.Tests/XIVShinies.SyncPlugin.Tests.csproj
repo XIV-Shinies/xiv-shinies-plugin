@@ -34,4 +34,17 @@
   <ItemGroup>
     <None Update="Crucible\Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!--
+    The plugin manifest and repo.json, copied to StoreListing in the build output, where
+    StoreListingTests reads them. Include, not Update: both live outside this project.
+  -->
+  <ItemGroup>
+    <None Include="..\..\src\XIVShinies.SyncPlugin\XIVShinies.SyncPlugin.json"
+          Link="StoreListing\XIVShinies.SyncPlugin.json"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\repo.json"
+          Link="StoreListing\repo.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

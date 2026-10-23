@@ -17,8 +17,9 @@ public sealed record ErrorResponse
     /// </summary>
     /// <remarks>
     /// Server-supplied, so never displayed or logged. It is only compared exactly: on a 403 against
-    /// the four refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), and on a Crucible
-    /// upload to be resent against <c>busy</c> (see <c>CrucibleOutcomePolicy.IsBusy</c>).
+    /// the four refusal codes (see <see cref="ApiStatusMap.FromHttpStatusCode"/>), on a 503 against
+    /// <c>sync_disabled</c> (see <see cref="Sync.RetryPolicy.EndsWhenSyncResumes"/>), and on a
+    /// Crucible upload to be resent against <c>busy</c> (see <c>CrucibleOutcomePolicy.IsBusy</c>).
     /// </remarks>
     public required string Error { get; init; }
 

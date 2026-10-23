@@ -16,9 +16,12 @@ namespace XIVShinies.SyncPlugin.Windows;
 /// <remarks>
 /// Stateless: a primitive takes the caller's font and wrap edge (a card's inner right, or null for
 /// the content region's edge). Colors come from Dalamud's palette and the active style, because
-/// users pick themes, light ones included; <see cref="Brand"/> holds the fixed accents. Muted text
-/// (<c>ImGuiCol.TextDisabled</c>) is for incidental text such as timestamps, empty-state filler and
-/// captions; anything the user must read to decide something, consent copy above all, draws at
+/// users pick themes, light ones included; only <see cref="Brand"/>'s accents and
+/// <see cref="BrandToggle"/>'s textless gray off-state track and white knob are fixed. Muted text
+/// (<c>ImGuiCol.TextDisabled</c>) is for incidental text such as relative timestamps, empty-state
+/// filler, captions over what they label, and hints that restate a disabled control's state, and for
+/// copy about a feature the website has switched off; anything else the user must read to decide
+/// something or to understand what the plugin does, consent copy above all, draws at
 /// <c>ImGuiCol.Text</c>.
 /// </remarks>
 internal static class Widgets
@@ -34,13 +37,25 @@ internal static class Widgets
     internal const float InlineIconScale = 0.82f;
 
     /// <summary>The red for warnings the user should act on.</summary>
-    internal static readonly Vector4 ErrorColor = ImGuiColors.DalamudRed;
+    /// <remarks>
+    /// The palette's <c>DalamudRed</c> moved 40% toward the style's text color: pure red is hard to
+    /// read at body-text size, and the mix stays readable on any theme (#FF6666 with the default white
+    /// text, a darker red with a light theme's dark text). A property, so it reads the style each time
+    /// it is drawn; every caller is draw code.
+    /// </remarks>
+    internal static Vector4 ErrorColor =>
+        Vector4.Lerp(ImGuiColors.DalamudRed, ImGui.GetStyle().Colors[(int)ImGuiCol.Text], 0.4f);
 
     /// <summary>The green for good news, such as an accepted upload or a verified token.</summary>
-    internal static readonly Vector4 SuccessColor = ImGuiColors.HealerGreen;
+    /// <remarks>
+    /// A property because the palette's colors belong to the active style: read on each draw, it
+    /// follows a theme the user changes while the game runs.
+    /// </remarks>
+    internal static Vector4 SuccessColor => ImGuiColors.HealerGreen;
 
     /// <summary>The yellow for "working, but worth knowing" states, such as a cached source note.</summary>
-    internal static readonly Vector4 CautionColor = ImGuiColors.DalamudYellow;
+    /// <remarks>A property (see <see cref="SuccessColor"/>).</remarks>
+    internal static Vector4 CautionColor => ImGuiColors.DalamudYellow;
 
     /// <summary>The vertical gap between sections.</summary>
     internal static void SectionGap() => ImGui.Dummy(new Vector2(0f, 10f * ImGuiHelpers.GlobalScale));
@@ -83,18 +98,33 @@ internal static class Widgets
 
     /// <summary>Draws wrapped text in a color, which <c>TextWrapped</c> cannot.</summary>
     /// <remarks>
-    /// The wrap position is pushed here so the caller's edge wins over an enclosing one, such as a
-    /// card's. A null <paramref name="wrapEdge"/> pushes 0: the content region's right edge, which in a
-    /// table is the cell's. Lines break only at spaces (see <see cref="BreakForWrap"/>).
+    /// Lines break only at spaces, measured to the caller's edge (see <see cref="BreakForWrap"/>), and
+    /// the wrap position pushed here (see <see cref="WrapPosFor"/>) wins over an enclosing one, such as
+    /// a card's. A null <paramref name="wrapEdge"/> means the content region's right edge, which in a
+    /// table is the cell's.
     /// </remarks>
     internal static void DrawWrapped(string text, Vector4 color, float? wrapEdge)
     {
+        var broken = BreakForWrap(text, wrapEdge, out var everyLineFits);
+
         using (ImRaii.PushColor(ImGuiCol.Text, color))
-        using (ImRaii.TextWrapPos(wrapEdge ?? 0f))
+        using (ImRaii.TextWrapPos(WrapPosFor(everyLineFits, wrapEdge)))
         {
-            ImGui.TextUnformatted(BreakForWrap(text, wrapEdge));
+            ImGui.TextUnformatted(broken);
         }
     }
+
+    /// <summary>
+    /// The wrap position to push for text <see cref="BreakForWrap"/> has already broken: none when
+    /// every line fits, and otherwise the caller's edge.
+    /// </summary>
+    /// <remarks>
+    /// A negative position turns ImGui's own wrapping off, so the breaks already made are the only
+    /// ones (see <see cref="TextWrap"/> for why, and which text still needs that wrapping). 0 is the
+    /// content region's right edge.
+    /// </remarks>
+    private static float WrapPosFor(bool everyLineFits, float? wrapEdge) =>
+        everyLineFits ? -1f : (wrapEdge ?? 0f);
 
     /// <summary>Draws wrapped text in one of the current style's own colors.</summary>
     /// <remarks>
@@ -110,19 +140,23 @@ internal static class Widgets
     /// <param name="wrapEdge">
     /// The wrap position in cursor space, or null for the content region's right edge.
     /// </param>
-    private static string BreakForWrap(string text, float? wrapEdge)
+    /// <param name="everyLineFits">
+    /// Whether every line of the result fits, which decides the wrap position (see
+    /// <see cref="WrapPosFor"/>).
+    /// </param>
+    private static string BreakForWrap(string text, float? wrapEdge, out bool everyLineFits)
     {
         var cursorX = ImGui.GetCursorPosX();
         var edge = wrapEdge ?? (cursorX + ImGui.GetContentRegionAvail().X);
 
-        // One scaled pixel short, so a line that exactly fills the room is not broken again by
-        // ImGui's own rounding.
-        return BreakAtSpacesForFont(text, edge - cursorX - ImGuiHelpers.GlobalScale);
+        // One scaled pixel short, so a line that exactly fills the room keeps slack against ImGui's
+        // own rounding where its wrapping is still on.
+        return BreakAtSpacesForFont(text, edge - cursorX - ImGuiHelpers.GlobalScale, out everyLineFits);
     }
 
     /// <summary>Breaks text at spaces for a width, measured in the current font.</summary>
-    private static string BreakAtSpacesForFont(string text, float width) =>
-        TextWrap.BreakAtSpaces(text, width, static s => ImGui.CalcTextSize(s).X);
+    private static string BreakAtSpacesForFont(string text, float width, out bool everyLineFits) =>
+        TextWrap.BreakAtSpaces(text, width, static s => ImGui.CalcTextSize(s).X, out everyLineFits);
 
     /// <summary>
     /// A wrapped paragraph whose spans carry their own color (null for the normal text color). ImGui
@@ -567,8 +601,9 @@ internal static class Widgets
     {
         ImGui.BeginTooltip();
         var wrapEdge = ImGui.GetFontSize() * 24f;
-        ImGui.PushTextWrapPos(wrapEdge);
-        ImGui.TextUnformatted(BreakForWrap(text, wrapEdge));
+        var broken = BreakForWrap(text, wrapEdge, out var everyLineFits);
+        ImGui.PushTextWrapPos(WrapPosFor(everyLineFits, wrapEdge));
+        ImGui.TextUnformatted(broken);
         ImGui.PopTextWrapPos();
         ImGui.EndTooltip();
     }

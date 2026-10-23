@@ -82,9 +82,29 @@ public class CrucibleOutcomePolicyTests
     [InlineData(null)]
     public void Another_503_without_a_wait_keeps_the_long_wait(string? errorCode)
     {
-        Assert.Equal(
-            new CrucibleOutcome(CrucibleOutcomeKind.Retry, Now + RetryPolicy.DefaultSyncDisabledBackoff),
-            CrucibleOutcomePolicy.Classify(ApiStatus.SyncDisabled, retryAfter: null, Now, errorCode));
+        var outcome = CrucibleOutcomePolicy.Classify(
+            ApiStatus.SyncDisabled, retryAfter: null, Now, errorCode);
+
+        Assert.Equal(CrucibleOutcomeKind.Retry, outcome.Kind);
+        Assert.Equal(Now + RetryPolicy.DefaultSyncDisabledBackoff, outcome.Until);
+        Assert.Equal(errorCode == RetryPolicy.SyncDisabledErrorCode, outcome.EndsWhenSyncResumes);
+    }
+
+    // Each keeps the server's wait; only the switched-off 503 can end it early, when syncing comes
+    // back on.
+    [Theory]
+    [InlineData(ApiStatus.SyncDisabled, "sync_disabled", true)]
+    [InlineData(ApiStatus.SyncDisabled, "busy", false)]
+    [InlineData(ApiStatus.SyncDisabled, null, false)]
+    [InlineData(ApiStatus.RateLimited, null, false)]
+    public void Only_a_switched_off_503_waits_for_sync_to_resume(
+        ApiStatus status, string? errorCode, bool expected)
+    {
+        var outcome = CrucibleOutcomePolicy.Classify(status, TimeSpan.FromHours(1), Now, errorCode);
+
+        Assert.Equal(CrucibleOutcomeKind.Retry, outcome.Kind);
+        Assert.Equal(Now.AddHours(1), outcome.Until);
+        Assert.Equal(expected, outcome.EndsWhenSyncResumes);
     }
 
     [Fact]
