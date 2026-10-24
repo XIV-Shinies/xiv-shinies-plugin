@@ -1,0 +1,43 @@
+# Fails when the Discord invite the plugin opens stops working (see
+# .github/scripts/check-discord-invite.mjs), and tells the admin channel when a scheduled or manual
+# run fails. Keep this job out of main's required checks: a Discord outage must not block a merge,
+# and the paths filter below leaves most pull requests without it.
+name: Discord invite
+
+on:
+  # Weekly, because an invite can die on Discord's side with no change in this repository.
+  schedule:
+    - cron: "0 15 * * 1"
+  # Before a change to the invite, or to this check, merges.
+  pull_request:
+    branches: [main]
+    paths:
+      - src/XIVShinies.SyncPlugin/PluginMeta.cs
+      - .github/scripts/check-discord-invite.mjs
+      - .github/workflows/invite.yml
+  workflow_dispatch:
+
+jobs:
+  invite:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check the Discord invite
+        id: check
+        run: node .github/scripts/check-discord-invite.mjs
+
+      # Scheduled and manual runs only: a pull request's author already sees its red check, and a
+      # pull request from a fork cannot read the secret.
+      - name: Tell the admin channel
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          DISCORD_ADMIN_WEBHOOK_URL: ${{ secrets.DISCORD_ADMIN_WEBHOOK_URL }}
+          REASON: ${{ steps.check.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node .github/scripts/post-invite-failure.mjs

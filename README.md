@@ -5,7 +5,7 @@
   <p>
     <a href="https://xiv-shinies.com">🌐 xiv-shinies.com</a>
     &nbsp;·&nbsp;
-    <a href="https://discord.gg/UuNe5BwAGG">💬 Discord</a>
+    <a href="https://discord.gg/trPRw5KyDt">💬 Discord</a>
     &nbsp;·&nbsp;
     <a href="https://www.patreon.com/c/noranda/">💛 Sponsor</a>
   </p>
