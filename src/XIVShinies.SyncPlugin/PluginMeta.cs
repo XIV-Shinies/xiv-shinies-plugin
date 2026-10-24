@@ -34,10 +34,10 @@ public static class PluginMeta
     /// <summary>The tagline's words after the site's name (see <see cref="TaglineLead"/>).</summary>
     public const string TaglineTail = "as you earn them.";
 
-    /// <summary>The community Discord invite (the same one the website links to).</summary>
-    public const string DiscordUrl = "https://discord.gg/UuNe5BwAGG";
+    /// <summary>The community Discord invite (the same one the website and the README link to).</summary>
+    public const string DiscordUrl = "https://discord.gg/trPRw5KyDt";
 
-    /// <summary>The maintainer's sponsor page (the same one the website links to).</summary>
+    /// <summary>The maintainer's sponsor page (the same one the website and the README link to).</summary>
     public const string SponsorUrl = "https://www.patreon.com/c/noranda/";
 
     /// <summary>

@@ -47,4 +47,11 @@
           Link="StoreListing\repo.json"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- The repository README, copied to Readme in the build output, where ReadmeTests reads it. -->
+  <ItemGroup>
+    <None Include="..\..\README.md"
+          Link="Readme\README.md"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

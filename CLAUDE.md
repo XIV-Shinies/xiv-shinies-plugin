@@ -89,6 +89,10 @@ settings masthead draws) match the manifest's `Name`, `RepoUrl` and `Punchline`;
 `repo.json` carries (the build-stamped fields and the download links) are the `/releasing` flow's
 to set, and the Release workflow checks the version and download links against the tag.
 
+The README's header links to exactly the masthead's site, Discord and sponsor links
+(`BackendUrl.Default`, `PluginMeta.DiscordUrl`, `PluginMeta.SponsorUrl`). Change a link in both
+places; `ReadmeTests` fails `dotnet test` when the header's links and those three differ.
+
 ## Build & test
 
 ```powershell
