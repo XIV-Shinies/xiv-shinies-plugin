@@ -91,7 +91,11 @@ to set, and the Release workflow checks the version and download links against t
 
 The README's header links to exactly the masthead's site, Discord and sponsor links
 (`BackendUrl.Default`, `PluginMeta.DiscordUrl`, `PluginMeta.SponsorUrl`). Change a link in both
-places; `ReadmeTests` fails `dotnet test` when the header's links and those three differ.
+places; `ReadmeTests` fails `dotnet test` when the header's links and those three differ. The
+Discord invite workflow (`invite.yml`) asks Discord's API whether `PluginMeta.DiscordUrl` still
+opens. It runs every week and on a pull request that changes `PluginMeta.cs`, and stays out of
+main's required checks. When a weekly or manual run fails, it posts to the admin Discord channel
+through the `DISCORD_ADMIN_WEBHOOK_URL` repository secret.
 
 ## Build & test
 
