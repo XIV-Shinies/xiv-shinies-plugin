@@ -95,7 +95,7 @@ public class SyncSchedulerTests
     public void The_interval_sweep_comes_due_once_the_full_sync_period_has_elapsed()
     {
         var scheduler = NewScheduler();
-        scheduler.MarkUploaded(SyncTrigger.Login, T0);
+        scheduler.MarkUploaded(new SyncDue { Trigger = SyncTrigger.Login }, T0);
 
         Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(29)));
 
@@ -127,8 +127,13 @@ public class SyncSchedulerTests
     public void An_unlock_upload_does_not_postpone_the_interval_sweep()
     {
         var scheduler = NewScheduler();
-        scheduler.MarkUploaded(SyncTrigger.Login, T0);
-        scheduler.MarkUploaded(SyncTrigger.Unlock, T0 + TimeSpan.FromMinutes(29));
+        scheduler.MarkUploaded(new SyncDue { Trigger = SyncTrigger.Login }, T0);
+        var unlock = new SyncDue
+        {
+            Trigger = SyncTrigger.Unlock,
+            Categories = new HashSet<string> { CategoryKeys.Mounts },
+        };
+        scheduler.MarkUploaded(unlock, T0 + TimeSpan.FromMinutes(29));
 
         Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(30)));
     }
@@ -457,7 +462,7 @@ public class SyncSchedulerTests
     public void Reset_does_not_leave_an_interval_pending_from_the_previous_character()
     {
         var scheduler = NewScheduler();
-        scheduler.MarkUploaded(SyncTrigger.Login, T0);
+        scheduler.MarkUploaded(new SyncDue { Trigger = SyncTrigger.Login }, T0);
 
         scheduler.Reset();
 
@@ -476,5 +481,237 @@ public class SyncSchedulerTests
         scheduler.NotifyUnlock(CategoryKeys.Mounts, T0 - TimeSpan.FromHours(1));
 
         Assert.NotNull(scheduler.Poll(T0));
+    }
+
+    // --- Held facts --------------------------------------------------------------------------
+    // Facts that can wait ride the next upload, so browsing them spends at most one upload per wait.
+
+    [Fact]
+    public void Held_facts_wait_for_another_upload()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait - TimeSpan.FromSeconds(1)));
+    }
+
+    // With nothing else going up, they go on their own once the wait is over, as an interval upload
+    // that names only them.
+    [Fact]
+    public void Held_facts_go_alone_once_the_wait_is_over()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+
+        var due = scheduler.Poll(T0 + SyncScheduler.HeldFactsWait);
+
+        Assert.NotNull(due);
+        Assert.Equal(SyncTrigger.Interval, due.Trigger);
+        Assert.Equal(new[] { CategoryKeys.AchievementProgress }, due.Categories!);
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait + TimeSpan.FromMinutes(1)));
+    }
+
+    // Unlike the unlock debounce, the wait does not slide, so steady browsing still uploads at most
+    // once per wait.
+    [Fact]
+    public void More_held_facts_do_not_push_the_wait_out()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0 + TimeSpan.FromMinutes(4));
+
+        Assert.NotNull(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+    }
+
+    [Fact]
+    public void Held_facts_ride_an_unlock_upload()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.NotifyUnlock(CategoryKeys.Mounts, T0 + TimeSpan.FromMinutes(1));
+
+        var due = scheduler.Poll(T0 + TimeSpan.FromMinutes(1) + scheduler.UnlockDebounce);
+
+        Assert.NotNull(due);
+        Assert.Equal(SyncTrigger.Unlock, due.Trigger);
+        Assert.Equal<IEnumerable<string>>(
+            new SortedSet<string> { CategoryKeys.AchievementProgress, CategoryKeys.Mounts },
+            new SortedSet<string>(due.Categories!));
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+    }
+
+    // A full sweep carries every category the user has on, held ones included.
+    [Fact]
+    public void Held_facts_ride_a_requested_sweep()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.Request(SyncTrigger.Manual, T0 + TimeSpan.FromMinutes(1));
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(1))!.Categories);
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+    }
+
+    [Fact]
+    public void Held_facts_ride_the_periodic_sweep()
+    {
+        var scheduler = NewScheduler();
+        scheduler.MarkUploaded(new SyncDue { Trigger = SyncTrigger.Login }, T0);
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0 + TimeSpan.FromMinutes(28));
+
+        var due = scheduler.Poll(T0 + TimeSpan.FromMinutes(30));
+
+        Assert.Equal(SyncTrigger.Interval, due!.Trigger);
+        Assert.Null(due.Categories);
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(33)));
+    }
+
+    // Held facts going alone is not a sweep. If it reset the clock, steady browsing would hold every
+    // other category back.
+    [Fact]
+    public void Held_facts_going_alone_do_not_postpone_the_periodic_sweep()
+    {
+        var scheduler = NewScheduler();
+        scheduler.MarkUploaded(new SyncDue { Trigger = SyncTrigger.Login }, T0);
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0 + TimeSpan.FromMinutes(20));
+        var alone = scheduler.Poll(T0 + TimeSpan.FromMinutes(25))!;
+
+        scheduler.MarkUploaded(alone, T0 + TimeSpan.FromMinutes(25));
+
+        var due = scheduler.Poll(T0 + TimeSpan.FromMinutes(30));
+        Assert.Equal(SyncTrigger.Interval, due!.Trigger);
+        Assert.Null(due.Categories);
+    }
+
+    [Fact]
+    public void Held_facts_wait_out_a_backoff()
+    {
+        var scheduler = NewScheduler();
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(10));
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+        Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(10)));
+    }
+
+    // Held facts belong to the character who earned them.
+    [Fact]
+    public void Reset_discards_held_facts()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+
+        scheduler.Reset();
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromHours(1)));
+    }
+
+    // The consent hover and the README promise "within five minutes", and docs/api-contract.md says
+    // they go alone after five.
+    [Fact]
+    public void Held_facts_wait_five_minutes_as_the_copy_promises()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(5), SyncScheduler.HeldFactsWait);
+    }
+
+    // An unlock about to go carries them a few seconds later, which spares an upload.
+    [Fact]
+    public void Held_facts_due_during_an_unlock_debounce_wait_for_that_unlock()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        var unlockAt = T0 + SyncScheduler.HeldFactsWait - TimeSpan.FromSeconds(2);
+        scheduler.NotifyUnlock(CategoryKeys.Mounts, unlockAt);
+
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+
+        var due = scheduler.Poll(unlockAt + scheduler.UnlockDebounce);
+        Assert.Equal(SyncTrigger.Unlock, due!.Trigger);
+        Assert.Contains(CategoryKeys.AchievementProgress, due.Categories!);
+    }
+
+    // The sweep owed on resume carries every category, so nothing is left to go alone after it.
+    [Fact]
+    public void Held_facts_ride_the_sweep_owed_when_sync_resumes()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Login, T0);
+        scheduler.Poll(T0);
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0 + TimeSpan.FromMinutes(1));
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        scheduler.SyncResumed();
+
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(2))!.Categories);
+        Assert.Null(scheduler.Poll(T0 + TimeSpan.FromMinutes(10)));
+    }
+
+    // Facts held after an upload carried the last ones start a wait of their own.
+    [Fact]
+    public void Facts_held_after_an_upload_start_a_new_wait()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.NotifyUnlock(CategoryKeys.Mounts, T0 + TimeSpan.FromMinutes(1));
+        scheduler.Poll(T0 + TimeSpan.FromMinutes(1) + scheduler.UnlockDebounce);
+        var heldAgainAt = T0 + TimeSpan.FromMinutes(3);
+
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, heldAgainAt);
+
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+        Assert.NotNull(scheduler.Poll(heldAgainAt + SyncScheduler.HeldFactsWait));
+    }
+
+    // Held facts last only the session, so an upload that failed to carry them holds them again rather
+    // than leaving them to the next periodic sweep.
+    [Fact]
+    public void Held_facts_an_upload_failed_to_carry_are_held_again()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        var failed = scheduler.Poll(T0 + SyncScheduler.HeldFactsWait)!;
+        var failedAt = T0 + SyncScheduler.HeldFactsWait + TimeSpan.FromSeconds(3);
+
+        scheduler.MarkFailed(failed, failedAt);
+
+        var due = scheduler.Poll(failedAt + SyncScheduler.HeldFactsWait);
+        Assert.Equal(new[] { CategoryKeys.AchievementProgress }, due!.Categories!);
+    }
+
+    [Fact]
+    public void Held_facts_a_failed_sweep_carried_are_held_again()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.Request(SyncTrigger.Manual, T0 + TimeSpan.FromMinutes(1));
+        var failed = scheduler.Poll(T0 + TimeSpan.FromMinutes(1))!;
+
+        scheduler.MarkFailed(failed, T0 + TimeSpan.FromMinutes(1));
+
+        Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(1) + SyncScheduler.HeldFactsWait));
+    }
+
+    [Fact]
+    public void A_failed_upload_that_carried_no_held_facts_holds_nothing()
+    {
+        var scheduler = NewScheduler();
+        scheduler.Request(SyncTrigger.Manual, T0);
+        var failed = scheduler.Poll(T0)!;
+
+        scheduler.MarkFailed(failed, T0);
+
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+    }
+
+    [Fact]
+    public void A_clock_that_jumps_backwards_does_not_stretch_the_wait()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        var rewound = T0 - TimeSpan.FromHours(1);
+
+        Assert.Null(scheduler.Poll(rewound));
+
+        Assert.NotNull(scheduler.Poll(rewound + SyncScheduler.HeldFactsWait));
     }
 }

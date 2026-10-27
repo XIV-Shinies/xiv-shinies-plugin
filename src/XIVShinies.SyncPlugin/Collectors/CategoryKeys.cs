@@ -16,6 +16,9 @@ public static class CategoryKeys
     /// <summary>Completed achievement IDs.</summary>
     public const string Achievements = "achievements";
 
+    /// <summary>The progress shown for each achievement the player opens in game.</summary>
+    public const string AchievementProgress = "achievementProgress";
+
     /// <summary>Unlocked mount IDs.</summary>
     public const string Mounts = "mounts";
 

@@ -34,6 +34,9 @@ public static class UploadLogSeed
     {
         [CategoryKeys.Quests] = 2847,
         [CategoryKeys.Achievements] = 1183,
+
+        // A session's worth of opened achievements, far below a lifetime total.
+        [CategoryKeys.AchievementProgress] = 7,
         [CategoryKeys.Mounts] = 214,
         [CategoryKeys.Minions] = 387,
         [CategoryKeys.Items] = 156,

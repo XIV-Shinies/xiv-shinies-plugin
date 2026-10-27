@@ -9,6 +9,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using XIVShinies.SyncPlugin.Achievements;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Beastmaster;
 using XIVShinies.SyncPlugin.Beastmaster.Crucible;
@@ -93,8 +94,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IBuddyList BuddyList { get; private set; } = null!;
 
     /// <summary>
-    /// Finds a game window by name. The Crucible run sharing uses it to read a Crucible window the
-    /// player already has open, such as the run HUD on entering a board.
+    /// Finds a game window by name: a Crucible window the player has open, such as the run HUD, or
+    /// whether the Achievements and Party Finder windows are open.
     /// </summary>
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
@@ -118,6 +119,9 @@ public sealed class Plugin : IDalamudPlugin
     // Learns the held beasts and their ranks from the bestiary window and the Crucible NPC's
     // conversation, when the player opens them.
     private readonly TamedBeastObserver tamedBeastObserver;
+
+    // Takes the progress the game receives when the player opens an achievement.
+    private readonly AchievementProgressObserver achievementProgressObserver;
 
     // Drives uploads on login, unlock and interval.
     private readonly SyncManager syncManager;
@@ -167,9 +171,17 @@ public sealed class Plugin : IDalamudPlugin
                 key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
                 Log);
 
+            // Before the collectors, since the achievement progress collector reads it. It gets a consent
+            // callback and asks about its own collection, so no category is named here.
+            achievementProgressObserver = new AchievementProgressObserver(
+                ClientState, Framework, GameGui,
+                key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
+                Log);
+
             // Nothing reads the game until something runs them.
             collectors = CollectorRegistry.Create(
-                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver);
+                DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver,
+                achievementProgressObserver);
 
             // Sets the "New" badge baseline. It needs the registered collectors, so it runs here
             // rather than with the migrations; after the first load it costs one flag read.
@@ -199,6 +211,9 @@ public sealed class Plugin : IDalamudPlugin
             // A learned beast or rank uploads promptly, like an unlock; one learned before this line rides
             // the login sync. The event carries its category key, so neither side names the collection.
             tamedBeastObserver.BeastsLearned += syncManager.NotifyCategoryChanged;
+
+            // A reading waits for the next upload rather than spending one of its own per open.
+            achievementProgressObserver.ReadingTaken += syncManager.NotifyCategoryHeld;
 
             // After the SyncManager, whose identity and server config it reads. Silent until the user
             // opts in: the same consent switches gate it, plus its own toggle.
@@ -256,11 +271,15 @@ public sealed class Plugin : IDalamudPlugin
             if (tamedBeastObserver is not null && syncManager is not null)
                 tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
+            if (achievementProgressObserver is not null && syncManager is not null)
+                achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
+
             crucibleManager?.Dispose();
             occultManager?.Dispose();
             syncManager?.Dispose();
             knowledgeObserver?.Dispose();
             tamedBeastObserver?.Dispose();
+            achievementProgressObserver?.Dispose();
             apiClient?.Dispose();
             throw;
         }
@@ -286,9 +305,10 @@ public sealed class Plugin : IDalamudPlugin
         windowSystem.RemoveAllWindows();
         mainWindow.Dispose();
 
-        // Before the SyncManager it notifies, so no upload can be scheduled through a manager being
+        // Before the SyncManager they notify, so no upload can be scheduled through a manager being
         // torn down.
         tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
+        achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
 
         // Before the SyncManager and ApiClient they borrow: each unsubscribes and cancels its own
         // upload in flight.
@@ -303,6 +323,7 @@ public sealed class Plugin : IDalamudPlugin
         // handlers are detached.
         knowledgeObserver.Dispose();
         tamedBeastObserver.Dispose();
+        achievementProgressObserver.Dispose();
 
         apiClient.Dispose();
     }

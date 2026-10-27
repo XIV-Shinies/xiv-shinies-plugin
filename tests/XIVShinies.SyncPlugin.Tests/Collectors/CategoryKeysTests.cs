@@ -17,6 +17,7 @@ public class CategoryKeysTests
     // missing from the reflected map, so it fails here too.
     private static readonly Dictionary<string, string> ContractSpellings = new()
     {
+        [nameof(CategoryKeys.AchievementProgress)] = "achievementProgress",
         [nameof(CategoryKeys.Achievements)] = "achievements",
         [nameof(CategoryKeys.Items)] = "items",
         [nameof(CategoryKeys.Minions)] = "minions",

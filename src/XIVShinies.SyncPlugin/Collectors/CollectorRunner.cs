@@ -19,7 +19,7 @@ public sealed record CollectionSnapshot
 
     /// <summary>
     /// Why each omitted category was omitted, keyed by category. The settings UI turns these into
-    /// hints, and the upload log uses them to tell a decision from a miss (see
+    /// hints, and the upload log uses them to tell a miss from a skip that is no failure (see
     /// <see cref="CollectSkipReasons.IsDeliberate"/>).
     /// </summary>
     public required IReadOnlyDictionary<string, string> Skipped { get; init; }

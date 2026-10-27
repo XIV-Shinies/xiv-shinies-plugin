@@ -40,7 +40,8 @@ progress**, **Triple Triad cards**, **Triple Triad NPCs** and **Occult records**
 jobs** are read by one of those syncs that runs while you are inside the Occult Crescent, and
 your knowledge level once you open the review window at Jeffroy. **Tamed beasts** upload within
 seconds of a change being read, when you talk to the Crucible's NPC or open your Master's
-Bestiary.
+Bestiary. **Achievement progress** is read when you open an achievement in your Achievements
+window, and goes up with the next sync, or on its own within five minutes.
 
 ## What gets sent
 
@@ -49,6 +50,9 @@ switch on (the live Occult tracker starts on; everything else starts off):
 
 - Completed **quest** IDs
 - Unlocked **achievement**, **mount**, and **minion** IDs
+- **Achievement progress**: for each achievement you open in your Achievements window, the
+  progress its details show and when you opened it. The game fetches that progress only when you
+  open the achievement, and the plugin never asks for it itself
 - Unlocked **orchestrion roll** IDs — the tunes playable from your orchestrion list, not the
   unused roll items sitting in your bags
 - Collected **Triple Triad card** IDs, and the IDs of the game's own **Triple Triad NPCs** you

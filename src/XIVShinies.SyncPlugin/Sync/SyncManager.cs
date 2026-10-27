@@ -845,6 +845,23 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>
+    /// Holds a category's new facts for the next upload, for a collection whose facts can wait (see
+    /// <see cref="SyncScheduler.NotifyHeld"/>).
+    /// </summary>
+    /// <param name="categoryKey">The category holding them, named by whatever captured them.</param>
+    /// <remarks>
+    /// Inert before opt-in, like <see cref="OnUnlock"/>. Facts held before the character is read ride
+    /// the login sweep.
+    /// </remarks>
+    public void NotifyCategoryHeld(string categoryKey)
+    {
+        if (identity is null)
+            return;
+
+        scheduler.NotifyHeld(categoryKey, timeProvider.GetUtcNow());
+    }
+
+    /// <summary>
     /// Runs every frame on the framework thread. Must stay cheap: this is the game's render loop.
     /// </summary>
     private void OnFrameworkUpdate(IFramework _)
@@ -1056,7 +1073,7 @@ internal sealed class SyncManager : IDisposable
         // Off the framework thread, JSON serialization included. No token: Task.Run skips the delegate
         // for an already-canceled one, so UploadAsync's finally would never clear uploadInFlight.
         var startedFor = sessionGeneration;
-        _ = Task.Run(() => UploadAsync(request, due.Trigger, startedFor, logDraft));
+        _ = Task.Run(() => UploadAsync(request, due, startedFor, logDraft));
     }
 
     /// <summary>
@@ -1141,11 +1158,14 @@ internal sealed class SyncManager : IDisposable
     }
 
     /// <summary>Uploads off the framework thread, retrying once if the failure was transient.</summary>
+    /// <param name="due">The work this upload carries out.</param>
     /// <param name="startedFor">The session generation this upload belongs to.</param>
     /// <param name="logDraft">The upload-log summary of this request, awaiting its outcome.</param>
     private async Task UploadAsync(
-        SyncRequest request, SyncTrigger trigger, int startedFor, UploadLogEntry logDraft)
+        SyncRequest request, SyncDue due, int startedFor, UploadLogEntry logDraft)
     {
+        var trigger = due.Trigger;
+
         try
         {
             for (var attempt = 0; ; attempt++)
@@ -1172,7 +1192,7 @@ internal sealed class SyncManager : IDisposable
                     ProvenSteps = response.Value?.ProvenSteps,
                 };
 
-                if (HandleResponse(response, trigger, startedFor))
+                if (HandleResponse(response, due, startedFor))
                 {
                     // Recorded even for failures, since a log that hid them would mislead. Rechecked,
                     // because HandleResponse also returns true for a stale response it discarded.
@@ -1185,7 +1205,10 @@ internal sealed class SyncManager : IDisposable
                 if (!RetryPolicy.ShouldRetryNow(response.Status, attempt))
                 {
                     if (startedFor == sessionGeneration)
+                    {
                         uploadLog.Record(settledEntry);
+                        scheduler.MarkFailed(due, timeProvider.GetUtcNow());
+                    }
 
                     return;
                 }
@@ -1218,9 +1241,12 @@ internal sealed class SyncManager : IDisposable
     /// <summary>
     /// Applies the server's answer to the scheduler. Returns true when the attempt is settled.
     /// </summary>
+    /// <param name="due">The work the upload carried out.</param>
     /// <param name="startedFor">The session generation the upload belongs to.</param>
-    private bool HandleResponse(ApiResponse<SyncResponse> response, SyncTrigger trigger, int startedFor)
+    private bool HandleResponse(ApiResponse<SyncResponse> response, SyncDue due, int startedFor)
     {
+        var trigger = due.Trigger;
+
         // Rechecked at the moment of writing, which shrinks the logout race from a round trip to a few
         // instructions.
         if (startedFor != sessionGeneration)
@@ -1234,7 +1260,7 @@ internal sealed class SyncManager : IDisposable
 
         if (response.Status == ApiStatus.Ok)
         {
-            scheduler.MarkUploaded(trigger, now);
+            scheduler.MarkUploaded(due, now);
             lastSyncedAtBox = now;
 
             // A success ends the run of failures, so the next failure is reported even if its status
@@ -1281,6 +1307,7 @@ internal sealed class SyncManager : IDisposable
             if (switchedOff)
                 BringConfigPollForward();
 
+            scheduler.MarkFailed(due, now);
             return true;
         }
 

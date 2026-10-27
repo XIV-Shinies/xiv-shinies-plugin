@@ -41,6 +41,15 @@ public class CollectSkipReasonsTests
         Assert.Null(CollectSkipReasons.Describe(reason, Host));
     }
 
+    // A collection read from a window the player opens has nothing to send until they open it. That
+    // is no fault, and a line asking for it would return every session.
+    [Fact]
+    public void Nothing_seen_yet_is_not_a_fault_and_draws_no_line()
+    {
+        Assert.True(CollectSkipReasons.IsDeliberate(CollectSkipReasons.NothingSeenYet));
+        Assert.Null(CollectSkipReasons.Describe(CollectSkipReasons.NothingSeenYet, Host));
+    }
+
     [Theory]
     [InlineData(CollectSkipReasons.NoRemoteConfig)]
     [InlineData(CollectSkipReasons.CollectorError)]
