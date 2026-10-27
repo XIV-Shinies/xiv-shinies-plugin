@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -49,8 +50,7 @@ public class AchievementProgressFactsTests
         Assert.Equal(3u, ArrayOf(result).Single()!["id"]!.GetValue<uint>());
     }
 
-    // The contract takes at most 1,000 entries. The newest go, since an older reading has had more
-    // chances to ride an earlier upload.
+    // The contract takes at most 1,000 entries; CollectResult.AchievementProgress says which go.
     [Fact]
     public void Past_the_contracts_cap_the_newest_readings_go()
     {
@@ -99,6 +99,32 @@ public class AchievementProgressFactsTests
     public void Readings_never_claim_completeness()
     {
         Assert.False(CollectResult.AchievementProgress(new[] { Reading(3) }).CompleteEnumeration);
+    }
+
+    // A reading the cap held back, or the contract refused, was not sent, so the store cannot cover it.
+    [Fact]
+    public void A_store_confirmation_forgets_exactly_the_readings_sent()
+    {
+        var readings = Enumerable.Range(1, AchievementProgressReading.MaxPerUpload + 1)
+            .Select(id => Reading((uint)id, at: T0.AddSeconds(id)))
+            .Append(Reading(0))
+            .ToArray();
+        IReadOnlyList<AchievementProgressReading>? forgotten = null;
+
+        var result = CollectResult.AchievementProgress(
+            readings, confirmedBy: "storedAchievementProgress", forgetSent: sent => forgotten = sent);
+        result.StoreConfirmation!.ForgetSent();
+
+        Assert.Equal("storedAchievementProgress", result.StoreConfirmation.ResponseKey);
+        Assert.Equal(
+            ArrayOf(result).Select(node => node!["id"]!.GetValue<uint>()),
+            forgotten!.Select(reading => reading.Id));
+    }
+
+    [Fact]
+    public void Without_a_response_key_no_store_is_confirmed()
+    {
+        Assert.Null(CollectResult.AchievementProgress(new[] { Reading(3) }).StoreConfirmation);
     }
 
     [Fact]

@@ -488,6 +488,27 @@ public class DtoSerializationTests
         Assert.Empty(response.Written);
     }
 
+    // A store confirmation is a key the record does not model, so a new collection needs no property.
+    [Fact]
+    public void SyncResponse_tells_whether_it_carries_an_unmodeled_key()
+    {
+        var response = JsonSerializer.Deserialize<SyncResponse>(
+            """{"ok": true, "bound": false, "storedFacewear": 0}""", ApiJson.Options)!;
+
+        Assert.True(response.Carries("storedFacewear"));
+        Assert.False(response.Carries("storedOrnaments"));
+    }
+
+    // The server omits a key rather than sending null, but the backend is user-overridable.
+    [Fact]
+    public void SyncResponse_does_not_count_a_null_key_as_carried()
+    {
+        var response = JsonSerializer.Deserialize<SyncResponse>(
+            """{"ok": true, "bound": false, "storedFacewear": null}""", ApiJson.Options)!;
+
+        Assert.False(response.Carries("storedFacewear"));
+    }
+
     [Fact]
     public void SyncResponse_reads_optional_keys_when_the_server_sends_them()
     {

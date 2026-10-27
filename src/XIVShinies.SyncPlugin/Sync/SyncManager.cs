@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -114,6 +115,15 @@ internal sealed class SyncManager : IDisposable
 
     /// <summary>True while an upload is in flight, so the framework thread never starts a second.</summary>
     private volatile bool uploadInFlight;
+
+    /// <summary>
+    /// The store confirmations responses bore out, each with its session, waiting for the next upload.
+    /// </summary>
+    /// <remarks>
+    /// Queued before the upload clears <see cref="uploadInFlight"/>, so no later upload can collect
+    /// before they are queued.
+    /// </remarks>
+    private readonly ConcurrentQueue<(int Session, StoreConfirmation Confirmation)> confirmedStores = new();
 
     /// <summary>True while a <c>/config</c> poll is in flight.</summary>
     private volatile bool configPollInFlight;
@@ -1027,6 +1037,10 @@ internal sealed class SyncManager : IDisposable
         CollectionSnapshot snapshot;
         SyncRequest request;
         UploadLogEntry logDraft;
+        IReadOnlyList<StoreConfirmation> storeConfirmations;
+
+        // Before collecting, so nothing the website already stored goes again.
+        ForgetStoredFacts();
 
         // A throw here would lose the sweep and escape into Dalamud's dispatch. CollectorRunner guards
         // each collector; this guards everything around them.
@@ -1096,6 +1110,9 @@ internal sealed class SyncManager : IDisposable
             // response fills in the rest. Inside the try because Draft serializes and hashes the facts.
             logDraft = UploadLogEntry.Draft(
                 timeProvider.GetUtcNow(), due.Trigger, snapshot, config?.ManifestVersion);
+
+            // From the bounded snapshot, whose categories are exactly the payload's.
+            storeConfirmations = [.. snapshot.StoreConfirmations.Values];
         }
         catch (Exception ex)
         {
@@ -1112,7 +1129,7 @@ internal sealed class SyncManager : IDisposable
         // Off the framework thread, JSON serialization included. No token: Task.Run skips the delegate
         // for an already-canceled one, so UploadAsync's finally would never clear uploadInFlight.
         var startedFor = sessionGeneration;
-        _ = Task.Run(() => UploadAsync(request, due, startedFor, logDraft));
+        _ = Task.Run(() => UploadAsync(request, due, startedFor, logDraft, storeConfirmations));
     }
 
     /// <summary>
@@ -1200,8 +1217,15 @@ internal sealed class SyncManager : IDisposable
     /// <param name="due">The work this upload carries out.</param>
     /// <param name="startedFor">The session generation this upload belongs to.</param>
     /// <param name="logDraft">The upload-log summary of this request, awaiting its outcome.</param>
+    /// <param name="storeConfirmations">
+    /// How each category forgets what it sent, once its store is confirmed.
+    /// </param>
     private async Task UploadAsync(
-        SyncRequest request, SyncDue due, int startedFor, UploadLogEntry logDraft)
+        SyncRequest request,
+        SyncDue due,
+        int startedFor,
+        UploadLogEntry logDraft,
+        IReadOnlyList<StoreConfirmation> storeConfirmations)
     {
         var trigger = due.Trigger;
 
@@ -1231,7 +1255,7 @@ internal sealed class SyncManager : IDisposable
                     ProvenSteps = response.Value?.ProvenSteps,
                 };
 
-                if (HandleResponse(response, due, startedFor))
+                if (HandleResponse(response, due, startedFor, storeConfirmations))
                 {
                     // Recorded even for failures, since a log that hid them would mislead. Rechecked,
                     // because HandleResponse also returns true for a stale response it discarded.
@@ -1282,7 +1306,14 @@ internal sealed class SyncManager : IDisposable
     /// </summary>
     /// <param name="due">The work the upload carried out.</param>
     /// <param name="startedFor">The session generation the upload belongs to.</param>
-    private bool HandleResponse(ApiResponse<SyncResponse> response, SyncDue due, int startedFor)
+    /// <param name="storeConfirmations">
+    /// How each category forgets what it sent, once its store is confirmed.
+    /// </param>
+    private bool HandleResponse(
+        ApiResponse<SyncResponse> response,
+        SyncDue due,
+        int startedFor,
+        IReadOnlyList<StoreConfirmation> storeConfirmations)
     {
         var trigger = due.Trigger;
 
@@ -1309,6 +1340,13 @@ internal sealed class SyncManager : IDisposable
 
             // It also shows a wait that ended early was rightly ended (see SyncResumeWait.UploadAccepted).
             syncWait.UploadAccepted();
+
+            // Applied by the next upload before it collects (see confirmedStores).
+            foreach (var confirmation in StoreConfirmations.Confirmed(storeConfirmations, response.Value))
+            {
+                confirmedStores.Enqueue((startedFor, confirmation));
+                log.Debug($"The website confirmed {confirmation.ResponseKey}; those facts go no more.");
+            }
 
             // Categories a per-category kill switch refused, logged so the user knows why one never
             // appears on the website.
@@ -1379,6 +1417,29 @@ internal sealed class SyncManager : IDisposable
             log.Debug($"Sync failed again: {response.Status}{HttpCodeNote(response.HttpStatusCode)}.");
 
         return false;
+    }
+
+    /// <summary>Lets each collection forget the facts the website confirmed storing.</summary>
+    /// <remarks>
+    /// Framework thread only, where the collections hold those facts. A confirmation from an earlier
+    /// session is skipped, since login has dropped its facts already.
+    /// </remarks>
+    private void ForgetStoredFacts()
+    {
+        while (confirmedStores.TryDequeue(out var confirmed))
+        {
+            if (confirmed.Session != sessionGeneration)
+                continue;
+
+            try
+            {
+                confirmed.Confirmation.ForgetSent();
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, $"Could not forget the facts {confirmed.Confirmation.ResponseKey} confirmed.");
+            }
+        }
     }
 
     /// <summary>

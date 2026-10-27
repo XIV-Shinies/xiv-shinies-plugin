@@ -388,8 +388,9 @@ Field constraints:
   how a knowledge sighting recorded outside an instance still reaches the server. Job writes
   are monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
   the TRUE knowledge level from the review window (the in-instance HUD shows only the
-  zone-synced level), sent with the time the window was opened, and held for upload like
-  achievement progress (see the `achievementProgress` bullet); the server keeps the
+  zone-synced level), sent with the time the window was opened. It waits for the next upload, or
+  goes within five minutes or at logout, as achievement progress does (see the `achievementProgress`
+  bullet), but goes with every upload that carries `occultProgression`; the server keeps the
   **freshest** observation across plugin and Lodestone sources, never a maximum — death
   without a raise can de-level knowledge. `occultRecords` carries `MKDLore` row ids — the
   game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
@@ -426,24 +427,28 @@ Field constraints:
 - **`achievementProgress` source & semantics.** The game asks its server for one achievement's
   progress when the player selects that achievement in the Achievements window; the list itself
   carries no counts. The plugin reads the answer the client receives and **never asks for progress
-  itself**. It takes a reading only while the Achievements window is open and the Party Finder is
-  not, because the Party Finder asks on its own for two Pilgrim's Traverse achievements. Each entry is `id`
+  itself**. It takes a reading only while the Achievements window is open. The game also asks on
+  its own for two Pilgrim's Traverse achievements shortly after login; their answers are dropped
+  when they land with the window shut, as they usually do. Each entry is `id`
   (the `Achievement` sheet row), `current` and `max` exactly as the game showed them — never clamped,
   even past the target — and `observedAt`, when the answer was seen, as second-exact UTC with a
   trailing `Z`. A reading outside the field bounds is skipped, not clamped. The plugin holds one
-  reading per achievement, the newest, for the login session, and sends them all (the newest 1,000,
-  past the cap) with every upload that includes the category: they ride the next upload the plugin
-  makes anyway, an `unlock` upload included, or go alone after five minutes as an `interval` upload
-  naming only the held categories, so browsing achievements spends at most twelve uploads an hour,
-  plus one at each logout. An
-  upload that fails, unless its body was rejected (400, 405, 413) or only the user can fix it (401,
-  403), queues them again as though just read. If a reading taken since the last upload that
-  carried the category is waiting when the player logs out, all held readings go up then, in one
-  `interval` upload, unless a server-requested wait or a 401/403 halt is in force or an upload is
-  already in flight. That upload is sent once and never queued again, and closing the
-  game outright may send nothing. The server weighs each reading by its
-  `observedAt`, never the upload's time, so sending a reading again is safe. With no reading held
-  the category is omitted, never sent empty. It never declares completeness.
+  reading per achievement, the newest, for the login session, and sends every held reading (the
+  newest 1,000, past the cap) with each upload that includes the category until a response carries
+  `storedAchievementProgress`. That upload's readings are then dropped, except one a newer reading of
+  the same achievement has replaced since; a response without the key (the store failed, or the
+  server stripped the category) leaves them held for the next upload that includes the category. A
+  new reading rides the next upload the plugin makes anyway, an `unlock` upload included, or goes
+  alone after five minutes as an `interval` upload naming only the held categories, so browsing
+  achievements spends at most twelve uploads an hour, plus one at each logout. An upload that fails,
+  unless its body was rejected (400, 405, 413) or only the user can fix it (401, 403), queues its
+  readings again as though just read. If a reading taken since the last upload that carried the
+  category is waiting when the player logs out, all held readings go up then, in one `interval`
+  upload, unless a server-requested wait or a 401/403 halt is in force or an upload is already in
+  flight. That upload is sent once and never queued again, and closing the game outright may send
+  nothing. The server weighs each reading by its `observedAt`, never the upload's time, so sending
+  an unconfirmed reading again is safe. With no reading held the category is omitted, never sent
+  empty. It never declares completeness.
 
 #### Response (200)
 
@@ -476,10 +481,12 @@ Optional keys are **omitted rather than null**, so the plugin can feature-detect
 `items` never appears in `written` (it feeds relic proofs and count storage, not a
 collection count). The plugin reads `written` as a plain category-keyed map, so a category
 it has never heard of arrives intact and a server that names fewer causes no error.
-`itemCounts`, `storedSequences`, `storedProgression`, `storedRecords`, and
-`storedAchievementProgress` are informational, like `written`: the plugin ignores them — no
-plugin logic may branch on them. The achievement progress store is best-effort: its failure never
-fails the upload, and only drops the key.
+`itemCounts`, `storedSequences`, `storedProgression` and `storedRecords` are informational, like
+`written`: the plugin ignores them — no plugin logic may branch on them.
+`storedAchievementProgress` is the one `stored…` key the plugin acts on: its presence confirms the
+store, so the readings that upload carried are not sent again (see the `achievementProgress`
+bullet). The achievement progress store is best-effort: its failure never fails the upload, and only
+drops the key.
 
 #### Status codes
 

@@ -8,9 +8,10 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </summary>
 /// <remarks>
 /// Reads no game state during a pass: <see cref="AchievementProgressObserver"/> takes each reading as
-/// the game receives it, and every upload that includes this collection sends them, up to the newest
-/// <see cref="Api.AchievementProgressReading.MaxPerUpload"/>. With none taken the pass is a
-/// <see cref="CollectSkipReasons.NothingSeenYet"/> skip (see <see cref="CollectSkipReasons.IsDeliberate"/>).
+/// the game receives it, and every upload that includes this collection sends the held ones, up to the
+/// newest <see cref="Api.AchievementProgressReading.MaxPerUpload"/>, until the website confirms storing
+/// them. With none held the pass is a <see cref="CollectSkipReasons.NothingSeenYet"/> skip (see
+/// <see cref="CollectSkipReasons.IsDeliberate"/>).
 /// </remarks>
 public sealed class AchievementProgressCollector : ICollector
 {
@@ -59,6 +60,10 @@ public sealed class AchievementProgressCollector : ICollector
         // The observer's ledger is written on the framework thread, so it is read there too.
         GameThread.EnsureFrameworkThread(framework, nameof(AchievementProgressCollector));
 
-        return CollectResult.AchievementProgress(observer.Readings(), collectedDetail: ReadOnOpen);
+        return CollectResult.AchievementProgress(
+            observer.Readings(),
+            collectedDetail: ReadOnOpen,
+            confirmedBy: info.StoredResponseKey,
+            forgetSent: observer.DropStored);
     }
 }

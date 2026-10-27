@@ -16,20 +16,13 @@ namespace XIVShinies.SyncPlugin.Achievements;
 /// The game asks its server for one achievement's progress when the player selects it, and keeps the
 /// answer in four fields this reads each frame (see <see cref="AchievementProgressCapture"/>). Read
 /// only: asking for progress would send server traffic the player did not cause. Readings belong to
-/// the character who opened them, so login drops them, logout keeps them for the sync manager's logout
-/// send, and losing consent drops them too.
+/// the character logged in when they were taken, so login drops them, logout keeps them for the sync
+/// manager's logout send, and losing consent drops them too.
 /// </remarks>
 public sealed unsafe class AchievementProgressObserver : IDisposable
 {
     /// <summary>The Achievements window, whose details panel shows an achievement's progress.</summary>
     private const string AchievementsWindowName = "Achievement";
-
-    /// <summary>
-    /// The Party Finder's windows. The Party Finder asks for two Pilgrim's Traverse achievements on its
-    /// own, so no answer is taken while one is open.
-    /// </summary>
-    private static readonly string[] PartyFinderWindowNames =
-        ["LookingForGroup", "LookingForGroupCondition", "LookingForGroupDetail"];
 
     private readonly AchievementProgressCapture capture = new();
 
@@ -46,7 +39,9 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
     private readonly IPluginLog log;
     private readonly TimeProvider timeProvider;
 
-    /// <summary>Wires the listeners. Takes nothing until the player opens an achievement.</summary>
+    /// <summary>
+    /// Wires the listeners. Takes nothing until an answer lands with the Achievements window open.
+    /// </summary>
     /// <param name="isCategoryEnabled">
     /// Whether the user has the given category switched on. Passed in so this class holds no opinion
     /// on where consent lives.
@@ -84,6 +79,10 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
     /// <summary>The readings held this session, the newest per achievement.</summary>
     /// <remarks>Framework thread only, where the readings are taken.</remarks>
     public IReadOnlyList<AchievementProgressReading> Readings() => capture.Readings();
+
+    /// <summary>Drops each sent reading the website stored, unless a newer one has replaced it.</summary>
+    /// <remarks>Framework thread only, where the readings are taken.</remarks>
+    public void DropStored(IReadOnlyList<AchievementProgressReading> sent) => capture.DropStored(sent);
 
     /// <summary>Unregisters everything the constructor wired.</summary>
     public void Dispose()
@@ -138,8 +137,7 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
 
                 case ProgressLook.NotCounted:
                     log.Debug(
-                        $"Progress for {shown} arrived with the Achievements window closed or the Party " +
-                        "Finder open; not taken.");
+                        $"Progress for {shown} arrived with the Achievements window closed; not taken.");
                     break;
 
                 case ProgressLook.OutsideContract:
@@ -161,24 +159,15 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
             ReadingTaken?.Invoke(CategoryKeys.AchievementProgress);
     }
 
-    /// <summary>Whether an answer landing now is one the player asked for.</summary>
-    private bool AnswerCounts() =>
-        IsOpen(AchievementsWindowName) && !IsAnyOpen(PartyFinderWindowNames);
-
-    private bool IsOpen(string windowName)
+    /// <summary>Whether an answer landing now counts: only while the Achievements window is open.</summary>
+    /// <remarks>
+    /// The game asks for two Pilgrim's Traverse achievements on its own shortly after login, usually
+    /// with the window shut. An answer that lands with the window already open looks the same as one
+    /// the player asked for, so it counts.
+    /// </remarks>
+    private bool AnswerCounts()
     {
-        var window = gameGui.GetAddonByName(windowName);
+        var window = gameGui.GetAddonByName(AchievementsWindowName);
         return !window.IsNull && window.IsVisible;
-    }
-
-    private bool IsAnyOpen(string[] windowNames)
-    {
-        foreach (var windowName in windowNames)
-        {
-            if (IsOpen(windowName))
-                return true;
-        }
-
-        return false;
     }
 }

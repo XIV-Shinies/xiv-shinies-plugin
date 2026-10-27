@@ -52,9 +52,9 @@ switch on (the live Occult tracker starts on; everything else starts off):
 
 - Completed **quest** IDs
 - Unlocked **achievement**, **mount**, and **minion** IDs
-- **Achievement progress**: for each achievement you open in your Achievements window, the
-  progress its details show and when you opened it. The game fetches that progress only when you
-  open the achievement, and the plugin never asks for it itself
+- **Achievement progress**: the progress the game receives while your Achievements window is
+  open, normally for each achievement you open there, and when it arrived. The plugin never asks
+  the game for progress itself
 - Unlocked **orchestrion roll** IDs — the tunes playable from your orchestrion list, not the
   unused roll items sitting in your bags
 - Collected **Triple Triad card** IDs, and the IDs of the game's own **Triple Triad NPCs** you

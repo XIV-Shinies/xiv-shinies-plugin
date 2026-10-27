@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -207,6 +208,12 @@ public sealed record CollectResult
     /// </remarks>
     public bool NothingReadThisPass { get; private init; }
 
+    /// <summary>
+    /// How to forget the facts sent once the website confirms storing them, or null when the facts go
+    /// with every upload.
+    /// </summary>
+    public StoreConfirmation? StoreConfirmation { get; private init; }
+
     /// <summary>The source could not be read; omit this category from the upload.</summary>
     /// <param name="reason">
     /// A short, stable, machine-readable reason, for example <c>"achievement_list_not_loaded"</c>.
@@ -325,6 +332,10 @@ public sealed record CollectResult
     /// </summary>
     /// <param name="readings">The held readings.</param>
     /// <param name="collectedDetail">See <see cref="CollectedDetail"/>; null when none.</param>
+    /// <param name="confirmedBy">
+    /// See <see cref="CategoryInfo.StoredResponseKey"/>; null sends the readings with every upload.
+    /// </param>
+    /// <param name="forgetSent">Drops the readings an upload sent, once their store is confirmed.</param>
     /// <remarks>
     /// Readings outside the contract (see <see cref="AchievementProgressReading.IsWithinContract"/>) are
     /// dropped, and past <see cref="AchievementProgressReading.MaxPerUpload"/> only the newest go, since
@@ -332,10 +343,13 @@ public sealed record CollectResult
     /// <see cref="CollectSkipReasons.NothingSeenYet"/> skip rather than an empty list.
     /// </remarks>
     public static CollectResult AchievementProgress(
-        IReadOnlyList<AchievementProgressReading> readings, string? collectedDetail = null)
+        IReadOnlyList<AchievementProgressReading> readings,
+        string? collectedDetail = null,
+        string? confirmedBy = null,
+        Action<IReadOnlyList<AchievementProgressReading>>? forgetSent = null)
     {
-        // The newest survive the cap, since an older reading has had more uploads to ride. Ordered by id
-        // after, so the upload log's fingerprint changes only when a reading does.
+        // The newest go; with a store confirmation, older ones go once the newest are dropped. Ordered
+        // by id after, so the upload log's fingerprint changes only when a reading does.
         var sent = readings
             .Where(reading => reading.IsWithinContract)
             .OrderByDescending(reading => reading.ObservedAt)
@@ -346,7 +360,16 @@ public sealed record CollectResult
         if (sent.Count == 0)
             return Skipped(CollectSkipReasons.NothingSeenYet);
 
-        return new() { Facts = SyncFacts.AchievementProgress(sent), CollectedDetail = collectedDetail };
+        return new()
+        {
+            Facts = SyncFacts.AchievementProgress(sent),
+            CollectedDetail = collectedDetail,
+
+            // Bound to this upload's list, so a store forgets only what went out.
+            StoreConfirmation = confirmedBy is not null && forgetSent is not null
+                ? new StoreConfirmation(confirmedBy, () => forgetSent(sent))
+                : null,
+        };
     }
 
     /// <summary>

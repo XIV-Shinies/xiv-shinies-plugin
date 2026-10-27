@@ -95,7 +95,7 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>
     /// Finds a game window by name: a Crucible window the player has open, such as the run HUD, or
-    /// whether the Achievements and Party Finder windows are open.
+    /// whether the Achievements window is open.
     /// </summary>
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 

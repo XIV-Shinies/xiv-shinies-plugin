@@ -174,6 +174,29 @@ public class PayloadCapsTests
         Assert.DoesNotContain("facewear", bounded.CompleteKeys);
     }
 
+    [Fact]
+    public void Capping_a_category_withdraws_its_store_confirmation()
+    {
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                ["facewear"] = EntryArray(PayloadCaps.MaxEntriesPerCategory + 1),
+                ["ornaments"] = EntryArray(3),
+            },
+            Skipped = new Dictionary<string, string>(),
+            StoreConfirmations = new Dictionary<string, StoreConfirmation>
+            {
+                ["facewear"] = new("storedFacewear", () => { }),
+                ["ornaments"] = new("storedOrnaments", () => { }),
+            },
+        };
+
+        var (bounded, _) = PayloadCaps.Bound(snapshot);
+
+        Assert.Equal(new[] { "ornaments" }, bounded.StoreConfirmations.Keys);
+    }
+
     // One over-cap category must not disarm the upload's other declarations.
     [Fact]
     public void Capping_one_category_leaves_another_categorys_claim_intact()

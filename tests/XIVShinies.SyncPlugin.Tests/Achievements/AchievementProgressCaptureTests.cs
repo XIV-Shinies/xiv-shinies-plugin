@@ -53,8 +53,7 @@ public class AchievementProgressCaptureTests
         Assert.Equal(expected, reading);
     }
 
-    // The Party Finder's own requests land with the Achievements window shut, or beside the Party
-    // Finder. Opening the window afterwards must not turn that answer into a reading.
+    // The game's own login answer usually lands with the window shut; opening it later must not take it.
     [Fact]
     public void An_answer_that_does_not_count_is_never_held_even_once_it_would()
     {

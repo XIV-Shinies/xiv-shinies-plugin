@@ -36,6 +36,31 @@ public class AchievementProgressLedgerTests
     }
 
     [Fact]
+    public void A_reading_the_website_stored_is_dropped()
+    {
+        var ledger = new AchievementProgressLedger();
+        ledger.Record(Reading(3, 750, 1000));
+        ledger.Record(Reading(4, 2, 5));
+
+        ledger.DropStored(new[] { Reading(3, 750, 1000) });
+
+        Assert.Equal(new[] { Reading(4, 2, 5) }, ledger.Snapshot());
+    }
+
+    // A reading taken while the upload was in flight was never sent, so it stays.
+    [Fact]
+    public void A_newer_reading_outlives_the_store_of_the_one_it_replaced()
+    {
+        var ledger = new AchievementProgressLedger();
+        ledger.Record(Reading(3, 750, 1000, T0));
+        ledger.Record(Reading(3, 800, 1000, T0.AddMinutes(1)));
+
+        ledger.DropStored(new[] { Reading(3, 750, 1000, T0) });
+
+        Assert.Equal(new[] { Reading(3, 800, 1000, T0.AddMinutes(1)) }, ledger.Snapshot());
+    }
+
+    [Fact]
     public void Clearing_drops_every_reading()
     {
         var ledger = new AchievementProgressLedger();

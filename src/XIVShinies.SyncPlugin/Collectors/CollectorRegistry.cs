@@ -113,10 +113,14 @@ public static class CollectorRegistry
         DisplayName = "Achievement progress",
         Section = CollectionLogSection,
 
+        // Dropped once stored: a re-sent reading would bring back progress the player deleted on the
+        // website.
+        StoredResponseKey = "storedAchievementProgress",
+
         // The consent disclosure, so it names every field a reading sends.
         WhatGetsSent =
-            "For each achievement you open in your Achievements window, the progress it shows and " +
-            "when you opened it.",
+            "The progress the game receives while your Achievements window is open, normally for " +
+            "each achievement you open there, and when it arrived.",
 
         // What triggers a read, and that the plugin never asks for progress itself: without the first,
         // an achievement never opened looks like a broken sync.

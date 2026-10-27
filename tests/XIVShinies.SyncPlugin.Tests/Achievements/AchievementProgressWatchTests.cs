@@ -82,17 +82,6 @@ public class AchievementProgressWatchTests
         Assert.Equal(Loaded(4, 2, 5), watch.TakeNewAnswer(Loaded(4, 2, 5)));
     }
 
-    // An answer the caller dropped, such as one the Party Finder asked for with the Achievements
-    // window closed, must not come back as new when the window opens later.
-    [Fact]
-    public void An_answer_already_seen_is_not_taken_again_later()
-    {
-        var watch = Baselined(Requested(0, 0, 0));
-        watch.TakeNewAnswer(Loaded(3811, 0, 1));
-
-        Assert.Null(watch.TakeNewAnswer(Loaded(3811, 0, 1)));
-    }
-
     [Fact]
     public void After_a_reset_the_next_look_is_a_baseline_again()
     {

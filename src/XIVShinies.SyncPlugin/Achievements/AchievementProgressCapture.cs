@@ -13,7 +13,7 @@ public enum ProgressLook
     /// <summary>An answer landed and is held for the next sync.</summary>
     Taken,
 
-    /// <summary>An answer landed while it could not be the player's own, and is dropped.</summary>
+    /// <summary>An answer landed while it did not count, and is dropped.</summary>
     NotCounted,
 
     /// <summary>An answer landed with a value the contract refuses, and is skipped.</summary>
@@ -39,6 +39,9 @@ public sealed class AchievementProgressCapture
     /// <summary>The held readings, the newest per achievement.</summary>
     public IReadOnlyList<AchievementProgressReading> Readings() => ledger.Snapshot();
 
+    /// <summary>Drops each sent reading the website stored, unless a newer one has replaced it.</summary>
+    public void DropStored(IReadOnlyList<AchievementProgressReading> sent) => ledger.DropStored(sent);
+
     /// <summary>Drops every reading and makes the next look a baseline.</summary>
     public void Forget()
     {
@@ -49,8 +52,8 @@ public sealed class AchievementProgressCapture
     /// <summary>Looks at the fields once, and holds an answer that landed if it counts.</summary>
     /// <param name="fields">The fields as they read this frame.</param>
     /// <param name="answerCounts">
-    /// Whether an answer landing now is the player's own. Asked only when one lands, since it looks up
-    /// game windows.
+    /// Whether an answer landing now counts. Asked only when one lands, since it looks up a game
+    /// window.
     /// </param>
     /// <param name="now">The moment the reading is stamped with.</param>
     public ProgressLookResult Look(ProgressFields fields, Func<bool> answerCounts, DateTimeOffset now)

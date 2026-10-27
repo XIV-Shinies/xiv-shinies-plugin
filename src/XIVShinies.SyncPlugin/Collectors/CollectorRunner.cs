@@ -94,6 +94,13 @@ public sealed record CollectionSnapshot
     public IReadOnlySet<string> CompleteKeys { get; init; } = new HashSet<string>();
 
     /// <summary>
+    /// Each collected category's store confirmation (see <see cref="CollectResult.StoreConfirmation"/>),
+    /// keyed by category. The sync manager runs one when the upload's response bears it out.
+    /// </summary>
+    public IReadOnlyDictionary<string, StoreConfirmation> StoreConfirmations { get; init; } =
+        new Dictionary<string, StoreConfirmation>();
+
+    /// <summary>
     /// The categories whose manifest the server sent over the client's ceiling (see
     /// <see cref="CollectContext.TruncatedManifests"/>), so the tail is not being reported.
     /// </summary>
@@ -132,6 +139,7 @@ public static class CollectorRunner
         var sourceNotes = new Dictionary<string, ItemSourceStatus>();
         var manifestDrivenKeys = new HashSet<string>();
         var completeKeys = new HashSet<string>();
+        var storeConfirmations = new Dictionary<string, StoreConfirmation>();
 
         // One context per pass, so every collector sees the same world. The group opt-ins are a copy
         // (see PluginSettings.SnapshotEnabledItemGroupKeys).
@@ -199,6 +207,9 @@ public static class CollectorRunner
                 if (result.FactCount is { } factCount)
                     factCounts[key] = factCount;
 
+                if (result.StoreConfirmation is { } storeConfirmation)
+                    storeConfirmations[key] = storeConfirmation;
+
                 // Source-keyed: two collectors reporting on one storage location describe the same
                 // place, so the last in registration order wins.
                 if (result.SourceNotes is not null)
@@ -227,6 +238,7 @@ public static class CollectorRunner
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,
             CompleteKeys = completeKeys,
+            StoreConfirmations = storeConfirmations,
             TruncatedManifests = context.TruncatedManifests,
         };
     }
