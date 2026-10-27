@@ -204,8 +204,11 @@ internal sealed partial class MainWindow
     /// <summary>The settings masthead: the mascot beside the plugin's name and one-line pitch.</summary>
     private void DrawSettingsHeader()
     {
-        // Never blocks: a transparent placeholder until the image has loaded.
-        var mascot = mascotTexture.GetWrapOrEmpty();
+        // Fetched only here: Dalamud frees a cache entry, which holds this plugin's assembly, about two
+        // seconds after its last draw, but never one fetched and not drawn. Blank until loaded; never blocks.
+        var mascot = textureProvider
+            .GetFromManifestResource(typeof(MainWindow).Assembly, PluginMeta.MascotResource)
+            .GetWrapOrEmpty();
 
         // About the height of the header block beside it.
         var mascotSize = 72f * ImGuiHelpers.GlobalScale;

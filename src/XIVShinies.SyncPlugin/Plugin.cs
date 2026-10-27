@@ -3,7 +3,6 @@
 using System;
 #endif
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
@@ -213,15 +212,10 @@ public sealed class Plugin : IDalamudPlugin
                 Framework, ClientState, Condition, GameGui, AddonLifecycle, DataManager, BuddyList, Log,
                 apiClient, Configuration.Settings, syncManager, version);
 
-            // The installer's hand-made icon, shipped next to the DLL. Dalamud owns the lazily loaded
-            // texture; a missing file leaves it empty and the header draws without an image.
-            var mascotTexture = TextureProvider.GetFromFile(Path.Combine(
-                PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty, "images", "icon.png"));
-
-            // After the sync manager and collectors, which it reads. The font pieces give it a
-            // heading-sized font and FontAwesome icons.
+            // After the sync manager and collectors, which it reads. The texture provider loads the
+            // masthead's mascot; the font pieces give it a heading-sized font and FontAwesome icons.
             mainWindow = new MainWindow(
-                Configuration, apiClient, syncManager, collectors, mascotTexture,
+                Configuration, apiClient, syncManager, collectors, TextureProvider,
                 PluginInterface.UiBuilder.FontAtlas,
                 PluginInterface.UiBuilder.IconFontHandle,
                 PluginInterface.UiBuilder.DefaultFontSpec.SizePx,
