@@ -122,7 +122,8 @@ public static class CollectorRegistry
         // an achievement never opened looks like a broken sync.
         Details =
             "Opening an achievement in game is what reads its progress, one achievement at a time, " +
-            "and it goes up within five minutes. The plugin never asks the game for progress itself.",
+            "and it goes up within five minutes, or when you log out. The plugin never asks the game " +
+            "for progress itself.",
     };
 
     private static readonly CategoryInfo OrchestrionRolls = new()
@@ -225,7 +226,7 @@ public static class CollectorRegistry
             "All 24 support jobs travel together, read by the automatic sync or Sync now while " +
             "you are inside the Crescent. The knowledge level is captured only when you choose " +
             "\"Review your knowledge level and currencies\" at Jeffroy in Phantom Village, and " +
-            "is sent with the time you opened it.",
+            "goes up within five minutes, or when you log out, with the time you opened it.",
     };
 
     private static readonly CategoryInfo OccultRecords = new()

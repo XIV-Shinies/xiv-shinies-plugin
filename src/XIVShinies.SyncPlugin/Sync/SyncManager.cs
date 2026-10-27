@@ -747,9 +747,23 @@ internal sealed class SyncManager : IDisposable
         loggedIn = true;
     }
 
-    /// <summary>The character logged out. Everything character-specific is dropped.</summary>
+    /// <summary>
+    /// The character logged out. Held facts go up if an upload may start now, then everything
+    /// character-specific is dropped.
+    /// </summary>
     private void OnLogout(int type, int code)
     {
+        // First, while the character is still known: held facts would be lost with the rest. Guarded,
+        // so a fault here can never skip the clearing below that keeps characters apart.
+        try
+        {
+            SendHeldFacts();
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "Could not send held facts before the logout.");
+        }
+
         identity = null;
         loginSettledAt = null;
         identityAttempts = 0;
@@ -797,6 +811,31 @@ internal sealed class SyncManager : IDisposable
         // The log diffs each row against the nearest older one, so the next character's first sync
         // would show "(changed)" against the departing character's counts.
         uploadLog.Clear();
+    }
+
+    /// <summary>
+    /// Uploads the held facts at once, when the plugin may upload and no upload is in flight.
+    /// </summary>
+    /// <remarks>
+    /// Its answer lands after the logout, so it is discarded unread, never retried or held again.
+    /// </remarks>
+    private void SendHeldFacts()
+    {
+        var plan = SyncTickPlan.Decide(
+            UploadGate.CanContactServer(settings), pollIsWorthwhile: false, blockedPendingUserAction);
+
+        var config = remoteConfig;
+        if (plan != TickAction.Full || identity is null || uploadInFlight
+            || !UploadGate.CanUpload(settings, config))
+        {
+            return;
+        }
+
+        if (scheduler.TakeHeldNow(timeProvider.GetUtcNow()) is not { } due)
+            return;
+
+        log.Debug("Sending held facts before the logout.");
+        StartUpload(due, config);
     }
 
     /// <summary>

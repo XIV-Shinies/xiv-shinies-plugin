@@ -419,6 +419,32 @@ public sealed class SyncScheduler
         }
     }
 
+    /// <summary>
+    /// Hands out the held facts at once, ahead of their wait, or null when none are held or the server
+    /// asked for a wait.
+    /// </summary>
+    /// <remarks>For a logout, after which held facts would be lost.</remarks>
+    public SyncDue? TakeHeldNow(DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            if (heldCategories.Count == 0)
+                return null;
+
+            if ((backoffUntil is { } until && now < until)
+                || (syncResumesBy is { } resumesBy && now < resumesBy))
+            {
+                return null;
+            }
+
+            var held = TakeHeld();
+            return new SyncDue
+            {
+                Trigger = SyncTrigger.Interval, Categories = held, HeldCategories = held,
+            };
+        }
+    }
+
     /// <summary>Empties the held categories, returning what they were. Call under the lock.</summary>
     private HashSet<string> TakeHeld()
     {

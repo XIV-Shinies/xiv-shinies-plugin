@@ -16,7 +16,8 @@ namespace XIVShinies.SyncPlugin.Achievements;
 /// The game asks its server for one achievement's progress when the player selects it, and keeps the
 /// answer in four fields this reads each frame (see <see cref="AchievementProgressCapture"/>). Read
 /// only: asking for progress would send server traffic the player did not cause. Readings belong to
-/// the character who opened them, so both session edges drop them; losing consent drops them too.
+/// the character who opened them, so login drops them, logout keeps them for the sync manager's logout
+/// send, and losing consent drops them too.
 /// </remarks>
 public sealed unsafe class AchievementProgressObserver : IDisposable
 {
@@ -68,7 +69,6 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
         answerCounts = AnswerCounts;
 
         clientState.Login += OnLogin;
-        clientState.Logout += OnLogout;
 
         // Subscribed last: a constructor that fails part-way returns nothing to dispose, so a frame
         // handler subscribed earlier would run for the rest of the session.
@@ -90,12 +90,9 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
     {
         framework.Update -= OnFrameworkUpdate;
         clientState.Login -= OnLogin;
-        clientState.Logout -= OnLogout;
     }
 
     private void OnLogin() => capture.Forget();
-
-    private void OnLogout(int type, int code) => capture.Forget();
 
     /// <summary>Reads the game's progress fields and takes an answer that just landed.</summary>
     /// <remarks>Four field reads a frame.</remarks>
@@ -105,13 +102,17 @@ public sealed unsafe class AchievementProgressObserver : IDisposable
 
         try
         {
-            // While nothing may be taken, every frame is a fresh baseline, so switching the collection
-            // on or logging in never takes an answer that landed before.
-            if (!clientState.IsLoggedIn || !isCategoryEnabled(CategoryKeys.AchievementProgress))
+            // While the collection is off, every frame is a fresh baseline, so switching it on never
+            // takes an answer that landed before. OnLogin's Forget does the same for logging in.
+            if (!isCategoryEnabled(CategoryKeys.AchievementProgress))
             {
                 capture.Forget();
                 return;
             }
+
+            // Logged out, the readings wait for the next login to drop them (see the class remarks).
+            if (!clientState.IsLoggedIn)
+                return;
 
             var achievement = Achievement.Instance();
             if (achievement == null)

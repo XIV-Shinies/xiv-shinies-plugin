@@ -37,11 +37,13 @@ that list only then.
 Everything else travels with the periodic full sync, or immediately when you press
 **Sync now**: **Tracked items** (the item counts that prove relic progress), **Quest
 progress**, **Triple Triad cards**, **Triple Triad NPCs** and **Occult records**. **Phantom
-jobs** are read by one of those syncs that runs while you are inside the Occult Crescent, and
-your knowledge level once you open the review window at Jeffroy. **Tamed beasts** upload within
+jobs** are read by any full sync (login, periodic or Sync now) that runs while you are inside the
+Occult Crescent, and your knowledge level once you open the review window at Jeffroy. **Tamed
+beasts** upload within
 seconds of a change being read, when you talk to the Crucible's NPC or open your Master's
-Bestiary. **Achievement progress** is read when you open an achievement in your Achievements
-window, and goes up with the next sync, or on its own within five minutes.
+Bestiary. **Achievement progress** and your knowledge level go up with the next sync, or on their
+own within five minutes or when you log out; achievement progress is read when you open an
+achievement in your Achievements window.
 
 ## What gets sent
 

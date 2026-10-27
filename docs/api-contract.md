@@ -388,7 +388,8 @@ Field constraints:
   how a knowledge sighting recorded outside an instance still reaches the server. Job writes
   are monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
   the TRUE knowledge level from the review window (the in-instance HUD shows only the
-  zone-synced level), sent with the time the window was opened; the server keeps the
+  zone-synced level), sent with the time the window was opened, and held for upload like
+  achievement progress (see the `achievementProgress` bullet); the server keeps the
   **freshest** observation across plugin and Lodestone sources, never a maximum — death
   without a raise can de-level knowledge. `occultRecords` carries `MKDLore` row ids — the
   game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
@@ -433,9 +434,14 @@ Field constraints:
   reading per achievement, the newest, for the login session, and sends them all (the newest 1,000,
   past the cap) with every upload that includes the category: they ride the next upload the plugin
   makes anyway, an `unlock` upload included, or go alone after five minutes as an `interval` upload
-  naming only this category, so browsing achievements spends at most twelve uploads an hour. An
+  naming only the held categories, so browsing achievements spends at most twelve uploads an hour,
+  plus one at each logout. An
   upload that fails, unless its body was rejected (400, 405, 413) or only the user can fix it (401,
-  403), queues them again as though just read. The server weighs each reading by its
+  403), queues them again as though just read. If a reading taken since the last upload that
+  carried the category is waiting when the player logs out, all held readings go up then, in one
+  `interval` upload, unless a server-requested wait or a 401/403 halt is in force or an upload is
+  already in flight. That upload is sent once and never queued again, and closing the
+  game outright may send nothing. The server weighs each reading by its
   `observedAt`, never the upload's time, so sending a reading again is safe. With no reading held
   the category is omitted, never sent empty. It never declares completeness.
 

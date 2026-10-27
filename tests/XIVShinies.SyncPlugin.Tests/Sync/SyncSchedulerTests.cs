@@ -704,6 +704,97 @@ public class SyncSchedulerTests
     }
 
     [Fact]
+    public void Held_facts_can_be_taken_ahead_of_their_wait()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+
+        var due = scheduler.TakeHeldNow(T0 + TimeSpan.FromSeconds(30));
+
+        Assert.Equal(SyncTrigger.Interval, due!.Trigger);
+        Assert.Equal(new[] { CategoryKeys.AchievementProgress }, due.Categories!);
+        Assert.Null(scheduler.Poll(T0 + SyncScheduler.HeldFactsWait));
+    }
+
+    // Every held category goes in the one upload, marked held as in any other upload of held facts.
+    [Fact]
+    public void Every_held_category_is_taken_together()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.NotifyHeld(CategoryKeys.OccultProgression, T0);
+
+        var due = scheduler.TakeHeldNow(T0)!;
+
+        var both = new SortedSet<string> { CategoryKeys.AchievementProgress, CategoryKeys.OccultProgression };
+        Assert.Equal<IEnumerable<string>>(both, new SortedSet<string>(due.Categories!));
+        Assert.Equal<IEnumerable<string>>(both, new SortedSet<string>(due.HeldCategories));
+    }
+
+    [Fact]
+    public void Taking_held_facts_leaves_a_pending_unlock_alone()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.NotifyUnlock(CategoryKeys.Mounts, T0);
+
+        scheduler.TakeHeldNow(T0);
+
+        var due = scheduler.Poll(T0 + scheduler.UnlockDebounce);
+        Assert.Equal(new[] { CategoryKeys.Mounts }, due!.Categories!);
+    }
+
+    [Fact]
+    public void Nothing_is_taken_when_nothing_is_held()
+    {
+        Assert.Null(NewScheduler().TakeHeldNow(T0));
+    }
+
+    // The server asked for the wait, and a logout does not overrule it.
+    [Fact]
+    public void Held_facts_are_not_taken_during_a_backoff()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(10));
+
+        Assert.Null(scheduler.TakeHeldNow(T0 + TimeSpan.FromMinutes(1)));
+    }
+
+    // A refused take keeps them, so they still go once the wait ends.
+    [Fact]
+    public void Held_facts_a_backoff_refused_still_go_after_it()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(10));
+        scheduler.TakeHeldNow(T0 + TimeSpan.FromMinutes(1));
+
+        Assert.NotNull(scheduler.Poll(T0 + TimeSpan.FromMinutes(10)));
+    }
+
+    // A wait that has run out counts as over, even before a poll clears it.
+    [Fact]
+    public void Held_facts_are_taken_once_a_backoff_has_run_out()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.BackOffUntil(T0 + TimeSpan.FromMinutes(1));
+
+        Assert.NotNull(scheduler.TakeHeldNow(T0 + TimeSpan.FromMinutes(2)));
+    }
+
+    [Fact]
+    public void Held_facts_are_not_taken_while_syncing_is_switched_off()
+    {
+        var scheduler = NewScheduler();
+        scheduler.NotifyHeld(CategoryKeys.AchievementProgress, T0);
+        scheduler.BackOffUntilSyncResumes(T0 + TimeSpan.FromHours(1), SyncTrigger.Interval);
+
+        Assert.Null(scheduler.TakeHeldNow(T0 + TimeSpan.FromMinutes(1)));
+    }
+
+    [Fact]
     public void A_clock_that_jumps_backwards_does_not_stretch_the_wait()
     {
         var scheduler = NewScheduler();

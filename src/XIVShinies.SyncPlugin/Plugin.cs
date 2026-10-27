@@ -162,7 +162,10 @@ public sealed class Plugin : IDalamudPlugin
 
             // Before the collectors, since the phantom jobs collector reads it. It records only what
             // the player puts on screen (see KnowledgeObserver).
-            knowledgeObserver = new KnowledgeObserver(AddonLifecycle, ClientState, Log);
+            knowledgeObserver = new KnowledgeObserver(
+                AddonLifecycle, ClientState,
+                key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
+                Log);
 
             // Before the collectors, since the tamed beasts collector reads it. It gets a consent callback
             // rather than the settings and asks about its own collection, so no category is named here.
@@ -212,8 +215,10 @@ public sealed class Plugin : IDalamudPlugin
             // the login sync. The event carries its category key, so neither side names the collection.
             tamedBeastObserver.BeastsLearned += syncManager.NotifyCategoryChanged;
 
-            // A reading waits for the next upload rather than spending one of its own per open.
+            // A reading or sighting waits for the next upload rather than spending one of its own each
+            // time.
             achievementProgressObserver.ReadingTaken += syncManager.NotifyCategoryHeld;
+            knowledgeObserver.SightingTaken += syncManager.NotifyCategoryHeld;
 
             // After the SyncManager, whose identity and server config it reads. Silent until the user
             // opts in: the same consent switches gate it, plus its own toggle.
@@ -274,6 +279,9 @@ public sealed class Plugin : IDalamudPlugin
             if (achievementProgressObserver is not null && syncManager is not null)
                 achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
 
+            if (knowledgeObserver is not null && syncManager is not null)
+                knowledgeObserver.SightingTaken -= syncManager.NotifyCategoryHeld;
+
             crucibleManager?.Dispose();
             occultManager?.Dispose();
             syncManager?.Dispose();
@@ -309,6 +317,7 @@ public sealed class Plugin : IDalamudPlugin
         // torn down.
         tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
         achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
+        knowledgeObserver.SightingTaken -= syncManager.NotifyCategoryHeld;
 
         // Before the SyncManager and ApiClient they borrow: each unsubscribes and cancels its own
         // upload in flight.
