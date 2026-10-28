@@ -16,7 +16,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// array, and never decreases. Outside an instance a held sighting goes alone with an empty jobs map,
 /// and with none the pass skips with <see cref="CollectSkipReasons.NotInOccultInstance"/>. A pass
 /// that read the jobs without a sighting puts where the knowledge level comes from on the chip's
-/// hover, never a visible line, because the sighting clears at every logout and a line would nag
+/// hover, never a visible line, because the sighting clears at every login and a line would nag
 /// every session.
 /// </remarks>
 // Unsafe because the director's state is a raw pointer; the null check below guards every read.
@@ -117,8 +117,7 @@ public sealed unsafe class OccultProgressionCollector : ICollector
             sighting,
             collectedDetail: sighting is null
                 ? "Your knowledge level is read when you open the review window at Jeffroy in " +
-                  "Phantom Village, and sent by the next automatic sync or Sync now. Logging out " +
-                  "first drops it."
+                  "Phantom Village, and goes up within five minutes, or when you log out."
                 : null);
     }
 }

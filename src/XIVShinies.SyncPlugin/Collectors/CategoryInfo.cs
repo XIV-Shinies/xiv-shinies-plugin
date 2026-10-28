@@ -82,4 +82,14 @@ public sealed record CategoryInfo
     /// the sync card.
     /// </remarks>
     public bool UploadsOnUnlock { get; init; }
+
+    /// <summary>
+    /// The sync response key the server sends only once it has stored this collection's facts, or null
+    /// when the facts go with every upload. When set, each fact goes until a response confirms it.
+    /// </summary>
+    /// <remarks>
+    /// A key the server sends for any other reason would drop facts it never stored;
+    /// <c>StoreConfirmationDeclarationTests</c> pins each one.
+    /// </remarks>
+    public string? StoredResponseKey { get; init; }
 }

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using XIVShinies.SyncPlugin.Achievements;
 using XIVShinies.SyncPlugin.Beastmaster;
 using XIVShinies.SyncPlugin.Occult;
 
@@ -106,6 +107,29 @@ public static class CollectorRegistry
         UploadsOnUnlock = true,
     };
 
+    private static readonly CategoryInfo AchievementProgress = new()
+    {
+        Key = CategoryKeys.AchievementProgress,
+        DisplayName = "Achievement progress",
+        Section = CollectionLogSection,
+
+        // Dropped once stored: a re-sent reading would bring back progress the player deleted on the
+        // website.
+        StoredResponseKey = "storedAchievementProgress",
+
+        // The consent disclosure, so it names every field a reading sends.
+        WhatGetsSent =
+            "The progress the game receives while your Achievements window is open, normally for " +
+            "each achievement you open there, and when it arrived.",
+
+        // What triggers a read, and that the plugin never asks for progress itself: without the first,
+        // an achievement never opened looks like a broken sync.
+        Details =
+            "Opening an achievement in game is what reads its progress, one achievement at a time, " +
+            "and it goes up within five minutes, or when you log out. The plugin never asks the game " +
+            "for progress itself.",
+    };
+
     private static readonly CategoryInfo OrchestrionRolls = new()
     {
         Key = CategoryKeys.OrchestrionRolls,
@@ -206,7 +230,7 @@ public static class CollectorRegistry
             "All 24 support jobs travel together, read by the automatic sync or Sync now while " +
             "you are inside the Crescent. The knowledge level is captured only when you choose " +
             "\"Review your knowledge level and currencies\" at Jeffroy in Phantom Village, and " +
-            "is sent with the time you opened it.",
+            "goes up within five minutes, or when you log out, with the time you opened it.",
     };
 
     private static readonly CategoryInfo OccultRecords = new()
@@ -256,12 +280,16 @@ public static class CollectorRegistry
     /// <param name="tamedBeastObserver">
     /// The passive bestiary capture the tamed beasts collector reads.
     /// </param>
+    /// <param name="achievementProgressObserver">
+    /// The passive progress capture the achievement progress collector reads.
+    /// </param>
     public static IReadOnlyList<ICollector> Create(
         IDataManager dataManager,
         IUnlockState unlockState,
         IFramework framework,
         KnowledgeObserver knowledgeObserver,
-        TamedBeastObserver tamedBeastObserver) =>
+        TamedBeastObserver tamedBeastObserver,
+        AchievementProgressObserver achievementProgressObserver) =>
         new ICollector[]
         {
             // The server stores Quest row ids, so no mapping is needed.
@@ -289,6 +317,10 @@ public static class CollectorRegistry
                 precondition: () => unlockState.IsAchievementListLoaded
                     ? null
                     : CollectSkipReasons.AchievementListNotLoaded),
+
+            // Reads no game state during a pass: the observer takes each reading as the player opens
+            // an achievement. See AchievementProgressCollector.
+            new AchievementProgressCollector(AchievementProgress, framework, achievementProgressObserver),
 
             // Orchestrion row ids, which the unlock state answers for. The "… Orchestrion Roll" items
             // are a separate Item-sheet id space, which the server drops as unknown here.

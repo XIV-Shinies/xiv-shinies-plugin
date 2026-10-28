@@ -9,9 +9,9 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// </summary>
 /// <remarks>
 /// Bookkeeping only: it never reads the game, the network or the clock, and every method that needs
-/// the time takes <c>now</c>. Work comes from three sources, in descending priority: a user-driven
-/// request (<c>manual</c>, <c>login</c>), a debounced burst of unlocks, and the periodic full sweep.
-/// A backoff suppresses all three without discarding any.
+/// the time takes <c>now</c>. Work comes from four sources, in descending priority: a user-driven
+/// request (<c>manual</c>, <c>login</c>), a debounced burst of unlocks, the periodic full sweep, and
+/// held facts nothing else carried. A backoff suppresses all four without discarding any.
 /// </remarks>
 public sealed class SyncScheduler
 {
@@ -27,12 +27,18 @@ public sealed class SyncScheduler
     /// <summary>The longest full-sweep interval the plugin will honor.</summary>
     public static readonly TimeSpan MaxFullSyncInterval = TimeSpan.FromHours(24);
 
+    /// <summary>
+    /// How long held facts wait for another upload before going on their own, outside a backoff. At
+    /// most twelve such uploads an hour, well inside the server's sixty.
+    /// </summary>
+    public static readonly TimeSpan HeldFactsWait = TimeSpan.FromMinutes(5);
+
     /// <summary>Guards every field below.</summary>
     /// <remarks>
-    /// <c>MarkUploaded</c> and both <c>BackOffUntil*</c> methods run on the upload task,
-    /// <c>ApplyIntervals</c> on the poll task, <c>IsBackingOff</c> on the window's draw call, and the
-    /// rest on the framework thread. The interval properties are written under it; the sync card's draw
-    /// call reads <c>FullSyncInterval</c> without it.
+    /// <c>MarkUploaded</c>, <c>MarkFailed</c> and both <c>BackOffUntil*</c> methods run on the upload
+    /// task, <c>ApplyIntervals</c> on the poll task, <c>IsBackingOff</c> on the window's draw call, and
+    /// the rest on the framework thread. The interval properties are written under it; the sync card's
+    /// draw call reads <c>FullSyncInterval</c> without it.
     /// </remarks>
     private readonly object gate = new();
 
@@ -41,6 +47,12 @@ public sealed class SyncScheduler
 
     /// <summary>When the current debounce window closes. Meaningless if no categories are pending.</summary>
     private DateTimeOffset unlockDueAt;
+
+    /// <summary>Categories whose facts wait for the next upload (see <see cref="NotifyHeld"/>).</summary>
+    private readonly HashSet<string> heldCategories = [];
+
+    /// <summary>When held facts go on their own. Meaningless if none are held.</summary>
+    private DateTimeOffset heldDueAt;
 
     /// <summary>A queued full sweep, if the user or a login asked for one.</summary>
     private SyncTrigger? pendingFullSweep;
@@ -152,6 +164,27 @@ public sealed class SyncScheduler
         }
     }
 
+    /// <summary>
+    /// Records that a category holds facts that can wait for the next upload, up to
+    /// <see cref="HeldFactsWait"/>.
+    /// </summary>
+    /// <remarks>
+    /// The facts ride whatever upload goes first, an unlock's included, so they must carry their own
+    /// observation times (see <see cref="SyncDue.Categories"/>). If none goes, they go on their own as an
+    /// <c>interval</c> upload naming only them. Unlike the unlock debounce, the wait does not slide, so
+    /// steady activity uploads at most once per wait.
+    /// </remarks>
+    public void NotifyHeld(string categoryKey, DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            if (heldCategories.Count == 0)
+                heldDueAt = now + HeldFactsWait;
+
+            heldCategories.Add(categoryKey);
+        }
+    }
+
     /// <summary>Suppresses all work until the given moment, as instructed by the server.</summary>
     /// <remarks>
     /// Pending work is deferred, never dropped, so a 429 mid-login does not cost that sync. The deadline
@@ -245,6 +278,7 @@ public sealed class SyncScheduler
         lock (gate)
         {
             pendingUnlockCategories.Clear();
+            heldCategories.Clear();
             pendingFullSweep = null;
 
             // An upload owed on resume belongs to the previous character too.
@@ -260,16 +294,33 @@ public sealed class SyncScheduler
     /// Records that an upload completed, restarting the interval clock if it was a full sweep.
     /// </summary>
     /// <remarks>
-    /// An <c>unlock</c> upload is not a sweep and must not postpone the next one, or a player who keeps
-    /// unlocking things would never get a full sweep.
+    /// An upload that names its categories, an unlock's or held facts', is not a sweep and must not
+    /// postpone the next one, or a player who keeps unlocking things would never get a full sweep.
     /// </remarks>
-    public void MarkUploaded(SyncTrigger trigger, DateTimeOffset now)
+    /// <param name="due">The work the upload carried out.</param>
+    /// <param name="now">When it completed.</param>
+    public void MarkUploaded(SyncDue due, DateTimeOffset now)
     {
         lock (gate)
         {
-            if (trigger is not SyncTrigger.Unlock)
+            if (due.Categories is null)
                 lastFullSweepAt = now;
         }
+    }
+
+    /// <summary>
+    /// Holds again the held categories an upload took, after it failed in a way a later try could fix.
+    /// </summary>
+    /// <remarks>
+    /// Held facts last only the session, so leaving them to the next periodic sweep risks a logout first.
+    /// Not for a rejected body: holding it again would send the same rejection every wait.
+    /// </remarks>
+    /// <param name="due">The work the failed upload was for.</param>
+    /// <param name="now">When it failed; a new wait starts here unless facts are already held.</param>
+    public void MarkFailed(SyncDue due, DateTimeOffset now)
+    {
+        foreach (var categoryKey in due.HeldCategories)
+            NotifyHeld(categoryKey, now);
     }
 
     /// <summary>
@@ -307,8 +358,12 @@ public sealed class SyncScheduler
             if (lastFullSweepAt is { } lastSweep && now < lastSweep)
                 lastFullSweepAt = now;
 
-            // 1. A user-driven sweep wins. It covers whatever a pending unlock would have sent, so
-            //    that unlock is dropped rather than uploaded twice.
+            // Likewise held facts would wait out the jump on top of their wait.
+            if (heldCategories.Count > 0 && heldDueAt > now + HeldFactsWait)
+                heldDueAt = now + HeldFactsWait;
+
+            // 1. A user-driven sweep wins. It covers whatever a pending unlock or held facts would have
+            //    sent: the unlock is dropped, and the held facts ride along (see SyncDue.HeldCategories).
             if (pendingFullSweep is { } requested)
             {
                 pendingFullSweep = null;
@@ -321,15 +376,21 @@ public sealed class SyncScheduler
                 // null, and the periodic sweep below would never come due for the session.
                 lastFullSweepAt = now;
 
-                return new SyncDue { Trigger = requested };
+                return new SyncDue { Trigger = requested, HeldCategories = TakeHeld() };
             }
 
-            // 2. A settled burst of unlocks: upload exactly the categories that changed.
+            // 2. A settled burst of unlocks: upload exactly the categories that changed, and any held
+            //    facts with them (see SyncDue.Categories).
             if (pendingUnlockCategories.Count > 0 && now >= unlockDueAt)
             {
+                var held = TakeHeld();
                 var categories = new HashSet<string>(pendingUnlockCategories);
+                categories.UnionWith(held);
                 pendingUnlockCategories.Clear();
-                return new SyncDue { Trigger = SyncTrigger.Unlock, Categories = categories };
+                return new SyncDue
+                {
+                    Trigger = SyncTrigger.Unlock, Categories = categories, HeldCategories = held,
+                };
             }
 
             // 3. The periodic sweep, stamped here so a failed upload waits out the next interval instead
@@ -340,11 +401,56 @@ public sealed class SyncScheduler
                 intervalSweepOwed = false;
                 lastFullSweepAt = now;
                 pendingUnlockCategories.Clear();
-                return new SyncDue { Trigger = SyncTrigger.Interval };
+                return new SyncDue { Trigger = SyncTrigger.Interval, HeldCategories = TakeHeld() };
+            }
+
+            // 4. Held facts that nothing else carried. An unlock still settling carries them instead,
+            //    sparing an upload. Not a sweep, so the interval clock is untouched.
+            if (heldCategories.Count > 0 && now >= heldDueAt && pendingUnlockCategories.Count == 0)
+            {
+                var held = TakeHeld();
+                return new SyncDue
+                {
+                    Trigger = SyncTrigger.Interval, Categories = held, HeldCategories = held,
+                };
             }
 
             return null;
         }
+    }
+
+    /// <summary>
+    /// Hands out the held facts at once, ahead of their wait, or null when none are held or the server
+    /// asked for a wait.
+    /// </summary>
+    /// <remarks>For a logout, after which held facts would be lost.</remarks>
+    public SyncDue? TakeHeldNow(DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            if (heldCategories.Count == 0)
+                return null;
+
+            if ((backoffUntil is { } until && now < until)
+                || (syncResumesBy is { } resumesBy && now < resumesBy))
+            {
+                return null;
+            }
+
+            var held = TakeHeld();
+            return new SyncDue
+            {
+                Trigger = SyncTrigger.Interval, Categories = held, HeldCategories = held,
+            };
+        }
+    }
+
+    /// <summary>Empties the held categories, returning what they were. Call under the lock.</summary>
+    private HashSet<string> TakeHeld()
+    {
+        var held = new HashSet<string>(heldCategories);
+        heldCategories.Clear();
+        return held;
     }
 
     /// <summary>Ranks the full-sweep triggers so the stronger user signal wins.</summary>

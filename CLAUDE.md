@@ -307,6 +307,13 @@ The declaration lives on `CategoryInfo`, which is Dalamud-free, so `Completeness
 can pin the exact set of declaring categories: it fails both when a category stops declaring and
 when a new one starts. A collection that declares completeness has to be added to that set.
 
+Of the sync response's `stored…` keys, the plugin acts only on a **store confirmation**. A
+collection whose `CategoryInfo` sets `StoredResponseKey` sends each fact until a response carries
+that key, then drops what that upload sent; without the key the facts stay held. Achievement
+progress uses it, because a re-sent reading would bring back progress the player deleted on the
+website. `StoreConfirmationDeclarationTests` pins each key, since one the server sends for any other
+reason would drop facts it never stored.
+
 ## Extensibility contract
 
 Adding a collection must be **one new `ICollector` class** and nothing else. The

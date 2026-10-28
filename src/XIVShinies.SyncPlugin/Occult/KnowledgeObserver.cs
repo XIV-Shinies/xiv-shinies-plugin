@@ -4,6 +4,7 @@ using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using XIVShinies.SyncPlugin.Api;
+using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Diagnostics;
 
 namespace XIVShinies.SyncPlugin.Occult;
@@ -16,8 +17,9 @@ namespace XIVShinies.SyncPlugin.Occult;
 /// Only this window and the Lodestone show the true level; the HUD and every mapped game struct carry
 /// the zone-synced one, so the window's first Atk value is the one client-side source. Purely passive:
 /// the plugin never opens the window or talks to an NPC. The sighting belongs to the character who
-/// opened the window, so login and logout clear it, and it is never persisted because knowledge is a
-/// live stat (see <see cref="KnowledgeObservation"/>); a reload waits for the next review.
+/// opened the window, so login clears it, logout keeps it for the sync manager's logout send, and it
+/// is never persisted, because knowledge is a live stat (see <see cref="KnowledgeObservation"/>); a
+/// reload waits for the next review.
 /// </remarks>
 public sealed unsafe class KnowledgeObserver : IDisposable
 {
@@ -31,20 +33,27 @@ public sealed unsafe class KnowledgeObserver : IDisposable
 
     private readonly IAddonLifecycle addonLifecycle;
     private readonly IClientState clientState;
+    private readonly Func<string, bool> isCategoryEnabled;
     private readonly IPluginLog log;
     private readonly TimeProvider timeProvider;
 
     private KnowledgeObservation? current;
 
     /// <summary>Wires the listener. Captures nothing until the player opens the window.</summary>
+    /// <param name="isCategoryEnabled">
+    /// Whether the user has the given category switched on. Passed in so this class holds no opinion
+    /// on where consent lives.
+    /// </param>
     public KnowledgeObserver(
         IAddonLifecycle addonLifecycle,
         IClientState clientState,
+        Func<string, bool> isCategoryEnabled,
         IPluginLog log,
         TimeProvider? timeProvider = null)
     {
         this.addonLifecycle = addonLifecycle;
         this.clientState = clientState;
+        this.isCategoryEnabled = isCategoryEnabled;
         this.log = log;
         this.timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -53,15 +62,20 @@ public sealed unsafe class KnowledgeObserver : IDisposable
         addonLifecycle.RegisterListener(AddonEvent.PostSetup, AddonName, OnAddon);
         addonLifecycle.RegisterListener(AddonEvent.PostRefresh, AddonName, OnAddon);
 
-        // Both edges clear the sighting: a session that ends without Logout firing, such as an
-        // abrupt disconnect, must not hand its value to the next character.
+        // Both edges move SessionGeneration; only login clears the sighting (see the class remarks).
         clientState.Login += OnLogin;
         clientState.Logout += OnLogout;
     }
 
     /// <summary>
-    /// The latest sighting for the logged-in character, or null when the window has not been opened
-    /// since login.
+    /// Raised when a sighting is captured, with the category key whose facts it holds for the next
+    /// upload.
+    /// </summary>
+    /// <remarks>The key travels with the event, so the scheduler never names this collection.</remarks>
+    public event Action<string>? SightingTaken;
+
+    /// <summary>
+    /// The latest sighting since the last login, or null when none is held.
     /// </summary>
     /// <remarks>
     /// The progression collector reads it during a collection pass on the framework thread, where the
@@ -92,16 +106,21 @@ public sealed unsafe class KnowledgeObserver : IDisposable
         sessionGeneration++;
     }
 
-    private void OnLogout(int type, int code)
-    {
-        current = null;
-        sessionGeneration++;
-    }
+    private void OnLogout(int type, int code) => sessionGeneration++;
 
     private void OnAddon(AddonEvent type, AddonArgs args)
     {
+        var taken = false;
+
         try
         {
+            // Switched off: nothing is read or queued, and a sighting held from before is dropped.
+            if (!isCategoryEnabled(CategoryKeys.OccultProgression))
+            {
+                current = null;
+                return;
+            }
+
             // Check the array pointer, not just the count: a null dereference is an access
             // violation, which no catch can stop, and it would crash the game.
             var addon = (AtkUnitBase*)args.Addon.Address;
@@ -128,6 +147,7 @@ public sealed unsafe class KnowledgeObserver : IDisposable
                 ObservedAt = timeProvider.GetUtcNow(),
             };
             log.Debug($"Knowledge level {level} observed from the review window.");
+            taken = true;
         }
         catch (Exception ex)
         {
@@ -138,5 +158,9 @@ public sealed unsafe class KnowledgeObserver : IDisposable
             else
                 log.Debug(ex, "Could not read the knowledge review window again.");
         }
+
+        // Outside the catch, so a fault in upload scheduling reports as itself.
+        if (taken)
+            SightingTaken?.Invoke(CategoryKeys.OccultProgression);
     }
 }

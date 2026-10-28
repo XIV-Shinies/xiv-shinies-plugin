@@ -121,6 +121,36 @@ public class CollectorRunnerTests
         Assert.Contains(UnknownCategory, snapshot.CompleteKeys);
     }
 
+    // Keyed by category, so PayloadCaps can withdraw the confirmation of a category it cuts.
+    [Fact]
+    public void A_store_confirmation_is_filed_under_its_collectors_key()
+    {
+        var reading = new AchievementProgressReading
+        {
+            Id = 3, Current = 1, Max = 5, ObservedAt = DateTimeOffset.UnixEpoch,
+        };
+        var collector = new FakeCollector(
+            UnknownCategory,
+            () => CollectResult.AchievementProgress(
+                new[] { reading }, confirmedBy: "storedFacewear", forgetSent: _ => { }));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Equal("storedFacewear", snapshot.StoreConfirmations[UnknownCategory].ResponseKey);
+    }
+
+    [Fact]
+    public void A_skipped_category_has_no_store_confirmation()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Skipped("not_read"));
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.Empty(snapshot.StoreConfirmations);
+    }
+
     [Fact]
     public void A_partial_reads_key_is_not_marked_complete()
     {

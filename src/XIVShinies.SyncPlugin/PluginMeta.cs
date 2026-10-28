@@ -40,6 +40,13 @@ public static class PluginMeta
     /// <summary>The maintainer's sponsor page (the same one the website and the README link to).</summary>
     public const string SponsorUrl = "https://www.patreon.com/c/noranda/";
 
+    /// <summary>The masthead mascot's name among the plugin assembly's built-in resources.</summary>
+    /// <remarks>
+    /// Built in because the release zip carries only the DLL and its manifests, never the images
+    /// folder a dev plugin has beside the DLL.
+    /// </remarks>
+    public const string MascotResource = "XIVShinies.SyncPlugin.Mascot.png";
+
     /// <summary>
     /// Builds the <c>User-Agent</c> header the API client sends on every request, in the format
     /// <c>XIVShinies.SyncPlugin/&lt;version&gt;</c>.

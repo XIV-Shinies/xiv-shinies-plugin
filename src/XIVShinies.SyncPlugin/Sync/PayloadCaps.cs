@@ -45,7 +45,7 @@ public static class PayloadCaps
 
     /// <summary>
     /// Caps every over-limit category of a whole snapshot, and <b>retracts the completeness claim
-    /// of every category it had to cut</b>.
+    /// and the store confirmation of every category it had to cut</b>.
     /// </summary>
     /// <returns>
     /// <c>Bounded</c> is the capped snapshot, the same instance when nothing was cut.
@@ -68,7 +68,17 @@ public static class PayloadCaps
         var completeKeys = new HashSet<string>(snapshot.CompleteKeys);
         completeKeys.ExceptWith(truncatedKeys);
 
-        return (snapshot with { Collections = bounded, CompleteKeys = completeKeys }, dropped);
+        // A store of the shortened list does not cover the entries cut from it.
+        var storeConfirmations = new Dictionary<string, StoreConfirmation>(snapshot.StoreConfirmations);
+        foreach (var key in truncatedKeys)
+            storeConfirmations.Remove(key);
+
+        return (snapshot with
+        {
+            Collections = bounded,
+            CompleteKeys = completeKeys,
+            StoreConfirmations = storeConfirmations,
+        }, dropped);
     }
 
     /// <summary>

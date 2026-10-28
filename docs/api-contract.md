@@ -17,7 +17,8 @@ uses when building or changing any request/response type.
 
 The plugin reads completion facts directly from the game client — completed quest IDs,
 achievement/mount/minion unlock IDs, possession counts for server-requested items, journal
-sequence positions for server-requested quests — and uploads them over HTTPS. **The server does all derivation** (quest completion, relic steps);
+sequence positions for server-requested quests, the progress of achievements the player opens —
+and uploads them over HTTPS. **The server does all derivation** (quest completion, relic steps);
 the plugin never computes app concepts, so new relic series, quest links, and proof rules
 ship without a plugin update.
 
@@ -101,6 +102,7 @@ Values are read per request, so a flipped kill switch reaches the plugin on its 
 200
 {
   "categories": {              // per-category kill switches (true = enabled)
+    "achievementProgress": true,
     "achievements": true,
     "items": true,
     "minions": true,
@@ -235,6 +237,9 @@ request without it is rejected with **413**. Maximum body size is **1 MiB** by d
   "trigger": "login", // "interval" | "login" | "manual" | "unlock"
   "collections": {
     // EVERY key optional — send what was readable
+    "achievementProgress": [ // what an opened achievement's details showed, one entry per achievement
+      {"id": 3, "current": 750, "max": 1000, "observedAt": "2026-10-27T12:00:00Z"}
+    ],
     "achievements": [1, 2],
     "minions": [2, 8],
     "mounts": [1, 5],
@@ -282,6 +287,7 @@ Field constraints:
 | `questSequences`         | object mapping quest id (digit-string key, ≤ 10 digits) → sequence byte (int 0–255), **max 100 entries** |
 | `occultProgression`      | `{jobs, knowledge?}` — `jobs` maps job id (digit-string key, ≤ 3 digits, no leading zeros) → `{exp: int 0–100M, level: int 0–255}`, **max 64 entries**; `knowledge` is `{level: int 0–255, observedAt: ISO 8601 UTC with a trailing Z (numeric-offset forms are a 400)}` |
 | `tamedBeasts`            | `{number: positive int, rank?: int 1–25, battlehorn?: int 1–3}[]`; unknown numbers are dropped with a warning, `0` fails validation — see the id-space bullet |
+| `achievementProgress`    | `{id: int 1–1,000,000, current: int 0–2,147,483,647, max: int 1–2,147,483,647, observedAt: ISO 8601 UTC}[]`, **max 1,000 entries**; strict — an entry with any other key is a 400 |
 | `collectionScopes`       | optional object keyed by category name, each `"full"` \| `"partial"` exactly (anything else is a 400); omitted key or object == `"partial"` |
 
 - **Unknown `collections` keys are stripped and logged, never rejected** — a plugin newer
@@ -382,7 +388,9 @@ Field constraints:
   how a knowledge sighting recorded outside an instance still reaches the server. Job writes
   are monotonic by (level, exp): a stale pair writes nothing. `occultProgression.knowledge` is
   the TRUE knowledge level from the review window (the in-instance HUD shows only the
-  zone-synced level), sent with the time the window was opened; the server keeps the
+  zone-synced level), sent with the time the window was opened. It waits for the next upload, or
+  goes within five minutes or at logout, as achievement progress does (see the `achievementProgress`
+  bullet), but goes with every upload that carries `occultProgression`; the server keeps the
   **freshest** observation across plugin and Lodestone sources, never a maximum — death
   without a raise can de-level knowledge. `occultRecords` carries `MKDLore` row ids — the
   game's `SeenLore` list IS the character's complete seen-set, readable anywhere, so the
@@ -416,6 +424,31 @@ Field constraints:
   window whose total disagrees with the game's own data at all. Until all three agree it is
   `"partial"` and an absent number means only "not seen". The server writes `plugin_acquired`
   monotonically, insert-only, stamping the upload time on first sight.
+- **`achievementProgress` source & semantics.** The game asks its server for one achievement's
+  progress when the player selects that achievement in the Achievements window; the list itself
+  carries no counts. The plugin reads the answer the client receives and **never asks for progress
+  itself**. It takes a reading only while the Achievements window is open. The game also asks on
+  its own for two Pilgrim's Traverse achievements shortly after login; their answers are dropped
+  when they land with the window shut, as they usually do. Each entry is `id`
+  (the `Achievement` sheet row), `current` and `max` exactly as the game showed them — never clamped,
+  even past the target — and `observedAt`, when the answer was seen, as second-exact UTC with a
+  trailing `Z`. A reading outside the field bounds is skipped, not clamped. The plugin holds one
+  reading per achievement, the newest, for the login session, and sends every held reading (the
+  newest 1,000, past the cap) with each upload that includes the category until a response carries
+  `storedAchievementProgress`. That upload's readings are then dropped, except one a newer reading of
+  the same achievement has replaced since; a response without the key (the store failed, or the
+  server stripped the category) leaves them held for the next upload that includes the category. A
+  new reading rides the next upload the plugin makes anyway, an `unlock` upload included, or goes
+  alone after five minutes as an `interval` upload naming only the held categories, so browsing
+  achievements spends at most twelve uploads an hour, plus one at each logout. An upload that fails,
+  unless its body was rejected (400, 405, 413) or only the user can fix it (401, 403), queues its
+  readings again as though just read. If a reading taken since the last upload that carried the
+  category is waiting when the player logs out, all held readings go up then, in one `interval`
+  upload, unless a server-requested wait or a 401/403 halt is in force or an upload is already in
+  flight. That upload is sent once and never queued again, and closing the game outright may send
+  nothing. The server weighs each reading by its `observedAt`, never the upload's time, so sending
+  an unconfirmed reading again is safe. With no reading held the category is omitted, never sent
+  empty. It never declares completeness.
 
 #### Response (200)
 
@@ -439,7 +472,8 @@ Field constraints:
   "skippedCategories": ["minions"], // present iff the server stripped disabled categories from this payload
   "storedSequences": 1, // present iff questSequences survived the strip and stored; NEW observations this upload (0 = all already known)
   "storedProgression": 3, // present iff occultProgression survived and stored; jobs whose value ADVANCED (knowledge not counted)
-  "storedRecords": 5 // present iff occultRecords survived and stored; NEW sticky rows this upload
+  "storedRecords": 5, // present iff occultRecords survived and stored; NEW sticky rows this upload
+  "storedAchievementProgress": 2 // present iff achievementProgress survived and stored; rows created, changed or confirmed
 }
 ```
 
@@ -447,9 +481,12 @@ Optional keys are **omitted rather than null**, so the plugin can feature-detect
 `items` never appears in `written` (it feeds relic proofs and count storage, not a
 collection count). The plugin reads `written` as a plain category-keyed map, so a category
 it has never heard of arrives intact and a server that names fewer causes no error.
-`itemCounts`, `storedSequences`, `storedProgression`, and `storedRecords` are
-informational, like `written`: the plugin ignores them — no plugin logic may branch on
-them.
+`itemCounts`, `storedSequences`, `storedProgression` and `storedRecords` are informational, like
+`written`: the plugin ignores them — no plugin logic may branch on them.
+`storedAchievementProgress` is the one `stored…` key the plugin acts on: its presence confirms the
+store, so the readings that upload carried are not sent again (see the `achievementProgress`
+bullet). The achievement progress store is best-effort: its failure never fails the upload, and only
+drops the key.
 
 #### Status codes
 

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using XIVShinies.SyncPlugin.Api;
 
@@ -59,6 +61,11 @@ public static class CollectSkipReasons
     public const string NotInOccultInstance = "not_in_occult_instance";
 
     /// <summary>
+    /// The collection reads only what the player opens in game, and holds nothing read this session.
+    /// </summary>
+    public const string NothingSeenYet = "nothing_seen_yet";
+
+    /// <summary>
     /// Turns a skip reason into advice for the settings window, or null if it is not worth saying.
     /// </summary>
     /// <remarks>
@@ -91,21 +98,23 @@ public static class CollectSkipReasons
             "not read — none of its groups are switched on. Tick at least one under Collections to " +
             "include it.",
 
-        // Decisions (see IsDeliberate) draw no line. "collector_error" and "sheet_unavailable" leave
-        // the user nothing to do.
+        // Skips that are no failure (see IsDeliberate) draw no line. "collector_error" and
+        // "sheet_unavailable" leave the user nothing to do.
         _ => null,
     };
 
     /// <summary>
-    /// True when the category was skipped by a decision rather than a failure: the user or the
-    /// server switched it off, or the server answered without asking for it.
+    /// True when the category was skipped for a reason that is no failure: switched off, not asked for
+    /// by the server, or nothing opened yet to read.
     /// </summary>
     /// <remarks>
     /// Neither the settings panel nor the upload log reports such a category as unread: "could not
-    /// read" beside a decision reads as a fault, and would stay there for good.
+    /// read" beside a decision reads as a fault, and would stay there for good. A collection read from a
+    /// window would draw that line every session until the player opened it.
     /// </remarks>
     /// <param name="reason">The skip reason.</param>
-    public static bool IsDeliberate(string reason) => reason is Disabled or ManifestNotOffered;
+    public static bool IsDeliberate(string reason) =>
+        reason is Disabled or ManifestNotOffered or NothingSeenYet;
 }
 
 /// <summary>
@@ -199,11 +208,17 @@ public sealed record CollectResult
     /// </remarks>
     public bool NothingReadThisPass { get; private init; }
 
+    /// <summary>
+    /// How to forget the facts sent once the website confirms storing them, or null when the facts go
+    /// with every upload.
+    /// </summary>
+    public StoreConfirmation? StoreConfirmation { get; private init; }
+
     /// <summary>The source could not be read; omit this category from the upload.</summary>
     /// <param name="reason">
     /// A short, stable, machine-readable reason, for example <c>"achievement_list_not_loaded"</c>.
-    /// The settings UI turns it into a hint, and the upload log uses it to tell a decision from a miss
-    /// (see <see cref="CollectSkipReasons.IsDeliberate"/>).
+    /// The settings UI turns it into a hint, and the upload log uses it to tell a miss from a skip that
+    /// is no failure (see <see cref="CollectSkipReasons.IsDeliberate"/>).
     /// </param>
     public static CollectResult Skipped(string reason) => new() { SkipReason = reason };
 
@@ -311,6 +326,51 @@ public sealed record CollectResult
         IReadOnlyList<ItemPossession> items,
         IReadOnlyDictionary<string, ItemSourceStatus>? sourceNotes) =>
         new() { Facts = SyncFacts.Items(items), SourceNotes = sourceNotes };
+
+    /// <summary>
+    /// Facts for the <c>achievementProgress</c> category: the progress each opened achievement showed.
+    /// </summary>
+    /// <param name="readings">The held readings.</param>
+    /// <param name="collectedDetail">See <see cref="CollectedDetail"/>; null when none.</param>
+    /// <param name="confirmedBy">
+    /// See <see cref="CategoryInfo.StoredResponseKey"/>; null sends the readings with every upload.
+    /// </param>
+    /// <param name="forgetSent">Drops the readings an upload sent, once their store is confirmed.</param>
+    /// <remarks>
+    /// Readings outside the contract (see <see cref="AchievementProgressReading.IsWithinContract"/>) are
+    /// dropped, and past <see cref="AchievementProgressReading.MaxPerUpload"/> only the newest go, since
+    /// one entry too many fails the whole upload. With nothing left this is a
+    /// <see cref="CollectSkipReasons.NothingSeenYet"/> skip rather than an empty list.
+    /// </remarks>
+    public static CollectResult AchievementProgress(
+        IReadOnlyList<AchievementProgressReading> readings,
+        string? collectedDetail = null,
+        string? confirmedBy = null,
+        Action<IReadOnlyList<AchievementProgressReading>>? forgetSent = null)
+    {
+        // The newest go; with a store confirmation, older ones go once the newest are dropped. Ordered
+        // by id after, so the upload log's fingerprint changes only when a reading does.
+        var sent = readings
+            .Where(reading => reading.IsWithinContract)
+            .OrderByDescending(reading => reading.ObservedAt)
+            .Take(AchievementProgressReading.MaxPerUpload)
+            .OrderBy(reading => reading.Id)
+            .ToList();
+
+        if (sent.Count == 0)
+            return Skipped(CollectSkipReasons.NothingSeenYet);
+
+        return new()
+        {
+            Facts = SyncFacts.AchievementProgress(sent),
+            CollectedDetail = collectedDetail,
+
+            // Bound to this upload's list, so a store forgets only what went out.
+            StoreConfirmation = confirmedBy is not null && forgetSent is not null
+                ? new StoreConfirmation(confirmedBy, () => forgetSent(sent))
+                : null,
+        };
+    }
 
     /// <summary>
     /// Facts for the <c>tamedBeasts</c> category: the beasts the character has forged a pact with.

@@ -5,10 +5,10 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.GameFonts;
 using Dalamud.Interface.ManagedFontAtlas;
-using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin.Services;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
 using XIVShinies.SyncPlugin.Onboarding;
@@ -45,8 +45,9 @@ internal sealed partial class MainWindow : Window, IDisposable
     // Bold Axis for button labels, owned here. ImGui has no font weights, so bold is its own font.
     private readonly IFontHandle buttonFont;
 
-    // Dalamud-owned and loaded in the background; never disposed here.
-    private readonly ISharedImmediateTexture mascotTexture;
+    // Asked for the mascot at each draw (see DrawSettingsHeader); the textures it hands out are
+    // Dalamud's, never disposed here.
+    private readonly ITextureProvider textureProvider;
 
     // The masthead's version. Cosmetic: uploads and the pasted diagnostic read the real one.
 #if DEBUG
@@ -126,7 +127,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         ApiClient apiClient,
         SyncManager syncManager,
         IReadOnlyList<ICollector> collectors,
-        ISharedImmediateTexture mascotTexture,
+        ITextureProvider textureProvider,
         IFontAtlas fontAtlas,
         IFontHandle iconFont,
         float baseFontSizePx,
@@ -137,7 +138,7 @@ internal sealed partial class MainWindow : Window, IDisposable
         this.configuration = configuration;
         this.syncManager = syncManager;
         this.collectors = collectors;
-        this.mascotTexture = mascotTexture;
+        this.textureProvider = textureProvider;
         this.iconFont = iconFont;
         this.pluginVersion = pluginVersion;
         this.diagnosticVersion = pluginVersion;

@@ -7,6 +7,14 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.10.0 — 2026-10-27
+
+- Sync the progress of achievements you open in game
+- Send your knowledge level within minutes, or at logout
+- Share your Crucible runs with the site, if you opt in
+- Show the mascot in the plugin's settings window
+- Point the Discord links at the current invite
+
 ## v0.9.0 — 2026-10-22
 
 - Sync your tamed beasts and each one's rank

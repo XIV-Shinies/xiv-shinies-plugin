@@ -65,7 +65,7 @@ public class CompletenessDeclarationTests
     /// </summary>
     /// <remarks>
     /// <c>tripleTriadNpcs</c> withholds for the reason beside its <see cref="CategoryInfo"/> in
-    /// <see cref="CollectorRegistry"/>. The other three never reach a factory that takes the claim; see
+    /// <see cref="CollectorRegistry"/>. The others never reach a factory that takes the claim; see
     /// <see cref="CollectResult.CompleteEnumeration"/>.
     /// </remarks>
     [Theory]
@@ -73,6 +73,7 @@ public class CompletenessDeclarationTests
     [InlineData(CategoryKeys.Items)]
     [InlineData(CategoryKeys.QuestSequences)]
     [InlineData(CategoryKeys.OccultProgression)]
+    [InlineData(CategoryKeys.AchievementProgress)]
     public void A_category_that_cannot_see_its_whole_domain_withholds_the_claim(string categoryKey)
     {
         var info = AllCategories().Single(candidate => candidate.Key == categoryKey);

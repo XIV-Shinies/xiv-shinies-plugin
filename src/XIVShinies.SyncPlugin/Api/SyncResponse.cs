@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace XIVShinies.SyncPlugin.Api;
 
@@ -46,5 +48,16 @@ public sealed record SyncResponse
     /// tell the user why a category did not sync.
     /// </summary>
     public IReadOnlyList<string>? SkippedCategories { get; init; }
+
+    /// <summary>The top-level keys no property here models, such as a store confirmation.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? UnmodeledKeys { get; init; }
+
+    /// <summary>Whether the response carries the key, among those no property here models.</summary>
+    /// <remarks>A null counts as absent, matching how the server omits a key it does not send.</remarks>
+    public bool Carries(string key) =>
+        UnmodeledKeys is { } keys
+        && keys.TryGetValue(key, out var value)
+        && value.ValueKind != JsonValueKind.Null;
 }
 

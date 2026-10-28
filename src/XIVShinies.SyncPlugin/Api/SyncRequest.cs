@@ -8,7 +8,7 @@ namespace XIVShinies.SyncPlugin.Api;
 /// <summary>What caused this upload. Serialized as a lowercase string per the contract.</summary>
 public enum SyncTrigger
 {
-    /// <summary>The periodic full-sweep safety net.</summary>
+    /// <summary>The periodic full sweep, or held facts going up on their own.</summary>
     Interval,
 
     /// <summary>A full sweep shortly after the character finished loading.</summary>
@@ -175,6 +175,28 @@ public static class SyncFacts
                 ["level"] = (int)knowledge.Level,
                 ["observedAt"] = WireTime.Format(knowledge.ObservedAt),
             };
+        }
+
+        return facts;
+    }
+
+    /// <summary>
+    /// Facts for the <c>achievementProgress</c> category: one object per reading, with exactly the
+    /// contract's four keys.
+    /// </summary>
+    /// <remarks>Built by hand so <c>observedAt</c> goes through <see cref="WireTime"/>.</remarks>
+    public static JsonNode AchievementProgress(IReadOnlyList<AchievementProgressReading> readings)
+    {
+        var facts = new JsonArray();
+        foreach (var reading in readings)
+        {
+            facts.Add(new JsonObject
+            {
+                ["id"] = reading.Id,
+                ["current"] = reading.Current,
+                ["max"] = reading.Max,
+                ["observedAt"] = WireTime.Format(reading.ObservedAt),
+            });
         }
 
         return facts;

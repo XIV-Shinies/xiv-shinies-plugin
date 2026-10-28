@@ -14,7 +14,7 @@
       The release version. The SDK copies it into the packaged manifest as "AssemblyVersion",
       normalized to four parts.
     -->
-    <Version>0.9.0</Version>
+    <Version>0.10.0</Version>
 
     <!--
       The manifest's "RepoUrl" is set in XIVShinies.SyncPlugin.json; the SDK does not derive it
@@ -49,11 +49,13 @@
   -->
 
   <!--
-    Dalamud shows a dev plugin's icon only when images/icon.png sits next to the loaded DLL, and
-    DalamudPackager takes it from there for release zips. The icon is hand-made: Dalamud's AI policy
-    disallows AI-generated icons.
+    Dalamud reads a dev plugin's icon from images/icon.png beside the loaded DLL, and uses the
+    manifest's IconUrl (the copy on main) when that file is missing or will not load. The icon is
+    hand-made: Dalamud's AI policy disallows AI-generated icons. The second item builds the
+    masthead's copy into the DLL (see PluginMeta.MascotResource).
   -->
   <ItemGroup>
     <None Include="images\icon.png" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="images\icon.png" LogicalName="XIVShinies.SyncPlugin.Mascot.png" />
   </ItemGroup>
 </Project>
