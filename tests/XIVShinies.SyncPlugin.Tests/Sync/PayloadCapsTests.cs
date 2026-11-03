@@ -1,7 +1,10 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
+using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Glamour;
 using XIVShinies.SyncPlugin.Sync;
 
 namespace XIVShinies.SyncPlugin.Tests.Sync;
@@ -154,6 +157,35 @@ public class PayloadCapsTests
         Assert.Same(collections["future"], bounded["future"]);
     }
 
+    // Glamour is read as current holdings, so a cut list would report every piece left off as gone;
+    // GlamourSnapshot withholds the whole category instead. These caps must cut only top-level arrays.
+    [Fact]
+    public void A_glamour_object_passes_through_untouched_whatever_its_inner_lists_hold()
+    {
+        var held = Enumerable.Range(1, PayloadCaps.MaxIdsPerCategory + 1)
+            .Select(i => new HeldPiece { Id = (uint)i, Place = HeldPlaces.Bags, Count = 1 })
+            .ToArray();
+        var dresser = Enumerable.Range(1, PayloadCaps.MaxEntriesPerCategory + 1)
+            .Select(i => new DresserPiece { Id = (uint)i })
+            .ToArray();
+        var glamour = SyncFacts.Glamour(new GlamourFacts { Dresser = dresser, Held = held });
+
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode> { [CategoryKeys.Glamour] = glamour },
+            Skipped = new Dictionary<string, string>(),
+            CompleteKeys = new HashSet<string>(),
+        };
+
+        var (bounded, dropped) = PayloadCaps.Bound(snapshot);
+
+        Assert.Empty(dropped);
+        Assert.Same(snapshot, bounded);
+        Assert.Same(glamour, bounded.Collections[CategoryKeys.Glamour]);
+        Assert.Equal(held.Length, glamour["held"]!.AsArray().Count);
+        Assert.Equal(dresser.Length, glamour["dresser"]!.AsArray().Count);
+    }
+
     // A truncated list is not the character's complete set (see PayloadCaps.Bound).
     [Fact]
     public void Capping_a_category_retracts_its_completeness_claim()
@@ -195,6 +227,49 @@ public class PayloadCapsTests
         var (bounded, _) = PayloadCaps.Bound(snapshot);
 
         Assert.Equal(new[] { "ornaments" }, bounded.StoreConfirmations.Keys);
+    }
+
+    // The copy a cut makes must keep everything it does not cut: the glamour object ships as read,
+    // and the container notes and single-record keys still reach the settings window and the log.
+    [Fact]
+    public void Capping_one_category_leaves_a_glamour_object_and_the_snapshots_other_keys_alone()
+    {
+        var glamour = SyncFacts.Glamour(new GlamourFacts
+        {
+            Dresser = new[] { new DresserPiece { Id = 2642 } },
+            Held = new[] { new HeldPiece { Id = 2965, Place = HeldPlaces.Bags, Count = 1 } },
+        });
+        var sourceNotes = new Dictionary<string, ItemSourceStatus>
+        {
+            [SourceKeys.Inventory] = new ItemSourceStatus { State = SourceStates.Live },
+        };
+        var singleRecordKeys = new HashSet<string> { CategoryKeys.Appearance };
+
+        var snapshot = new CollectionSnapshot
+        {
+            Collections = new Dictionary<string, JsonNode>
+            {
+                [CategoryKeys.Glamour] = glamour,
+                ["facewear"] = EntryArray(PayloadCaps.MaxEntriesPerCategory + 1),
+            },
+            Skipped = new Dictionary<string, string>(),
+            StoreConfirmations = new Dictionary<string, StoreConfirmation>
+            {
+                ["facewear"] = new("storedFacewear", () => { }),
+            },
+            SourceNotes = sourceNotes,
+            SingleRecordKeys = singleRecordKeys,
+        };
+
+        var (bounded, dropped) = PayloadCaps.Bound(snapshot);
+
+        Assert.Equal("facewear", Assert.Single(dropped).CategoryKey);
+        Assert.Empty(bounded.StoreConfirmations);
+        Assert.Same(glamour, bounded.Collections[CategoryKeys.Glamour]);
+        Assert.Same(sourceNotes, bounded.SourceNotes);
+        Assert.Equal(SourceStates.Live, Assert.Single(bounded.SourceNotes).Value.State);
+        Assert.Same(singleRecordKeys, bounded.SingleRecordKeys);
+        Assert.Equal(new[] { CategoryKeys.Appearance }, bounded.SingleRecordKeys);
     }
 
     // One over-cap category must not disarm the upload's other declarations.

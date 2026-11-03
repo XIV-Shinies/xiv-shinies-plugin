@@ -33,11 +33,20 @@ public class ManifestConsentTests
 
         public bool UsesItemManifest { get; }
 
+        // AutoEnableCandidates reads this through CollectorGate.
+        public bool RequiresServerSupport { get; init; }
+
+        // ManifestConsent never reads these; the interface requires them.
+        public bool IsSingleRecord { get; init; }
+
+        public bool ReadsStorage { get; init; }
+
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] { 1 });
     }
 
     // The one no-click consent path depends on leaving out a category whose groups the user answers
-    // separately; ManifestConsent.FixedScopeCategoryKeys explains why.
+    // separately; ManifestConsent.FixedScopeCategoryKeys explains why. Reading storage or waiting for
+    // the server to name it gives a collection no groups, so the answer still reaches it.
     [Fact]
     public void Only_categories_a_tick_settles_on_their_own_have_a_fixed_scope()
     {
@@ -46,9 +55,14 @@ public class ManifestConsentTests
             new FakeCollector("quests", usesItemManifest: false),
             new FakeCollector("items", usesItemManifest: true),
             new FakeCollector("orchestrionRolls", usesItemManifest: false),
+            new FakeCollector(UnknownCategory, usesItemManifest: false)
+            {
+                ReadsStorage = true,
+                RequiresServerSupport = true,
+            },
         });
 
-        Assert.Equal(new[] { "quests", "orchestrionRolls" }, keys);
+        Assert.Equal(new[] { "quests", "orchestrionRolls", UnknownCategory }, keys);
     }
 
     [Fact]
@@ -58,6 +72,149 @@ public class ManifestConsentTests
         {
             new FakeCollector("items", usesItemManifest: true),
         }));
+    }
+
+    private static ConfigResponse Remote(
+        IReadOnlyDictionary<string, bool> categories, bool enabled = true) => new()
+    {
+        Categories = new Dictionary<string, bool>(categories),
+        Enabled = enabled,
+        Intervals = new ConfigIntervals { FullSyncMinutes = 30, UnlockDebounceSeconds = 5 },
+        ItemManifest = Array.Empty<uint>(),
+        ManifestVersion = "abc",
+    };
+
+    private static ICollector[] OrdinaryAndNeedingNaming() => new ICollector[]
+    {
+        new FakeCollector("quests", usesItemManifest: false),
+        new FakeCollector(UnknownCategory, usesItemManifest: false) { RequiresServerSupport = true },
+    };
+
+    private static PluginSettings OnboardedWithStandingAnswer()
+    {
+        var settings = new PluginSettings { OnboardingComplete = true, AutoEnableNewFeatures = true };
+        settings.MarkCategoriesSeen(new[] { "seenEarlier" });
+        return settings;
+    }
+
+    [Fact]
+    public void Before_any_config_the_standing_answer_skips_a_collection_awaiting_its_naming()
+    {
+        var keys = ManifestConsent.AutoEnableCandidates(OrdinaryAndNeedingNaming(), remoteConfig: null);
+
+        Assert.Equal(new[] { "quests" }, keys);
+    }
+
+    [Fact]
+    public void A_collection_the_website_offers_is_within_the_standing_answer()
+    {
+        var keys = ManifestConsent.AutoEnableCandidates(
+            OrdinaryAndNeedingNaming(), Remote(new Dictionary<string, bool> { [UnknownCategory] = true }));
+
+        Assert.Contains(UnknownCategory, keys);
+    }
+
+    // A closed feature flag reads this way: the website names the collection, switched off.
+    [Fact]
+    public void A_collection_named_off_is_outside_the_standing_answer()
+    {
+        var keys = ManifestConsent.AutoEnableCandidates(
+            OrdinaryAndNeedingNaming(), Remote(new Dictionary<string, bool> { [UnknownCategory] = false }));
+
+        Assert.DoesNotContain(UnknownCategory, keys);
+    }
+
+    [Fact]
+    public void A_collection_left_unnamed_is_outside_the_standing_answer()
+    {
+        var keys = ManifestConsent.AutoEnableCandidates(
+            OrdinaryAndNeedingNaming(), Remote(new Dictionary<string, bool>()));
+
+        Assert.DoesNotContain(UnknownCategory, keys);
+    }
+
+    [Fact]
+    public void Nothing_is_within_the_standing_answer_while_syncing_is_paused()
+    {
+        var keys = ManifestConsent.AutoEnableCandidates(
+            OrdinaryAndNeedingNaming(),
+            Remote(new Dictionary<string, bool> { [UnknownCategory] = true }, enabled: false));
+
+        Assert.Empty(keys);
+    }
+
+    [Fact]
+    public void A_collection_with_separate_groups_is_outside_the_standing_answer_even_when_offered()
+    {
+        var keys = ManifestConsent.AutoEnableCandidates(
+            new ICollector[] { new FakeCollector("items", usesItemManifest: true) },
+            Remote(new Dictionary<string, bool> { ["items"] = true }));
+
+        Assert.Empty(keys);
+    }
+
+    [Fact]
+    public void A_collection_stores_no_answer_until_the_website_offers_it()
+    {
+        var settings = OnboardedWithStandingAnswer();
+        var collectors = OrdinaryAndNeedingNaming();
+
+        settings.AutoEnableUnseenCategories(ManifestConsent.AutoEnableCandidates(collectors, null));
+        settings.AutoEnableUnseenCategories(ManifestConsent.AutoEnableCandidates(
+            collectors, Remote(new Dictionary<string, bool> { [UnknownCategory] = false })));
+
+        Assert.False(settings.EnabledCategories.ContainsKey(UnknownCategory));
+
+        var enabled = settings.AutoEnableUnseenCategories(ManifestConsent.AutoEnableCandidates(
+            collectors, Remote(new Dictionary<string, bool> { [UnknownCategory] = true })));
+
+        Assert.Contains(UnknownCategory, enabled);
+        Assert.True(settings.IsCategoryEnabled(UnknownCategory));
+    }
+
+    // Nothing was stored while it was not offered, so taking the answer back beforehand holds.
+    [Fact]
+    public void Unticking_the_standing_answer_before_the_offer_keeps_the_collection_off()
+    {
+        var settings = OnboardedWithStandingAnswer();
+        var collectors = OrdinaryAndNeedingNaming();
+
+        settings.AutoEnableUnseenCategories(ManifestConsent.AutoEnableCandidates(collectors, null));
+        settings.AutoEnableNewFeatures = false;
+
+        settings.AutoEnableUnseenCategories(ManifestConsent.AutoEnableCandidates(
+            collectors, Remote(new Dictionary<string, bool> { [UnknownCategory] = true })));
+
+        Assert.False(settings.IsCategoryEnabled(UnknownCategory));
+    }
+
+    [Fact]
+    public void An_ordinary_collection_is_within_the_standing_answer_unless_named_off()
+    {
+        var collectors = OrdinaryAndNeedingNaming();
+
+        Assert.Contains("quests", ManifestConsent.AutoEnableCandidates(
+            collectors, Remote(new Dictionary<string, bool>())));
+        Assert.DoesNotContain("quests", ManifestConsent.AutoEnableCandidates(
+            collectors, Remote(new Dictionary<string, bool> { ["quests"] = false })));
+    }
+
+    [Fact]
+    public void A_collection_already_shown_keeps_its_answer_when_the_website_offers_it()
+    {
+        var settings = OnboardedWithStandingAnswer();
+        settings.MarkCategoriesSeen(new[] { "quests", UnknownCategory });
+
+        Assert.Empty(settings.AutoEnableUnseenCategories(ManifestConsent.AutoEnableCandidates(
+            OrdinaryAndNeedingNaming(), Remote(new Dictionary<string, bool> { [UnknownCategory] = true }))));
+    }
+
+    [Fact]
+    public void The_log_line_names_each_collection_switched_on()
+    {
+        var note = ManifestConsent.AutoEnabledNote(new[] { "quests", UnknownCategory });
+
+        Assert.Contains($"quests, {UnknownCategory}", note);
     }
 
     [Fact]

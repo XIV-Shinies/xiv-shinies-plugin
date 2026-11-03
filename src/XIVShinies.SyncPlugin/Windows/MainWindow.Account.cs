@@ -96,8 +96,12 @@ internal sealed partial class MainWindow
             {
                 // Saved before the probe, since the API client reads it from the settings. Saving it
                 // unverified is safe: nothing uploads before onboarding or with the master switch off.
+                var tokenChanged = configuration.Settings.Token != tokenInput;
                 configuration.Settings.Token = tokenInput;
                 configuration.Save();
+
+                if (tokenChanged)
+                    syncManager.NotifyTokenChanged();
 
                 onboarding.BeginTokenCheck();
                 verifier.Start();

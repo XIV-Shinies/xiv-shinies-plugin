@@ -82,9 +82,16 @@ internal sealed class SyncManager : IDisposable
     // The settings window's upload log. In memory only; see UploadLog for why.
     private readonly UploadLog uploadLog = new();
 
-    // True once this load's first /config poll has answered, successfully or not. Sweeps wait for
-    // it; see OnFrameworkUpdate.
+    // True once a /config poll for the current token has answered, successfully or not. Sweeps wait
+    // for it; see OnFrameworkUpdate.
     private volatile bool firstConfigAnswerSeen;
+
+    /// <summary>
+    /// Counts saved token changes, so a <c>/config</c> answer for a replaced token is dropped (see
+    /// <see cref="NotifyTokenChanged"/>).
+    /// </summary>
+    /// <remarks>Written only on the framework thread and read by the poll task.</remarks>
+    private volatile int tokenGeneration;
 
     /// <summary>Canceled on unload, so work in flight stops instead of using disposed state.</summary>
     private readonly CancellationTokenSource lifetime = new();
@@ -110,7 +117,7 @@ internal sealed class SyncManager : IDisposable
     // - A queued delegate still runs after Dispose has begun, so each checks lifetimeToken first.
     //   Nothing awaits the queued and background tasks, and none lets an exception escape.
 
-    /// <summary>The most recent <c>/config</c>, or null until the first poll succeeds.</summary>
+    /// <summary>The most recent <c>/config</c> for the current token, or null until one succeeds.</summary>
     private volatile ConfigResponse? remoteConfig;
 
     /// <summary>True while an upload is in flight, so the framework thread never starts a second.</summary>
@@ -148,8 +155,8 @@ internal sealed class SyncManager : IDisposable
     /// answers.
     /// </summary>
     /// <remarks>
-    /// Separate from <see cref="firstConfigAnswerSeen"/>, which latches for the whole load, so a second
-    /// Verify press after pasting a different token still waits.
+    /// Separate from <see cref="firstConfigAnswerSeen"/>, which latches until the token changes, so a
+    /// second Verify press after pasting a different token still waits.
     /// </remarks>
     private volatile bool onboardingConfigPending;
 
@@ -482,7 +489,7 @@ internal sealed class SyncManager : IDisposable
         var collectable = new List<ICollector>(collectors.Count);
         foreach (var collector in collectors)
         {
-            if (CollectorGate.IsEnabled(collector.CategoryKey, settings, config))
+            if (CollectorGate.IsEnabled(collector, settings, config))
                 collectable.Add(collector);
         }
 
@@ -686,6 +693,31 @@ internal sealed class SyncManager : IDisposable
             }
 
             scheduler.Request(SyncTrigger.Manual, now);
+        });
+    }
+
+    /// <summary>
+    /// Forgets the <c>/config</c> fetched for the previous token and holds sweeps until the new token's
+    /// answers. Called when the user saves a different token.
+    /// </summary>
+    /// <remarks>
+    /// <c>/config</c> answers for the token's account, so the old answer could let a collection the
+    /// new account has not been offered be read and sent.
+    /// </remarks>
+    public void NotifyTokenChanged()
+    {
+        // Marshaled, because it writes framework-thread fields.
+        _ = framework.RunOnFrameworkThread(() =>
+        {
+            if (lifetimeToken.IsCancellationRequested)
+                return;
+
+            tokenGeneration++;
+            remoteConfig = null;
+            firstConfigAnswerSeen = false;
+
+            // Due now; a poll still in flight for the old token delays it until that one ends.
+            nextConfigPollAt = null;
         });
     }
 
@@ -942,8 +974,8 @@ internal sealed class SyncManager : IDisposable
 
         CaptureIdentityIfSettled(now);
 
-        // Hold sweeps until this load's first config poll answers, either way, or the first sweep has no
-        // item manifest and skips items. The trigger stays queued, so this costs one config round trip.
+        // Hold sweeps until the current token's first config poll answers, either way, or the first sweep
+        // has no item manifest and skips items. The trigger stays queued, so this costs one round trip.
         if (remoteConfig is null && !firstConfigAnswerSeen)
             return;
 
@@ -1074,12 +1106,11 @@ internal sealed class SyncManager : IDisposable
 
             LogCollectionCost(snapshot, due.Trigger);
 
-            // The full facts as shipped, for checking values and not just counts. They stay local in
-            // /xllog, and the user already consented to uploading them. Verbose, not Debug: a quests line
-            // is tens of kilobytes. With Verbose off, the level check skips serializing them on the
-            // framework thread.
+            // The full facts as shipped, for checking values: local to /xllog and consented to for upload.
+            // Verbose, not Debug: a quests line is tens of kilobytes, and a glamour line can name retainers.
             if (log.MinimumLogLevel <= LogEventLevel.Verbose)
             {
+                // Inside the check, so with Verbose off the facts are not serialized for this dump.
                 foreach (var (categoryKey, facts) in snapshot.Collections)
                     log.Verbose($"{due.Trigger} facts for {categoryKey}: {facts.ToJsonString()}");
             }
@@ -1360,6 +1391,15 @@ internal sealed class SyncManager : IDisposable
                 log.Information($"Server skipped: {names}");
             }
 
+            // Categories the server dropped as malformed. The upload log still lists them as sent, so
+            // this line is the only sign that the plugin and the server disagree on a shape.
+            var rejected = response.Value?.RejectedCategories;
+            if (rejected is {Count: > 0}
+                && ServerText.SingleLine(string.Join(", ", rejected)) is { } rejectedNames)
+            {
+                log.Information($"Server rejected: {rejectedNames}");
+            }
+
             return true;
         }
 
@@ -1481,13 +1521,18 @@ internal sealed class SyncManager : IDisposable
         // No token: an already-canceled one would make Task.Run skip the delegate, stranding
         // configPollInFlight at true.
         var startedFor = sessionGeneration;
-        _ = Task.Run(() => PollConfigAsync(startedFor, pollNumber));
+        var tokenFor = tokenGeneration;
+        _ = Task.Run(() => PollConfigAsync(startedFor, tokenFor, pollNumber));
     }
 
     /// <param name="startedFor">The session generation this poll belongs to.</param>
+    /// <param name="tokenFor">The token generation this poll asked with.</param>
     /// <param name="pollNumber">This poll's number, counting polls from 1 as they start.</param>
-    private async Task PollConfigAsync(int startedFor, int pollNumber)
+    private async Task PollConfigAsync(int startedFor, int tokenFor, int pollNumber)
     {
+        // An answer for a replaced token is dropped whole: its switches belong to another account.
+        bool ForCurrentToken() => tokenFor == tokenGeneration;
+
         // The finally reads this to choose the full interval or the short retry, so every exit follows
         // one rule.
         var answered = false;
@@ -1500,6 +1545,14 @@ internal sealed class SyncManager : IDisposable
         {
             var response = await apiClient.GetConfigAsync(lifetimeToken).ConfigureAwait(false);
 
+            // Counted as answered, so the finally does not push back the new token's poll, which is
+            // already due.
+            if (!ForCurrentToken())
+            {
+                answered = true;
+                return;
+            }
+
             // A refusal only the user can fix is an answer too: the short retry is for a poll that could
             // not reach the server, and asking again sooner only repeats the question.
             answered = response.IsSuccess || RetryPolicy.RequiresUserAction(response.Status);
@@ -1509,6 +1562,11 @@ internal sealed class SyncManager : IDisposable
                 // Applied even after a logout: the config describes the server and token, not the
                 // character.
                 var config = response.Value!;
+
+                // Before the config goes up: a frame drawing a row as offered marks it shown, and a
+                // shown collection keeps its answer. An older config still refuses one awaiting its naming.
+                var autoEnabled = settings.AutoEnableUnseenCategories(
+                    ManifestConsent.AutoEnableCandidates(collectors, config));
 
                 remoteConfig = config;
 
@@ -1523,12 +1581,19 @@ internal sealed class SyncManager : IDisposable
                 // and losing that race delays one upload.
                 _ = framework.RunOnFrameworkThread(() =>
                 {
-                    // At teardown the migration waits for the next load's first poll.
+                    // At teardown the save and the migration wait for the next load's first poll.
                     if (lifetimeToken.IsCancellationRequested)
                         return;
 
                     try
                     {
+                        if (autoEnabled.Count > 0)
+                        {
+                            // The trace first: a save that throws must not lose it.
+                            log.Information(ManifestConsent.AutoEnabledNote(autoEnabled));
+                            saveSettings();
+                        }
+
                         // Past onboarding only (see PluginSettings.SettleItemGroupConsent), and never on an
                         // empty groups array, which would burn the one-time flag before real groups arrive.
                         if (settings.OnboardingComplete
@@ -1543,7 +1608,7 @@ internal sealed class SyncManager : IDisposable
                     catch (Exception ex)
                     {
                         // A last-resort net for a discarded task; see UploadAsync.
-                        log.Error(ex, "Item group consent migration failed.");
+                        log.Error(ex, "Applying the config's consent changes failed.");
                     }
                 });
 
@@ -1579,9 +1644,10 @@ internal sealed class SyncManager : IDisposable
         }
         finally
         {
-            // Any answer, even a failure or cancellation, releases the first-sweep hold. The upload
-            // will surface whatever is wrong with the server.
-            firstConfigAnswerSeen = true;
+            // Any answer for the current token, even a failure or cancellation, releases the
+            // first-sweep hold. The upload will surface whatever is wrong with the server.
+            if (ForCurrentToken())
+                firstConfigAnswerSeen = true;
 
             // Any answer ends the wizard's wait; see OnboardingConfigPending.
             onboardingConfigPending = false;

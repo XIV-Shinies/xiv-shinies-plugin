@@ -72,7 +72,7 @@ public class SourceNoteTextTests
     }
 
     // Cached is the saddlebag's healthy resting state, so it is a chip. The detail names the premium
-    // saddlebag, which shares this key.
+    // saddlebag, which shares this key, and the no-companion case (see SourceNoteText.Describe).
     [Fact]
     public void A_cached_saddlebag_is_a_chip_with_the_refresh_hint_in_its_detail()
     {
@@ -83,7 +83,7 @@ public class SourceNoteTextTests
         Assert.Null(note.Text);
         Assert.Equal(
             "Read from cache, including the premium saddlebag — open it once in game to refresh " +
-            "as needed.",
+            "as needed. Without a chocobo companion there is no saddlebag, so it reads as empty.",
             note.Detail);
     }
 

@@ -71,6 +71,44 @@ public sealed record CategoryInfo
     public bool EnumeratesCompleteDomain { get; init; }
 
     /// <summary>
+    /// True when this collection is read and sent only once the server's <c>/config</c> names it in its
+    /// category map and switches it on.
+    /// </summary>
+    /// <remarks>
+    /// False, the default, reads a key the map never names as on: the server drops payload keys it does
+    /// not know, so an unknown collection costs a few bytes. Set it for a collection worth sending only
+    /// to a server that stores it, one whose snapshot is large or whose record would be a disclosure for
+    /// nothing; <c>SelfDescriptionDeclarationTests</c> pins which collections set it. Until the server
+    /// names it, <see cref="CollectorGate.ServerPermits"/> keeps it unread and unsent, and the settings
+    /// window draws it as unavailable (see <see cref="CategorySettingsRow.NotOfferedByServer"/>).
+    /// </remarks>
+    public bool RequiresServerSupport { get; init; }
+
+    /// <summary>
+    /// True when the facts are one record about the character rather than a collection of things, so
+    /// the upload log names the category without a count.
+    /// </summary>
+    /// <remarks>
+    /// A record has no "how many": counted from its shape it would show its number of fields, which moves
+    /// with the payload's layout rather than anything the player did, and even a count of one reads as
+    /// "one of something". The record's fingerprint still drives the log's "(changed)" mark.
+    /// <c>SelfDescriptionDeclarationTests</c> pins which collections set it.
+    /// </remarks>
+    public bool IsSingleRecord { get; init; }
+
+    /// <summary>
+    /// True when the facts come from the character's storage containers (inventory, saddlebag,
+    /// retainers, Armoire, Glamour Dresser) and each pass reports their scan state.
+    /// </summary>
+    /// <remarks>
+    /// While such a collection is on, the "Reading from:" panel lists each container, whether it could
+    /// be read and, when not, which window to open (see <see cref="ReadStatusView.Build"/>). Separate
+    /// from <see cref="UsesItemManifest"/>: a collection can read storage without the item manifest
+    /// scoping it. <c>SelfDescriptionDeclarationTests</c> pins which collections set it.
+    /// </remarks>
+    public bool ReadsStorage { get; init; }
+
+    /// <summary>
     /// True when the game announces each new entry the moment it is earned, so the plugin uploads it
     /// within seconds instead of on the scheduled sweep. The sync card reads it to decide whether to
     /// promise that; false only withholds the promise.

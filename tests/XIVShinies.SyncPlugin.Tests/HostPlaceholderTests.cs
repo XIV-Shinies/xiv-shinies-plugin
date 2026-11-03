@@ -26,8 +26,8 @@ public class HostPlaceholderTests
         Assert.Equal("Nothing to fill.", HostPlaceholder.Fill("Nothing to fill.", Host));
     }
 
-    // A brace left after Fill is a misspelled placeholder, such as "{Host}", that would reach the
-    // player. No disclosure calls the website "server". The registry scan covers later collections.
+    // A brace left after Fill is a misspelled placeholder, such as "{Host}", that would reach the player.
+    // No disclosure says "server" or the brand name, wrong on another backend. New collections are covered.
     [Fact]
     public void Every_collection_disclosure_fills_to_plain_text_without_server()
     {
@@ -40,6 +40,7 @@ public class HostPlaceholderTests
                 Assert.DoesNotContain("{", filled);
                 Assert.DoesNotContain("}", filled);
                 Assert.DoesNotContain("server", filled, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("XIV Shinies", filled, StringComparison.OrdinalIgnoreCase);
             }
         }
     }

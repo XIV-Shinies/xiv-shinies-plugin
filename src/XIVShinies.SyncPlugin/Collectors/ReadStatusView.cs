@@ -10,7 +10,8 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </summary>
 /// <remarks>
 /// A collection line answers "can the sync see this collection at all?"; a container line answers
-/// "where did the item counts come from?". Two lists keep them apart without relying on order.
+/// "which of my storage locations could the sync see?". Two lists keep them apart without relying on
+/// order.
 /// </remarks>
 public sealed record ReadStatus
 {
@@ -18,8 +19,8 @@ public sealed record ReadStatus
     public required IReadOnlyList<SourceNote> Collections { get; init; }
 
     /// <summary>
-    /// One line per storage container the item pass looked at (inventory, saddlebag, armoire and so
-    /// on), in the order the pass reported them.
+    /// One line per storage container the storage-reading collections looked at (inventory, saddlebag,
+    /// armoire and so on), in the order the pass reported them.
     /// </summary>
     public required IReadOnlyList<SourceNote> Containers { get; init; }
 }
@@ -45,8 +46,8 @@ public static class ReadStatusView
     /// than a decision.
     /// </param>
     /// <param name="sourceNotes">
-    /// Per-container scan status from the latest item pass, keyed by <see cref="SourceKeys"/>. Empty
-    /// before any pass has looked at the item sources.
+    /// Per-container scan status from the latest pass that looked at the storage containers, keyed
+    /// by <see cref="SourceKeys"/>. Empty before any pass has looked at them.
     /// </param>
     /// <param name="host">
     /// The configured website's address. Lines that name the website use it, and it fills a
@@ -60,20 +61,20 @@ public static class ReadStatusView
         var collections = new List<SourceNote>(rows.Count);
         var containers = new List<SourceNote>(sourceNotes.Count);
 
-        // Containers are read only for a manifest-driven collection. With every such collection off,
+        // Containers are read only for a collection that reads storage. With every such collection off,
         // their lines would urge the user to open a saddlebag nothing is scanning.
-        var anyManifestCollectionOn = false;
+        var anyStorageCollectionOn = false;
         foreach (var row in rows)
         {
-            if (row.UsesItemManifest && row.IsEffectivelyOn)
+            if (row.ReadsStorage && row.IsEffectivelyOn)
             {
-                anyManifestCollectionOn = true;
+                anyStorageCollectionOn = true;
                 break;
             }
         }
 
         // Containers first: DescribeCollection's manifest-driven rule needs to know if any line resulted.
-        if (anyManifestCollectionOn)
+        if (anyStorageCollectionOn)
         {
             foreach (var (sourceKey, status) in sourceNotes)
             {
@@ -122,8 +123,9 @@ public static class ReadStatusView
     /// <see cref="CollectSkipReasons.IsDeliberate"/>), and for a healthy manifest-driven collection
     /// while the panel has a container line, because its facts are the container counts; with no
     /// container line, dropping it would leave the panel silent about a collection the user switched
-    /// on. A missed manifest-driven collection always keeps its line, because its reason appears
-    /// nowhere else.
+    /// on. A collection that reads the containers without being manifest-driven keeps its chip, since
+    /// its facts are more than those counts, and a missed manifest-driven collection always keeps its
+    /// line, because its reason appears nowhere else.
     /// </remarks>
     /// <param name="row">The category row this line is about.</param>
     /// <param name="hasContainerLines">

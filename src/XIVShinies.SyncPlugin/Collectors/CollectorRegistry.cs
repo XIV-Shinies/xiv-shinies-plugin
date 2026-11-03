@@ -26,6 +26,7 @@ public static class CollectorRegistry
     private const string TripleTriadSection = "Triple Triad";
     private const string ItemsSection = "Items & relics";
     private const string LimitedJobsSection = "Limited jobs";
+    private const string GlamourSection = "Glamour";
 
     /// <summary>
     /// The Occult Crescent section's heading. Public because the wizard files the live tracker, which
@@ -210,6 +211,9 @@ public static class CollectorRegistry
 
         // The only collection scoped by the server's item manifest, so it gets per-group consent rows.
         UsesItemManifest = true,
+
+        // Counts come from the storage containers, so the settings panel shows their scan state.
+        ReadsStorage = true,
     };
 
     private static readonly CategoryInfo OccultProgression = new()
@@ -270,6 +274,59 @@ public static class CollectorRegistry
         EnumeratesCompleteDomain = true,
     };
 
+    private static readonly CategoryInfo Glamour = new()
+    {
+        Key = CategoryKeys.Glamour,
+        DisplayName = "Gear & glamour storage",
+        Section = GlamourSection,
+
+        // Names every kind of data sent (see GlamourFacts): copy counts, which "the gear you hold" would
+        // not disclose, retainer names and market listings, and the source notes as storage locations.
+        WhatGetsSent =
+            "The gear you hold: copies, quality, dyes and where each piece is kept, down to the " +
+            "retainer or its market listings. Plus which storage locations could be read, and your " +
+            "retainers' names and number.",
+
+        // Hover elaboration only: when each place is read (an unopened dresser looks like a broken sync)
+        // and how "which retainer" travels. Wording and spelling match SourceNoteText and the skip hint.
+        Details =
+            "Bags, equipped gear and armoury chest: every full sync. Glamour Dresser, Armoire and " +
+            "saddlebag: once opened and closed this session. Retainers: the game's saved copy; " +
+            "their names and the last-summoned one's market listings need a Summoning Bell this " +
+            "session. Each retainer goes as a one-way fingerprint, never its ID. Nothing is read " +
+            "while a storage window is open, and only your own character is read.",
+
+        // The snapshot is large and read as current holdings, so it waits for a server that names it.
+        RequiresServerSupport = true,
+
+        // Read from the same containers as items. A dresser or saddlebag not opened this session is
+        // missing, so the container lines saying which window to open matter here too.
+        ReadsStorage = true,
+    };
+
+    private static readonly CategoryInfo Appearance = new()
+    {
+        Key = CategoryKeys.Appearance,
+        DisplayName = "Character appearance",
+        Section = GlamourSection,
+
+        // Names all three kinds of data. The wire carries which glasses, not merely whether any are worn.
+        WhatGetsSent =
+            "Your character creator appearance, the glasses you wear, and your display settings.",
+
+        // Details the three kinds the visible line names, so it belongs in the hover. It names only
+        // the full syncs: an unlock's upload carries just the unlocked collection, never this one.
+        Details =
+            "Race, clan, gender, face, hair, eyes, colors and body, and whether your weapon, " +
+            "headgear, visor, Viera ears and Free Company crest show. Read from your own character " +
+            "on every full sync, so " + HostPlaceholder.Token + " can draw you as you are.",
+
+        // Sent to a server that does not store appearances, the record would be a disclosure for nothing.
+        RequiresServerSupport = true,
+
+        IsSingleRecord = true,
+    };
+
     /// <summary>Creates every collector, in the order they will be run.</summary>
     /// <param name="dataManager">Dalamud's game data accessor.</param>
     /// <param name="unlockState">Dalamud's local-player unlock state.</param>
@@ -283,13 +340,22 @@ public static class CollectorRegistry
     /// <param name="achievementProgressObserver">
     /// The passive progress capture the achievement progress collector reads.
     /// </param>
+    /// <param name="gameGui">
+    /// The game's windows, which the glamour collector checks for an open storage window before it reads.
+    /// </param>
+    /// <param name="condition">
+    /// The game's condition flags, which the glamour collector checks for a summoning bell in use before
+    /// it reads.
+    /// </param>
     public static IReadOnlyList<ICollector> Create(
         IDataManager dataManager,
         IUnlockState unlockState,
         IFramework framework,
         KnowledgeObserver knowledgeObserver,
         TamedBeastObserver tamedBeastObserver,
-        AchievementProgressObserver achievementProgressObserver) =>
+        AchievementProgressObserver achievementProgressObserver,
+        IGameGui gameGui,
+        ICondition condition) =>
         new ICollector[]
         {
             // The server stores Quest row ids, so no mapping is needed.
@@ -357,5 +423,12 @@ public static class CollectorRegistry
             // Counts rather than ids, for the items the server's manifest names; the runner treats
             // it like any other.
             new ItemCollector(Items, dataManager, framework),
+
+            // Current holdings, not a list that only grows, read from the same storage as items. See
+            // GlamourCollector for when it skips a pass.
+            new GlamourCollector(Glamour, dataManager, framework, gameGui, condition),
+
+            // Reads the character itself, not a container; a transformed character is skipped.
+            new AppearanceCollector(Appearance, framework),
         };
 }

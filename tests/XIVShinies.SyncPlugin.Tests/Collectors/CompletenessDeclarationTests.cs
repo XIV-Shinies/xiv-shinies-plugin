@@ -74,6 +74,8 @@ public class CompletenessDeclarationTests
     [InlineData(CategoryKeys.QuestSequences)]
     [InlineData(CategoryKeys.OccultProgression)]
     [InlineData(CategoryKeys.AchievementProgress)]
+    [InlineData(CategoryKeys.Glamour)]
+    [InlineData(CategoryKeys.Appearance)]
     public void A_category_that_cannot_see_its_whole_domain_withholds_the_claim(string categoryKey)
     {
         var info = AllCategories().Single(candidate => candidate.Key == categoryKey);

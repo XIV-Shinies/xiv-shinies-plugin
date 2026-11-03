@@ -51,6 +51,15 @@ public sealed unsafe class OccultRecordsCollector : ICollector
     /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
 
+    /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
     // Ignores the context: no server manifest scopes this collection.
     /// <inheritdoc/>
     public CollectResult Collect(CollectContext context)

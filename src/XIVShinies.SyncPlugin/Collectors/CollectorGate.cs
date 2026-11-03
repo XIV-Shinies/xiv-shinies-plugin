@@ -13,44 +13,72 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// </remarks>
 public static class CollectorGate
 {
-    /// <summary>True when this category may be collected right now.</summary>
-    /// <param name="categoryKey">The collector's category key.</param>
+    /// <summary>True when this collector's category may be collected right now.</summary>
+    /// <param name="collector">
+    /// The collector asking. Its key names the switches, and its own
+    /// <see cref="ICollector.RequiresServerSupport"/> decides how the server's switch is read.
+    /// </param>
     /// <param name="settings">The user's persisted choices.</param>
     /// <param name="remoteConfig">
     /// The most recent <c>/config</c> response, or null when it has not been fetched yet.
     /// </param>
-    public static bool IsEnabled(string categoryKey, PluginSettings settings, ConfigResponse? remoteConfig)
+    /// <remarks>
+    /// The user's half is <see cref="IsCapturePermitted"/>, the same question a window's capture asks,
+    /// and the server's half is <see cref="ServerPermits"/>.
+    /// </remarks>
+    public static bool IsEnabled(
+        ICollector collector, PluginSettings settings, ConfigResponse? remoteConfig) =>
+        IsCapturePermitted(collector.CategoryKey, settings) && ServerPermits(collector, remoteConfig);
+
+    /// <summary>Whether the server's half of the gate permits this collector's category.</summary>
+    /// <param name="collector">
+    /// The collector asking. Its key names the server's switch, and its own
+    /// <see cref="ICollector.RequiresServerSupport"/> declaration decides whether a switch the
+    /// server never sent counts as on (false) or off (true).
+    /// </param>
+    /// <param name="remoteConfig">
+    /// The most recent <c>/config</c> response, or null when it has not been fetched yet.
+    /// </param>
+    /// <remarks>
+    /// Takes the collector rather than its key, so no caller can ask about a category without its
+    /// declaration. Public because the settings window draws the server's answer beside the user's own
+    /// choice on every row.
+    /// </remarks>
+    public static bool ServerPermits(ICollector collector, ConfigResponse? remoteConfig)
     {
-        // Nothing is collected before the user has seen what gets sent and opted in (a Dalamud rule).
-        if (!settings.MasterEnabled || !settings.OnboardingComplete)
-            return false;
+        var categoryKey = collector.CategoryKey;
+        var requiresServerSupport = collector.RequiresServerSupport;
 
-        if (!settings.IsCategoryEnabled(categoryKey))
-            return false;
-
-        // Proceed without /config: the server strips disabled categories and answers 503 while syncing
-        // is off anyway, and refusing would strand the plugin whenever /config is unreachable.
+        // Without /config an ordinary collection proceeds: the server still strips or refuses what it has
+        // off, and refusing would strand an offline plugin. One needing server support waits to be named.
         if (remoteConfig is null)
-            return true;
+            return !requiresServerSupport;
 
         if (!remoteConfig.Enabled)
             return false;
 
-        return remoteConfig.IsCategoryEnabled(categoryKey);
+        // See ConfigResponse for why the two read a missing key differently.
+        return requiresServerSupport
+            ? remoteConfig.IsCategoryExplicitlyEnabled(categoryKey)
+            : remoteConfig.IsCategoryEnabled(categoryKey);
     }
 
     /// <summary>
-    /// Whether a collection may capture a fact into memory, before any upload is in sight.
+    /// Whether the user's own switches let a collection capture facts, into memory or an upload.
     /// </summary>
-    /// <param name="categoryKey">The collection asking.</param>
+    /// <param name="categoryKey">
+    /// The collection asking. A key is enough: the server-support declaration plays no part here.
+    /// </param>
     /// <param name="settings">The plugin's own switches.</param>
     /// <remarks>
-    /// For a collection whose source is a window the player opens: the read happens when the game fills
-    /// that window, not during a pass. A collection switched off in the plugin captures nothing, not even
-    /// into memory. The <c>/config</c> switches, the account's "Sync from the plugin" switch among them,
-    /// are left out: consent given in the plugin is the answer that counts this early, and
-    /// <see cref="IsEnabled"/> and the server both keep what they switch off out of the payload.
+    /// <see cref="IsEnabled"/> asks it every pass, and a collection whose source is a window the player
+    /// opens asks it alone, when the game fills that window. A collection switched off in the plugin
+    /// captures nothing, not even into memory. The <c>/config</c> switches, the account's "Sync from the
+    /// plugin" switch among them, are left out: consent given in the plugin is the answer that counts
+    /// this early, and <see cref="IsEnabled"/> and the server both keep what they switch off out of the
+    /// payload.
     /// </remarks>
+    // Nothing is collected before the user has seen what gets sent and opted in (a Dalamud rule).
     public static bool IsCapturePermitted(string categoryKey, PluginSettings settings) =>
         settings.MasterEnabled
         && settings.OnboardingComplete

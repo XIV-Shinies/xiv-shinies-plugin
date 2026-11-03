@@ -8,8 +8,8 @@ using XIVShinies.SyncPlugin.Collectors;
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
 // ReadStatusView builds the settings window's "Reading from:" panel in two groups: the collections the
-// sync will upload, and the containers the item counts come from. Like CategorySettingsView, it must
-// contain no category-name or source-name branch.
+// sync will upload, and the containers the storage-reading collections draw on. Like
+// CategorySettingsView, it must contain no category-name or source-name branch.
 //
 // A note's tone picks its form (see SourceNote): a healthy note is a chip whose Label is all its
 // visible text; a note needing an in-game action is a full line in Text.
@@ -25,7 +25,8 @@ public class ReadStatusViewTests
         bool userEnabled = true,
         bool serverEnabled = true,
         string? skipReason = null,
-        bool usesItemManifest = false) => new()
+        bool usesItemManifest = false,
+        bool readsStorage = false) => new()
     {
         Key = key,
         DisplayName = $"{key} display",
@@ -35,6 +36,7 @@ public class ReadStatusViewTests
         ServerEnabled = serverEnabled,
         SkipReason = skipReason,
         UsesItemManifest = usesItemManifest,
+        ReadsStorage = readsStorage,
     };
 
     private static ItemSourceStatus Status(string state) => new() { State = state };
@@ -50,9 +52,14 @@ public class ReadStatusViewTests
             [SourceKeys.Inventory] = Status(SourceStates.Live),
         };
 
-    // Container notes appear only while a manifest-driven collection is switched on.
-    private static CategorySettingsRow ManifestRow(string key = "items") =>
-        Row(key, usesItemManifest: true);
+    // Shaped like the items collection: manifest-driven, and reading storage so container notes show.
+    private static CategorySettingsRow ManifestRow(
+        string key = "items", bool userEnabled = true, bool serverEnabled = true) =>
+        Row(key, userEnabled, serverEnabled, usesItemManifest: true, readsStorage: true);
+
+    // Reads storage without being manifest-driven, like the glamour collection.
+    private static CategorySettingsRow StorageRow(string key = UnknownCategory) =>
+        Row(key, readsStorage: true);
 
     // Pins that Build has no tone branch that could drop an unreadable source.
     [Fact]
@@ -274,8 +281,7 @@ public class ReadStatusViewTests
     [Fact]
     public void A_manifest_driven_collection_that_was_read_gets_no_note_of_its_own()
     {
-        var status = ReadStatusView.Build(
-            new[] { Row("items", usesItemManifest: true) }, OneSource(), Host);
+        var status = ReadStatusView.Build(new[] { ManifestRow() }, OneSource(), Host);
 
         Assert.Empty(status.Collections);
     }
@@ -285,8 +291,7 @@ public class ReadStatusViewTests
     [Fact]
     public void A_manifest_driven_collection_keeps_its_note_when_no_container_note_stands_in_for_it()
     {
-        var status = ReadStatusView.Build(
-            new[] { Row("items", usesItemManifest: true) }, NoSources(), Host);
+        var status = ReadStatusView.Build(new[] { ManifestRow() }, NoSources(), Host);
 
         var note = Assert.Single(status.Collections);
         Assert.Equal("items display", note.Label);
@@ -303,7 +308,7 @@ public class ReadStatusViewTests
             ["facewearCabinet"] = Status(SourceStates.Live),
         };
 
-        var status = ReadStatusView.Build(new[] { Row("items", usesItemManifest: true) }, sources, Host);
+        var status = ReadStatusView.Build(new[] { ManifestRow() }, sources, Host);
 
         Assert.Empty(status.Containers);
         Assert.Equal("items display", Assert.Single(status.Collections).Label);
@@ -316,7 +321,7 @@ public class ReadStatusViewTests
     {
         var rows = new[]
         {
-            Row("items", skipReason: CollectSkipReasons.NoRemoteConfig, usesItemManifest: true),
+            ManifestRow() with { SkipReason = CollectSkipReasons.NoRemoteConfig },
         };
 
         // A container note is present, which would suppress a healthy collection.
@@ -425,16 +430,15 @@ public class ReadStatusViewTests
     [Fact]
     public void A_manifest_driven_collection_for_an_unknown_category_is_also_suppressed_when_read()
     {
-        var status = ReadStatusView.Build(
-            new[] { Row(UnknownCategory, usesItemManifest: true) }, OneSource(), Host);
+        var status = ReadStatusView.Build(new[] { ManifestRow(UnknownCategory) }, OneSource(), Host);
 
         Assert.Empty(status.Collections);
     }
 
-    // Containers are opened only for a manifest-driven collection. With none on, nothing reads them,
+    // Containers are opened only for a collection that reads storage. With none on, nothing reads them,
     // and a note urging the user to open their saddlebag would be advice they cannot act on.
     [Fact]
-    public void Container_notes_are_dropped_when_no_manifest_driven_collection_is_on()
+    public void Container_notes_are_dropped_when_no_storage_reading_collection_is_on()
     {
         var status = ReadStatusView.Build(new[] { Row("mounts") }, OneSource(), Host);
 
@@ -444,31 +448,84 @@ public class ReadStatusViewTests
 
     // The common case: unticking the collection takes its container notes with it.
     [Fact]
-    public void Container_notes_are_dropped_when_the_user_switches_the_manifest_collection_off()
+    public void Container_notes_are_dropped_when_the_user_switches_the_storage_collection_off()
     {
-        var status = ReadStatusView.Build(
-            new[] { Row("items", userEnabled: false, usesItemManifest: true) }, OneSource(), Host);
+        var status = ReadStatusView.Build(new[] { ManifestRow(userEnabled: false) }, OneSource(), Host);
 
         Assert.Empty(status.Containers);
     }
 
     [Fact]
-    public void Container_notes_are_dropped_when_the_server_switches_the_manifest_collection_off()
+    public void Container_notes_are_dropped_when_the_server_switches_the_storage_collection_off()
     {
-        var status = ReadStatusView.Build(
-            new[] { Row("items", serverEnabled: false, usesItemManifest: true) }, OneSource(), Host);
+        var status = ReadStatusView.Build(new[] { ManifestRow(serverEnabled: false) }, OneSource(), Host);
 
         Assert.Empty(status.Containers);
     }
 
     // The notes are hidden, not forgotten.
     [Fact]
-    public void Container_notes_return_once_a_manifest_driven_collection_is_on()
+    public void Container_notes_return_once_a_storage_reading_collection_is_on()
     {
         var status = ReadStatusView.Build(
             new[] { Row("mounts"), ManifestRow() }, OneSource(), Host);
 
         Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
+    }
+
+    // A collection that reads the containers without being manifest-driven needs the same "open your
+    // saddlebag" guidance. The unknown category proves the notes follow the row's flag, not a name.
+    [Fact]
+    public void Container_notes_are_shown_for_a_storage_reading_collection_that_is_not_manifest_driven()
+    {
+        var status = ReadStatusView.Build(new[] { StorageRow(), Row("mounts") }, OneSource(), Host);
+
+        Assert.Equal(new[] { "Inventory" }, status.Containers.Select(note => note.Label));
+    }
+
+    // Only a manifest-driven collection gives up its chip to the container notes, so this one is still
+    // named as read.
+    [Fact]
+    public void A_storage_reading_collection_that_is_not_manifest_driven_keeps_its_chip()
+    {
+        var status = ReadStatusView.Build(new[] { StorageRow() }, OneSource(), Host);
+
+        var note = Assert.Single(status.Collections);
+        Assert.Equal("facewear display", note.Label);
+        Assert.Equal(SourceTone.Live, note.Tone);
+        Assert.Single(status.Containers);
+    }
+
+    // Both rows read the same containers, so each container is listed once, and only the
+    // manifest-driven row gives up its chip to those lines.
+    [Fact]
+    public void A_manifest_row_and_a_storage_only_row_share_one_set_of_container_lines()
+    {
+        var sources = new Dictionary<string, ItemSourceStatus>
+        {
+            [SourceKeys.Inventory] = Status(SourceStates.Live),
+            [SourceKeys.Saddlebag] = Status(SourceStates.Cached),
+        };
+
+        var status = ReadStatusView.Build(new[] { ManifestRow(), StorageRow() }, sources, Host);
+
+        var note = Assert.Single(status.Collections);
+        Assert.Equal("facewear display", note.Label);
+        Assert.Equal(SourceTone.Live, note.Tone);
+        Assert.Equal(
+            new[] { "Inventory", "Saddlebag" }, status.Containers.Select(container => container.Label));
+    }
+
+    // A manifest-driven collection that reads no storage brings no container notes, so with nothing
+    // standing in for it, its chip stays.
+    [Fact]
+    public void Container_notes_follow_the_storage_flag_rather_than_the_manifest_flag()
+    {
+        var status = ReadStatusView.Build(
+            new[] { Row("items", usesItemManifest: true) }, OneSource(), Host);
+
+        Assert.Empty(status.Containers);
+        Assert.Equal("items display", Assert.Single(status.Collections).Label);
     }
 
     // With every group off, the collector scans nothing and reports a skip. No container is read, so
@@ -477,7 +534,7 @@ public class ReadStatusViewTests
     public void A_manifest_driven_collection_with_no_groups_enabled_says_what_to_do_about_it()
     {
         var status = ReadStatusView.Build(
-            new[] { Row("items", usesItemManifest: true, skipReason: CollectSkipReasons.NoItemGroupsEnabled) },
+            new[] { ManifestRow() with { SkipReason = CollectSkipReasons.NoItemGroupsEnabled } },
             NoSources(), Host);
 
         var note = Assert.Single(status.Collections);

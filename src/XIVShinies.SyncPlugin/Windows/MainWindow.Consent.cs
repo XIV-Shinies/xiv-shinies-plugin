@@ -117,7 +117,8 @@ internal sealed partial class MainWindow
         // Where the copy's wrapped lines return to, captured before the checkbox draws.
         var labelColumn = ImGui.GetCursorPosX() + checkboxColumn;
 
-        // Disabled while the server has it off, with the stored choice kept for when it returns.
+        // Disabled while the server is not accepting it (see CategorySettingsRow.ServerEnabled), with
+        // the stored choice kept for when it does.
         using (ImRaii.Disabled(!row.ServerEnabled))
         {
             // `##key` keeps the ImGui ID unique, so two collections with one name cannot share clicks.
@@ -273,11 +274,11 @@ internal sealed partial class MainWindow
             // The tick answers for disclosures not yet read, so the copy names where to read them: the
             // collection's row, marked New until seen.
             DrawWrapped(
-                "Tick this and a new collection a later update adds starts switched on, whatever it " +
-                "sends, instead of waiting for you to find it. It is marked New in the settings, " +
-                "where you can read what it sends and switch it off. Collections whose groups you " +
-                "choose separately, and kinds of sharing like the Crucible runs and the live " +
-                "tracker above, are never switched on by this box.",
+                $"Tick this and a new collection starts switched on as soon as {BackendHost()} offers " +
+                "it, whatever it sends, instead of waiting for you to find it. It is marked New in " +
+                "the settings, where you can read what it sends and switch it off. Collections whose " +
+                "groups you choose separately, and kinds of sharing like the Crucible runs and the " +
+                "live tracker above, are never switched on by this box.",
                 ImGuiCol.Text);
             ImGui.Unindent(checkboxColumn);
         }

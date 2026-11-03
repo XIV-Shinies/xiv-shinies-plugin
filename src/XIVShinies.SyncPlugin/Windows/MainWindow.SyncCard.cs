@@ -195,8 +195,8 @@ internal sealed partial class MainWindow
                 ImGuiCol.Text);
         }
 
-        // The panel lists switched-on collections and the item containers, which no one category owns, so it
-        // sits here. It waits for a pass (SyncManager.HasCollected), or every enabled row would show as read.
+        // The panel lists switched-on collections and the storage containers they share, so it sits here.
+        // It waits for a pass (SyncManager.HasCollected), or every enabled row would show as read.
         if (pipelineRunning && syncManager.HasCollected)
         {
             ImGui.Dummy(new Vector2(0f, 6f * ImGuiHelpers.GlobalScale));

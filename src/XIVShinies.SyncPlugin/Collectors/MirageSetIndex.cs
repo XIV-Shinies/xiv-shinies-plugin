@@ -9,7 +9,8 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <remarks>
 /// A dresser slot holding an outfit records its set item ID (a <c>MirageStoreSetItem</c> row), not
 /// its pieces' IDs. The sheet says which pieces a set has, and a per-slot bit field says which are
-/// stored. This reads no game state; the collector reads the sheet and the dresser cache.
+/// stored. This reads no game state; <see cref="StorageSheets.MirageSets"/> reads the sheet, and the
+/// collectors read the dresser's bits.
 /// </remarks>
 public static class MirageSetIndex
 {

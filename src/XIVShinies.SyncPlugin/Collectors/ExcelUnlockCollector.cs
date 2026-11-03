@@ -77,6 +77,15 @@ public sealed class ExcelUnlockCollector<TRow> : ICollector, IUnlockAware
     public bool UsesItemManifest => info.UsesItemManifest;
 
     /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
+
+    /// <inheritdoc/>
     // From the category: not every sheet this class reads is announced by the game.
     public bool UploadsOnUnlock => info.UploadsOnUnlock;
 

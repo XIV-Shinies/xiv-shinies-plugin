@@ -67,9 +67,8 @@ internal sealed partial class MainWindow
         var remoteConfig = syncManager.RemoteConfig;
         var welcomeRows = BuildCategoryRows(remoteConfig);
 
-        // Each collector's own consent copy, at full contrast: this screen never discloses less than the
-        // settings (see DrawCompletenessNote), and a new collection needs no change here. A line the
-        // server has off mutes and wears the "Off" chip, seen only on going Back after the server answers.
+        // Each collector's own consent copy, so a new collection needs no change here. A permitted row draws
+        // at full contrast: this screen never discloses less than settings (see DrawCompletenessNote).
         foreach (var section in CategorySettingsView.GroupBySection(welcomeRows))
         {
             DrawSectionLabel(section.Title);
@@ -83,12 +82,14 @@ internal sealed partial class MainWindow
                 DrawWrappedWithTrailingHint(
                     $"{row.DisplayName} — {HostPlaceholder.Fill(row.WhatGetsSent, BackendHost())}",
                     row.Details is { } details ? HostPlaceholder.Fill(details, BackendHost()) : null,
+                    // Muted with the "Off" chip whenever the server does not permit the row; before it
+                    // answers, only a collection it must name (see CategorySettingsRow.ServerEnabled).
                     trailingChip: off ? OffChip(row.ServerOffText(BackendHost())) : null,
                     muted: off);
             }
 
-            // The tracker's line joins the Crescent section, where a reader scanning by game area looks. The
-            // one sanctioned title check on a consent surface: no collector gains a name branch by it.
+            // The tracker's line joins the Crescent section, where a reader scanning by game area looks. Only
+            // the tracker, not a collection, depends on this title check, so no collector branches on a name.
             if (section.Title == CollectorRegistry.OccultSection)
             {
                 DrawOccultTrackerDisclosureLine(remoteConfig);

@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Xunit;
 using XIVShinies.SyncPlugin.Api;
 using XIVShinies.SyncPlugin.Collectors;
+using XIVShinies.SyncPlugin.Glamour;
 
 namespace XIVShinies.SyncPlugin.Tests.Collectors;
 
@@ -188,5 +189,128 @@ public class CollectResultTests
         var facts = result.Facts!.AsObject();
         Assert.False(facts.ContainsKey("0"));
         Assert.Equal(3, facts["70562"]!.GetValue<int>());
+    }
+
+    // 10 is in the dresser and the Armoire, 21 in an outfit and held. The outfit's id (500) and extra
+    // copies are not pieces, so the distinct pieces are 10, 11, 20, 21, 30 and 40: six.
+    private static GlamourFacts SampleGlamourFacts() => new()
+    {
+        Dresser = new[]
+        {
+            new DresserPiece { Id = 10 },
+            new DresserPiece { Id = 11, Hq = true, Stains = new[] { 0, 5 } },
+        },
+        OutfitGlamours = new[] { new OutfitGlamour { OutfitId = 500, PieceIds = new uint[] { 20, 21 } } },
+        Armoire = new uint[] { 10, 30 },
+        Held = new[]
+        {
+            new HeldPiece { Id = 21, Place = HeldPlaces.Bags, Count = 1 },
+            new HeldPiece { Id = 40, Place = HeldPlaces.Bags, Count = 3 },
+        },
+    };
+
+    // The factory is the one place glamour facts become wire JSON, so its output is pinned as the
+    // literal text the server receives.
+    [Fact]
+    public void Glamour_serializes_its_facts_to_the_contract_json()
+    {
+        var result = CollectResult.Glamour(
+            SampleGlamourFacts(), new Dictionary<string, ItemSourceStatus>());
+
+        Assert.True(result.WasCollected);
+        Assert.Null(result.SkipReason);
+        Assert.Equal(
+            """{"version":1,"dresser":""" +
+            """[{"id":10},{"id":11,"hq":true,"stains":[0,5]}],"outfitGlamours":""" +
+            """[{"outfitId":500,"pieceIds":[20,21]}],"armoire":[10,30],"held":""" +
+            """[{"id":21,"place":"bags","count":1},{"id":40,"place":"bags","count":3}]}""",
+            result.Facts!.ToJsonString(ApiJson.Options));
+    }
+
+    // Glamour reads the storage the items category reports on, so its notes describe those same
+    // sources.
+    [Fact]
+    public void Glamour_carries_its_source_notes_alongside_the_facts()
+    {
+        var notes = new Dictionary<string, ItemSourceStatus>
+        {
+            [SourceKeys.Inventory] = new ItemSourceStatus { State = SourceStates.Live },
+            [SourceKeys.Retainers] =
+                new ItemSourceStatus { State = SourceStates.Cached, Count = 2, Total = 3 },
+        };
+
+        var result = CollectResult.Glamour(SampleGlamourFacts(), notes);
+
+        Assert.Same(notes, result.SourceNotes);
+    }
+
+    // The facts hold several lists, so the log gets the number a reader understands: distinct pieces.
+    [Fact]
+    public void Glamour_counts_distinct_pieces_for_the_upload_log()
+    {
+        var facts = SampleGlamourFacts();
+
+        var result = CollectResult.Glamour(facts, new Dictionary<string, ItemSourceStatus>());
+
+        Assert.Equal(GlamourSnapshot.CountPieces(facts), result.FactCount);
+        Assert.Equal(6, result.FactCount);
+    }
+
+    // Glamour is a snapshot of current holdings, not an id list, so the factory offers no way to claim
+    // completeness.
+    [Fact]
+    public void Glamour_never_claims_a_complete_enumeration()
+    {
+        var result = CollectResult.Glamour(SampleGlamourFacts(), new Dictionary<string, ItemSourceStatus>());
+
+        Assert.False(result.CompleteEnumeration);
+    }
+
+    // The factory never looks inside the record, so any recognizable shape will do.
+    private static JsonObject SampleAppearanceFacts() => new()
+    {
+        ["version"] = 1,
+        ["weaponHidden"] = true,
+    };
+
+    [Fact]
+    public void Appearance_is_a_collected_fact()
+    {
+        var result = CollectResult.Appearance(SampleAppearanceFacts());
+
+        Assert.True(result.WasCollected);
+        Assert.Null(result.SkipReason);
+    }
+
+    // AppearanceSnapshot already wrote the exact wire keys, so the factory hands on the same object.
+    [Fact]
+    public void Appearance_passes_its_facts_through_unchanged()
+    {
+        var facts = SampleAppearanceFacts();
+
+        var result = CollectResult.Appearance(facts);
+
+        Assert.Same(facts, result.Facts);
+    }
+
+    // One record about the character is not an id list either.
+    [Fact]
+    public void Appearance_never_claims_a_complete_enumeration()
+    {
+        Assert.False(CollectResult.Appearance(SampleAppearanceFacts()).CompleteEnumeration);
+    }
+
+    // The category declares itself one record, so the upload log shows no number and needs no count.
+    [Fact]
+    public void Appearance_supplies_no_count_for_the_upload_log()
+    {
+        Assert.Null(CollectResult.Appearance(SampleAppearanceFacts()).FactCount);
+    }
+
+    // A record that arrived was read, so the "nothing read" mark would be false.
+    [Fact]
+    public void Appearance_is_never_marked_as_nothing_read()
+    {
+        Assert.False(CollectResult.Appearance(SampleAppearanceFacts()).NothingReadThisPass);
     }
 }
