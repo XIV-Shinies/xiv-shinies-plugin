@@ -5,7 +5,7 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// <summary>Maps an item ID to the armoire ("Cabinet") row that holds it.</summary>
 /// <remarks>
 /// The game answers "is this in the armoire?" by Cabinet row ID, not item ID. This reads no game
-/// state; the collector reads the sheet that supplies the pairs.
+/// state; <see cref="StorageSheets.CabinetRows"/> reads the sheet that supplies the pairs.
 /// </remarks>
 public static class ArmoireIndex
 {

@@ -1,16 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using XIVShinies.SyncPlugin.Api;
-
-// "Cabinet" names both the armoire's memory struct and this sheet of what the armoire can hold.
-using CabinetSheet = Lumina.Excel.Sheets.Cabinet;
-
-// Every glamour-dresser outfit and the pieces inside it.
-using MirageSetSheet = Lumina.Excel.Sheets.MirageStoreSetItem;
 
 namespace XIVShinies.SyncPlugin.Collectors;
 
@@ -21,8 +16,9 @@ namespace XIVShinies.SyncPlugin.Collectors;
 /// A count proves a relic step on the server and, for items tracked by number, feeds a running total;
 /// a stale positive still proves a step after the item is consumed, so caches count too, reported as
 /// not fresh. Live containers and the cache-backed sources, readable once the player opens them, are
-/// summed, so copies parked on a retainer count. Only the local player's own storage is read, and no
-/// retainer id leaves the process.
+/// summed, so copies parked on a retainer count. Only the local player's own storage is read and this
+/// collector never touches a retainer id; it shares its read gates and source notes with
+/// <see cref="GlamourCollector"/> through <see cref="StorageSources"/>.
 /// </remarks>
 // Unsafe: FFXIVClientStructs' Instance() methods return pointers into live game memory.
 public sealed unsafe class ItemCollector : ICollector
@@ -38,32 +34,15 @@ public sealed unsafe class ItemCollector : ICollector
 
     private readonly CategoryInfo info;
 
-    // Walked once per pass; the order is cosmetic. Every armoury chest is listed so nothing the
-    // manifest asks about, such as a soul crystal, hides in a skipped one. ArmoryFeets and ArmoryEar
-    // are FFXIVClientStructs' own spellings.
+    // Walked once per pass; order is cosmetic. Every armory chest is listed, soul crystals included, so
+    // no manifest item hides in a skipped one. StorageContainers says what is shared and never walked.
     private static readonly InventoryType[] LiveContainers =
-    {
-        InventoryType.Inventory1,
-        InventoryType.Inventory2,
-        InventoryType.Inventory3,
-        InventoryType.Inventory4,
-        InventoryType.EquippedItems,
-        InventoryType.ArmoryMainHand,
-        InventoryType.ArmoryOffHand,
-        InventoryType.ArmoryHead,
-        InventoryType.ArmoryBody,
-        InventoryType.ArmoryHands,
-        InventoryType.ArmoryWaist,
-        InventoryType.ArmoryLegs,
-        InventoryType.ArmoryFeets,
-        InventoryType.ArmoryEar,
-        InventoryType.ArmoryNeck,
-        InventoryType.ArmoryWrist,
-        InventoryType.ArmoryRings,
+    [
+        .. StorageContainers.GearContainers.Select(container => container.Type),
         InventoryType.ArmorySoulCrystal,
         InventoryType.Crystals,
         InventoryType.Currency,
-    };
+    ];
 
     /// <summary>Creates the collector.</summary>
     /// <param name="info">
@@ -96,6 +75,15 @@ public sealed unsafe class ItemCollector : ICollector
 
     /// <inheritdoc/>
     public bool UsesItemManifest => info.UsesItemManifest;
+
+    /// <inheritdoc/>
+    public bool RequiresServerSupport => info.RequiresServerSupport;
+
+    /// <inheritdoc/>
+    public bool IsSingleRecord => info.IsSingleRecord;
+
+    /// <inheritdoc/>
+    public bool ReadsStorage => info.ReadsStorage;
 
     /// <inheritdoc/>
     public CollectResult Collect(CollectContext context)
@@ -142,7 +130,7 @@ public sealed unsafe class ItemCollector : ICollector
 
         // Every live container was walked, so both sources are live. Currencies are reported apart but
         // share the state: the fallback reads the same current memory, whether or not it ran.
-        sourceNotes[SourceKeys.Inventory] = new ItemSourceStatus { State = SourceStates.Live };
+        sourceNotes[SourceKeys.Inventory] = StorageSources.Inventory();
         sourceNotes[SourceKeys.Currencies] = new ItemSourceStatus { State = SourceStates.Live };
 
         BuildCachedTallies(manifestIds, cached, sourceNotes);
@@ -198,7 +186,10 @@ public sealed unsafe class ItemCollector : ICollector
             if (quantity <= 0)
                 continue;
 
-            AccumulateLive(live, id, (uint)quantity, slot->IsHighQuality(), slot->IsCollectable());
+            ItemTallies.Add(
+                live,
+                id,
+                ItemTally.ForQuality((uint)quantity, slot->IsHighQuality(), slot->IsCollectable()));
         }
     }
 
@@ -236,100 +227,71 @@ public sealed unsafe class ItemCollector : ICollector
             if (count == 0)
                 continue;
 
-            AccumulateNq(live, id, count);
+            ItemTallies.Add(
+                live, id, ItemTally.ForQuality(count, isHighQuality: false, isCollectable: false));
         }
     }
 
     // Each cache-backed source contributes only once the player has opened it, and its note says
-    // whether it was read or never opened.
+    // whether it was read or never opened. StorageSources holds each gate and the note built on it.
     private void BuildCachedTallies(
         HashSet<uint> manifestIds,
         Dictionary<uint, ItemTally> cached,
         Dictionary<string, ItemSourceStatus> notes)
     {
-        // The armoire comes from UIState, not ItemFinderModule. The game fetches it on the first open
-        // each session and cannot answer before then.
         var uiState = UIState.Instance();
-        var cabinetLoaded = uiState is not null && uiState->Cabinet.IsCabinetLoaded();
-        notes[SourceKeys.Armoire] = new ItemSourceStatus
-        {
-            State = cabinetLoaded ? SourceStates.Loaded : SourceStates.Unscanned,
-        };
-        if (cabinetLoaded)
+        notes[SourceKeys.Armoire] = StorageSources.Armoire(uiState);
+        if (StorageSources.IsArmoireLoaded(uiState))
         {
             // The armoire holds a single copy of each item, so a match counts 1.
             foreach (var id in manifestIds)
             {
                 if (id != 0 && IsStoredInArmoire(id))
-                    AccumulateNq(cached, id, 1);
+                {
+                    ItemTallies.Add(
+                        cached, id, ItemTally.ForQuality(1, isHighQuality: false, isCollectable: false));
+                }
             }
         }
 
         var finder = ItemFinderModule.Instance();
         if (finder is null)
         {
-            // Unscanned is the honest status for "not read", not an empty but current read.
-            notes[SourceKeys.Saddlebag] = new ItemSourceStatus { State = SourceStates.Unscanned };
-            notes[SourceKeys.Retainers] = new ItemSourceStatus { State = SourceStates.Unscanned };
-            notes[SourceKeys.GlamourDresser] = new ItemSourceStatus { State = SourceStates.Unscanned };
+            // Nothing is readable, so each note is unscanned, except as StorageSources.Saddlebag says.
+            notes[SourceKeys.Saddlebag] = StorageSources.Saddlebag(null, uiState);
+            notes[SourceKeys.Retainers] = StorageSources.Retainers(null);
+            notes[SourceKeys.GlamourDresser] = StorageSources.GlamourDresser(null);
             return;
         }
 
-        if (finder->IsSaddleBagCached)
+        if (StorageSources.IsSaddlebagCached(finder))
         {
             TallySlots(finder->SaddleBagItemIds, finder->SaddleBagItemCount, manifestIds, cached);
             TallySlots(finder->PremiumSaddleBagItemIds, finder->PremiumSaddleBagItemCount, manifestIds, cached);
-            notes[SourceKeys.Saddlebag] = new ItemSourceStatus { State = SourceStates.Cached };
         }
-        else
-        {
-            notes[SourceKeys.Saddlebag] = new ItemSourceStatus { State = SourceStates.Unscanned };
-        }
+
+        notes[SourceKeys.Saddlebag] = StorageSources.Saddlebag(finder, uiState);
 
         // The outfit index is resolved before the walk, so the walk always has a real one; an unreadable
-        // sheet throws instead (see BuildMirageSetIndex).
-        if (finder->IsGlamourDresserCached)
-        {
+        // sheet throws instead (see GetMirageSetIndex).
+        if (StorageSources.IsDresserCached(finder))
             TallyGlamourDresser(finder, GetMirageSetIndex(), manifestIds, cached);
-            notes[SourceKeys.GlamourDresser] = new ItemSourceStatus { State = SourceStates.Cached };
-        }
-        else
-        {
-            notes[SourceKeys.GlamourDresser] = new ItemSourceStatus { State = SourceStates.Unscanned };
-        }
 
-        // The note says "3 of 5": cached retainers of the total. Neither read touches a retainer id or
-        // name. The manager reports 0 until the game fills it, which reads as owning none, so 0 omits it.
-        var retainerManager = RetainerManager.Instance();
-        var knownTotal = retainerManager is not null ? (int)retainerManager->GetRetainerCount() : 0;
-        int? retainerTotal = knownTotal > 0 ? knownTotal : null;
+        notes[SourceKeys.GlamourDresser] = StorageSources.GlamourDresser(finder);
 
-        var retainerCount = finder->RetainerInventories.Count;
-        if (retainerCount > 0)
-        {
+        // The gate reads only the map's count, never its keys. The note says "3 of 5": remembered
+        // retainers of the total (see StorageSources.Retainers).
+        if (StorageSources.HasRememberedRetainers(finder))
             TallyRetainers(finder, manifestIds, cached);
-            notes[SourceKeys.Retainers] = new ItemSourceStatus
-            {
-                State = SourceStates.Cached,
-                Count = retainerCount,
-                Total = retainerTotal,
-            };
-        }
-        else
-        {
-            notes[SourceKeys.Retainers] = new ItemSourceStatus
-            {
-                State = SourceStates.Unscanned,
-                Total = retainerTotal,
-            };
-        }
+
+        notes[SourceKeys.Retainers] = StorageSources.Retainers(finder);
     }
 
     /// <summary>Adds every occupied slot of the player's own retainers to the cached tally.</summary>
     /// <remarks>
-    /// Only the map's values are read: its keys are retainer ids, which are never touched and never
-    /// leave the process. <c>ItemFinderModule</c> persists this cache to a local file, so contents can
-    /// appear after login without a summon and may be stale; a never-visited retainer is simply absent.
+    /// Only the map's values are read; its keys are retainer ids, which item counts have no use for.
+    /// <c>ItemFinderModule</c> persists this cache to a local file, so contents can appear after login
+    /// without a summon and may be stale; a never-visited retainer is simply absent.
     /// <c>IsRetainerCurrent</c> would tell a fresh read from the file, but it needs the keys, and both
     /// report as not fresh anyway.
     /// </remarks>
@@ -341,6 +303,8 @@ public sealed unsafe class ItemCollector : ICollector
         // Values only: the keys are retainer ids.
         foreach (var inventoryPointer in finder->RetainerInventories.Values)
         {
+            // An entry with no inventory adds nothing yet counts as remembered, so only its copies go
+            // missing; the glamour category skips the whole pass instead (see GlamourCollector.ReadHeld).
             var retainer = inventoryPointer.Value;
             if (retainer is null)
                 continue;
@@ -349,10 +313,7 @@ public sealed unsafe class ItemCollector : ICollector
 
             // Equipped gear has no counts: one each.
             foreach (var equippedId in retainer->EquippedItemIds)
-            {
-                if (equippedId != 0 && manifestIds.Contains(equippedId))
-                    AccumulateNq(cached, equippedId, 1);
-            }
+                ItemTallies.AddStoredId(cached, manifestIds, equippedId, 1);
         }
     }
 
@@ -360,7 +321,8 @@ public sealed unsafe class ItemCollector : ICollector
     /// Adds every slot whose id is in the manifest to the cached tally, reading a parallel (item id,
     /// count) array pair: the saddlebags and each retainer's bags.
     /// </summary>
-    // Bounded by the shorter span, so a mismatched pair never reads out of bounds.
+    // Bounded by the shorter span, so a mismatched pair never reads out of bounds. AddStoredId reads
+    // the high-quality encoding these copies use and decides whether a slot counts.
     private static void TallySlots(
         Span<uint> itemIds,
         Span<ushort> counts,
@@ -368,13 +330,7 @@ public sealed unsafe class ItemCollector : ICollector
         Dictionary<uint, ItemTally> cached)
     {
         for (var slot = 0; slot < itemIds.Length && slot < counts.Length; slot++)
-        {
-            var id = itemIds[slot];
-            if (id == 0 || !manifestIds.Contains(id))
-                continue;
-
-            AccumulateNq(cached, id, counts[slot]);
-        }
+            ItemTallies.AddStoredId(cached, manifestIds, itemIds[slot], counts[slot]);
     }
 
     /// <summary>
@@ -382,15 +338,14 @@ public sealed unsafe class ItemCollector : ICollector
     /// outfits into their pieces.
     /// </summary>
     /// <remarks>
-    /// A slot holds an item's id or an outfit's set id (a <c>MirageStoreSetItem</c> row), and a paired
-    /// array holds each slot's unlock bits: <paramref name="setIndex"/> maps a set id to its pieces, and
-    /// the bits say which are stored now. The bits come from <c>ItemFinderModule</c>, because
-    /// <c>MirageManager.IsSetSlotUnlocked</c> clears its data on a zone change. Each stored piece counts
-    /// one copy, and a manifest listing both a set id and its pieces counts both.
+    /// The dresser pairs each slot's stored id with its outfit unlock bits, and
+    /// <see cref="ItemTallies.AddDresserSlot"/> holds the rules for a slot. The bits come from
+    /// <c>ItemFinderModule</c>, because <c>MirageManager.IsSetSlotUnlocked</c> clears its data on a
+    /// zone change.
     /// </remarks>
     private static void TallyGlamourDresser(
         ItemFinderModule* finder,
-        IReadOnlyDictionary<uint, uint[]> setIndex,
+        IReadOnlyDictionary<uint, uint[]> mirageSetIndex,
         HashSet<uint> manifestIds,
         Dictionary<uint, ItemTally> cached)
     {
@@ -399,65 +354,16 @@ public sealed unsafe class ItemCollector : ICollector
         var bits = finder->GlamourDresserItemSetUnlockBits;
 
         for (var slot = 0; slot < ids.Length && slot < bits.Length; slot++)
-        {
-            var storedId = ids[slot];
-            if (storedId == 0)
-                continue;
-
-            // An individually stored item, or an outfit's set id that the manifest lists itself.
-            if (manifestIds.Contains(storedId))
-                AccumulateNq(cached, storedId, 1);
-
-            if (setIndex.TryGetValue(storedId, out var pieces))
-            {
-                foreach (var pieceId in MirageSetIndex.StoredPieces(pieces, bits[slot]))
-                {
-                    if (manifestIds.Contains(pieceId))
-                        AccumulateNq(cached, pieceId, 1);
-                }
-            }
-        }
-    }
-
-    private static void AccumulateLive(
-        Dictionary<uint, ItemTally> tallies,
-        uint id,
-        uint quantity,
-        bool isHighQuality,
-        bool isCollectable)
-    {
-        // Collectable first: it is its own quality, distinct from high quality. Each quantity lands in
-        // one bucket, and the buckets travel apart because the server applies different rules to each.
-        ItemTally delta;
-        if (isCollectable)
-            delta = new ItemTally(Nq: 0, Hq: 0, Collectable: quantity);
-        else if (isHighQuality)
-            delta = new ItemTally(Nq: 0, Hq: quantity, Collectable: 0);
-        else
-            delta = new ItemTally(Nq: quantity, Hq: 0, Collectable: 0);
-
-        AddTally(tallies, id, delta);
-    }
-
-    // The caches expose ids and counts but no quality flags, so every cached count is normal quality.
-    private static void AccumulateNq(Dictionary<uint, ItemTally> tallies, uint id, uint quantity) =>
-        AddTally(tallies, id, new ItemTally(Nq: quantity, Hq: 0, Collectable: 0));
-
-    // One item can fill several slots and containers; an absent id starts from the all-zero tally.
-    private static void AddTally(Dictionary<uint, ItemTally> tallies, uint id, ItemTally delta)
-    {
-        tallies.TryGetValue(id, out var existing);
-        tallies[id] = existing.Add(delta);
+            ItemTallies.AddDresserSlot(cached, manifestIds, mirageSetIndex, ids[slot], bits[slot]);
     }
 
     private bool IsStoredInArmoire(uint itemId)
     {
         var uiState = UIState.Instance();
-        if (uiState is null)
-            return false;
 
-        // Before the first open the game does not know the contents, and would answer a confident "no".
-        if (!uiState->Cabinet.IsCabinetLoaded())
+        // While the armoire is not loaded the game would answer a confident "no". This is the gate the
+        // armoire's note is built on, so the two agree.
+        if (!StorageSources.IsArmoireLoaded(uiState))
             return false;
 
         // An unreadable sheet throws, so the field only ever holds a real index.
@@ -469,55 +375,19 @@ public sealed unsafe class ItemCollector : ICollector
     }
 
     /// <remarks>
-    /// Lets an unreadable sheet throw: <see cref="CollectorRunner"/> then omits the whole
-    /// <c>items</c> category, which the server reads as "not read this time". Catching it would
-    /// send counts beside an Armoire note already set to <c>Loaded</c>, claiming a scan that never
-    /// happened.
+    /// Lets an unreadable sheet throw from <see cref="StorageSheets.CabinetRows"/>:
+    /// <see cref="CollectorRunner"/> then omits the whole <c>items</c> category, which the server reads
+    /// as "not read this time". Catching it would send counts beside an Armoire note already set to
+    /// <c>Loaded</c>, claiming a scan that never happened.
     /// </remarks>
-    private IReadOnlyDictionary<uint, uint> BuildArmoireIndex()
-    {
-        var sheet = dataManager.GetExcelSheet<CabinetSheet>();
+    private IReadOnlyDictionary<uint, uint> BuildArmoireIndex() =>
+        ArmoireIndex.Build(StorageSheets.CabinetRows(dataManager));
 
-        var rows = new List<(uint CabinetId, uint ItemId)>();
-        foreach (var row in sheet)
-            rows.Add((row.RowId, row.Item.RowId));
-
-        return ArmoireIndex.Build(rows);
-    }
-
-    private IReadOnlyDictionary<uint, uint[]> GetMirageSetIndex() =>
-        mirageSetIndex ??= BuildMirageSetIndex();
-
+    /// <summary>The outfit index, built once (see <see cref="StorageSheets"/>).</summary>
     /// <remarks>
-    /// Throws on an unreadable sheet: an omitted category is honest, and counts that silently skip
-    /// every stored outfit are not.
+    /// Throws on an unreadable sheet, from <see cref="StorageSheets.MirageSets"/>: an omitted category
+    /// is honest, and counts that silently skip every stored outfit are not.
     /// </remarks>
-    private IReadOnlyDictionary<uint, uint[]> BuildMirageSetIndex()
-    {
-        var sheet = dataManager.GetExcelSheet<MirageSetSheet>();
-
-        var rows = new List<(uint SetItemId, uint[] PieceItemIds)>();
-        foreach (var row in sheet)
-        {
-            // The sheet's column order is load-bearing: a stored outfit's unlock bit i refers to piece
-            // i. An empty column reads id 0 and keeps its place; StoredPieces drops it, Build does not.
-            var pieces = new uint[]
-            {
-                row.MainHand.RowId,
-                row.OffHand.RowId,
-                row.Head.RowId,
-                row.Body.RowId,
-                row.Hands.RowId,
-                row.Legs.RowId,
-                row.Feet.RowId,
-                row.Earrings.RowId,
-                row.Necklace.RowId,
-                row.Bracelets.RowId,
-                row.Ring.RowId,
-            };
-            rows.Add((row.RowId, pieces));
-        }
-
-        return MirageSetIndex.Build(rows);
-    }
+    private IReadOnlyDictionary<uint, uint[]> GetMirageSetIndex() =>
+        mirageSetIndex ??= StorageSheets.MirageSets(dataManager);
 }

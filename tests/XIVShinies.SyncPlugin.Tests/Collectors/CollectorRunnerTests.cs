@@ -39,6 +39,13 @@ public class CollectorRunnerTests
 
         public bool UsesItemManifest { get; init; }
 
+        public bool RequiresServerSupport { get; init; }
+
+        public bool IsSingleRecord { get; init; }
+
+        // The settings panel reads this, never the runner.
+        public bool ReadsStorage { get; init; }
+
         public int CollectCallCount { get; private set; }
 
         public CollectContext? LastContext { get; private set; }
@@ -108,6 +115,63 @@ public class CollectorRunnerTests
         Assert.DoesNotContain(UnknownCategory, snapshot.ManifestDrivenKeys);
     }
 
+    // Recorded before the gate, since it describes the collector: even a collection not opted into
+    // is marked.
+    [Fact]
+    public void A_single_record_collectors_key_is_marked_even_when_it_is_not_collected()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Ids(new[] { 42u }))
+        {
+            IsSingleRecord = true,
+        };
+
+        var snapshot = CollectorRunner.Run(new[] { collector }, OptedIn(), RemoteConfig());
+
+        Assert.Contains(UnknownCategory, snapshot.SingleRecordKeys);
+        Assert.Equal(0, collector.CollectCallCount);
+    }
+
+    [Fact]
+    public void A_collection_of_things_is_not_marked_single_record()
+    {
+        var snapshot = CollectorRunner.Run(
+            new[] { Collecting(UnknownCategory, 42) }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.DoesNotContain(UnknownCategory, snapshot.SingleRecordKeys);
+    }
+
+    [Fact]
+    public void A_collector_needing_server_support_is_skipped_until_the_server_names_it()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Ids(new[] { 42u }))
+        {
+            RequiresServerSupport = true,
+        };
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
+
+        Assert.False(snapshot.Collections.ContainsKey(UnknownCategory));
+        Assert.Equal(CollectSkipReasons.Disabled, snapshot.Skipped[UnknownCategory]);
+        Assert.Equal(0, collector.CollectCallCount);
+    }
+
+    [Fact]
+    public void A_collector_needing_server_support_runs_once_the_server_names_it()
+    {
+        var collector = new FakeCollector(UnknownCategory, () => CollectResult.Ids(new[] { 42u }))
+        {
+            RequiresServerSupport = true,
+        };
+
+        var snapshot = CollectorRunner.Run(
+            new[] { collector },
+            OptedIn(UnknownCategory),
+            RemoteConfig(categories: new Dictionary<string, bool> { [UnknownCategory] = true }));
+
+        Assert.True(snapshot.Collections.ContainsKey(UnknownCategory));
+    }
+
     // The payload builder turns this set into `collectionScopes` "full" declarations.
     [Fact]
     public void A_complete_enumerations_key_is_marked_in_the_snapshot()
@@ -149,6 +213,47 @@ public class CollectorRunnerTests
             new[] { collector }, OptedIn(UnknownCategory), RemoteConfig());
 
         Assert.Empty(snapshot.StoreConfirmations);
+    }
+
+    // Each set holds only the collectors that earned a place in it, so one collector's declaration
+    // never lands on its neighbor's key.
+    [Fact]
+    public void A_pass_files_each_declaration_under_the_collector_that_made_it()
+    {
+        static CollectResult Confirmed(string responseKey) => CollectResult.AchievementProgress(
+            new[]
+            {
+                new AchievementProgressReading
+                {
+                    Id = 3, Current = 1, Max = 5, ObservedAt = DateTimeOffset.UnixEpoch,
+                },
+            },
+            confirmedBy: responseKey,
+            forgetSent: _ => { });
+
+        var record = new FakeCollector(
+            UnknownCategory, () => CollectResult.Appearance(new JsonObject { ["height"] = 50 }))
+        {
+            IsSingleRecord = true,
+        };
+        var confirming = new FakeCollector("ornaments", () => Confirmed("storedOrnaments"));
+
+        // Would confirm a store if it ran, so its absence below is the gate's doing.
+        var unnamed = new FakeCollector("emotes", () => Confirmed("storedEmotes"))
+        {
+            RequiresServerSupport = true,
+        };
+
+        var snapshot = CollectorRunner.Run(
+            new ICollector[] { record, confirming, unnamed },
+            OptedIn(UnknownCategory, "ornaments", "emotes"),
+            RemoteConfig());
+
+        Assert.Equal(new[] { UnknownCategory }, snapshot.SingleRecordKeys);
+        Assert.Equal(new[] { "ornaments" }, snapshot.StoreConfirmations.Keys);
+        Assert.Equal("storedOrnaments", snapshot.StoreConfirmations["ornaments"].ResponseKey);
+        Assert.Equal(0, unnamed.CollectCallCount);
+        Assert.Equal(CollectSkipReasons.Disabled, snapshot.Skipped["emotes"]);
     }
 
     [Fact]
@@ -377,7 +482,7 @@ public class CollectorRunnerTests
         Assert.True(snapshot.Collections.ContainsKey("quests"));
     }
 
-    // Proceeding without /config is safe (see CollectorGate.IsEnabled).
+    // Proceeding without /config is safe (see CollectorGate.ServerPermits).
     [Fact]
     public void A_missing_remote_config_falls_back_to_the_local_toggles()
     {

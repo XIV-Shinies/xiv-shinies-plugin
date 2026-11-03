@@ -7,6 +7,12 @@ as the GitHub release notes for that version: the release workflow copies the to
 verbatim into the release it publishes. Sections are added by the release flow (see
 `.claude/skills/releasing/`), one per release, immediately under this line.
 
+## v0.11.0 — 2026-11-03
+
+- Share your gear and where it is kept, retainer names too
+- Share your appearance so XIV Shinies can draw you
+- Start both once XIV Shinies offers them, if you opted in
+
 ## v0.10.0 — 2026-10-27
 
 - Sync the progress of achievements you open in game

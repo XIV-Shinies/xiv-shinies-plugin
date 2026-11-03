@@ -21,8 +21,8 @@ public class UploadLogSeedTests
     private static readonly DateTimeOffset Now =
         new(2026, 8, 27, 18, 0, 0, TimeSpan.Zero);
 
-    // The seed reads only a collector's key and manifest flag; the rest satisfies the interface. A
-    // fake keeps these tests free of Dalamud and pins that the seed reads what it is given.
+    // The seed reads only the key, manifest flag and single-record flag; the rest fills the interface.
+    // A fake keeps these tests free of Dalamud and pins that the seed reads what it is given.
     private sealed class FakeCollector : ICollector
     {
         public FakeCollector(string categoryKey) => CategoryKey = categoryKey;
@@ -38,6 +38,12 @@ public class UploadLogSeedTests
         public string? Details => null;
 
         public bool UsesItemManifest { get; init; }
+
+        public bool RequiresServerSupport { get; init; }
+
+        public bool IsSingleRecord { get; init; }
+
+        public bool ReadsStorage { get; init; }
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids([1u]);
     }
@@ -204,6 +210,43 @@ public class UploadLogSeedTests
         Assert.Contains(CategoryKeys.Items, UploadLogDiff.ChangedCategories(displayed, index));
     }
 
+    // Recorded as a real upload records one: a count of one and the flag, so the window names it
+    // without a number and the diff compares its fingerprint.
+    [Fact]
+    public void A_single_record_collection_is_seeded_as_one_record()
+    {
+        var collectors = new List<ICollector>
+        {
+            new FakeCollector(CategoryKeys.Mounts),
+            new FakeCollector("facewear") { IsSingleRecord = true },
+        };
+
+        var swept = UploadLogSeed.Build(collectors, Now)
+            .Single(e => e.Trigger == SyncTrigger.Interval);
+
+        var record = Assert.Single(swept.Categories, c => c.Key == "facewear");
+        Assert.Equal(1, record.Count);
+        Assert.True(record.IsSingleRecord);
+    }
+
+    // Moving it changes the record, not how many there are.
+    [Fact]
+    public void Moving_a_single_record_collection_marks_it_changed_and_keeps_it_one_record()
+    {
+        // Only the single-record collection is registered, so the scheduled row moves it: the seed
+        // falls back to the first collection when the key it names is absent.
+        var collectors = new List<ICollector>
+        {
+            new FakeCollector("facewear") { IsSingleRecord = true },
+        };
+
+        var displayed = UploadLogSeed.Build(collectors, Now).Reverse().ToList();
+        var index = displayed.FindIndex(e => e.Trigger == SyncTrigger.Interval);
+
+        Assert.Contains("facewear", UploadLogDiff.ChangedCategories(displayed, index));
+        Assert.Equal(1, Assert.Single(displayed[index].Categories).Count);
+    }
+
     // The skip reason must leave with its collection rather than land on another; Build says why.
     [Fact]
     public void The_unreadable_row_is_dropped_when_its_collection_is_not_seeded()
@@ -230,12 +273,18 @@ public class UploadLogSeedTests
         Assert.Empty(UploadLogSeed.Build(Array.Empty<ICollector>(), Now));
     }
 
-    // The fallback count is believable for a small collection and absurd for a quest-sized one. This
-    // fails when a collection is added, which is when someone should choose its number.
+    // The fallback count suits a small collection, not a quest-sized one, so a new collection fails
+    // here until someone picks its number. A single record is seeded as one record, so it needs none.
     [Fact]
     public void Every_declared_category_has_a_figure_on_file()
     {
-        Assert.Empty(CategoryKeyReflection.All().Except(UploadLogSeed.PlausibleCounts.Keys));
+        var singleRecords = CategoryInfoReflection.All()
+            .Where(info => info.IsSingleRecord)
+            .Select(info => info.Key);
+
+        Assert.Empty(CategoryKeyReflection.All()
+            .Except(UploadLogSeed.PlausibleCounts.Keys)
+            .Except(singleRecords));
     }
 }
 #endif

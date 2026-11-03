@@ -112,6 +112,30 @@ public sealed record ConfigResponse
     // nothing"; a throw here would take down the settings window, which asks once per row per frame.
     public bool IsCategoryEnabled(string categoryKey) =>
         Categories is null || !Categories.TryGetValue(categoryKey, out var enabled) || enabled;
+
+    /// <summary>
+    /// True only when the server's category map names this category and switches it on.
+    /// </summary>
+    /// <remarks>
+    /// For a collection that declares <see cref="Collectors.CategoryInfo.RequiresServerSupport"/>,
+    /// which is only worth uploading to a server that knows it, so a key the map lacks reads as off.
+    /// </remarks>
+    // An explicit JSON null map (see ApiJson) names nothing, so every category reads as off.
+    public bool IsCategoryExplicitlyEnabled(string categoryKey) =>
+        Categories is not null && Categories.TryGetValue(categoryKey, out var enabled) && enabled;
+
+    /// <summary>
+    /// True when the server's category map carries this category at all, switched on or off.
+    /// </summary>
+    /// <remarks>
+    /// The settings window asks this of a collection that declares
+    /// <see cref="Collectors.CategoryInfo.RequiresServerSupport"/>, to tell one the server has not
+    /// offered from one it switched off; the two draw different sentences. Kept here so every reader
+    /// of <see cref="Categories"/> gets the same null guard.
+    /// </remarks>
+    // An explicit JSON null map names nothing.
+    public bool NamesCategory(string categoryKey) =>
+        Categories is not null && Categories.ContainsKey(categoryKey);
 }
 
 /// <summary>

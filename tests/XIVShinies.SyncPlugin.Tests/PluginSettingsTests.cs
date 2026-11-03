@@ -498,7 +498,7 @@ public class PluginSettingsTests
     }
 
     // The guard reads the stored answer itself, so it holds even when the seen-set does not list the
-    // category: a stored "no" is an answer no later load may reverse.
+    // category: a stored "no" is an answer nothing may reverse.
     [Fact]
     public void A_category_answered_no_is_never_switched_back_on()
     {
@@ -512,7 +512,7 @@ public class PluginSettingsTests
         Assert.False(settings.IsCategoryEnabled("orchestrionRolls"));
     }
 
-    // Called at load, so it skips what it cannot use rather than throw into the plugin's constructor.
+    // Called at load and on each config poll, so it skips what it cannot use rather than throw.
     [Fact]
     public void Auto_enabling_tolerates_a_null_sequence_and_skips_blanks()
     {

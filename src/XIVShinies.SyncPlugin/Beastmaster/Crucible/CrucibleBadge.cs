@@ -10,10 +10,10 @@ namespace XIVShinies.SyncPlugin.Beastmaster.Crucible;
 /// <remarks>
 /// The sharing starts off, so a "New" chip announces it, ruled like the collections' chips: "Off"
 /// outranks it, only the settings screen draws it, a click counts as seeing the card, and the chip
-/// stays up for the rest of the viewing that recorded it. Unlike a collection, the sharing exists only
-/// where the server advertises it, so short of a click the card neither announces itself nor is
-/// recorded until the server permits it, and never shows "New" and then turns "Off". It sits alone at
-/// the foot of a long list, so it counts as seen only once its checkbox has been on screen.
+/// stays up for the rest of the viewing that recorded it. Unlike an ordinary collection, the sharing
+/// exists only where the server advertises it, so short of a click the card neither announces itself
+/// nor is recorded until the server permits it, and never shows "New" and then turns "Off". It sits
+/// alone at the foot of a long list, so it counts as seen only once its checkbox has been on screen.
 /// </remarks>
 public static class CrucibleBadge
 {

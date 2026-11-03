@@ -30,6 +30,13 @@ public class CollectorSelectionTests
 
         public bool UsesItemManifest => false;
 
+        // Selection never reads these; the interface requires them.
+        public bool RequiresServerSupport { get; init; }
+
+        public bool IsSingleRecord { get; init; }
+
+        public bool ReadsStorage { get; init; }
+
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
 

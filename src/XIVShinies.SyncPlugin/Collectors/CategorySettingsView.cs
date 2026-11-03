@@ -49,10 +49,22 @@ public sealed record CategorySettingsRow
     /// </summary>
     /// <remarks>
     /// Carried so a view can act on it without holding a collector. <see cref="ReadStatusView"/> uses it
-    /// to put the container lines in place of this collection's own line, and to drop them when no such
-    /// collection is on; <see cref="Groups"/> is populated only when it is set.
+    /// to put the container lines in place of this collection's own healthy line, since its facts are
+    /// the container counts; whether those lines show at all is <see cref="ReadsStorage"/>'s answer.
+    /// <see cref="Groups"/> is populated only when it is set.
     /// </remarks>
     public required bool UsesItemManifest { get; init; }
+
+    /// <summary>
+    /// Whether this row's collector reads the character's storage containers and reports their scan
+    /// state (see <see cref="ICollector.ReadsStorage"/>).
+    /// </summary>
+    /// <remarks>
+    /// Lets <see cref="ReadStatusView"/> decide from the rows alone whether the container lines show.
+    /// Defaulted, unlike <see cref="UsesItemManifest"/>, because false only leaves those lines out;
+    /// <see cref="CategorySettingsView.Build"/> always sets it from the collector.
+    /// </remarks>
+    public bool ReadsStorage { get; init; }
 
     /// <summary>
     /// Whether this row's collector uploads each new entry within seconds (see
@@ -65,8 +77,8 @@ public sealed record CategorySettingsRow
     public bool UploadsOnUnlock { get; init; }
 
     /// <summary>
-    /// False when the server refuses this category: off for everyone, held back from this account, or
-    /// syncing off altogether.
+    /// False when the server refuses this category: off for everyone, held back from this account,
+    /// syncing off altogether, or not named when it must be (see <see cref="NotOfferedByServer"/>).
     /// </summary>
     /// <remarks>
     /// The checkbox stays visible but disabled, keeping the user's choice for when it returns.
@@ -86,21 +98,35 @@ public sealed record CategorySettingsRow
     public bool ServerGloballyOff { get; init; }
 
     /// <summary>
+    /// True when this row's collection needs the server to name it (see
+    /// <see cref="ICollector.RequiresServerSupport"/>) and no <c>/config</c> has named it.
+    /// </summary>
+    /// <remarks>
+    /// A category map that never mentions a collection made no decision about it, so
+    /// <see cref="ServerOffText"/> says it is not offered, or before any <c>/config</c> that it awaits
+    /// the answer, rather than switched off. Naming it, even as off, makes this false, as it always is
+    /// for an ordinary collection. Defaulted, like <see cref="ServerGloballyOff"/>, because false yields
+    /// the ordinary per-category wording.
+    /// </remarks>
+    public bool NotOfferedByServer { get; init; }
+
+    /// <summary>
     /// The server's own explanation for switching this category off, or null when it gave none.
     /// Meaningful only while <see cref="ServerEnabled"/> is false; see <see cref="ServerOffText"/>.
     /// </summary>
     public string? ServerNote { get; init; }
 
     /// <summary>
-    /// What to print under a category the server has switched off, or null when it is on and
+    /// What to print under a category the server is not accepting, or null when it is on and
     /// nothing needs saying.
     /// </summary>
     /// <remarks>
     /// The server's note when it sent one, otherwise the generic line; see
     /// <see cref="ConfigResponse.CategoryNotes"/> for why only one off-state carries a note. A note that
     /// arrives while the category is on is dropped, since it has nowhere to go under a live checkbox. A
-    /// global pause outranks the note and the generic line, since either would send the user looking for
-    /// a decision about this collection that nobody made.
+    /// global pause, and after it a collection the server has not named (see
+    /// <see cref="NotOfferedByServer"/>), outranks the note and the generic line, since either would send
+    /// the user looking for a decision about this collection that nobody made.
     /// </remarks>
     /// <param name="host">The configured website's address.</param>
     // A method: the generic lines name an address (see ServerOffCopy) that a row does not hold.
@@ -108,7 +134,9 @@ public sealed record CategorySettingsRow
         ? null
         : ServerGloballyOff
             ? ServerOffCopy.Paused(host)
-            : ServerNote ?? ServerOffCopy.Feature(host);
+            : NotOfferedByServer
+                ? (ServerStateKnown ? ServerOffCopy.NotOffered(host) : ServerOffCopy.AwaitingAnswer(host))
+                : ServerNote ?? ServerOffCopy.Feature(host);
 
     /// <summary>
     /// Why the last collection pass skipped this category, or null if it did not. The window turns it
@@ -140,8 +168,9 @@ public sealed record CategorySettingsRow
     /// <summary>True when this row should announce itself as new.</summary>
     /// <remarks>
     /// Badging a collection the server switched off would announce something the user cannot use.
-    /// While the server's answer is unknown the badge shows, so a user whose config poll is failing
-    /// still learns a collection exists.
+    /// While the server's answer is unknown an ordinary collection's badge shows, so a user whose config
+    /// poll is failing still learns a collection exists. One that needs the server to name it has nothing
+    /// to use until then, so it stays quiet and unseen and announces itself once the server offers it.
     /// </remarks>
     public bool IsEffectivelyNew => IsNew && ServerEnabled;
 
@@ -364,11 +393,15 @@ public static class CategorySettingsView
         {
             var key = collector.CategoryKey;
 
-            // Group rows reuse serverEnabled: the scopes guarding stored consent assume row and groups agree.
-            // An unfetched config forbids nothing, or an offline plugin would show every category off.
             var serverPaused = remoteConfig is { Enabled: false };
-            var serverEnabled = remoteConfig is null
-                || (remoteConfig.Enabled && remoteConfig.IsCategoryEnabled(key));
+
+            // Asking the gate keeps a row from promising a collection the upload pass would refuse, or
+            // graying out one it would run.
+            var serverEnabled = CollectorGate.ServerPermits(collector, remoteConfig);
+
+            // With no config, nothing has been named (see CategorySettingsRow.NotOfferedByServer).
+            var notOfferedByServer = collector.RequiresServerSupport
+                && remoteConfig?.NamesCategory(key) != true;
 
             rows.Add(new CategorySettingsRow
             {
@@ -384,11 +417,15 @@ public static class CategorySettingsView
 
                 UsesItemManifest = collector.UsesItemManifest,
 
+                ReadsStorage = collector.ReadsStorage,
+
                 UploadsOnUnlock = collector.UploadsOnUnlock,
 
                 ServerEnabled = serverEnabled,
 
                 ServerGloballyOff = serverPaused,
+
+                NotOfferedByServer = notOfferedByServer,
 
                 // CategoryNote bounds and folds the server's text.
                 ServerNote = remoteConfig?.CategoryNote(key),
@@ -409,6 +446,7 @@ public static class CategorySettingsView
                     ? collectedDetail
                     : null,
 
+                // Reuses serverEnabled: the scopes guarding stored consent assume row and groups agree.
                 Groups = BuildGroupRows(collector, settings, remoteConfig, serverEnabled),
             });
         }

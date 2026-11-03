@@ -49,6 +49,12 @@ public sealed record SyncResponse
     /// </summary>
     public IReadOnlyList<string>? SkippedCategories { get; init; }
 
+    /// <summary>
+    /// Present only when the server dropped a category whose value failed its checks, applying the
+    /// rest of the upload. Never names a category <see cref="SkippedCategories"/> names.
+    /// </summary>
+    public IReadOnlyList<string>? RejectedCategories { get; init; }
+
     /// <summary>The top-level keys no property here models, such as a store confirmation.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? UnmodeledKeys { get; init; }

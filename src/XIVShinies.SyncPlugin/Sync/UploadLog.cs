@@ -31,12 +31,18 @@ namespace XIVShinies.SyncPlugin.Sync;
 /// saddlebag, a consent-group toggle, or a manifest edit to a held item. Null for every other
 /// category, and when the facts are not the possession shape; then no change is flagged.
 /// </param>
+/// <param name="IsSingleRecord">
+/// Mirrors <see cref="Collectors.ICollector.IsSingleRecord"/>. Such a category's count is 1, or null
+/// when the pass read nothing, so its fingerprint carries the change signal. The window and the pasted
+/// log name it without the number (see <see cref="Collectors.CategoryInfo.IsSingleRecord"/>).
+/// </param>
 public sealed record UploadLogCategory(
     string Key,
     int? Count,
     string Fingerprint = "",
     bool UsesItemManifest = false,
-    int? OwnedCount = null);
+    int? OwnedCount = null,
+    bool IsSingleRecord = false);
 
 /// <summary>Which upload path an upload log row is about.</summary>
 public enum UploadLogSource
@@ -179,21 +185,25 @@ public sealed record UploadLogEntry
         foreach (var (key, facts) in snapshot.Collections)
         {
             var manifestDriven = snapshot.ManifestDrivenKeys.Contains(key);
+            var singleRecord = snapshot.SingleRecordKeys.Contains(key);
 
-            // Null when the pass read none of what the category is about. Otherwise the collector's
-            // own count when it gave one (see CollectResult.FactCount), else a shape count.
+            // Null when the pass read none of the category. Else 1 for a single record of any shape, then
+            // the collector's own count (see CollectResult.FactCount), else a shape count.
             var count = snapshot.NothingReadKeys.Contains(key)
                 ? (int?)null
-                : snapshot.FactCounts.TryGetValue(key, out var reported)
-                    ? reported
-                    : CountFacts(facts);
+                : singleRecord
+                    ? 1
+                    : snapshot.FactCounts.TryGetValue(key, out var reported)
+                        ? reported
+                        : CountFacts(facts);
 
             categories.Add(new UploadLogCategory(
                 key,
                 count,
                 Fingerprint(facts),
                 manifestDriven,
-                manifestDriven ? CountOwned(facts) : null));
+                manifestDriven ? CountOwned(facts) : null,
+                singleRecord));
         }
 
         return new UploadLogEntry
@@ -735,9 +745,12 @@ public static class UploadLogText
     {
         // No count means the pass saw none of the collection. Not worded with "read", which names
         // categories that never went out ("Could not read:" here, "not read yet" in settings).
-        var label = category.Count is { } count
-            ? $"{displayName} {count:N0}"
-            : $"{displayName} (none seen)";
+        var label = category.Count is not { } count
+            ? $"{displayName} (none seen)"
+            // A single record with a count is named alone (see CategoryInfo.IsSingleRecord).
+            : category.IsSingleRecord
+                ? displayName
+                : $"{displayName} {count:N0}";
         if (changed)
             label += " (changed)";
 
@@ -805,11 +818,13 @@ public static class UploadLogText
             {
                 text.Append(' ').Append(category.Key).Append('=');
 
-                // A word, not a blank or a zero: "went out with no reading" is the fact a debugger
-                // needs. Underscored to match the skip reason codes on the same line.
-                text.Append(category.Count is { } sentCount
-                    ? sentCount.ToString(CultureInfo.InvariantCulture)
-                    : "none_seen");
+                // A word, not a blank or zero: "went out with no reading" is what a debugger needs.
+                // Underscored like this line's skip reason codes; a single record prints "record".
+                text.Append(category.Count is not { } sentCount
+                    ? "none_seen"
+                    : category.IsSingleRecord
+                        ? "record"
+                        : sentCount.ToString(CultureInfo.InvariantCulture));
 
                 // A manifest category's "changed:" flag compares this count, so printing it lets
                 // the paste alone confirm the flag or its absence.

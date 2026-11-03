@@ -269,6 +269,44 @@ public class DtoSerializationTests
         Assert.True(config.IsCategoryEnabled("facewear")); // never mentioned by the server
     }
 
+    // For a collection that needs the server to name it, only an explicit `true` counts, so an absent
+    // key reads as off.
+    [Fact]
+    public void Only_a_category_the_map_switches_on_is_explicitly_enabled()
+    {
+        const string body = """
+        {"categories": {"quests": true, "minions": false},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.True(config.IsCategoryExplicitlyEnabled("quests"));
+        Assert.False(config.IsCategoryExplicitlyEnabled("minions"));
+        Assert.False(config.IsCategoryExplicitlyEnabled("facewear")); // never mentioned
+    }
+
+    // A key the map carries, whichever way it is switched, is what tells "not offered" from "switched
+    // off".
+    [Fact]
+    public void A_category_the_map_carries_is_named_whichever_way_it_is_switched()
+    {
+        const string body = """
+        {"categories": {"quests": true, "minions": false},
+         "enabled": true,
+         "intervals": {"fullSyncMinutes": 30, "unlockDebounceSeconds": 5},
+         "itemManifest": [], "manifestVersion": "abc"}
+        """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(body, ApiJson.Options)!;
+
+        Assert.True(config.NamesCategory("quests"));
+        Assert.True(config.NamesCategory("minions"));
+        Assert.False(config.NamesCategory("facewear")); // never mentioned
+    }
+
     // --- Category notes ------------------------------------------------------------------------
 
     // The server explains a switched-off category in its own words, keyed like the switches. The
@@ -457,6 +495,7 @@ public class DtoSerializationTests
         Assert.Null(response.AchievementsSkipped);
         Assert.Null(response.ProvenSteps);
         Assert.Null(response.SkippedCategories);
+        Assert.Null(response.RejectedCategories);
 
         // An unsent category is an absent key, not an error.
         Assert.False(response.Written.ContainsKey("tripleTriadCards"));
@@ -529,6 +568,15 @@ public class DtoSerializationTests
         Assert.Equal(new[] { "minions" }, response.SkippedCategories);
         Assert.Equal(5, response.Written["tripleTriadCards"]);
         Assert.Equal(1, response.Written["tripleTriadNpcs"]);
+    }
+
+    [Fact]
+    public void SyncResponse_reads_the_categories_the_server_rejected()
+    {
+        var response = JsonSerializer.Deserialize<SyncResponse>(
+            """{"ok": true, "bound": false, "rejectedCategories": ["appearance"]}""", ApiJson.Options)!;
+
+        Assert.Equal(new[] { "appearance" }, response.RejectedCategories);
     }
 
     [Fact]
@@ -889,5 +937,21 @@ public class DtoSerializationTests
         var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
 
         Assert.True(config.IsCategoryEnabled("quests"));
+    }
+
+    // A null map switches nothing on and names nothing, so both answer "no" rather than throwing.
+    [Fact]
+    public void A_null_categories_map_names_no_category()
+    {
+        const string json = """
+            {"categories":null,"enabled":true,
+             "intervals":{"fullSyncMinutes":30,"unlockDebounceSeconds":5},
+             "itemManifest":[],"manifestVersion":"abc"}
+            """;
+
+        var config = JsonSerializer.Deserialize<ConfigResponse>(json, ApiJson.Options)!;
+
+        Assert.False(config.IsCategoryExplicitlyEnabled("quests"));
+        Assert.False(config.NamesCategory("quests"));
     }
 }

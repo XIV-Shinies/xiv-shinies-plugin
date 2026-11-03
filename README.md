@@ -36,8 +36,9 @@ that list only then.
 
 Everything else travels with the periodic full sync, or immediately when you press
 **Sync now**: **Tracked items** (the item counts that prove relic progress), **Quest
-progress**, **Triple Triad cards**, **Triple Triad NPCs** and **Occult records**. **Phantom
-jobs** are read by any full sync (login, periodic or Sync now) that runs while you are inside the
+progress**, **Triple Triad cards**, **Triple Triad NPCs**, **Occult records**, **Gear & glamour
+storage** and **Character appearance**. **Phantom jobs** are read by any full sync (login,
+periodic or Sync now) that runs while you are inside the
 Occult Crescent, and your knowledge level once you open the review window at Jeffroy. **Tamed
 beasts** upload within
 seconds of a change being read, when you talk to the Crucible's NPC or open your Master's
@@ -71,6 +72,23 @@ switch on (the live Occult tracker starts on; everything else starts off):
   the record). It shows part of itself at a time and remembers the last filter you set, so page
   through it once with no filter applied. Nothing else about you is read for this beyond the zone
   you are in, and other players are never involved
+- The ID numbers and copy counts of the **gear you hold and where it is kept**: your Glamour
+  Dresser (with each piece's quality and dyes), outfit glamours, Armoire, and the gear you wear or
+  keep in your bags, armoury chest, saddlebag, retainers and retainer market listings, down to
+  which retainer holds each piece — plus which of those storage locations could be read, how many
+  retainers you have, and their names. A retainer is identified by a one-way hash of its id, never
+  the id itself, and its name is read only once you have used a Summoning Bell this session. Gear
+  only; materials and other items are never included. Your bags, equipped gear and armoury chest
+  are read at login and on every scheduled or manual sync; the dresser, Armoire and saddlebag once
+  you have opened and closed each one this session (dresser dyes only in the area where you opened
+  it); and your retainers from the game's saved copy of each one you have summoned, which survives
+  logging out, plus the market listings of the one summoned most recently. Nothing is read while a
+  storage window is open. This is a picture of what you hold right now, so the site can tell when
+  a piece has left your storage — though nothing you marked by hand is ever unmarked
+- Your **character's appearance** as set in the character creator (race, clan, gender, face, hair,
+  eyes, colors and body), the glasses you wear, and your display settings: whether your weapon,
+  headgear, visor, Viera ears and Free Company crest are shown — read from your own character, so
+  XIV Shinies can draw you as you are
 - **Live Occult Crescent instance state**, while you are inside one: which critical
   encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
   are on, powering the site's live occult tracker on the right data center. This is world
@@ -91,7 +109,11 @@ switch on (the live Occult tracker starts on; everything else starts off):
   are skipped: nothing about them is sent beyond how many your run beat and the points they were
   worth, as the results screen shows them. Nothing about other players is read or sent
 
-For a collection the plugin can read end to end, the upload also records that the list is
+The gear and appearance collections are read only once XIV Shinies offers them; until then
+neither is read or sent, and the settings show each as not offered (or, before XIV Shinies has
+answered, as waiting for its answer).
+
+For a collection the plugin can read end to end, the upload also declares that the list is
 complete. That is what lets the site point out something you marked by hand that the plugin
 did not find, so you can review it — nothing is ever unmarked for you.
 
@@ -113,10 +135,10 @@ as a whole — can be toggled at any time from the settings window (`/shinies`).
 Sharing your Crucible runs is its own switch: it starts off, the offer below never turns it on,
 and it is marked **New** in the settings until you have seen it.
 
-Setup also offers to start collections added by later updates already switched on, whatever they
-send, so that if you always opt in you are not asked every time. It is off unless you tick it, and
-either way a new collection is marked **New** in the settings until you have seen it — there you
-can read what it sends and switch it on or off.
+Setup also offers to start new collections switched on as soon as the site makes them available to
+you, whatever they send, so that if you always opt in you are not asked every time. It is off
+unless you tick it, and either way a new collection is marked **New** in the settings until you have
+seen it — there you can read what it sends and switch it on or off.
 
 ![The first-run wizard: what it sends, and your privacy, before anything uploads](images/screenshots/wizard-1-welcome.png)
 

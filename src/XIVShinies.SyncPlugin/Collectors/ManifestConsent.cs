@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using XIVShinies.SyncPlugin.Api;
 
 namespace XIVShinies.SyncPlugin.Collectors;
 
@@ -55,6 +57,27 @@ public static class ManifestConsent
 
         return keys;
     }
+
+    /// <summary>
+    /// The collections <see cref="PluginSettings.AutoEnableNewFeatures"/> may switch on under this
+    /// <c>/config</c>: those with a fixed scope that the server permits.
+    /// </summary>
+    /// <remarks>
+    /// A collection that needs naming stays out until the server offers it to this player: its row is
+    /// grayed until then, unable to show a stored answer or let the user undo it. With no answer yet an
+    /// ordinary collection counts as permitted (see <see cref="CollectorGate.ServerPermits"/>).
+    /// </remarks>
+    /// <param name="collectors">Every registered collector.</param>
+    /// <param name="remoteConfig">The server's answer, or null before any.</param>
+    public static IReadOnlyList<string> AutoEnableCandidates(
+        IEnumerable<ICollector> collectors, ConfigResponse? remoteConfig) =>
+        FixedScopeCategoryKeys(
+            collectors.Where(collector => CollectorGate.ServerPermits(collector, remoteConfig)));
+
+    /// <summary>The log line for collections switched on without a click, so each leaves a trace.</summary>
+    public static string AutoEnabledNote(IReadOnlyList<string> categoryKeys) =>
+        $"Switched on {string.Join(", ", categoryKeys)} — never shown as available on this install, and " +
+        "new collections are set to start on.";
 
     /// <summary>
     /// Writes one category's consent, and every manifest group nested under it, together.

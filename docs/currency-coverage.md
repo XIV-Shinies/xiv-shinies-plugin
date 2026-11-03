@@ -4,7 +4,7 @@ Which classes of in-game currency the item scan can resolve by item id, and thro
 mechanism. Established by an in-game sweep on 2026-07-12 (live client, one character):
 each id below was resolved through the same two-step read the real scan uses — the
 container walk first, then the `CurrencyManager` fallback for ids the walk did not find —
-and the result recorded from the log.
+and the result read back from the plugin log.
 
 This table exists for whoever curates manifest groups server-side: an id in a covered
 class will auto-fill once it joins a group; nothing here requires plugin changes to extend
@@ -16,7 +16,7 @@ to other ids of the same class.
   live containers) directly. Covers the "classic" currencies the in-game Currency window
   lists. A zero balance may occupy no container slot; the id then simply reports the
   honest explicit zero.
-- **CurrencyManager fallback** — for manifest ids the walk did not find, the scan probes
+- **CurrencyManager fallback** — for manifest ids the walk did not find, the scan queries
   the game's `CurrencyManager` (membership check first, then the count). Covers the
   bucket-tracked currencies. Notably, buckets answer even at zero balance, so these ids
   report zeros verified live (on the wire it is the same explicit zero as any other —

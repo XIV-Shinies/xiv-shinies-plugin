@@ -62,13 +62,15 @@ public class PluginSettings
     public bool CrucibleSharingSeen { get; set; }
 
     /// <summary>
-    /// True when the user chose to have collections added by later updates start switched on.
+    /// True when the user chose to have a new collection start switched on once the server offers it.
     /// <see cref="AutoEnableUnseenCategories"/> acts on it.
     /// </summary>
     /// <remarks>
     /// Off by default. Unlike the tracker toggle, this answers for collections the user has not read
     /// a disclosure for yet, and a pre-ticked box would collect that answer from everyone who did not
-    /// untick it. New collections announce themselves either way.
+    /// untick it. It reaches every collection, whatever it sends, except one whose groups the user
+    /// answers separately (see <see cref="Collectors.ManifestConsent.FixedScopeCategoryKeys"/>), and
+    /// new collections announce themselves either way.
     /// </remarks>
     public bool AutoEnableNewFeatures { get; set; }
 
@@ -153,9 +155,9 @@ public class PluginSettings
 
     /// <summary>Guards every read and write of the collections below.</summary>
     /// <remarks>
-    /// The settings window writes them on the render thread while each collection pass reads them on
-    /// the framework thread, and a list or dictionary throws when one thread adds while another
-    /// enumerates.
+    /// The settings window writes them on the render thread and a <c>/config</c> poll on a background
+    /// task, while each collection pass reads them on the framework thread, and a list or dictionary
+    /// throws when one thread adds while another enumerates.
     /// </remarks>
     // Private, so it is never written to the config file.
     private readonly object gate = new();
@@ -358,16 +360,19 @@ public class PluginSettings
     }
 
     /// <summary>
-    /// Switches on every collection this install has never shown, for a user who ticked
+    /// Switches on every given collection this install has never shown, for a user who ticked
     /// <see cref="AutoEnableNewFeatures"/>.
     /// </summary>
-    /// <param name="categoryKeys">Every category registered in this build.</param>
+    /// <param name="categoryKeys">
+    /// The collections this answer may reach, from
+    /// <see cref="Collectors.ManifestConsent.AutoEnableCandidates"/>.
+    /// </param>
     /// <returns>The keys switched on, in the order given; empty when nothing changed.</returns>
     /// <remarks>
-    /// The only place a collection turns on without its own tick, licensed by that standing answer.
-    /// It does nothing for a user still ahead of the wizard, which shows every collection anyway. A
-    /// collection the user has been shown keeps their answer forever, and an enabled collection still
-    /// wears its "New" badge.
+    /// The only place a collection turns on without the user acting on the consent list, licensed by
+    /// that standing answer. It does nothing for a user still ahead of the wizard, which shows every
+    /// collection anyway. A collection the user has been shown keeps their answer forever, and an
+    /// enabled collection still wears its "New" badge.
     /// </remarks>
     public IReadOnlyList<string> AutoEnableUnseenCategories(IEnumerable<string> categoryKeys)
     {

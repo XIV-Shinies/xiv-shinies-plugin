@@ -85,6 +85,10 @@ public sealed class Plugin : IDalamudPlugin
     /// The local character's condition flags. The Crucible run sharing reads only "in combat"; while it
     /// is set it reads no Crucible window or own HP, only the familiar's (see <see cref="BuddyList"/>).
     /// </summary>
+    /// <remarks>
+    /// The glamour collection reads only "using a summoning bell", and is not read while it is set,
+    /// since a retainer's windows can be open then.
+    /// </remarks>
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     /// <summary>
@@ -97,6 +101,10 @@ public sealed class Plugin : IDalamudPlugin
     /// Finds a game window by name: a Crucible window the player has open, such as the run HUD, or
     /// whether the Achievements window is open.
     /// </summary>
+    /// <remarks>
+    /// The glamour collection also asks whether the Glamour Dresser, its outfit-glamour window, the
+    /// Armoire or the saddlebag is open, and waits for it to close (see <see cref="GlamourCollector"/>).
+    /// </remarks>
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
 
     // --- Plugin state --------------------------------------------------------------------
@@ -181,10 +189,11 @@ public sealed class Plugin : IDalamudPlugin
                 key => CollectorGate.IsCapturePermitted(key, Configuration.Settings),
                 Log);
 
-            // Nothing reads the game until something runs them.
+            // Nothing reads the game until something runs them. The glamour collection only asks the
+            // window and condition services questions during a pass, so they add nothing to tear down.
             collectors = CollectorRegistry.Create(
                 DataManager, UnlockState, Framework, knowledgeObserver, tamedBeastObserver,
-                achievementProgressObserver);
+                achievementProgressObserver, GameGui, Condition);
 
             // Sets the "New" badge baseline. It needs the registered collectors, so it runs here
             // rather than with the migrations; after the first load it costs one flag read.
@@ -192,17 +201,13 @@ public sealed class Plugin : IDalamudPlugin
                 Configuration.Save();
 
             // After the baseline, which defines "never shown", and before the window can mark one
-            // shown. See ManifestConsent.FixedScopeCategoryKeys for which collections qualify.
+            // shown. A collection that needs naming waits for a /config that offers it (see SyncManager).
             var autoEnabled = Configuration.Settings.AutoEnableUnseenCategories(
-                ManifestConsent.FixedScopeCategoryKeys(collectors));
+                ManifestConsent.AutoEnableCandidates(collectors, remoteConfig: null));
             if (autoEnabled.Count > 0)
             {
                 Configuration.Save();
-
-                // The one path that switches a collection on without a click, so it leaves a trace.
-                Log.Information(
-                    $"Switched on {string.Join(", ", autoEnabled)} — new since this install was " +
-                    "last shown the list, and new collections are set to start on.");
+                Log.Information(ManifestConsent.AutoEnabledNote(autoEnabled));
             }
 
             // It subscribes at once, but every path checks the upload gate first, so nothing is sent
@@ -273,21 +278,21 @@ public sealed class Plugin : IDalamudPlugin
             mainWindow?.Dispose();
 
             // Either may be unbuilt, so both are null-checked.
-            if (tamedBeastObserver is not null && syncManager is not null)
-                tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
+            if (knowledgeObserver is not null && syncManager is not null)
+                knowledgeObserver.SightingTaken -= syncManager.NotifyCategoryHeld;
 
             if (achievementProgressObserver is not null && syncManager is not null)
                 achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
 
-            if (knowledgeObserver is not null && syncManager is not null)
-                knowledgeObserver.SightingTaken -= syncManager.NotifyCategoryHeld;
+            if (tamedBeastObserver is not null && syncManager is not null)
+                tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
             crucibleManager?.Dispose();
             occultManager?.Dispose();
             syncManager?.Dispose();
-            knowledgeObserver?.Dispose();
-            tamedBeastObserver?.Dispose();
             achievementProgressObserver?.Dispose();
+            tamedBeastObserver?.Dispose();
+            knowledgeObserver?.Dispose();
             apiClient?.Dispose();
             throw;
         }
@@ -315,9 +320,9 @@ public sealed class Plugin : IDalamudPlugin
 
         // Before the SyncManager they notify, so no upload can be scheduled through a manager being
         // torn down.
-        tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
-        achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
         knowledgeObserver.SightingTaken -= syncManager.NotifyCategoryHeld;
+        achievementProgressObserver.ReadingTaken -= syncManager.NotifyCategoryHeld;
+        tamedBeastObserver.BeastsLearned -= syncManager.NotifyCategoryChanged;
 
         // Before the SyncManager and ApiClient they borrow: each unsubscribes and cancels its own
         // upload in flight.
@@ -330,9 +335,9 @@ public sealed class Plugin : IDalamudPlugin
 
         // After the SyncManager whose collection passes read them: no pass can start once its
         // handlers are detached.
-        knowledgeObserver.Dispose();
-        tamedBeastObserver.Dispose();
         achievementProgressObserver.Dispose();
+        tamedBeastObserver.Dispose();
+        knowledgeObserver.Dispose();
 
         apiClient.Dispose();
     }

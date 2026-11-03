@@ -68,6 +68,32 @@ public interface ICollector
     bool UsesItemManifest { get; }
 
     /// <summary>
+    /// True when this collection may be collected only once the server's <c>/config</c> names it and
+    /// switches it on (see <see cref="CategoryInfo.RequiresServerSupport"/>).
+    /// </summary>
+    /// <remarks>
+    /// Lives on the collector so <see cref="CollectorGate"/> and the settings window keep no list of
+    /// such collections. False keeps the ordinary rule: a key the server never names reads as on.
+    /// </remarks>
+    bool RequiresServerSupport { get; }
+
+    /// <summary>
+    /// True when this collection's facts are one record about the character rather than a collection
+    /// of things (see <see cref="CategoryInfo.IsSingleRecord"/>).
+    /// </summary>
+    /// <remarks>The upload log reads this to name the category without a count.</remarks>
+    bool IsSingleRecord { get; }
+
+    /// <summary>
+    /// True when this collection's facts come from the character's storage containers and its pass
+    /// reports their scan state (see <see cref="CategoryInfo.ReadsStorage"/>).
+    /// </summary>
+    /// <remarks>
+    /// The settings panel reads this to decide whether the storage container lines belong on screen.
+    /// </remarks>
+    bool ReadsStorage { get; }
+
+    /// <summary>
     /// True when the game announces each new entry of this collection the moment it is earned, so it
     /// uploads within seconds (see <see cref="CategoryInfo.UploadsOnUnlock"/>).
     /// </summary>

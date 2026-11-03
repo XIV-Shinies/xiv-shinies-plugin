@@ -18,7 +18,9 @@ public static class SourceNoteText
 {
     /// <summary>Describes one source's scan status, or returns null when there is nothing to say.</summary>
     /// <param name="sourceKey">The <see cref="SourceKeys"/> wire key naming the storage source.</param>
-    /// <param name="status">That source's scan status from the most recent item pass.</param>
+    /// <param name="status">
+    /// That source's scan status from the most recent pass that read the storage containers.
+    /// </param>
     /// <param name="host">The configured website's address, named where a note says who keeps proof.</param>
     public static SourceNote? Describe(string sourceKey, ItemSourceStatus status, string host) =>
         (sourceKey, status.State) switch
@@ -46,15 +48,16 @@ public static class SourceNoteText
                         "like Occult Crescent's pieces, can only be read while inside it.",
                 },
 
-            // Cached is the saddlebag's healthy state: the game never offers a live read of it. The
-            // detail names the premium half, which travels under the same key.
+            // Cached is healthy here, since the live saddlebag is never walked (see StorageContainers). The
+            // detail names the premium half (same key) and the no-companion case (see SaddlebagNote).
             (SourceKeys.Saddlebag, SourceStates.Cached) =>
                 new SourceNote
                 {
                     Label = "Saddlebag",
                     Tone = SourceTone.Cached,
                     Detail = "Read from cache, including the premium saddlebag — open it once in " +
-                        "game to refresh as needed.",
+                        "game to refresh as needed. Without a chocobo companion there is no " +
+                        "saddlebag, so it reads as empty.",
                 },
 
             (SourceKeys.Saddlebag, SourceStates.Unscanned) =>

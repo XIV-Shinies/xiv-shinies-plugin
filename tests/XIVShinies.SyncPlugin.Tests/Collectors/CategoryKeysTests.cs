@@ -19,6 +19,8 @@ public class CategoryKeysTests
     {
         [nameof(CategoryKeys.AchievementProgress)] = "achievementProgress",
         [nameof(CategoryKeys.Achievements)] = "achievements",
+        [nameof(CategoryKeys.Appearance)] = "appearance",
+        [nameof(CategoryKeys.Glamour)] = "glamour",
         [nameof(CategoryKeys.Items)] = "items",
         [nameof(CategoryKeys.Minions)] = "minions",
         [nameof(CategoryKeys.Mounts)] = "mounts",

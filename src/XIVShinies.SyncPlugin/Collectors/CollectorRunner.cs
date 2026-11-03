@@ -84,6 +84,16 @@ public sealed record CollectionSnapshot
     public IReadOnlySet<string> ManifestDrivenKeys { get; init; } = new HashSet<string>();
 
     /// <summary>
+    /// The categories whose collectors declare <see cref="ICollector.IsSingleRecord"/>.
+    /// </summary>
+    /// <remarks>
+    /// The upload log copies this onto each category, where it names such a category without a count
+    /// (see <see cref="CategoryInfo.IsSingleRecord"/>). It is collector self-description, so no
+    /// consumer compares keys against a name.
+    /// </remarks>
+    public IReadOnlySet<string> SingleRecordKeys { get; init; } = new HashSet<string>();
+
+    /// <summary>
     /// The categories whose facts this pass declared a <b>complete</b> enumeration (see
     /// <see cref="CollectResult.CompleteEnumeration"/>).
     /// </summary>
@@ -138,6 +148,7 @@ public static class CollectorRunner
         var durations = new Dictionary<string, TimeSpan>();
         var sourceNotes = new Dictionary<string, ItemSourceStatus>();
         var manifestDrivenKeys = new HashSet<string>();
+        var singleRecordKeys = new HashSet<string>();
         var completeKeys = new HashSet<string>();
         var storeConfirmations = new Dictionary<string, StoreConfirmation>();
 
@@ -157,8 +168,11 @@ public static class CollectorRunner
             if (collector.UsesItemManifest)
                 manifestDrivenKeys.Add(key);
 
+            if (collector.IsSingleRecord)
+                singleRecordKeys.Add(key);
+
             // Ask before reading: a disabled category must cost nothing, not even a game lookup.
-            if (!CollectorGate.IsEnabled(key, settings, remoteConfig))
+            if (!CollectorGate.IsEnabled(collector, settings, remoteConfig))
             {
                 skipped[key] = CollectSkipReasons.Disabled;
                 continue;
@@ -237,6 +251,7 @@ public static class CollectorRunner
             Durations = durations,
             SourceNotes = sourceNotes,
             ManifestDrivenKeys = manifestDrivenKeys,
+            SingleRecordKeys = singleRecordKeys,
             CompleteKeys = completeKeys,
             StoreConfirmations = storeConfirmations,
             TruncatedManifests = context.TruncatedManifests,

@@ -41,6 +41,13 @@ public class CategorySettingsViewTests
 
         public bool UsesItemManifest { get; }
 
+        public bool RequiresServerSupport { get; init; }
+
+        // The settings view never reads this; the interface requires it.
+        public bool IsSingleRecord { get; init; }
+
+        public bool ReadsStorage { get; init; }
+
         public bool UploadsOnUnlock { get; init; }
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
@@ -48,6 +55,9 @@ public class CategorySettingsViewTests
 
     private static ICollector Fake(string key) =>
         new FakeCollector(key, $"{key} display", $"what {key} sends");
+
+    private static ICollector FakeNeedingServerSupport(string key) =>
+        new FakeCollector(key, $"{key} display", $"what {key} sends") {RequiresServerSupport = true};
 
     // Proves group rows attach by the collector's self-description, not by its category name.
     private static ICollector FakeManifestDriven(string key) =>
@@ -163,6 +173,13 @@ public class CategorySettingsViewTests
         public string? Details => null;
 
         public bool UsesItemManifest => false;
+
+        // Unlike UploadsOnUnlock, these three have no default on the interface.
+        public bool RequiresServerSupport => false;
+
+        public bool IsSingleRecord => false;
+
+        public bool ReadsStorage => false;
 
         public CollectResult Collect(CollectContext context) => CollectResult.Ids(new uint[] {1});
     }
@@ -580,6 +597,28 @@ public class CategorySettingsViewTests
         Assert.Null(rows[0].Groups);
     }
 
+    // ReadStatusView shows the container lines by this flag, manifest-driven or not. The unknown
+    // category proves nothing here decides it by name.
+    [Fact]
+    public void A_collectors_storage_flag_is_carried_onto_its_row()
+    {
+        var rows = CategorySettingsView.Build(
+            new ICollector[]
+            {
+                new FakeCollector(UnknownCategory, "facewear display", "what facewear sends")
+                {
+                    ReadsStorage = true,
+                },
+                Fake("mounts"),
+            },
+            OptedIn(),
+            RemoteConfig());
+
+        Assert.True(rows[0].ReadsStorage);
+        Assert.False(rows[0].UsesItemManifest);
+        Assert.False(rows[1].ReadsStorage);
+    }
+
     // No later path can handle a blank group key: consent reads treat it as off, seen-marking skips it,
     // leaving a "New" badge that re-saves the config every frame, and the consent write throws. So the
     // view drops it at the boundary.
@@ -711,7 +750,7 @@ public class CategorySettingsViewTests
 
     // --- What a switched-off category says for itself -------------------------------------------
     // A category is off for one of two reasons, and the row draws a different sentence for each. The
-    // fake is a category nobody wrote code for, so a future gated collection gets this without an edit.
+    // fake is a category nobody wrote code for, so any gated collection gets this without an edit.
 
     // A category in testing prints the server's note verbatim, since "it is off" alone reads as broken.
     [Fact]
@@ -743,7 +782,7 @@ public class CategorySettingsViewTests
         var rows = CategorySettingsView.Build(
             new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), config);
 
-        // Pinned against ServerOffCopy.Feature itself, so a reword moves both surfaces that draw it.
+        // Pinned against ServerOffCopy.Feature itself, so a reword moves every surface that draws it.
         Assert.Equal(
             ServerOffCopy.Feature(Host), Assert.Single(rows).ServerOffText(Host));
     }
@@ -1095,5 +1134,97 @@ public class CategorySettingsViewTests
         Assert.True(row.ServerEnabled);
         Assert.False(row.ServerGloballyOff);
         Assert.Null(row.ServerOffText(Host));
+    }
+
+    // --- A collection that needs the server to name it ------------------------------------------
+    // Such a collection reads as off while the server's map does not carry its key, and its row says
+    // it is not offered: a server that never named it has not switched it off.
+
+    [Fact]
+    public void A_collection_the_server_never_names_is_drawn_as_not_offered()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            RemoteConfig()));
+
+        Assert.False(row.ServerEnabled);
+        Assert.True(row.NotOfferedByServer);
+
+        // Pinned against ServerOffCopy.NotOffered itself, so a reword moves every surface that
+        // draws it.
+        Assert.Equal(ServerOffCopy.NotOffered(Host), row.ServerOffText(Host));
+    }
+
+    // Named as off, it is an ordinary switched-off collection, so the server's note is what it prints.
+    [Fact]
+    public void A_collection_the_server_names_off_says_what_the_server_said()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = false},
+            categoryNotes: new Dictionary<string, string> {[UnknownCategory] = "In testing."});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.False(row.ServerEnabled);
+        Assert.False(row.NotOfferedByServer);
+        Assert.Equal("In testing.", row.ServerOffText(Host));
+    }
+
+    [Fact]
+    public void A_collection_the_server_names_on_is_server_enabled()
+    {
+        var config = RemoteConfig(
+            categories: new Dictionary<string, bool> {[UnknownCategory] = true});
+
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)}, OptedIn(UnknownCategory), config));
+
+        Assert.True(row.ServerEnabled);
+        Assert.False(row.NotOfferedByServer);
+        Assert.Null(row.ServerOffText(Host));
+    }
+
+    // Before /config nothing says the server knows it: the row is off, as the gate is, unbadged and
+    // unseen, so it announces itself once offered. Its line claims neither answer, since none came.
+    [Fact]
+    public void A_collection_needing_server_support_waits_for_the_config()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            remoteConfig: null));
+
+        Assert.False(row.ServerEnabled);
+        Assert.True(row.NotOfferedByServer);
+        Assert.False(row.IsEffectivelyOn);
+        Assert.False(row.IsEffectivelyNew);
+        Assert.False(CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips: false));
+        Assert.False(CategorySettingsView.ShowingRetiresTheBadge(row, showNewChips: true));
+        Assert.Equal(ServerOffCopy.AwaitingAnswer(Host), row.ServerOffText(Host));
+    }
+
+    // While syncing is stopped for everyone, the pause explains the row, even one never offered.
+    [Fact]
+    public void A_paused_server_outranks_a_collection_it_never_named()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {FakeNeedingServerSupport(UnknownCategory)},
+            OptedIn(UnknownCategory),
+            RemoteConfig(enabled: false)));
+
+        Assert.True(row.NotOfferedByServer);
+        Assert.Equal(ServerOffCopy.Paused(Host), row.ServerOffText(Host));
+    }
+
+    [Fact]
+    public void An_ordinary_collection_the_server_never_names_is_never_drawn_as_not_offered()
+    {
+        var row = Assert.Single(CategorySettingsView.Build(
+            new[] {Fake(UnknownCategory)}, OptedIn(UnknownCategory), RemoteConfig()));
+
+        Assert.True(row.ServerEnabled);
+        Assert.False(row.NotOfferedByServer);
     }
 }
