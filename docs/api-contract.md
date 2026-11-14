@@ -672,10 +672,14 @@ snapshot is ~1.2 KB.
   "instance": {
     "territoryTypeId": 1252,    // 1252 South Horn | 1346 North Horn
     "worldId": 73               // OPTIONAL: the reporter's CURRENT World row id (not home
-                                // world). The server maps world → data center to scope
-                                // matching and the browse list per DC; omitted when
-                                // unreadable, and the tracker then stays un-scoped. An
-                                // unknown id is ignored (catalog-trailing rule).
+                                // world). The server scopes matching and the browse list
+                                // to the region of the world's data center, since one
+                                // instance can draw players from any data center in
+                                // that region. Omitted when unreadable; the upload then
+                                // matches across regions, and a tracker it starts has
+                                // no data center, so every region lists it until a
+                                // scoped upload adopts it. An unknown id is ignored
+                                // (catalog-trailing rule).
   },
   "encounters": [
     // Full state every upload. CEs and the Forked Tower by DynamicEvent row id;
@@ -690,8 +694,10 @@ snapshot is ~1.2 KB.
 ```
 
 - **`sinceUtc` is the fingerprint.** Occult instances have no client-readable id; the
-  server matches an upload to the active tracker (same territory) sharing at least one
-  exact `(encounter, sinceUtc)` pair, bridging quiet gaps with the reporter's presence.
+  server matches an upload to an active tracker in the same territory (and, when
+  `worldId` resolves, in the same region or with no data center) that shares at least
+  one exact `(encounter, sinceUtc)` pair, bridging quiet gaps with the reporter's
+  presence.
   So the plugin must send **server-assigned epochs, identical for every observer** — a
   FATE's start epoch, a CE phase deadline (or battle start derived as deadline −
   duration) — at exact whole-second precision, formatted `YYYY-MM-DDThh:mm:ssZ`. The
@@ -704,8 +710,8 @@ snapshot is ~1.2 KB.
   ids land on the tracker's tower state rather than an encounter row.
 - **`leave`** (sent on territory exit) clears the character's presence only; the tracker
   lives on for reporters still inside. A reporter also ages out after ~3 missed
-  heartbeats, so a missed leave self-heals. A leave's `worldId` is sampled at exit, so a
-  deferred leave still clears presence on the data center that was actually left.
+  heartbeats, so a missed leave self-heals. A leave's `worldId` is the world at exit,
+  even when the leave ships later.
 - **Absence self-heal.** Unlike the monotonic `/sync` writes, this endpoint is a
   replace-style full snapshot: an encounter the tracker holds `active` that is absent
   from an incoming snapshot (except on `enter`, whose table may still be settling) is

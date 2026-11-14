@@ -19,7 +19,7 @@ public static class OccultUploadBuilder
     /// <param name="trigger">What prompted this upload.</param>
     /// <param name="encounters">The tracker's snapshot (see <c>OccultEncounterTracker.Current</c>).</param>
     /// <param name="currentWorldId">The reporter's current <c>World</c> row id, or null when
-    /// unreadable; the server then leaves the tracker unscoped by data center.</param>
+    /// unreadable (see <see cref="OccultInstanceIdentity.WorldId"/>).</param>
     public static OccultInstanceStateRequest Build(
         string characterContentIdHash,
         string characterName,

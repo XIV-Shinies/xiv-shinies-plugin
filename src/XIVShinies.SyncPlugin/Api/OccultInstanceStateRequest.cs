@@ -49,12 +49,12 @@ public sealed record OccultInstanceIdentity
     public required uint TerritoryTypeId { get; init; }
 
     /// <summary>
-    /// The reporter's current world (<c>World</c> sheet row id), not the home world, since a
-    /// data-center traveler reports from where they are. Omitted from the JSON when unreadable.
+    /// The reporter's current world (<c>World</c> sheet row id), not the home world, because a traveler's
+    /// instance belongs to the region of the world they visit. Omitted from the JSON when unreadable.
     /// </summary>
     /// <remarks>
-    /// The server maps the world to a data center to scope fingerprint matching and the browse list;
-    /// without it the tracker stays unscoped.
+    /// The server maps the world to its data center's region to scope fingerprint matching and the browse
+    /// list. Without it the upload matches across regions, and a tracker it starts has no data center.
     /// </remarks>
     public uint? WorldId { get; init; }
 }

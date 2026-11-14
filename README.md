@@ -91,7 +91,7 @@ switch on (the live Occult tracker starts on; everything else starts off):
   XIV Shinies can draw you as you are
 - **Live Occult Crescent instance state**, while you are inside one: which critical
   encounters, FATEs, and Forked Tower windows are up in your instance, and which world you
-  are on, powering the site's live occult tracker on the right data center. This is world
+  are on, powering the site's live occult tracker for that world's region. This is world
   state — nothing about you beyond your presence in the instance, and never anything about
   other players. It starts enabled (the setup wizard shows the ticked box before anything
   sends) and can be switched off any time in the settings. If XIV Shinies has the tracker
