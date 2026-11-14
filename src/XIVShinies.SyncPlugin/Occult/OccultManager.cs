@@ -376,10 +376,10 @@ internal sealed class OccultManager : IDisposable
 
     /// <summary>
     /// The character's current <c>World</c> row id, or null while the game has not set it. Current, not
-    /// home, because a data-center traveler's instance belongs to the visited data center.
+    /// home: see <see cref="OccultInstanceIdentity.WorldId"/>.
     /// </summary>
     /// <remarks>
-    /// Framework thread only. It sends the raw row id unresolved: the server resolves ids the installed
+    /// Framework thread only. It returns the raw row id unresolved: the server resolves ids the installed
     /// game data lacks, and a <c>RowId</c> read cannot throw the way a name lookup can. Zero is the
     /// game's unset world, so <c>&gt; 0</c> is the whole readability test.
     /// </remarks>

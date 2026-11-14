@@ -78,7 +78,7 @@ public class OccultUploadBuilderTests
         Assert.Single(instance);
     }
 
-    // worldId is what scopes the tracker to a data center on the server.
+    // worldId is what scopes the tracker to a region on the server.
     [Fact]
     public void The_instance_object_carries_the_current_world_when_known()
     {
